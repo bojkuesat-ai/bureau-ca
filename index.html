@@ -345,7 +345,7 @@ const SB_KEY="sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createClient(SB_URL,SB_KEY):null;
 function sess2session(user,prof){ return {id:user.id,email:user.email,prenom:prof.prenom,nom:((prof.prenom||"")+" "+(prof.nom||"")).trim(),fonction:prof.fonction,sig:((prof.prenom||prof.nom||"")+(prof.fonction?" \u00b7 "+prof.fonction:"")),statut:prof.statut||"attente",role:prof.role||"membre"}; }
 async function loadAccounts(){ try{ const {data}=await sb.from("ca_membres").select("*"); S.admins=(data||[]).map(a=>({id:a.id,email:a.email,prenom:a.prenom,nom:a.nom,fonction:a.fonction,statut:a.statut,role:a.role,ts:a.created_at})); }catch(e){} }
-async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; return; } S.session=sess2session(user,prof); await loadAccounts(); }catch(e){ S.session=null; } }
+async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; S.needProfile=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; } S.needProfile=null; S.session=sess2session(user,prof); await loadAccounts(); }catch(e){ S.session=null; } }
 
 /* ============================ ÉTAT ============================ */
 const S = {
@@ -374,7 +374,7 @@ const val = id => { const e=document.getElementById(id); return e ? e.value : ""
 
 /* ============================ RENDU ============================ */
 const root = () => document.getElementById("root");
-function render(){ root().innerHTML = S.view==="home" ? viewHome() : S.view==="admin" ? viewAdmin() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.forcePwd ? viewNewPwd() : viewAuth()) : (S.session.statut==="attente" ? viewPending() : viewDash())); }
+function render(){ root().innerHTML = S.view==="home" ? viewHome() : S.view==="admin" ? viewAdmin() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.needProfile ? viewCompleteProfile() : (S.forcePwd ? viewNewPwd() : viewAuth())) : (S.session.statut==="attente" ? viewPending() : viewDash())); }
 function viewNewPwd(){
   return `<div class="auth-wrap"><div class="auth">
     <div class="top"><span class="eyebrow">${esc(S.meta.nom||"Bureau étudiant")} · CA</span><button class="link" data-action="go-home">← Accueil</button></div>
@@ -386,6 +386,22 @@ function viewNewPwd(){
       <label>Confirmer</label><input class="f" id="np_pwd2" type="password" placeholder="Retapez le mot de passe">
       <p class="err" id="np_err" style="display:none"></p>
       <button class="btn" data-action="set-new-pwd">Définir mon mot de passe</button>
+    </div>
+  </div></div>`;
+}
+function viewCompleteProfile(){
+  return `<div class="auth-wrap"><div class="auth">
+    <div class="top"><span class="eyebrow">${esc(S.meta.nom||"Bureau étudiant")} · CA</span><button class="link" data-action="go-home">← Accueil</button></div>
+    <h1 class="serif">Compléter votre profil</h1>
+    <p class="lead">Votre compte existe déjà (Caisse). Renseignez vos informations pour rejoindre l'espace CA — votre accès sera validé par le propriétaire.</p>
+    <div class="auth-card">
+      <p class="hint" style="margin:0 0 6px">Connecté·e avec <b style="color:var(--ink)">${esc((S.needProfile&&S.needProfile.email)||"")}</b></p>
+      <label>Nom</label><input class="f" id="cp_nom" placeholder="Ex. Bojku">
+      <label>Prénom</label><input class="f" id="cp_prenom" placeholder="Ex. Esat">
+      <label>Fonction</label><select class="f" id="cp_fonction"><option value="">— choisir une fonction —</option>${TOUS_POSTES.map(p=>`<option value="${esc(p.titre)}">${esc(p.titre)}</option>`).join("")}</select>
+      <p class="err" id="cp_err" style="display:none"></p>
+      <button class="btn" data-action="complete-profile">Rejoindre l'espace CA</button>
+      <p class="swap"><button data-action="logout">Se déconnecter</button></p>
     </div>
   </div></div>`;
 }
@@ -518,6 +534,7 @@ function viewAuth(){
       <span style="display:flex;gap:10px;align-items:center"><button class="home-admin" data-action="go-admin" style="position:static">⚙︎ Admin</button><button class="link" data-action="go-home">← Accueil</button></span></div>
     <h1 class="serif">Espace CA</h1>
     <p class="lead">Réservé aux responsables. Chaque action est enregistrée au nom de l’admin connecté.</p>
+    <div class="banner" style="margin:0 0 14px"><span class="dot" style="background:var(--stamp)"></span>Vous avez déjà un compte pour la Caisse ? Pas besoin d'en créer un : connectez-vous avec le même e-mail et le même mot de passe.</div>
     <div class="auth-card">${card}</div>
   </div></div>`;
 }
@@ -980,6 +997,16 @@ document.addEventListener("click", async e=>{
       if(!sb) return authErr("Connexion au serveur indisponible. Réessayez.");
       const { error } = await sb.auth.signInWithPassword({ email:email, password:pwd });
       if(error) return authErr("E-mail ou mot de passe incorrect.");
+      await refreshSession(); render(); break;
+    }
+    case "complete-profile": {
+      if(!S.needProfile) break;
+      const nom=val("cp_nom").trim(), prenom=val("cp_prenom").trim(), fonction=val("cp_fonction");
+      const cerr=m=>{ const e=document.getElementById("cp_err"); if(e){e.textContent=m;e.style.display="block";} };
+      if(!nom||!prenom) return cerr("Indiquez votre nom et votre prénom.");
+      if(!fonction) return cerr("Choisissez votre fonction.");
+      const r=await sb.from("ca_membres").insert({ id:S.needProfile.id, prenom:prenom, nom:nom, fonction:fonction });
+      if(r && r.error) return cerr("Erreur : "+r.error.message);
       await refreshSession(); render(); break;
     }
     case "logout": { if(sb){ try{ await sb.auth.signOut(); }catch(e){} } S.session=null; S.view="home"; render(); break; }
