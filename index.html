@@ -421,14 +421,6 @@ function viewCompleteProfile(){
 }
 function viewAdmin(){
   const back = `<button class="link" data-action="go-home">← Accueil</button>`;
-  if(S.admins.length===0){
-    return `<div class="auth-wrap"><div class="auth">
-      <div class="top"><span class="eyebrow">Admin · Réservé au propriétaire</span>${back}</div>
-      <h1 class="serif">Aucun compte</h1>
-      <p class="lead">Créez d\'abord votre compte propriétaire depuis l\'espace CA : le tout premier compte devient le vôtre.</p>
-      <div class="auth-card"><button class="btn" data-action="go-ca">Aller créer mon compte (CA)</button></div>
-    </div></div>`;
-  }
   const owner = S.session && S.session.role==="owner";
   if(!owner){
     return `<div class="auth-wrap"><div class="auth">
