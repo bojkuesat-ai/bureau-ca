@@ -471,6 +471,14 @@ function viewAdmin(){
     <div class="compose"><h3 class="serif">${S.meta.bilanActif?"Onglet ouvert":"Onglet fermé"}</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Ouvre ou ferme l'onglet où chaque membre dépose un bilan <b>anonyme</b> (ce qui va / à changer). Vous seul voyez la compilation et générez le document à publier.</p>
       <div class="row-btn"><button class="btn${S.meta.bilanActif?" ghost":""}" data-action="toggle-bilan">${S.meta.bilanActif?"Désactiver les Bilans moraux":"Activer les Bilans moraux"}</button></div></div>
+    <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Zone dangereuse</h2><span class="l"></span></div>
+    <div class="compose" style="border-color:var(--red)">
+      <h3 class="serif">Réinitialiser les données</h3>
+      <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Efface tout le contenu (tâches, budgets, réunions, événements, planning, votes, documents, messages, annonces, contacts, bilans, journal, organigramme). <b style="color:var(--ink)">Les comptes et la caisse ne sont pas touchés.</b> Action irréversible — à utiliser après vos tests.</p>
+      <input class="f" id="reset_confirm" placeholder="Tapez RESET pour confirmer">
+      <p class="err" id="reset_err" style="display:none"></p>
+      <div class="row-btn"><button class="btn" style="background:var(--red);border-color:var(--red);color:#fff" data-action="reset-data">Réinitialiser toutes les données</button></div>
+    </div>
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Sauvegarde & journal</h2><span class="l"></span></div>
     <div class="compose"><h3 class="serif">Données</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Exportez une sauvegarde de toutes les données (recommandé avant la bascule Supabase), ou réimportez-la.</p>
@@ -719,11 +727,12 @@ function tabDocs(){
     <p class="err" id="d_err" style="display:none"></p>
     <div class="row-btn"><button class="btn" data-action="upload-doc">Déposer le fichier</button></div></div>`;
   if(!S.docs||S.docs.length===0) return compose+`<div class="empty">Aucun document. Déposez vos PV, budgets, fichiers…</div>`;
-  const list=S.docs.map(d=>{ const up=(S.admins||[]).find(a=>a.id===d.cree_par_id); const upn=up?((up.prenom||"")+" "+(up.nom||"")).trim():"";
+  const meId=S.session&&S.session.id;
+  const list=S.docs.map(d=>{ const up=(S.admins||[]).find(a=>a.id===d.cree_par_id); const upn=up?((up.prenom||"")+" "+(up.nom||"")).trim():""; const mine=owner||d.cree_par_id===meId;
     return `<div class="doc"><span class="ic">📄</span>
       <span class="meta"><p class="dt">${esc(d.titre)}</p><p class="du">${esc(d.cat||"")}${upn?" · "+esc(upn):""}</p></span>
       <button class="chip" data-action="open-doc" data-id="${esc(d.id)}">Ouvrir</button>
-      ${owner?`<button class="rm2" data-action="del-doc" data-id="${esc(d.id)}">✕</button>`:""}</div>`;
+      ${mine?`<label class="chip" style="cursor:pointer">Remplacer<input type="file" style="display:none" data-change="docreplace" data-id="${esc(d.id)}"></label><button class="rm2" data-action="del-doc" data-id="${esc(d.id)}">✕</button>`:""}</div>`;
   }).join("");
   return compose+list;
 }
@@ -986,6 +995,7 @@ document.addEventListener("change", e=>{
   if(el.dataset.change==="evfield"){ const ev=(S.evenements||[]).find(x=>x.id===(S.evUI&&S.evUI.sel)); if(ev){ ev[el.dataset.field]=el.value; if(sb){ const col=({budgetPrevu:"budget_prevu",budgetReel:"budget_reel"})[el.dataset.field]||el.dataset.field; const v=(col==="budget_prevu"||col==="budget_reel")?(parseFloat(String(el.value).replace(",","."))||0):el.value; sb.from("ca_evenements").update({[col]:v}).eq("id",ev.id); } } return; }
   if(el.dataset.change==="reunote"){ const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(m){ const pt=(m.ordre||[]).find(p=>p.id===el.dataset.pt); if(pt){ pt.notes=el.value; if(sb) sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); } } return; }
   if(el.dataset.change==="msgfile"){ S.msgUI=S.msgUI||{sel:null,draft:"",file:null}; S.msgUI.draft=val("msg_txt"); const fl=el.files&&el.files[0]; S.msgUI.file=fl||null; render(); return; }
+  if(el.dataset.change==="docreplace"){ const fl=el.files&&el.files[0]; const did=el.dataset.id; if(!fl||!did||!sb) return; const d=(S.docs||[]).find(x=>x.id===did); if(!d) return; const meId=S.session&&S.session.id; if(!(((S.session&&S.session.role==="owner"))||d.cree_par_id===meId)) return; (async()=>{ const safe=fl.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=uid()+"-"+safe; const up=await sb.storage.from("ca-documents").upload(path,fl); if(up&&up.error){ if(window.alert) window.alert("Échec du remplacement : "+up.error.message); return; } const oldPath=d.chemin; const r=await sb.from("ca_docs").update({chemin:path}).eq("id",did); if(r&&r.error){ if(window.alert) window.alert("Mise à jour impossible : "+r.error.message); return; } try{ if(oldPath) await sb.storage.from("ca-documents").remove([oldPath]); }catch(e){} await loadDocs(); render(); })(); return; }
 });
 document.addEventListener("click", async e=>{
   const el=e.target.closest("[data-action]"); if(!el) return;
@@ -1116,6 +1126,15 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       S.forcePwd=null; render(); break;
     }
     case "toggle-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break; const nv=!S.meta.bilanActif; await sb.from("ca_meta").update({bilan_actif:nv}).eq("id",1); S.meta.bilanActif=nv; logAct(nv?"Bilans moraux activés":"Bilans moraux désactivés"); render(); break; }
+    case "reset-data": {
+      if(!(S.session&&S.session.role==="owner")||!sb) break;
+      const rerr=m=>{ const e=document.getElementById("reset_err"); if(e){e.textContent=m;e.style.display="block";} };
+      if(val("reset_confirm").trim()!=="RESET") return rerr("Tapez RESET (en majuscules) pour confirmer.");
+      if(window.confirm && !window.confirm("Effacer TOUTES les données (sauf comptes et caisse) ? Action irréversible.")) break;
+      const r=await sb.rpc("ca_reset_all");
+      if(r&&r.error) return rerr("Échec : "+r.error.message);
+      await refreshSession(); S.tab="org"; render(); break;
+    }
     case "bilan-start": S.bilanUI={step:0,draft:(S.bilanUI&&S.bilanUI.draft)||{}}; render(); break;
     case "bilan-next": { bilanCapture(); const T=bilanTargets(); S.bilanUI.step=Math.min(S.bilanUI.step+1,T.length); render(); break; }
     case "bilan-prev": bilanCapture(); S.bilanUI.step=Math.max((S.bilanUI.step||0)-1,-1); render(); break;
@@ -1236,8 +1255,8 @@ ${sections||"<p>Aucun retour.</p>"}
       window.open(data.signedUrl, "_blank"); break;
     }
     case "del-doc": {
-      if(!(S.session&&S.session.role==="owner")) break;
       const d=(S.docs||[]).find(x=>x.id===id); if(!d) break;
+      if(!((S.session&&S.session.role==="owner")||d.cree_par_id===(S.session&&S.session.id))) break;
       if(window.confirm && !window.confirm("Supprimer ce document ?")) break;
       try{ await sb.storage.from("ca-documents").remove([d.chemin]); }catch(e){}
       try{ await sb.from("ca_docs").delete().eq("id",id); }catch(e){}
