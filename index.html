@@ -322,7 +322,7 @@ const dateFR = ts => new Date(ts).toLocaleDateString("fr-BE",{day:"2-digit",mont
 function fmtDateLong(d){ try{ return new Date(d+"T00:00").toLocaleDateString("fr-BE",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}); }catch(e){ return d; } }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function dShort(d){ try{ return new Date(d+"T00:00").toLocaleDateString("fr-BE",{day:"2-digit",month:"short"}); }catch(e){ return d; } }
-function logAct(txt,who){ const j=(S.journal||[]).slice(); j.unshift({ts:Date.now(),who:who||((S.session&&S.session.sig)||"—"),txt:txt}); S.journal=j.slice(0,200); persist("journal"); }
+function logAct(txt,who){ const w=who||((S.session&&S.session.sig)||"\u2014"); try{ if(typeof sb!=="undefined" && sb) sb.from("ca_journal").insert({who:w,txt:txt}); }catch(e){} const j=(S.journal||[]).slice(); j.unshift({ts:Date.now(),who:w,txt:txt}); S.journal=j.slice(0,200); }
 const eur = n => new Intl.NumberFormat("fr-BE",{style:"currency",currency:"EUR"}).format(n||0);
 const normId = s => s.trim().toLowerCase();
 function genPwd(){ const c="ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let r=""; for(let i=0;i<8;i++) r+=c[Math.floor(Math.random()*c.length)]; return r; }
@@ -345,7 +345,20 @@ const SB_KEY="sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createClient(SB_URL,SB_KEY):null;
 function sess2session(user,prof){ return {id:user.id,email:user.email,prenom:prof.prenom,nom:((prof.prenom||"")+" "+(prof.nom||"")).trim(),fonction:prof.fonction,sig:((prof.prenom||prof.nom||"")+(prof.fonction?" \u00b7 "+prof.fonction:"")),statut:prof.statut||"attente",role:prof.role||"membre"}; }
 async function loadAccounts(){ try{ const {data}=await sb.from("ca_membres").select("*"); S.admins=(data||[]).map(a=>({id:a.id,email:a.email,prenom:a.prenom,nom:a.nom,fonction:a.fonction,statut:a.statut,role:a.role,ts:a.created_at})); }catch(e){} }
-async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; S.needProfile=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; } S.needProfile=null; S.session=sess2session(user,prof); await loadAccounts(); await loadDocs(); }catch(e){ S.session=null; } }
+async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; S.needProfile=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; } S.needProfile=null; S.session=sess2session(user,prof); await loadAccounts(); await loadDocs(); await loadMessages(); await loadTaches(); await loadContacts(); await loadAnnonces(); await loadEvenements(); await loadReunions(); await loadCreneaux(); await loadOrg(); await loadBudgets(); await loadVotes(); await loadMeta(); await loadBilans(); await loadJournal(); }catch(e){ S.session=null; } }
+async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; if(data.nom) S.meta.nom=data.nom; } }catch(e){} }
+async function loadBilans(){ try{ const {data}=await sb.from("ca_bilans").select("*").order("created_at",{ascending:true}); S.bilans=(data||[]).map(b=>({id:b.id,cible:b.cible,positifs:b.positifs,ameliorer:b.ameliorer,ts:b.created_at})); }catch(e){ S.bilans=[]; } try{ const f=await sb.from("ca_bilan_faits").select("*"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){} }
+async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").select("*").order("created_at",{ascending:false}); S.journal=(data||[]).map(j=>({ts:j.created_at,who:j.who,txt:j.txt})); }catch(e){} }
+async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,decidePar:b.decide_par,decideLe:b.decide_le,votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix}))})); }catch(e){ S.budgets=[]; } }
+async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id}))}; }); }catch(e){ S.votes=[]; } }
+async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
+async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,ordre:m.ordre||[],presences:m.presences||{}})); }catch(e){ S.reunions=[]; } }
+async function loadCreneaux(){ try{ const c=await sb.from("ca_creneaux").select("*").order("date",{ascending:true}); const d=await sb.from("ca_dispos").select("*"); const dl=(d&&d.data)||[]; S.creneaux=(((c&&c.data))||[]).map(x=>({id:x.id,titre:x.titre,date:x.date,lieu:x.lieu,creePar:x.cree_par,dispos:dl.filter(y=>y.creneau_id===x.id).map(y=>({nom:y.nom,statut:y.statut}))})); }catch(e){ S.creneaux=[]; } }
+async function loadOrg(){ try{ const {data}=await sb.from("ca_org").select("*"); const o={}; (data||[]).forEach(r=>{ o[r.poste_id]={missions:r.missions,contact:r.contact}; }); S.org=o; }catch(e){} }
+async function loadTaches(){ try{ const {data}=await sb.from("ca_taches").select("*").order("created_at",{ascending:false}); S.taches=(data||[]).map(t=>({id:t.id,titre:t.titre,posteId:t.poste_id,statut:t.statut,echeance:t.echeance,priorite:t.priorite,creePar:t.cree_par})); }catch(e){ S.taches=[]; } }
+async function loadContacts(){ try{ const {data}=await sb.from("ca_contacts").select("*").order("nom",{ascending:true}); S.contacts=(data||[]).map(c=>({id:c.id,nom:c.nom,type:c.type,email:c.email,tel:c.tel,notes:c.notes})); }catch(e){ S.contacts=[]; } }
+async function loadAnnonces(){ try{ const {data}=await sb.from("ca_annonces").select("*").order("created_at",{ascending:false}); S.annonces=(data||[]).map(a=>({id:a.id,auteur:a.auteur,texte:a.texte,ts:a.created_at})); }catch(e){ S.annonces=[]; } }
+async function loadMessages(){ try{ const {data}=await sb.from("ca_messages").select("*").order("created_at",{ascending:true}); S.messages=(data||[]).map(m=>({id:m.id,fromId:m.from_id,to:m.to_id,texte:m.texte,fichier:m.fichier,ts:m.created_at})); }catch(e){ S.messages=[]; } }
 async function loadDocs(){ try{ const {data}=await sb.from("ca_docs").select("*").order("created_at",{ascending:false}); S.docs=(data||[]).map(d=>({id:d.id,titre:d.titre,cat:d.categorie,chemin:d.chemin,cree_par_id:d.cree_par})); }catch(e){ S.docs=[]; } }
 
 /* ============================ ÉTAT ============================ */
@@ -354,19 +367,19 @@ const S = {
   session:null,
   meta:   store.get("meta",{nom:"Bureau étudiant",caisseUrl:"https://be-caisse.netlify.app"}),
   admins: [],
-  org:    store.get("org",{}),
-  taches: store.get("taches",[]),
-  creneaux: store.get("creneaux",[]),
-  budgets: store.get("budgets",[]),
-  votes:  store.get("votes",[]),
+  org:    {},
+  taches: [],
+  creneaux: [],
+  budgets: [],
+  votes:  [],
   docs:   [],
-  annonces: store.get("annonces",[]),
-  messages: store.get("messages",[]),
-  reunions: store.get("reunions",[]),
-  evenements: store.get("evenements",[]),
-  contacts: store.get("contacts",[]),
-  journal: store.get("journal",[]),
-  bilans: store.get("bilans",[]),
+  annonces: [],
+  messages: [],
+  reunions: [],
+  evenements: [],
+  contacts: [],
+  journal: [],
+  bilans: [],
 };
 if (!S.meta.caisseUrl) { S.meta.caisseUrl="https://be-caisse.netlify.app"; persist("meta"); }
 if (S.meta.nom==="Bureau étudiant de Criminologie") { S.meta.nom="Bureau étudiant"; persist("meta"); }
@@ -809,21 +822,21 @@ function tabBilan(){
 function msgMeId(){ const k=((S.session&&S.session.nom)||"").trim().toLowerCase(); const p=PERSONNES.find(x=>(x.prenom+" "+x.nom).toLowerCase()===k); return p?p.id:S.session.id; }
 function tabMessages(){
   if(!S.msgUI) S.msgUI={sel:null,draft:"",file:null};
-  const meId=msgMeId();
-  const others=PERSONNES.filter(p=>p.id!==meId);
-  const banner=`<div class="banner"><span class="dot" style="background:var(--amber)"></span>Démo locale : l'envoi entre membres et les pièces jointes s'activeront avec Supabase.</div>`;
+  const meId=S.session.id;
+  const others=(S.admins||[]).filter(a=>a.id!==meId && a.statut==="actif");
   if(!S.msgUI.sel){
-    return banner+`<div class="compose" style="padding:12px 16px 8px"><h3 class="serif" style="margin:0">Messages directs</h3>
-      <p style="color:var(--ink-soft);font-size:13px;margin:4px 0 0">Choisissez une personne pour lui écrire en privé.</p></div>
-      <div class="msg-list">${others.map(p=>`<button class="msg-row" data-action="msg-open" data-id="${p.id}"><span class="msg-av">${esc(initials(p.prenom+" "+p.nom))}</span><span><span class="nm">${esc(p.prenom)} ${esc(p.nom)}</span><br><span class="fn">${esc(p.fonction)}</span></span></button>`).join("")}</div>`;
+    return `<div class="compose" style="padding:12px 16px 8px"><h3 class="serif" style="margin:0">Messages directs</h3>
+      <p style="color:var(--ink-soft);font-size:13px;margin:4px 0 0">Choisissez une personne pour lui écrire en privé (avec pièce jointe possible).</p></div>
+      ${others.length?`<div class="msg-list">${others.map(p=>`<button class="msg-row" data-action="msg-open" data-id="${esc(p.id)}"><span class="msg-av">${esc(initials((p.prenom||"")+" "+(p.nom||"")))}</span><span><span class="nm">${esc(p.prenom)} ${esc(p.nom)}</span><br><span class="fn">${esc(p.fonction||"")}</span></span></button>`).join("")}</div>`:`<div class="empty">Aucun autre membre validé pour le moment.</div>`}`;
   }
-  const other=PERSONNES.find(p=>p.id===S.msgUI.sel)||{prenom:"?",nom:"",fonction:""};
-  const thread=(S.messages||[]).filter(m=>(m.fromId===meId&&m.to===S.msgUI.sel)||(m.fromId===S.msgUI.sel&&m.to===meId)).sort((a,b)=>a.ts-b.ts);
-  const bubbles=thread.length?thread.map(m=>{const mine=m.fromId===meId;return `<div class="bub ${mine?"me":"them"}">${m.texte?esc(m.texte):""}${m.fichier?`<div class="att">📎 ${esc(m.fichier)}</div>`:""}<div class="m-meta">${mine?"Vous":esc(m.from||other.prenom)} · ${dateFR(m.ts)}</div></div>`;}).join(""):`<div class="empty" style="border:none;color:var(--slate)">Aucun message. Écrivez le premier.</div>`;
-  return banner+`
+  const other=(S.admins||[]).find(p=>p.id===S.msgUI.sel)||{prenom:"?",nom:"",fonction:""};
+  const thread=(S.messages||[]).filter(m=>(m.fromId===meId&&m.to===S.msgUI.sel)||(m.fromId===S.msgUI.sel&&m.to===meId));
+  const bubbles=thread.length?thread.map(m=>{const mine=m.fromId===meId; const fn=m.fichier?m.fichier.substring(m.fichier.indexOf("-")+1):"";
+    return `<div class="bub ${mine?"me":"them"}">${m.texte?esc(m.texte):""}${m.fichier?`<div class="att" data-action="open-att" data-path="${esc(m.fichier)}" style="cursor:pointer;text-decoration:underline">📎 ${esc(fn)}</div>`:""}<div class="m-meta">${mine?"Vous":esc(other.prenom)} · ${dateFR(m.ts)}</div></div>`;}).join(""):`<div class="empty" style="border:none;color:var(--slate)">Aucun message. Écrivez le premier.</div>`;
+  return `
     <div class="msg-head"><button class="btn ghost sm" data-action="msg-back">← Membres</button>
-      <span class="msg-av" style="width:32px;height:32px">${esc(initials(other.prenom+" "+other.nom))}</span>
-      <span><span class="u-nom">${esc(other.prenom)} ${esc(other.nom)}</span> <span class="u-id">${esc(other.fonction)}</span></span></div>
+      <span class="msg-av" style="width:32px;height:32px">${esc(initials((other.prenom||"")+" "+(other.nom||"")))}</span>
+      <span><span class="u-nom">${esc(other.prenom)} ${esc(other.nom)}</span> <span class="u-id">${esc(other.fonction||"")}</span></span></div>
     <div class="msg-thread">${bubbles}</div>
     ${S.msgUI.file?`<p class="attach-chip">📎 ${esc(S.msgUI.file.name)} · <button class="link" data-action="msg-unattach">retirer</button></p>`:""}
     <div class="msg-compose">
@@ -970,9 +983,9 @@ document.addEventListener("change", e=>{
   if(el.dataset.change==="nom"){ S.meta.nom=el.value; persist("meta"); }
   if(el.dataset.change==="search"){ S.searchQ=el.value; render(); return; }
   if(el.dataset.change==="importfile"){ const fl=el.files&&el.files[0]; if(!fl) return; const rd=new FileReader(); rd.onload=()=>{ try{ const d=JSON.parse(rd.result); Object.keys(d).forEach(k=>{ S[k]=d[k]; persist(k); }); logAct("Données importées"); render(); }catch(e){ if(window.alert) window.alert("Fichier de sauvegarde invalide."); } }; rd.readAsText(fl); return; }
-  if(el.dataset.change==="evfield"){ const ev=(S.evenements||[]).find(x=>x.id===(S.evUI&&S.evUI.sel)); if(ev){ ev[el.dataset.field]=el.value; persist("evenements"); } return; }
-  if(el.dataset.change==="reunote"){ const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(m){ const pt=(m.ordre||[]).find(p=>p.id===el.dataset.pt); if(pt){ pt.notes=el.value; persist("reunions"); } } return; }
-  if(el.dataset.change==="msgfile"){ S.msgUI=S.msgUI||{sel:null,draft:"",file:null}; S.msgUI.draft=val("msg_txt"); const fl=el.files&&el.files[0]; S.msgUI.file=fl?{name:fl.name}:null; render(); }
+  if(el.dataset.change==="evfield"){ const ev=(S.evenements||[]).find(x=>x.id===(S.evUI&&S.evUI.sel)); if(ev){ ev[el.dataset.field]=el.value; if(sb){ const col=({budgetPrevu:"budget_prevu",budgetReel:"budget_reel"})[el.dataset.field]||el.dataset.field; const v=(col==="budget_prevu"||col==="budget_reel")?(parseFloat(String(el.value).replace(",","."))||0):el.value; sb.from("ca_evenements").update({[col]:v}).eq("id",ev.id); } } return; }
+  if(el.dataset.change==="reunote"){ const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(m){ const pt=(m.ordre||[]).find(p=>p.id===el.dataset.pt); if(pt){ pt.notes=el.value; if(sb) sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); } } return; }
+  if(el.dataset.change==="msgfile"){ S.msgUI=S.msgUI||{sel:null,draft:"",file:null}; S.msgUI.draft=val("msg_txt"); const fl=el.files&&el.files[0]; S.msgUI.file=fl||null; render(); return; }
 });
 document.addEventListener("click", async e=>{
   const el=e.target.closest("[data-action]"); if(!el) return;
@@ -1023,23 +1036,23 @@ document.addEventListener("click", async e=>{
       try{ const blob=new Blob([JSON.stringify(dump,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="bureau-etudiant-sauvegarde-"+todayISO()+".json"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); logAct("Sauvegarde exportée"); }catch(e){}
       break;
     }
-    case "ev-create": { const t=val("ev_titre").trim(), dt=val("ev_date"); if(!t) break; const nid=uid(); S.evenements=[...(S.evenements||[]),{id:nid,titre:t,date:dt,lieu:"",responsable:"",budgetPrevu:"",budgetReel:"",checklist:[],notes:"",ts:Date.now()}]; persist("evenements"); logAct("Événement créé : "+t); S.evUI={sel:nid}; render(); break; }
+    case "ev-create": { const t=val("ev_titre").trim(), dt=val("ev_date"); if(!t||!sb) break; const {data,error}=await sb.from("ca_evenements").insert({titre:t,date:dt||null,lieu:"",responsable:"",budget_prevu:0,budget_reel:0,checklist:[],notes:""}).select().single(); if(error||!data) break; await loadEvenements(); S.evUI={sel:data.id}; render(); break; }
     case "ev-open": S.evUI={sel:el.dataset.id}; render(); break;
     case "ev-back": S.evUI={sel:null}; render(); break;
-    case "ev-del": { if(window.confirm && !window.confirm("Supprimer cet événement ?")) break; S.evenements=(S.evenements||[]).filter(e=>e.id!==el.dataset.id); persist("evenements"); S.evUI={sel:null}; render(); break; }
-    case "ev-additem": { const t=val("ev_item").trim(); if(!t) break; S.evenements=(S.evenements||[]).map(e=>e.id===S.evUI.sel?{...e,checklist:[...(e.checklist||[]),{id:uid(),texte:t,fait:false}]}:e); persist("evenements"); render(); break; }
-    case "ev-toggleitem": S.evenements=(S.evenements||[]).map(e=>e.id===S.evUI.sel?{...e,checklist:(e.checklist||[]).map(c=>c.id===el.dataset.it?{...c,fait:!c.fait}:c)}:e); persist("evenements"); render(); break;
-    case "ev-delitem": S.evenements=(S.evenements||[]).map(e=>e.id===S.evUI.sel?{...e,checklist:(e.checklist||[]).filter(c=>c.id!==el.dataset.it)}:e); persist("evenements"); render(); break;
-    case "contact-add": { const n=val("c_nom").trim(); if(!n) break; S.contacts=[...(S.contacts||[]),{id:uid(),nom:n,type:val("c_type"),email:val("c_email").trim(),tel:val("c_tel").trim(),notes:val("c_notes").trim(),ts:Date.now()}]; persist("contacts"); render(); break; }
-    case "contact-del": S.contacts=(S.contacts||[]).filter(c=>c.id!==el.dataset.id); persist("contacts"); render(); break;
-    case "reu-create": { const t=val("reu_titre").trim(), dt=val("reu_date"); if(!t) break; const nid=uid(); S.reunions=[...(S.reunions||[]),{id:nid,titre:t,date:dt,ordre:[],presences:{},ts:Date.now()}]; persist("reunions"); logAct("Réunion créée : "+t); S.reuUI={sel:nid}; render(); break; }
+    case "ev-del": { if(!sb) break; if(window.confirm && !window.confirm("Supprimer cet événement ?")) break; await sb.from("ca_evenements").delete().eq("id",el.dataset.id); await loadEvenements(); S.evUI={sel:null}; render(); break; }
+    case "ev-additem": { const t=val("ev_item").trim(); if(!t||!sb) break; const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev) break; ev.checklist=[...(ev.checklist||[]),{id:uid(),texte:t,fait:false}]; await sb.from("ca_evenements").update({checklist:ev.checklist}).eq("id",ev.id); render(); break; }
+    case "ev-toggleitem": { const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev||!sb) break; ev.checklist=(ev.checklist||[]).map(c=>c.id===el.dataset.it?{...c,fait:!c.fait}:c); await sb.from("ca_evenements").update({checklist:ev.checklist}).eq("id",ev.id); render(); break; }
+    case "ev-delitem": { const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev||!sb) break; ev.checklist=(ev.checklist||[]).filter(c=>c.id!==el.dataset.it); await sb.from("ca_evenements").update({checklist:ev.checklist}).eq("id",ev.id); render(); break; }
+    case "contact-add": { const n=val("c_nom").trim(); if(!n) break; if(!sb) break; await sb.from("ca_contacts").insert({nom:n,type:val("c_type"),email:val("c_email").trim(),tel:val("c_tel").trim(),notes:val("c_notes").trim()}); await loadContacts(); render(); break; }
+    case "contact-del": if(!sb) break; await sb.from("ca_contacts").delete().eq("id",el.dataset.id); await loadContacts(); render(); break;
+    case "reu-create": { const t=val("reu_titre").trim(), dt=val("reu_date"); if(!t||!sb) break; const {data,error}=await sb.from("ca_reunions").insert({titre:t,date:dt||null,ordre:[],presences:{}}).select().single(); if(error||!data) break; await loadReunions(); S.reuUI={sel:data.id}; render(); break; }
     case "reu-open": S.reuUI={sel:el.dataset.id}; render(); break;
     case "reu-back": S.reuUI={sel:null}; render(); break;
-    case "reu-del": { if(window.confirm && !window.confirm("Supprimer cette réunion ?")) break; S.reunions=(S.reunions||[]).filter(m=>m.id!==el.dataset.id); persist("reunions"); S.reuUI={sel:null}; render(); break; }
-    case "reu-addpoint": { const t=val("reu_point").trim(); if(!t) break; S.reunions=(S.reunions||[]).map(m=>m.id===S.reuUI.sel?{...m,ordre:[...(m.ordre||[]),{id:uid(),texte:t,fait:false,notes:""}]}:m); persist("reunions"); render(); break; }
-    case "reu-togglepoint": S.reunions=(S.reunions||[]).map(m=>m.id===S.reuUI.sel?{...m,ordre:(m.ordre||[]).map(p=>p.id===el.dataset.pt?{...p,fait:!p.fait}:p)}:m); persist("reunions"); render(); break;
-    case "reu-delpoint": S.reunions=(S.reunions||[]).map(m=>m.id===S.reuUI.sel?{...m,ordre:(m.ordre||[]).filter(p=>p.id!==el.dataset.pt)}:m); persist("reunions"); render(); break;
-    case "reu-pres": S.reunions=(S.reunions||[]).map(m=>{ if(m.id!==S.reuUI.sel) return m; const pr={...(m.presences||{})}; pr[el.dataset.person]= pr[el.dataset.person]===el.dataset.val?undefined:el.dataset.val; return {...m,presences:pr}; }); persist("reunions"); render(); break;
+    case "reu-del": { if(!sb) break; if(window.confirm && !window.confirm("Supprimer cette réunion ?")) break; await sb.from("ca_reunions").delete().eq("id",el.dataset.id); await loadReunions(); S.reuUI={sel:null}; render(); break; }
+    case "reu-addpoint": { const t=val("reu_point").trim(); if(!t||!sb) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break; m.ordre=[...(m.ordre||[]),{id:uid(),texte:t,fait:false,notes:""}]; await sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); render(); break; }
+    case "reu-togglepoint": { const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break; m.ordre=(m.ordre||[]).map(p=>p.id===el.dataset.pt?{...p,fait:!p.fait}:p); await sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); render(); break; }
+    case "reu-delpoint": { const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break; m.ordre=(m.ordre||[]).filter(p=>p.id!==el.dataset.pt); await sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); render(); break; }
+    case "reu-pres": { const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break; const pr={...(m.presences||{})}; pr[el.dataset.person]= pr[el.dataset.person]===el.dataset.val?undefined:el.dataset.val; m.presences=pr; await sb.from("ca_reunions").update({presences:pr}).eq("id",m.id); render(); break; }
     case "reu-gen": {
       const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
       const pres=m.presences||{}; const names=v=>PERSONNES.filter(p=>pres[p.id]===v).map(p=>esc(p.prenom+" "+p.nom));
@@ -1061,17 +1074,25 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       const w=window.open("","_blank"); if(w){ w.document.open(); w.document.write(doc); w.document.close(); }
       break;
     }
-    case "msg-open": S.msgUI={sel:el.dataset.id,draft:"",file:null}; render(); break;
+    case "msg-open": S.msgUI={sel:el.dataset.id,draft:"",file:null}; if(sb){ await loadMessages(); } render(); break;
     case "msg-back": S.msgUI={sel:null,draft:"",file:null}; render(); break;
     case "msg-unattach": S.msgUI=S.msgUI||{sel:null}; S.msgUI.draft=val("msg_txt"); S.msgUI.file=null; render(); break;
     case "msg-send": {
-      if(!S.msgUI||!S.msgUI.sel) break;
+      if(!S.msgUI||!S.msgUI.sel || !sb) break;
       const txt=val("msg_txt").trim(), file=S.msgUI.file;
       if(!txt && !file) break;
-      S.messages=[...(S.messages||[]),{id:uid(),fromId:msgMeId(),from:S.session.sig,to:S.msgUI.sel,texte:txt,fichier:file?file.name:null,ts:Date.now()}];
-      persist("messages");
+      let path=null;
+      if(file){ const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,"_"); path=uid()+"-"+safe; const up=await sb.storage.from("ca-messages").upload(path,file); if(up&&up.error){ if(window.alert)window.alert("Échec de la pièce jointe : "+up.error.message); break; } }
+      const ins=await sb.from("ca_messages").insert({ from_id:S.session.id, to_id:S.msgUI.sel, texte:txt, fichier:path });
+      if(ins&&ins.error){ if(window.alert)window.alert("Message non envoyé : "+ins.error.message); break; }
       S.msgUI.draft=""; S.msgUI.file=null;
-      render(); break;
+      await loadMessages(); render(); break;
+    }
+    case "open-att": {
+      const path=el.dataset.path; if(!path||!sb) break;
+      const {data,error}=await sb.storage.from("ca-messages").createSignedUrl(path,3600);
+      if(error||!data){ if(window.alert)window.alert("Impossible d'ouvrir la pièce jointe."); break; }
+      window.open(data.signedUrl,"_blank"); break;
     }
     case "reset-pwd": {
       if(!(S.session&&S.session.role==="owner")) break;
@@ -1094,22 +1115,24 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       S.session={id:ad.id,nom:(ad.prenom?ad.prenom+" "+ad.nom:ad.nom),prenom:ad.prenom,fonction:ad.fonction,sig:((ad.prenom||ad.nom||"")+(ad.fonction?" · "+ad.fonction:"")),statut:ad.statut||"actif",role:ad.role||"membre"};
       S.forcePwd=null; render(); break;
     }
-    case "toggle-bilan": if(!(S.session&&S.session.role==="owner")) break; S.meta.bilanActif=!S.meta.bilanActif; persist("meta"); logAct(S.meta.bilanActif?"Bilans moraux activés":"Bilans moraux désactivés"); render(); break;
+    case "toggle-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break; const nv=!S.meta.bilanActif; await sb.from("ca_meta").update({bilan_actif:nv}).eq("id",1); S.meta.bilanActif=nv; logAct(nv?"Bilans moraux activés":"Bilans moraux désactivés"); render(); break; }
     case "bilan-start": S.bilanUI={step:0,draft:(S.bilanUI&&S.bilanUI.draft)||{}}; render(); break;
     case "bilan-next": { bilanCapture(); const T=bilanTargets(); S.bilanUI.step=Math.min(S.bilanUI.step+1,T.length); render(); break; }
     case "bilan-prev": bilanCapture(); S.bilanUI.step=Math.max((S.bilanUI.step||0)-1,-1); render(); break;
     case "bilan-goto": bilanCapture(); S.bilanUI.step=parseInt(el.dataset.i,10)||0; render(); break;
     case "bilan-send": {
-      if(!S.meta.bilanActif) break;
+      if(!S.meta.bilanActif||!sb) break;
       const subs=S.meta.bilanSubmitters||[];
       if(subs.includes(me.id)) break;
       bilanCapture();
       const draft=(S.bilanUI&&S.bilanUI.draft)||{};
-      const arr=(S.bilans||[]).slice();
-      Object.keys(draft).forEach(pid=>{ const d=draft[pid]; if(d && (d.positifs||d.ameliorer)) arr.splice(Math.floor(Math.random()*(arr.length+1)),0,{id:uid(),cible:pid,positifs:d.positifs||"",ameliorer:d.ameliorer||"",ts:Date.now()}); });
-      S.bilans=arr; persist("bilans");
-      S.meta.bilanSubmitters=[...subs,me.id]; persist("meta");
+      const rows=[]; Object.keys(draft).forEach(pid=>{ const d=draft[pid]; if(d && (d.positifs||d.ameliorer)) rows.push({cible:pid,positifs:d.positifs||"",ameliorer:d.ameliorer||""}); });
+      for(let i=rows.length-1;i>0;i--){ const k=Math.floor(Math.random()*(i+1)); const tmp=rows[i]; rows[i]=rows[k]; rows[k]=tmp; }
+      if(rows.length){ const ins=await sb.from("ca_bilans").insert(rows); if(ins&&ins.error){ if(window.alert) window.alert("Envoi impossible : "+ins.error.message); break; } }
+      await sb.from("ca_bilan_faits").insert({membre_id:me.id});
+      S.meta.bilanSubmitters=[...subs,me.id];
       S.bilanUI={step:-1,draft:{}};
+      await loadBilans();
       render(); break;
     }
     case "generate-bilan": {
@@ -1167,28 +1190,25 @@ ${sections||"<p>Aucun retour.</p>"}
     /* organigramme */
     case "edit-poste": S.editPoste=id; render(); break;
     case "cancel-edit": S.editPoste=null; render(); break;
-    case "save-org": S.org[id]={missions:val("m_"+id).trim(),contact:val("c_"+id).trim()}; persist("org"); S.editPoste=null; render(); break;
+    case "save-org": { if(!sb) break; const missions=val("m_"+id).trim(), contact=val("c_"+id).trim(); await sb.from("ca_org").upsert({poste_id:id,missions:missions,contact:contact}); S.org[id]={missions:missions,contact:contact}; S.editPoste=null; render(); break; }
     /* tâches */
-    case "add-tache": { const t=val("t_titre").trim(); if(!t) return; S.taches.unshift({id:uid(),titre:t,posteId:val("t_poste"),statut:"todo",echeance:val("t_ech"),priorite:val("t_prio"),creePar:me.sig,ts:Date.now()}); persist("taches"); render(); break; }
-    case "move-tache": S.taches=S.taches.map(t=>t.id===id?{...t,statut:el.dataset.to}:t); persist("taches"); render(); break;
-    case "del-tache": S.taches=S.taches.filter(t=>t.id!==id); persist("taches"); render(); break;
+    case "add-tache": { const t=val("t_titre").trim(); if(!t) return; if(!sb) break; await sb.from("ca_taches").insert({titre:t,poste_id:val("t_poste"),statut:"todo",echeance:val("t_ech")||null,priorite:val("t_prio"),cree_par:me.sig}); await loadTaches(); render(); break; }
+    case "move-tache": if(!sb) break; await sb.from("ca_taches").update({statut:el.dataset.to}).eq("id",id); await loadTaches(); render(); break;
+    case "del-tache": if(!sb) break; await sb.from("ca_taches").delete().eq("id",id); await loadTaches(); render(); break;
     /* planning */
-    case "add-creneau": { const t=val("cr_titre").trim(), d=val("cr_date"); if(!t||!d) return;
-      S.creneaux=[...S.creneaux,{id:uid(),titre:t,date:d,lieu:val("cr_lieu").trim(),creePar:me.sig,dispos:[]}].sort((x,y)=>x.date.localeCompare(y.date)); persist("creneaux"); render(); break; }
-    case "rsvp": S.creneaux=S.creneaux.map(c=>{ if(c.id!==id) return c; const dispos=c.dispos.filter(d=>d.nom.toLowerCase()!==me.sig.toLowerCase()); return {...c,dispos:[...dispos,{nom:me.sig,statut:el.dataset.st}]}; }); persist("creneaux"); render(); break;
-    case "del-creneau": S.creneaux=S.creneaux.filter(c=>c.id!==id); persist("creneaux"); render(); break;
+    case "add-creneau": { const t=val("cr_titre").trim(), d=val("cr_date"); if(!t||!d||!sb) return; await sb.from("ca_creneaux").insert({titre:t,date:d,lieu:val("cr_lieu").trim(),cree_par:me.sig}); await loadCreneaux(); render(); break; }
+    case "rsvp": if(!sb) break; await sb.from("ca_dispos").upsert({creneau_id:id,membre_id:S.session.id,nom:me.sig,statut:el.dataset.st}); await loadCreneaux(); render(); break;
+    case "del-creneau": if(!sb) break; await sb.from("ca_creneaux").delete().eq("id",id); await loadCreneaux(); render(); break;
     /* budgets */
-    case "add-budget": { const t=val("b_titre").trim(); if(!t) return; const cout=parseFloat(String(val("b_cout")).replace(",","."))||0;
-      S.budgets.unshift({id:uid(),titre:t,type:val("b_type"),cout,desc:val("b_desc").trim(),demandeur:me.sig,statut:"vote",votes:[],ts:Date.now()}); persist("budgets"); render(); break; }
-    case "bvote": S.budgets=S.budgets.map(b=>{ if(b.id!==id||b.statut!=="vote") return b; const votes=b.votes.filter(x=>x.nom.toLowerCase()!==me.sig.toLowerCase()); return {...b,votes:[...votes,{nom:me.sig,choix:el.dataset.choix}]}; }); persist("budgets"); render(); break;
-    case "bdecide": if(S.session.fonction!=="Président") break; { const st=el.dataset.st; S.budgets=S.budgets.map(b=>b.id===id?{...b,statut:st,decidePar:st==="vote"?null:me.sig,decideLe:st==="vote"?null:Date.now()}:b); persist("budgets"); logAct(st==="approuve"?"Budget approuvé":st==="refuse"?"Budget refusé":"Vote de budget rouvert"); render(); } break;
-    case "del-budget": if(S.session.fonction!=="Président") break; S.budgets=S.budgets.filter(b=>b.id!==id); persist("budgets"); render(); break;
+    case "add-budget": { const t=val("b_titre").trim(); if(!t||!sb) return; const cout=parseFloat(String(val("b_cout")).replace(",","."))||0; await sb.from("ca_budgets").insert({titre:t,type:val("b_type"),cout:cout,description:val("b_desc").trim(),demandeur:me.sig,statut:"vote",cree_par:S.session.id}); await loadBudgets(); render(); break; }
+    case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix}); await loadBudgets(); render(); break; }
+    case "bdecide": { if(S.session.fonction!=="Président"||!sb) break; const st=el.dataset.st; await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id); await loadBudgets(); render(); break; }
+    case "del-budget": if(S.session.fonction!=="Président"||!sb) break; await sb.from("ca_budgets").delete().eq("id",id); await loadBudgets(); render(); break;
     /* votes */
-    case "add-vote": { const q=val("v_q").trim(); const opts=[0,1,2,3,4].map(i=>val("v_o"+i).trim()).filter(Boolean);
-      if(!q||opts.length<2) return; S.votes.unshift({id:uid(),question:q,statut:"open",creePar:me.sig,options:opts.map(l=>({id:uid(),label:l})),voters:[],ts:Date.now()}); persist("votes"); render(); break; }
-    case "vpick": S.votes=S.votes.map(v=>{ if(v.id!==id||v.statut!=="open") return v; const voters=v.voters.filter(x=>x.nom.toLowerCase()!==me.sig.toLowerCase()); return {...v,voters:[...voters,{nom:me.sig,optionId:el.dataset.opt}]}; }); persist("votes"); render(); break;
-    case "vtoggle": S.votes=S.votes.map(v=>v.id===id?{...v,statut:v.statut==="open"?"closed":"open"}:v); persist("votes"); render(); break;
-    case "del-vote": S.votes=S.votes.filter(v=>v.id!==id); persist("votes"); render(); break;
+    case "add-vote": { const q=val("v_q").trim(); const opts=[0,1,2,3,4].map(i=>val("v_o"+i).trim()).filter(Boolean); if(!q||opts.length<2||!sb) return; const {data,error}=await sb.from("ca_votes").insert({question:q,statut:"open",cree_par:S.session.id}).select().single(); if(error||!data) break; await sb.from("ca_vote_options").insert(opts.map(l=>({vote_id:data.id,label:l}))); await loadVotes(); render(); break; }
+    case "vpick": { if(!sb) break; const v=(S.votes||[]).find(x=>x.id===id); if(!v||v.statut!=="open") break; await sb.from("ca_vote_ballots").upsert({vote_id:id,membre_id:S.session.id,option_id:el.dataset.opt,nom:me.sig}); await loadVotes(); render(); break; }
+    case "vtoggle": { if(!sb) break; const v=(S.votes||[]).find(x=>x.id===id); if(!v) break; await sb.from("ca_votes").update({statut:v.statut==="open"?"closed":"open"}).eq("id",id); await loadVotes(); render(); break; }
+    case "del-vote": if(!sb) break; await sb.from("ca_votes").delete().eq("id",id); await loadVotes(); render(); break;
     /* documents */
     case "add-doc": { const t=val("d_titre").trim(); let u=val("d_url").trim(); if(!t||!u) return; if(!/^https?:\/\//i.test(u)) u="https://"+u;
       S.docs.unshift({id:uid(),titre:t,url:u,cat:val("d_cat"),creePar:me.sig,ts:Date.now()}); persist("docs"); render(); break; }
@@ -1224,8 +1244,8 @@ ${sections||"<p>Aucun retour.</p>"}
       await loadDocs(); render(); break;
     }
     /* annonces */
-    case "add-annonce": { const tx=val("a_txt").trim(); if(!tx) return; S.annonces.unshift({id:uid(),auteur:me.sig,texte:tx,ts:Date.now()}); persist("annonces"); render(); break; }
-    case "del-annonce": S.annonces=S.annonces.filter(x=>x.id!==id); persist("annonces"); render(); break;
+    case "add-annonce": { const tx=val("a_txt").trim(); if(!tx) return; if(!sb) break; await sb.from("ca_annonces").insert({auteur:me.sig,texte:tx,cree_par:S.session.id}); await loadAnnonces(); render(); break; }
+    case "del-annonce": if(!sb) break; await sb.from("ca_annonces").delete().eq("id",id); await loadAnnonces(); render(); break;
   }
 });
 
