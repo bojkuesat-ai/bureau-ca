@@ -345,7 +345,8 @@ const SB_KEY="sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createClient(SB_URL,SB_KEY):null;
 function sess2session(user,prof){ return {id:user.id,email:user.email,prenom:prof.prenom,nom:((prof.prenom||"")+" "+(prof.nom||"")).trim(),fonction:prof.fonction,sig:((prof.prenom||prof.nom||"")+(prof.fonction?" \u00b7 "+prof.fonction:"")),statut:prof.statut||"attente",role:prof.role||"membre"}; }
 async function loadAccounts(){ try{ const {data}=await sb.from("ca_membres").select("*"); S.admins=(data||[]).map(a=>({id:a.id,email:a.email,prenom:a.prenom,nom:a.nom,fonction:a.fonction,statut:a.statut,role:a.role,ts:a.created_at})); }catch(e){} }
-async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; S.needProfile=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; } S.needProfile=null; S.session=sess2session(user,prof); await loadAccounts(); }catch(e){ S.session=null; } }
+async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; S.needProfile=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; } S.needProfile=null; S.session=sess2session(user,prof); await loadAccounts(); await loadDocs(); }catch(e){ S.session=null; } }
+async function loadDocs(){ try{ const {data}=await sb.from("ca_docs").select("*").order("created_at",{ascending:false}); S.docs=(data||[]).map(d=>({id:d.id,titre:d.titre,cat:d.categorie,chemin:d.chemin,cree_par_id:d.cree_par})); }catch(e){ S.docs=[]; } }
 
 /* ============================ ÉTAT ============================ */
 const S = {
@@ -358,7 +359,7 @@ const S = {
   creneaux: store.get("creneaux",[]),
   budgets: store.get("budgets",[]),
   votes:  store.get("votes",[]),
-  docs:   store.get("docs",[]),
+  docs:   [],
   annonces: store.get("annonces",[]),
   messages: store.get("messages",[]),
   reunions: store.get("reunions",[]),
@@ -697,15 +698,20 @@ function tabVotes(){
 /* ---- onglet DOCUMENTS ---- */
 function host(u){ try{ return new URL(u).hostname.replace(/^www\./,""); }catch(e){ return u; } }
 function tabDocs(){
-  const compose=`<div class="compose"><h3 class="serif">Ajouter un document</h3>
+  const owner = S.session && S.session.role==="owner";
+  const compose=`<div class="compose"><h3 class="serif">Déposer un document</h3>
     <input class="f" id="d_titre" placeholder="Nom (ex. PV réunion du 12/03)">
-    <div class="two"><input class="f" id="d_url" placeholder="Lien (Drive, Dropbox, PDF…)">
-      <select class="f" id="d_cat">${CATS.map(c=>`<option>${c}</option>`).join("")}</select></div>
-    <div class="row-btn"><button class="btn" data-action="add-doc">Ajouter le lien</button></div></div>`;
-  if(S.docs.length===0) return compose+`<div class="empty">Aucun document. Ajoutez vos PV, budgets et fichiers Drive.</div>`;
-  const list=S.docs.map(d=>`<div class="doc" data-action="open-url" data-url="${esc(d.url)}" style="cursor:pointer">
-    <span class="ic">↗</span><span class="meta"><p class="dt">${esc(d.titre)}</p><p class="du">${esc(host(d.url))}${d.creePar?" · "+esc(d.creePar):""}</p></span>
-    <span class="cat">${esc(d.cat)}</span><button class="rm2" data-action="del-doc" data-id="${d.id}">✕</button></div>`).join("");
+    <div class="two"><select class="f" id="d_cat">${CATS.map(c=>`<option>${c}</option>`).join("")}</select>
+      <input class="f" id="d_file" type="file"></div>
+    <p class="err" id="d_err" style="display:none"></p>
+    <div class="row-btn"><button class="btn" data-action="upload-doc">Déposer le fichier</button></div></div>`;
+  if(!S.docs||S.docs.length===0) return compose+`<div class="empty">Aucun document. Déposez vos PV, budgets, fichiers…</div>`;
+  const list=S.docs.map(d=>{ const up=(S.admins||[]).find(a=>a.id===d.cree_par_id); const upn=up?((up.prenom||"")+" "+(up.nom||"")).trim():"";
+    return `<div class="doc"><span class="ic">📄</span>
+      <span class="meta"><p class="dt">${esc(d.titre)}</p><p class="du">${esc(d.cat||"")}${upn?" · "+esc(upn):""}</p></span>
+      <button class="chip" data-action="open-doc" data-id="${esc(d.id)}">Ouvrir</button>
+      ${owner?`<button class="rm2" data-action="del-doc" data-id="${esc(d.id)}">✕</button>`:""}</div>`;
+  }).join("");
   return compose+list;
 }
 
@@ -1187,7 +1193,36 @@ ${sections||"<p>Aucun retour.</p>"}
     case "add-doc": { const t=val("d_titre").trim(); let u=val("d_url").trim(); if(!t||!u) return; if(!/^https?:\/\//i.test(u)) u="https://"+u;
       S.docs.unshift({id:uid(),titre:t,url:u,cat:val("d_cat"),creePar:me.sig,ts:Date.now()}); persist("docs"); render(); break; }
     case "open-url": if(el.dataset.url) window.open(el.dataset.url,"_blank","noopener"); break;
-    case "del-doc": e.stopPropagation(); S.docs=S.docs.filter(d=>d.id!==id); persist("docs"); render(); break;
+    case "upload-doc": {
+      const t=val("d_titre").trim(), cat=val("d_cat");
+      const derr=m=>{ const el2=document.getElementById("d_err"); if(el2){el2.textContent=m;el2.style.display="block";} };
+      const fi=document.getElementById("d_file"); const file=fi&&fi.files&&fi.files[0];
+      if(!t) return derr("Donnez un nom au document.");
+      if(!file) return derr("Choisissez un fichier.");
+      if(!sb) return derr("Serveur indisponible.");
+      derr("Envoi en cours…"); const el3=document.getElementById("d_err"); if(el3) el3.style.color="var(--ink-soft)";
+      const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
+      const path=uid()+"-"+safe;
+      const up=await sb.storage.from("ca-documents").upload(path, file);
+      if(up && up.error) return derr("Échec de l'envoi : "+up.error.message);
+      const ins=await sb.from("ca_docs").insert({ titre:t, categorie:cat, chemin:path, cree_par:S.session.id });
+      if(ins && ins.error) return derr("Fichier envoyé mais non enregistré : "+ins.error.message);
+      await loadDocs(); render(); break;
+    }
+    case "open-doc": {
+      const d=(S.docs||[]).find(x=>x.id===id); if(!d) break;
+      const {data,error}=await sb.storage.from("ca-documents").createSignedUrl(d.chemin, 3600);
+      if(error||!data){ if(window.alert) window.alert("Impossible d'ouvrir le fichier."); break; }
+      window.open(data.signedUrl, "_blank"); break;
+    }
+    case "del-doc": {
+      if(!(S.session&&S.session.role==="owner")) break;
+      const d=(S.docs||[]).find(x=>x.id===id); if(!d) break;
+      if(window.confirm && !window.confirm("Supprimer ce document ?")) break;
+      try{ await sb.storage.from("ca-documents").remove([d.chemin]); }catch(e){}
+      try{ await sb.from("ca_docs").delete().eq("id",id); }catch(e){}
+      await loadDocs(); render(); break;
+    }
     /* annonces */
     case "add-annonce": { const tx=val("a_txt").trim(); if(!tx) return; S.annonces.unshift({id:uid(),auteur:me.sig,texte:tx,ts:Date.now()}); persist("annonces"); render(); break; }
     case "del-annonce": S.annonces=S.annonces.filter(x=>x.id!==id); persist("annonces"); render(); break;
