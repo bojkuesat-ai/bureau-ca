@@ -365,7 +365,7 @@ async function loadDocs(){ try{ const {data}=await sb.from("ca_docs").select("*"
 const S = {
   view:"home", tab:"org", authMode:"login", showCfg:false, editPoste:null,
   session:null,
-  meta:   store.get("meta",{nom:"Bureau étudiant",caisseUrl:"https://be-caisse.netlify.app"}),
+  meta:   store.get("meta",{nom:"Bureau étudiant",caisseUrl:"https://bojkuesat-ai.github.io/bureau-ca/caisse/"}),
   admins: [],
   org:    {},
   taches: [],
@@ -381,7 +381,7 @@ const S = {
   journal: [],
   bilans: [],
 };
-if (!S.meta.caisseUrl) { S.meta.caisseUrl="https://be-caisse.netlify.app"; persist("meta"); }
+if (!S.meta.caisseUrl || /netlify/i.test(S.meta.caisseUrl)) { S.meta.caisseUrl="https://bojkuesat-ai.github.io/bureau-ca/caisse/"; persist("meta"); }
 if (S.meta.nom==="Bureau étudiant de Criminologie") { S.meta.nom="Bureau étudiant"; persist("meta"); }
 function persist(k){ store.set(k, S[k]); }
 const val = id => { const e=document.getElementById(id); return e ? e.value : ""; };
