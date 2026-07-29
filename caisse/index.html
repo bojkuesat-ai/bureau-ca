@@ -525,6 +525,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabMine" aria-pressed="true">Mes demandes</button>
+    <button id="tabDirect" aria-pressed="false">Paiement direct</button>
     <button id="tabTreso" aria-pressed="false" hidden>À traiter<span class="pill" id="pillReq" hidden>0</span></button>
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
     <button id="tabExpenses" aria-pressed="false" hidden>Dépenses</button>
@@ -608,6 +609,41 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       <div class="card" style="overflow:hidden">
         <div class="head"><span>Date</span><span>Objet</span><span>Statut</span><span class="r">Montant</span><span></span></div>
         <div id="myList"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="viewDirect" class="stack" hidden>
+    <div class="card pad">
+      <div class="eyebrow">Nouvelle demande</div>
+      <h2 style="font-size:22px;margin:6px 0 10px">Demander un paiement direct au trésorier</h2>
+      <p class="hint" style="margin:0 0 16px">Pour une dépense que tu ne peux pas avancer : c'est le trésorier qui paie directement le bénéficiaire (hôtel, imprimeur, publication des statuts…).</p>
+      <form id="directForm" class="stack" style="gap:14px">
+        <div class="grid2">
+          <div class="field"><label for="fd_amount">Montant (€)</label><input type="number" id="fd_amount" step="0.01" min="0.01" placeholder="0,00" required></div>
+          <div class="field"><label for="fd_benef">Bénéficiaire (qui doit être payé)</label><input type="text" id="fd_benef" maxlength="90" placeholder="Ex. Hôtel Ibis, Imprimerie Dupont…" required></div>
+        </div>
+        <div class="field"><label for="fd_object">Objet / raison</label>
+          <input type="text" id="fd_object" maxlength="90" placeholder="Ex. Réservation hôtel week-end" required></div>
+        <div class="field"><label for="fd_mode">Mode de paiement</label>
+          <select id="fd_mode"><option value="virement">Virement bancaire</option><option value="en_ligne">Paiement en ligne</option></select></div>
+        <div id="fd_virementBox" class="stack" style="gap:14px">
+          <div class="field"><label for="fd_iban">IBAN du bénéficiaire</label>
+            <input type="text" id="fd_iban" maxlength="40" placeholder="BE00 0000 0000 0000"></div>
+          <div class="field"><label for="fd_comm">Communication du virement</label>
+            <input type="text" id="fd_comm" maxlength="140" placeholder="Ex. Facture 2026-042 / réservation"></div>
+        </div>
+        <div class="field"><label for="fd_note">Commentaire / lien (facultatif)</label>
+          <textarea id="fd_note" maxlength="400" placeholder="Lien de paiement, devis, ou info utile au trésorier"></textarea></div>
+        <div class="err" id="directErr" hidden></div>
+        <div><button class="btn" type="submit" id="directSubmitBtn">Envoyer au trésorier</button></div>
+      </form>
+    </div>
+    <div>
+      <div class="eyebrow" style="margin-bottom:8px">Mes paiements directs</div>
+      <div class="card" style="overflow:hidden">
+        <div class="head"><span>Date</span><span>Objet</span><span>Statut</span><span class="r">Montant</span><span></span></div>
+        <div id="myDirectList"></div>
       </div>
     </div>
   </section>
@@ -1463,7 +1499,7 @@ $("#d_body").addEventListener("click", e => {
 });
 
 /* ---------- virements à effectuer ---------- */
-const aVirer = () => state.items.filter(i => i.status === "Validée");
+const aVirer = () => state.items.filter(i => i.status === "Validée" && !(i.kind==="direct" && i.pay_mode!=="virement"));
 
 $("#payrunBtn").onclick = () => { buildPayrun(); $("#payrun").classList.add("open"); };
 $("#payClose").onclick = () => $("#payrun").classList.remove("open");
@@ -1480,8 +1516,8 @@ function buildPayrun(){
   const banner = nExp ? `<div class="hint" style="margin-bottom:10px;border:1px solid #c47f17;color:#c47f17">⚠ ${nExp} demande(s) déjà exportée(s) vers la banque. Ne renvoyez pas le fichier si les virements ont déjà été faits — marquez-les plutôt comme remboursées.</div>` : "";
   $("#payBody").innerHTML = banner + list.map(i => `<div class="vrow">
       <input type="checkbox" data-pay="${i.id}" checked>
-      <div><div class="who2">${esc(i.requester_name)}</div>
-        <div class="ib">${esc(i.iban || "IBAN MANQUANT")}</div>
+      <div><div class="who2">${esc(payeeName(i))}${i.kind==="direct"?` <span class="tag" style="background:#3a2d6e;color:#cdbcff;font-size:10px">DIRECT</span>`:""}</div>
+        <div class="ib">${esc(payeeIban(i) || "IBAN MANQUANT")}</div>
         <div class="ib" style="color:var(--muted2)">${refOf(i)} · ${esc(i.object)}</div>
         ${i.exported_at?`<div class="ib" style="color:#c47f17">⚠ déjà exporté le ${new Date(i.exported_at).toLocaleDateString("fr-BE")}</div>`:""}</div>
       <div class="mt">${euro(i.amount)}</div></div>`).join("")
@@ -1495,7 +1531,7 @@ function payCoches(){
 
 $("#payCopy").onclick = async () => {
   const l = payCoches(); if(!l.length) return toast("Aucune ligne cochée.");
-  const txt = l.map(i => `${i.requester_name} | ${i.iban} | ${Number(i.amount).toFixed(2).replace(".",",")} EUR | ${refOf(i)} ${i.object}`).join("\n");
+  const txt = l.map(i => `${payeeName(i)} | ${payeeIban(i)} | ${Number(i.amount).toFixed(2).replace(".",",")} EUR | ${payeeComm(i)}`).join("\n");
   try{ await navigator.clipboard.writeText(txt); toast(l.length + " ligne(s) copiée(s)."); }
   catch(e){ toast("Copie impossible sur ce navigateur."); }
 };
@@ -1503,6 +1539,9 @@ $("#payCopy").onclick = async () => {
 /* ---- Export virements : IBAN émetteur + utilitaires ---- */
 const DBTR_NAME = "Le bureau étudiant";
 const DBTR_IBAN = "BE74363057740807";
+const payeeName = i => i.kind==="direct" ? (i.beneficiary||i.requester_name||"") : (i.requester_name||"");
+const payeeIban = i => i.kind==="direct" ? (i.beneficiary_iban||i.iban||"") : (i.iban||"");
+const payeeComm = i => (i.kind==="direct" && i.communication) ? i.communication : (refOf(i)+" "+(i.object||""));
 const ibanClean = v => String(v||"").replace(/\s+/g,"").toUpperCase();
 const xmlEsc = v => String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const refClean = v => String(v??"").replace(/[^A-Za-z0-9\/\-?:().,'+ ]/g," ").trim().slice(0,35);
@@ -1515,7 +1554,7 @@ function telechargerFichier(nom, contenu, type){
 function preparerVirements(){
   const l = payCoches();
   if(!l.length){ toast("Aucune ligne cochée."); return null; }
-  const bons = l.filter(i => ibanClean(i.iban).length >= 14);
+  const bons = l.filter(i => ibanClean(payeeIban(i)).length >= 14);
   const sansIban = l.length - bons.length;
   if(!bons.length){ toast("Aucune ligne avec un IBAN valide."); return null; }
   const dejaExp = bons.filter(i => i.exported_at).length;
@@ -1537,7 +1576,7 @@ $("#payCsv").onclick = async () => {
   const l = preparerVirements(); if(!l) return;
   const cols = ["Bénéficiaire","IBAN","Montant","Devise","Communication"];
   const rows = l.map(i => [
-      i.requester_name, ibanClean(i.iban), Number(i.amount||0).toFixed(2), "EUR", refOf(i)+" "+(i.object||"")
+      payeeName(i), ibanClean(payeeIban(i)), Number(i.amount||0).toFixed(2), "EUR", payeeComm(i)
     ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(";"));
   telechargerFichier("virements-ING-"+new Date().toISOString().slice(0,10)+".csv",
     "\uFEFF"+cols.join(";")+"\n"+rows.join("\n"), "text/csv;charset=utf-8");
@@ -1555,12 +1594,12 @@ function buildSepaXml(list){
   const tx = list.map((i,n) => {
     const amt = Number(i.amount||0).toFixed(2);
     const e2e = refClean(refOf(i)) || ("REF"+(n+1));
-    const rmt = refClean(refOf(i)+" "+(i.object||""));
+    const rmt = refClean(payeeComm(i));
     return "      <CdtTrfTxInf>\n"
       + "        <PmtId><EndToEndId>"+xmlEsc(e2e)+"</EndToEndId></PmtId>\n"
       + "        <Amt><InstdAmt Ccy=\"EUR\">"+amt+"</InstdAmt></Amt>\n"
-      + "        <Cdtr><Nm>"+xmlEsc(String(i.requester_name||"").slice(0,70))+"</Nm></Cdtr>\n"
-      + "        <CdtrAcct><Id><IBAN>"+xmlEsc(ibanClean(i.iban))+"</IBAN></Id></CdtrAcct>\n"
+      + "        <Cdtr><Nm>"+xmlEsc(String(payeeName(i)||"").slice(0,70))+"</Nm></Cdtr>\n"
+      + "        <CdtrAcct><Id><IBAN>"+xmlEsc(ibanClean(payeeIban(i)))+"</IBAN></Id></CdtrAcct>\n"
       + "        <RmtInf><Ustrd>"+xmlEsc(rmt)+"</Ustrd></RmtInf>\n"
       + "      </CdtTrfTxInf>";
   }).join("\n");
@@ -2058,8 +2097,50 @@ $("#reqForm").addEventListener("submit", async e => {
   finally{ btn.disabled = false; btn.textContent = "Envoyer la demande"; }
 });
 
+$("#directForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("#directSubmitBtn"); btn.disabled = true; btn.textContent = "Envoi…";
+  try{
+    const amount = parseFloat($("#fd_amount").value);
+    const benef  = $("#fd_benef").value.trim();
+    const object = $("#fd_object").value.trim();
+    const mode   = $("#fd_mode").value;
+    const iban   = ($("#fd_iban").value||"").trim();
+    const comm   = ($("#fd_comm").value||"").trim();
+    if(!(amount>0)) throw new Error("Indiquez un montant valide.");
+    if(!benef)  throw new Error("Indiquez le bénéficiaire à payer.");
+    if(!object) throw new Error("Indiquez l'objet de la dépense.");
+    if(mode==="virement" && iban.replace(/\s+/g,"").length < 14)
+      throw new Error("Pour un virement, indiquez un IBAN valide du bénéficiaire.");
+    const { data, error } = await sb.from("requests").insert({
+      user_id: state.profile.id, requester_name: state.profile.name || "",
+      requester_position: state.profile.position || "",
+      expense_date: new Date().toISOString().slice(0,10),
+      amount, object, category: "Paiement direct",
+      kind: "direct", beneficiary: benef, pay_mode: mode,
+      beneficiary_iban: mode==="virement" ? iban : null,
+      communication:    mode==="virement" ? comm : null,
+      iban:             mode==="virement" ? iban : null,
+      note: $("#fd_note").value.trim(),
+      status: "En attente"
+    }).select().single();
+    if(error) throw error;
+    try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name, what:"Demande de paiement direct envoyée" }); }catch(_){}
+    $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display="";
+    await refresh(); toast("Demande de paiement direct envoyée au trésorier.");
+  }catch(err){
+    let m = err.message || String(err);
+    if(/doublon|identique/i.test(m)) m = "Demande identique déjà envoyée récemment.";
+    erreurForm("#directErr", m); toast("Envoi impossible.");
+  }finally{ btn.disabled=false; btn.textContent="Envoyer au trésorier"; }
+});
+
 /* ---------- rendu ---------- */
 function estIncomplet(it){
+  if(it.kind==="direct"){
+    if(it.pay_mode==="virement") return (it.status==="En attente"||it.status==="Validée") && String(it.iban||"").replace(/\s+/g,"").length < 14;
+    return false;
+  }
   const sansPiece = piecesDe(it).length === 0;
   const sansIban = String(it.iban||"").replace(/\s+/g,"").length < 14;
   return (it.status==="En attente" || it.status==="Validée") && (sansPiece || sansIban);
@@ -2079,18 +2160,22 @@ function setView(v){
   $("#tabExpenses").setAttribute("aria-pressed", v==="expenses");
   $("#tabIncomes").setAttribute("aria-pressed", v==="incomes");
   $("#tabMembers").setAttribute("aria-pressed", v==="members");
+  $("#tabDirect").setAttribute("aria-pressed", v==="direct");
   $("#viewMine").hidden = v!=="mine";
   $("#viewTreso").hidden = v!=="treso";
   $("#viewOverview").hidden = v!=="overview";
   $("#viewExpenses").hidden = v!=="expenses";
   $("#viewIncomes").hidden = v!=="incomes";
   $("#viewMembers").hidden = v!=="members";
+  $("#viewDirect").hidden = v!=="direct";
   if(v==="expenses" && !$("#e_date").value) $("#e_date").value = new Date().toISOString().slice(0,10);
   if(v==="incomes" && !$("#i_date").value) $("#i_date").value = new Date().toISOString().slice(0,10);
   if(v==="mine"){ majHoraire(); avertirFermeture(); }
   render();
 }
 $("#tabMine").onclick = () => setView("mine");
+$("#tabDirect").onclick = () => setView("direct");
+$("#fd_mode")?.addEventListener("change", () => { const b=$("#fd_virementBox"); if(b) b.style.display = $("#fd_mode").value==="virement" ? "" : "none"; });
 $("#tabTreso").onclick = () => setView("treso");
 $("#tabOverview").onclick = () => setView("overview");
 $("#tabExpenses").onclick = () => setView("expenses");
@@ -2099,7 +2184,9 @@ $("#tabMembers").onclick = () => setView("members");
 
 function render(){
   if(!state.profile?.approved) return;
-  const mine = ouvert(state.items).filter(i => i.user_id === state.profile.id);
+  const mineAll = ouvert(state.items).filter(i => i.user_id === state.profile.id);
+  const mine = mineAll.filter(i => i.kind !== "direct");
+  const mineDirect = mineAll.filter(i => i.kind === "direct");
   const somme = a => a.reduce((s,i)=>s+Number(i.amount||0),0);
   const parStatut = s => mine.filter(i=>i.status===s);
   const attente = parStatut("En attente"), valide = parStatut("Validée"),
@@ -2116,6 +2203,8 @@ function render(){
 
   $("#myList").innerHTML = mine.length ? mine.map(i=>rowHTML(i,false)).join("")
     : emptyHTML("Aucune demande pour l'instant","Remplissez le formulaire ci-dessus pour en créer une.");
+  if($("#myDirectList")) $("#myDirectList").innerHTML = mineDirect.length ? mineDirect.map(i=>rowHTML(i,false)).join("")
+    : emptyHTML("Aucun paiement direct","Utilisez le formulaire ci-dessus.");
 
   if(isTreso()){
     const by = s => state.items.filter(i=>i.status===s);
@@ -2344,11 +2433,15 @@ function renderDrawer(it){
   $("#d_body").innerHTML = `
     <div class="stampwrap">${stampHTML(it)}<div class="eyebrow">Montant demandé</div><div class="bigamt">${euro(it.amount)}</div></div>
     <dl class="facts">
+      ${it.kind==="direct" ? `<dt>Type</dt><dd><span class="tag" style="background:#3a2d6e;color:#cdbcff">PAIEMENT DIRECT</span></dd>
+      <dt>Bénéficiaire</dt><dd><b>${esc(it.beneficiary||"—")}</b></dd>
+      <dt>Mode</dt><dd>${it.pay_mode==="virement"?"Virement bancaire":"Paiement en ligne"}</dd>
+      ${it.pay_mode==="virement"&&it.communication?`<dt>Communication</dt><dd>${esc(it.communication)}</dd>`:""}` : ""}
       <dt>Demandeur</dt><dd>${esc(it.requester_name)}${it.requester_position?`<br><span class="hint">${esc(it.requester_position)}</span>`:""}</dd>
       <dt>Date dépense</dt><dd>${fdate(it.expense_date)}</dd>
       <dt>Catégorie</dt><dd>${esc(it.category)}</dd>
-      <dt>Payé par</dt><dd>${esc(it.payment_method||"—")}</dd>
-      <dt>Virement vers</dt><dd class="mono" style="font-size:13px">${esc(it.iban||"IBAN manquant")}</dd>
+      ${it.kind==="direct" ? "" : `<dt>Payé par</dt><dd>${esc(it.payment_method||"—")}</dd>`}
+      ${it.kind==="direct"&&it.pay_mode!=="virement" ? `<dt>Paiement</dt><dd>En ligne (voir commentaire)</dd>` : `<dt>Virement vers</dt><dd class="mono" style="font-size:13px">${esc(payeeIban(it)||"IBAN manquant")}</dd>`}
       ${it.note?`<dt>Commentaire</dt><dd>${esc(it.note)}</dd>`:""}
     </dl>
     ${it.decision_note ? `<div class="motif ${it.status==="Refusée"?"ko":"ok"}">
