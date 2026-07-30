@@ -966,6 +966,125 @@ const state = { profile:null, items:[], members:[], expenses:[], incomes:[], clo
 
 const euro = n => (Number(n)||0).toLocaleString("fr-BE",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const fdate = iso => iso ? iso.split("-").reverse().join("/") : "—";
+
+/* ===== E-mails (Amazon SES via Edge Function) + reçu par lien ===== */
+const SEND_FN = SUPABASE_URL + "/functions/v1/send-email";
+const mailEsc = x => String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const prenomDe = it => String(it && it.requester_name || "").split(" ")[0] || "";
+async function envoyerMail(to, subject, html){
+  if(!to) return false;
+  try{
+    const r = await fetch(SEND_FN, { method:"POST",
+      headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+SUPABASE_ANON_KEY, "apikey":SUPABASE_ANON_KEY },
+      body: JSON.stringify({ to, subject, html }) });
+    return r.ok;
+  }catch(e){ return false; }
+}
+async function emailDuDemandeur(it){
+  if(!it || !it.user_id) return null;
+  const m = (state.members||[]).find(x=>x.id===it.user_id);
+  if(m && m.email) return m.email;
+  try{ const {data}=await sb.from("profiles").select("email").eq("id", it.user_id).maybeSingle(); return (data&&data.email)||null; }catch(e){ return null; }
+}
+function lienRecu(it){ return window.location.origin + window.location.pathname + "#recu=" + it.id; }
+
+async function mailRembourse(it){
+  const to = await emailDuDemandeur(it); if(!to) return false;
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Remboursement effectué</h2>
+    <p>Bonjour ${mailEsc(prenomDe(it))},</p>
+    <p>Votre demande de remboursement <b>${mailEsc(it.object)}</b> (${euro(it.amount)}) a été <b>remboursée</b>.</p>
+    <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
+    <p style="text-align:center;margin:26px 0"><a href="${lienRecu(it)}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir / télécharger mon reçu</a></p>
+    <p style="color:#666;font-size:13px">Vous pourrez le consulter, le télécharger en PDF et l'imprimer.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+  return envoyerMail(to, "Remboursement effectué — "+refOf(it), html);
+}
+async function mailRefuse(it, motif){
+  const to = await emailDuDemandeur(it); if(!to) return false;
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Demande refusée</h2>
+    <p>Bonjour ${mailEsc(prenomDe(it))},</p>
+    <p>Votre demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}) a été <b>refusée</b>.</p>
+    <p style="background:#faf3f3;border:1px solid #e0c3c3;border-radius:8px;padding:12px"><b>Motif :</b><br>${mailEsc(motif).replace(/\n/g,"<br>")}</p>
+    <p style="color:#666;font-size:13px">Vous pouvez consulter le détail dans l'application.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+  return envoyerMail(to, "Demande refusée — "+refOf(it), html);
+}
+
+async function genererRecuPDF(it){
+  let mod;
+  try{ mod = await import("https://esm.sh/jspdf@2.5.1"); }
+  catch(e){ toast("Module PDF indisponible (connexion ?)."); return; }
+  const jsPDF = mod.jsPDF || (mod.default && mod.default.jsPDF) || mod.default;
+  const montant = Number(it.amount||0).toFixed(2).replace(".",",") + " EUR";
+  const paye = it.paid_at ? fdate(new Date(it.paid_at).toISOString().slice(0,10)) : "—";
+  const doc = new jsPDF({ unit:"mm", format:"a4" });
+  let y = 24;
+  doc.setFont("helvetica","bold"); doc.setFontSize(11);
+  doc.text("Le bureau etudiant", 20, y);
+  doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(110);
+  doc.text("Recu de remboursement", 20, y+5);
+  doc.setTextColor(0); doc.setDrawColor(200); doc.line(20, y+9, 190, y+9);
+  y += 22;
+  doc.setFont("helvetica","bold"); doc.setFontSize(20);
+  doc.text("Recu de remboursement", 20, y);
+  y += 8; doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(90);
+  doc.text("Reference " + refOf(it) + "  -  emis le " + fdate(new Date().toISOString().slice(0,10)), 20, y);
+  doc.setTextColor(0); y += 16;
+  const ligne = (lib, val) => {
+    doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(110); doc.text(lib, 20, y);
+    doc.setFont("helvetica","normal"); doc.setFontSize(11); doc.setTextColor(0); doc.text(String(val||"—"), 20, y+5);
+    y += 14;
+  };
+  ligne("Beneficiaire", (it.requester_name||"") + (it.requester_position?"  ("+it.requester_position+")":""));
+  ligne("Objet de la depense", it.object);
+  ligne("Categorie", it.category);
+  ligne("IBAN credite", it.iban);
+  ligne("Remboursement effectue le", paye);
+  y += 4; doc.setDrawColor(200); doc.line(20, y, 190, y); y += 12;
+  doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(110);
+  doc.text("MONTANT REMBOURSE", 20, y);
+  doc.setFontSize(24); doc.setTextColor(0); doc.text(montant, 20, y+11);
+  y += 34; doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(120);
+  doc.text("Ce document atteste qu'un remboursement a ete effectue par la caisse du bureau etudiant", 20, y);
+  doc.text("au benefice de la personne mentionnee ci-dessus, pour la depense decrite.", 20, y+4);
+  y += 24; doc.setDrawColor(120); doc.line(20, y, 90, y);
+  doc.setTextColor(0); doc.setFontSize(10); doc.text("Le bureau etudiant - Tresorerie", 20, y+5);
+  doc.save("recu-" + refOf(it) + ".pdf");
+}
+
+let _recuPending = (function(){ const m=(window.location.hash||"").match(/recu=([A-Za-z0-9-]+)/); return m?m[1]:null; })();
+function verifierLienRecu(){
+  if(!_recuPending) return;
+  const it = (state.items||[]).find(x=>x.id===_recuPending);
+  if(!it) return;
+  _recuPending = null;
+  ouvrirRecuModal(it);
+}
+function ouvrirRecuModal(it){
+  let ov = document.getElementById("recuOverlay");
+  if(!ov){ ov=document.createElement("div"); ov.id="recuOverlay";
+    ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px";
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = `<div style="background:#fff;color:#1a1a1a;max-width:460px;width:100%;border-radius:14px;padding:26px;font-family:Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+    <h2 style="margin:0 0 4px">Reçu de remboursement</h2>
+    <p style="color:#666;margin:0 0 16px">Référence ${mailEsc(refOf(it))}</p>
+    <p style="margin:6px 0"><b>Bénéficiaire :</b> ${mailEsc(it.requester_name||"")}</p>
+    <p style="margin:6px 0"><b>Objet :</b> ${mailEsc(it.object||"")}</p>
+    <p style="margin:6px 0"><b>Montant :</b> ${euro(it.amount)}</p>
+    <p style="margin:6px 0"><b>Remboursé le :</b> ${it.paid_at?fdate(new Date(it.paid_at).toISOString().slice(0,10)):"—"}</p>
+    <div style="display:flex;gap:10px;margin-top:22px">
+      <button id="recuDl" style="flex:1;background:#2d6a4f;color:#fff;border:none;padding:13px;border-radius:9px;font-weight:bold;cursor:pointer">Télécharger le PDF</button>
+      <button id="recuClose" style="background:#eee;border:none;padding:13px 18px;border-radius:9px;cursor:pointer">Fermer</button>
+    </div></div>`;
+  ov.style.display="flex";
+  document.getElementById("recuDl").onclick = () => genererRecuPDF(it);
+  document.getElementById("recuClose").onclick = () => { ov.style.display="none"; try{ history.replaceState(null,"",window.location.pathname); }catch(e){} };
+}
 const fstamp = t => new Date(t).toLocaleString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
 const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const slug = s => String(s??"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
@@ -1158,6 +1277,7 @@ async function refresh(){
     state.closures = c.data || [];
   }
   render();
+  verifierLienRecu();
 }
 
 /* ---------- dépenses directes ---------- */
@@ -1651,6 +1771,7 @@ $("#payDone").onclick = async () => {
       ok++;
       await sb.from("events").insert({ request_id:i.id, who:state.profile.name,
         what: i.user_id === state.profile.id ? "Remboursement effectué au trésorier lui-même" : "Remboursement effectué (série de virements)" });
+      mailRembourse(i);
     }
   }
   btn.disabled = false; btn.textContent = "Marquer comme remboursés";
@@ -2514,53 +2635,7 @@ $("#d_body").addEventListener("click", async e => {
   }
   if(act==="recu"){
     b.disabled = true;
-    let mod;
-    try{ mod = await import("https://esm.sh/jspdf@2.5.1"); }
-    catch(e){ b.disabled=false; return toast("Module PDF indisponible (connexion ?)."); }
-    const jsPDF = mod.jsPDF || (mod.default && mod.default.jsPDF) || mod.default;
-    const montant = Number(it.amount||0).toFixed(2).replace(".",",") + " EUR";
-    const paye = it.paid_at ? fdate(new Date(it.paid_at).toISOString().slice(0,10)) : "—";
-    const doc = new jsPDF({ unit:"mm", format:"a4" });
-    let y = 24;
-    doc.setFont("helvetica","bold"); doc.setFontSize(11);
-    doc.text("Le bureau etudiant", 20, y);
-    doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(110);
-    doc.text("Recu de remboursement", 20, y+5);
-    doc.setTextColor(0);
-    doc.setDrawColor(200); doc.line(20, y+9, 190, y+9);
-    y += 22;
-    doc.setFont("helvetica","bold"); doc.setFontSize(20);
-    doc.text("Recu de remboursement", 20, y);
-    y += 8; doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(90);
-    doc.text("Reference " + refOf(it) + "  -  emis le " + fdate(new Date().toISOString().slice(0,10)), 20, y);
-    doc.setTextColor(0);
-    y += 16;
-    const ligne = (lib, val) => {
-      doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(110);
-      doc.text(lib, 20, y);
-      doc.setFont("helvetica","normal"); doc.setFontSize(11); doc.setTextColor(0);
-      doc.text(String(val||"—"), 20, y+5);
-      y += 14;
-    };
-    ligne("Beneficiaire", (it.requester_name||"") + (it.requester_position?"  ("+it.requester_position+")":""));
-    ligne("Objet de la depense", it.object);
-    ligne("Categorie", it.category);
-    ligne("IBAN credite", it.iban);
-    ligne("Remboursement effectue le", paye);
-    y += 4;
-    doc.setDrawColor(200); doc.line(20, y, 190, y); y += 12;
-    doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(110);
-    doc.text("MONTANT REMBOURSE", 20, y);
-    doc.setFontSize(24); doc.setTextColor(0);
-    doc.text(montant, 20, y+11);
-    y += 34;
-    doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(120);
-    doc.text("Ce document atteste qu'un remboursement a ete effectue par la caisse du bureau etudiant", 20, y);
-    doc.text("au benefice de la personne mentionnee ci-dessus, pour la depense decrite.", 20, y+4);
-    y += 24; doc.setDrawColor(120); doc.line(20, y, 90, y);
-    doc.setTextColor(0); doc.setFontSize(10);
-    doc.text("Le tresorier - " + (state.profile.name||""), 20, y+5);
-    doc.save("recu-" + refOf(it) + ".pdf");
+    await genererRecuPDF(it);
     b.disabled = false;
     toast("Recu PDF telecharge.");
     return;
@@ -2584,6 +2659,8 @@ $("#d_body").addEventListener("click", async e => {
   b.disabled = false;
   if(error) return toast("Action impossible : "+error.message);
   await sb.from("events").insert({ request_id:it.id, who:state.profile.name, what:label });
+  if(act==="refuser"){ mailRefuse(it, note); }
+  if(act==="payer"){ mailRembourse(it); }
   await refresh(); await loadEvents(it.id);
   toast(label + ".");
 });
