@@ -651,6 +651,12 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
 
   <!-- à traiter -->
   <section id="viewTreso" class="stack" hidden>
+    <div id="tresoRecap" class="card" style="padding:14px 16px;display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div id="tresoRecapTxt" style="font-size:14px;line-height:1.5"></div>
+        <button class="btn ghost sm" id="recapMailBtn">M'envoyer ce récap par mail</button>
+      </div>
+    </div>
     <div class="kpis">
       <div class="kpi wait"><div class="eyebrow">À traiter</div><div class="n" id="k_pending">0</div></div>
       <div class="kpi wait"><div class="eyebrow">Montant en attente</div><div class="n" id="k_pendingAmt">0 €</div></div>
@@ -667,10 +673,13 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
           <option value="Validée">Validée — à payer</option>
           <option value="Remboursée">Remboursée</option>
           <option value="Refusée">Refusée</option>
+          <option value="reexamen">Réexamens ⚠</option>
+          <option value="direct">Paiements directs</option>
         </select>
         <input type="text" id="search" placeholder="Rechercher un objet ou un nom">
         <div class="spacer"></div>
         <button class="btn ghost sm" id="payrunBtn">Virements à faire</button>
+        <button class="btn ghost sm" id="relanceAllBtn">Relancer les incomplètes</button>
         <button class="btn ghost sm" id="reportBtn">Bilan à imprimer</button>
         <button class="btn ghost sm" id="exportBtn">Exporter en CSV</button>
         <button class="btn ghost sm" id="exportXlsx">Exporter en Excel</button>
@@ -1055,6 +1064,96 @@ async function mailRouvert(it){
   return envoyerMail(to, "Dossier remis en traitement — "+refOf(it), html);
 }
 
+async function mailValide(it){
+  const to = await emailDuDemandeur(it); if(!to) return false;
+  const direct = it.kind==="direct";
+  const suite = direct ? "Le virement au bénéficiaire va être effectué prochainement."
+                       : "Le remboursement va être effectué prochainement par virement.";
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Demande validée</h2>
+    <p>Bonjour ${mailEsc(prenomDe(it))},</p>
+    <p>Votre ${direct?"demande de paiement direct":"demande de remboursement"} <b>${mailEsc(it.object)}</b> (${euro(it.amount)}) a été <b>validée</b> par le trésorier.</p>
+    <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
+    <p>${suite} Vous recevrez une confirmation une fois le virement effectué.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
+  return envoyerMail(to, "Demande validée — "+refOf(it), html);
+}
+function construireRelance(it){
+  const mem = state.members.find(x=>x.id===it.user_id);
+  const prenom = (mem && mem.first_name) || String(it.requester_name||"").split(" ")[0] || "";
+  const manque=[];
+  if(piecesDe(it).length===0) manque.push("le justificatif (facture ou ticket)");
+  if(String(it.iban||"").replace(/\s+/g,"").length<14) manque.push("un IBAN valide pour le virement");
+  const msg = `Bonjour ${prenom},\n\nVotre demande de remboursement ${refOf(it)} (${it.object}, ${euro(it.amount)}) est en attente car il manque ${manque.join(" et ")}.\n\nMerci de compléter ta demande dès que possible directement dans l'application. Sans cela, le remboursement ne pourra pas être effectué.\n\nMerci !\nLe bureau étudiant`;
+  return { prenom, manque, msg };
+}
+async function mailRelance(it){
+  const to = await emailDuDemandeur(it); if(!to) return false;
+  const { manque } = construireRelance(it);
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Votre demande est incomplète</h2>
+    <p>Bonjour ${mailEsc(prenomDe(it))},</p>
+    <p>Votre demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}) est en attente car il manque ${mailEsc(manque.join(" et "))}.</p>
+    <p>Merci de la compléter dès que possible directement dans l'application. Sans cela, le remboursement ne pourra pas être effectué.</p>
+    <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Compléter ma demande</a></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+  return envoyerMail(to, "Demande incomplète — "+refOf(it), html);
+}
+
+async function relancerIncompletes(auto){
+  const now = Date.now();
+  const J = 864e5;
+  const incompletes = state.items.filter(i => i.status==="En attente" && i.kind!=="direct" && estIncomplet(i));
+  const cible = incompletes.filter(i => {
+    const age = i.created_at ? now - new Date(i.created_at).getTime() : Infinity;
+    const derniere = i.relance_at ? now - new Date(i.relance_at).getTime() : Infinity;
+    return auto ? (age > 3*J && derniere > 5*J) : (derniere > 2*J);
+  });
+  if(!cible.length){ if(!auto) toast("Aucune demande à relancer pour l'instant."); return 0; }
+  let ok = 0;
+  for(const it of cible){
+    const sent = await mailRelance(it);
+    if(sent){
+      ok++;
+      try{ await sb.from("requests").update({ relance_at:new Date().toISOString() }).eq("id", it.id); }catch(_){}
+      try{ await sb.from("events").insert({ request_id:it.id, who:"Système", what: auto?"Relance automatique envoyée (demande incomplète)":"Relance envoyée (demande incomplète)" }); }catch(_){}
+    }
+  }
+  if(ok){ toast(ok+" relance(s) envoyée(s)."); if(!auto) await refresh(); }
+  else if(!auto) toast("Envoi impossible (adresses manquantes ?).");
+  return ok;
+}
+function statsTreso(){
+  const attente = state.items.filter(i=>i.status==="En attente");
+  const reexams = state.items.filter(i=>i.reexamen_at && i.status==="Refusée");
+  const seuil = Date.now() - 3*24*3600*1000;
+  const reexamsRetard = reexams.filter(i=> new Date(i.reexamen_at).getTime() < seuil);
+  const montantAVirer = aVirer().reduce((s,i)=>s+Number(i.amount||0),0);
+  return { attente, reexams, reexamsRetard, montantAVirer };
+}
+async function mailRecapTreso(){
+  const to = state.profile && state.profile.email;
+  if(!to) return toast("Aucune adresse e-mail sur votre profil.");
+  const st = statsTreso();
+  const li = [
+    `${st.attente.length} demande(s) en attente de décision`,
+    `${st.reexams.length} demande(s) de réexamen à traiter${st.reexamsRetard.length?` (dont ${st.reexamsRetard.length} depuis plus de 3 jours)`:""}`,
+    `${euro(st.montantAVirer)} de virements à effectuer`
+  ];
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Récapitulatif Caisse</h2>
+    <p>Bonjour ${mailEsc(prenomDe({requester_name: state.profile.name}))},</p>
+    <ul style="line-height:1.7">${li.map(x=>`<li>${mailEsc(x)}</li>`).join("")}</ul>
+    <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+  toast("Envoi du récap…");
+  const ok = await envoyerMail(to, "Récapitulatif Caisse", html);
+  toast(ok ? "Récap envoyé par mail." : "Envoi impossible.");
+}
+
 async function genererRecuPDF(it){
   let mod;
   try{ mod = await import("https://esm.sh/jspdf@2.5.1"); }
@@ -1362,6 +1461,7 @@ async function refresh(){
     state.incomes = y.data || [];
     const c = await sb.from("closures").select("*").order("year",{ascending:false});
     state.closures = c.data || [];
+    if(!state.relanceAutoFaite){ state.relanceAutoFaite = true; relancerIncompletes(true); }
   }
   render();
   verifierLienRecu();
@@ -2311,6 +2411,10 @@ $("#directForm")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = $("#directSubmitBtn"); btn.disabled = true; btn.textContent = "Envoi…";
   try{
+    if(!isTreso() && !fenetreOuverte()){
+      majHoraire();
+      throw new Error("Les demandes sont acceptées du lundi au vendredi jusqu'à 18h (heure belge). Réessayez pendant cette plage.");
+    }
     const amount = parseFloat($("#fd_amount").value);
     const benef  = $("#fd_benef").value.trim();
     const object = $("#fd_object").value.trim();
@@ -2358,7 +2462,7 @@ function estIncomplet(it){
 }
 const rowHTML = (it, showWho) => `<div class="row" data-id="${it.id}" tabindex="0" role="button">
   <div class="date mono" style="font-size:13px">${fdate(it.expense_date)}</div>
-  <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${esc(it.category)} · ${piecesDe(it).length} pièce(s)</div></div>
+  <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div></div>
   <div><span class="tag ${tagClass(it.status)}">${it.status}</span></div>
   <div class="amt">${euro(it.amount)}</div><div class="chev">›</div></div>`;
 const emptyHTML = (t,m) => `<div class="empty"><strong>${t}</strong>${m}</div>`;
@@ -2391,6 +2495,8 @@ $("#tabDirect").onclick = () => setView("direct");
 $("#fd_mode")?.addEventListener("change", () => { const b=$("#fd_virementBox"); if(b) b.style.display = $("#fd_mode").value==="virement" ? "" : "none"; });
 $("#tabTreso").onclick = () => setView("treso");
 $("#tabReexam").onclick = () => setView("reexam");
+if($("#recapMailBtn")) $("#recapMailBtn").onclick = mailRecapTreso;
+if($("#relanceAllBtn")) $("#relanceAllBtn").onclick = () => relancerIncompletes(false);
 $("#tabOverview").onclick = () => setView("overview");
 $("#tabExpenses").onclick = () => setView("expenses");
 $("#tabIncomes").onclick = () => setView("incomes");
@@ -2433,16 +2539,30 @@ function render(){
 
     const reexams = state.items.filter(i => i.reexamen_at && i.status === "Refusée");
     $("#pillReexam").textContent = reexams.length; $("#pillReexam").hidden = reexams.length === 0;
-    if($("#reexamList")) $("#reexamList").innerHTML = reexams.length
-      ? reexams.map(i=>rowHTML(i,true)).join("")
-      : emptyHTML("Aucune demande de réexamen","Les dossiers refusés dont le demandeur conteste le refus apparaîtront ici.");
+    const seuilReexam = Date.now() - 3*24*3600*1000;
+    const reexamRetard = reexams.filter(i => new Date(i.reexamen_at).getTime() < seuilReexam).length;
+    if($("#reexamList")){
+      const alerte = reexamRetard ? `<div style="padding:10px 16px;background:#fff7ec;border-bottom:1px solid var(--line);color:#c47f17;font-weight:600">\u26a0 ${reexamRetard} demande(s) de réexamen en attente depuis plus de 3 jours.</div>` : "";
+      $("#reexamList").innerHTML = reexams.length
+        ? alerte + reexams.map(i=>rowHTML(i,true)).join("")
+        : emptyHTML("Aucune demande de réexamen","Les dossiers refusés dont le demandeur conteste le refus apparaîtront ici.");
+    }
+
+    const st = statsTreso();
+    const parts = [`<b>${st.attente.length}</b> en attente`, `<b>${st.reexams.length}</b> réexamen(s)`, `<b>${euro(st.montantAVirer)}</b> à virer`];
+    let recapTxt = parts.join(" &nbsp;·&nbsp; ");
+    if(st.reexamsRetard.length) recapTxt += ` &nbsp;·&nbsp; <span style="color:#c47f17;font-weight:700">\u26a0 ${st.reexamsRetard.length} réexamen(s) &gt; 3 jours</span>`;
+    if($("#tresoRecap")){
+      $("#tresoRecapTxt").innerHTML = recapTxt;
+      $("#tresoRecap").style.display = (st.attente.length || st.reexams.length || st.montantAVirer) ? "" : "none";
+    }
 
     const nReqPay = aVirer().length;
     $("#payrunBtn").textContent = nReqPay ? `Virements à faire (${nReqPay})` : "Virements à faire";
 
     const f = $("#filterStatus").value, q = slug($("#search").value.trim());
     const list = ouvert(state.items).filter(i => {
-      const okS = f==="all" ? true : f==="a_traiter" ? (i.status==="En attente"||i.status==="Validée") : f==="incomplet" ? estIncomplet(i) : i.status===f;
+      const okS = f==="all" ? true : f==="a_traiter" ? (i.status==="En attente"||i.status==="Validée") : f==="incomplet" ? estIncomplet(i) : f==="reexamen" ? (i.reexamen_at && i.status==="Refusée") : f==="direct" ? (i.kind==="direct") : i.status===f;
       const okQ = !q || slug(i.object).includes(q) || slug(i.requester_name).includes(q);
       return okS && okQ;
     });
@@ -2572,7 +2692,7 @@ async function openDrawer(id){
     state.proofUrls[id] = await afficherPieces(it);
     if(state.selected === id) renderDrawer(it);
   }
-  loadEvents(id);
+  if(isTreso()) loadEvents(id);
 }
 function closeDrawer(){ staged.fix = []; state.selected=null; $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); }
 
@@ -2629,7 +2749,7 @@ function renderDrawer(it){
       const manque=[];
       if(piecesDe(it).length===0) manque.push("le justificatif");
       if(String(it.iban||"").replace(/\s+/g,"").length<14) manque.push("un IBAN valide");
-      actions += `<div class="callout" style="border-color:#c47f17"><b style="color:#c47f17">Demande incomplète</b><p>Il manque ${manque.join(" et ")}. Le remboursement ne pourra pas être fait tant que ce n'est pas complété.</p><div class="actions"><button class="btn ghost" data-act="relance">Copier un message de relance</button></div></div>`;
+      actions += `<div class="callout" style="border-color:#c47f17"><b style="color:#c47f17">Demande incomplète</b><p>Il manque ${manque.join(" et ")}. Le remboursement ne pourra pas être fait tant que ce n'est pas complété.</p><div class="actions"><button class="btn" data-act="relanceMail">Envoyer la relance par mail</button><button class="btn ghost" data-act="relance">Copier le message</button></div></div>`;
     }
     if(it.status === "En attente"){
       actions += champMotif(it) +
@@ -2670,9 +2790,20 @@ function renderDrawer(it){
       <b style="color:#c47f17">Demande de réexamen du demandeur · ${fstamp(it.reexamen_at)}</b><p>${esc(it.reexamen_msg||"")}</p></div>` : ""}
     <div><div class="eyebrow" style="margin-bottom:7px">Pièces justificatives</div>${proofHTML}</div>
     ${actions}
-    <div><div class="eyebrow" style="margin-bottom:9px">Historique</div><div class="timeline" id="d_events">…</div></div>`;
+    <div><div class="eyebrow" style="margin-bottom:9px">Historique</div><div class="timeline" id="d_events">${isTreso()?"…":timelineMembre(it)}</div></div>`;
 }
 
+function timelineMembre(it){
+  const evs = [];
+  if(it.created_at) evs.push({ at:it.created_at, txt: it.kind==="direct" ? "Demande de paiement direct envoyée" : "Demande de remboursement envoyée" });
+  if(it.reexamen_at) evs.push({ at:it.reexamen_at, txt:"Réexamen demandé" });
+  if(it.decided_at && it.status==="Validée") evs.push({ at:it.decided_at, txt:"Demande validée par le trésorier" });
+  if(it.decided_at && it.status==="Refusée") evs.push({ at:it.decided_at, txt:"Demande refusée" + (it.decision_note?" — "+it.decision_note:"") });
+  if(it.paid_at) evs.push({ at:it.paid_at, txt: it.kind==="direct" ? "Paiement effectué" : "Remboursement effectué" });
+  evs.sort((a,b)=> new Date(a.at) - new Date(b.at));
+  if(!evs.length) return "\u2014";
+  return evs.map(e=>`<div class="ev"><time>${fstamp(e.at)}</time>${esc(e.txt)}</div>`).join("");
+}
 async function loadEvents(id){
   const { data } = await sb.from("events").select("*").eq("request_id", id).order("at",{ascending:true});
   const el = $("#d_events"); if(!el || state.selected!==id) return;
@@ -2724,14 +2855,18 @@ $("#d_body").addEventListener("click", async e => {
 
   const sienne = it.user_id === state.profile.id;
   if(act==="relance"){
-    const mem = state.members.find(x=>x.id===it.user_id);
-    const prenom = (mem && mem.first_name) || String(it.requester_name||"").split(" ")[0] || "";
-    const manque=[];
-    if(piecesDe(it).length===0) manque.push("le justificatif (facture ou ticket)");
-    if(String(it.iban||"").replace(/\s+/g,"").length<14) manque.push("un IBAN valide pour le virement");
-    const msg = `Bonjour ${prenom},\n\nVotre demande de remboursement ${refOf(it)} (${it.object}, ${euro(it.amount)}) est en attente car il manque ${manque.join(" et ")}.\n\nMerci de compléter ta demande dès que possible directement dans l'application. Sans cela, le remboursement ne pourra pas être effectué.\n\nMerci !\nLe bureau étudiant`;
+    const { msg } = construireRelance(it);
     try{ await navigator.clipboard.writeText(msg); toast("Message de relance copié."); }
     catch(e){ toast("Copie impossible sur ce navigateur."); }
+    return;
+  }
+  if(act==="relanceMail"){
+    b.disabled = true;
+    const ok = await mailRelance(it);
+    b.disabled = false;
+    if(ok){ try{ await sb.from("events").insert({ request_id:it.id, who:state.profile.name, what:"Relance envoyée par e-mail au demandeur" }); }catch(_){}
+      await loadEvents(it.id); toast("Relance envoyée par mail."); }
+    else toast("Envoi impossible (adresse du demandeur manquante ?).");
     return;
   }
   if(act==="recu"){
@@ -2760,6 +2895,7 @@ $("#d_body").addEventListener("click", async e => {
   b.disabled = false;
   if(error) return toast("Action impossible : "+error.message);
   await sb.from("events").insert({ request_id:it.id, who:state.profile.name, what:label });
+  if(act==="valider"){ mailValide(it); }
   if(act==="refuser"){ mailRefuse(it, note); }
   if(act==="payer"){ mailRembourse(it); }
   if(act==="rouvrir"){ mailRouvert(it); }
