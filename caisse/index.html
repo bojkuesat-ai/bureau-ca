@@ -1125,6 +1125,33 @@ async function relancerIncompletes(auto){
   else if(!auto) toast("Envoi impossible (adresses manquantes ?).");
   return ok;
 }
+
+async function mailMessage(it, note){
+  const to = await emailDuDemandeur(it); if(!to) return false;
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Message du trésorier</h2>
+    <p>Bonjour ${mailEsc(prenomDe(it))},</p>
+    <p>Le trésorier vous a laissé un message concernant votre demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)})&nbsp;:</p>
+    <p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(note).replace(/\n/g,"<br>")}</p>
+    <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
+    <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir ma demande</a></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
+  return envoyerMail(to, "Message du trésorier — "+refOf(it), html);
+}
+async function mailComplementRecu(it, remisEnAttente){
+  const to = (state.profile && state.profile.email) || await emailDuDemandeur(it);
+  if(!to) return false;
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Compléments bien reçus</h2>
+    <p>Bonjour ${mailEsc(prenomDe(it))},</p>
+    <p>Nous confirmons la bonne réception de vos compléments pour la demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}).</p>
+    ${remisEnAttente ? "<p>Votre demande repasse automatiquement <b>en attente de décision</b>. Vous serez informé dès qu'une décision sera prise.</p>" : "<p>Le trésorier en a été informé et poursuivra le traitement de votre demande.</p>"}
+    <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
+  return envoyerMail(to, "Compléments bien reçus — "+refOf(it), html);
+}
 function statsTreso(){
   const attente = state.items.filter(i=>i.status==="En attente");
   const reexams = state.items.filter(i=>i.reexamen_at && i.status==="Refusée");
@@ -2846,6 +2873,7 @@ $("#d_body").addEventListener("click", async e => {
       const maj2 = state.items.find(x => x.id === it.id);
       if(maj2){ state.proofUrls[it.id] = await afficherPieces(maj2); renderDrawer(maj2); }
       await loadEvents(it.id);
+      mailComplementRecu(it, it.status === "Refusée");
       toast(it.status === "Refusée" ? "Demande complétée et remise en attente." : "Compléments envoyés au trésorier.");
     }catch(err){
       toast("Envoi impossible : " + (err.message || err));
@@ -2899,6 +2927,7 @@ $("#d_body").addEventListener("click", async e => {
   if(act==="refuser"){ mailRefuse(it, note); }
   if(act==="payer"){ mailRembourse(it); }
   if(act==="rouvrir"){ mailRouvert(it); }
+  if(act==="message"){ mailMessage(it, note); }
   await refresh(); await loadEvents(it.id);
   toast(label + ".");
 });
