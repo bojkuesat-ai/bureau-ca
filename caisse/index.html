@@ -868,6 +868,17 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
 
   <!-- membres -->
   <section id="viewMembers" class="stack" hidden>
+    <div>
+      <div class="section-title"><div class="eyebrow">Annonce aux membres</div></div>
+      <div class="card" style="padding:16px">
+        <div class="field"><label for="ann_subject">Objet (facultatif)</label>
+          <input type="text" id="ann_subject" maxlength="120" placeholder="Ex. Fermeture de la caisse pendant les examens"></div>
+        <div class="field" style="margin-top:10px"><label for="ann_body">Message</label>
+          <textarea id="ann_body" placeholder="Votre annonce à tous les membres…"></textarea></div>
+        <div class="actions" style="margin-top:12px"><button class="btn" id="ann_send">Envoyer l'annonce par e-mail aux membres</button></div>
+        <p class="hint" style="margin-top:8px">Un e-mail est envoyé individuellement à chaque membre actif — les adresses ne sont jamais partagées entre eux.</p>
+      </div>
+    </div>
     <div id="pendingBlock">
       <div class="section-title"><div class="eyebrow">Inscriptions à confirmer</div></div>
       <div class="card" style="overflow:hidden"><div id="pendingList"></div></div>
@@ -991,14 +1002,17 @@ const fdate = iso => iso ? iso.split("-").reverse().join("/") : "—";
 
 /* ===== E-mails (Amazon SES via Edge Function) + reçu par lien ===== */
 const SEND_FN = SUPABASE_URL + "/functions/v1/send-email";
+const TRESO_EMAIL = "bojkuesat@gmail.com";
 const mailEsc = x => String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const prenomDe = it => String(it && it.requester_name || "").split(" ")[0] || "";
-async function envoyerMail(to, subject, html){
+async function envoyerMail(to, subject, html, reply_to){
   if(!to) return false;
   try{
+    const payload = { to, subject, html };
+    if(reply_to) payload.reply_to = reply_to;
     const r = await fetch(SEND_FN, { method:"POST",
       headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+SUPABASE_ANON_KEY, "apikey":SUPABASE_ANON_KEY },
-      body: JSON.stringify({ to, subject, html }) });
+      body: JSON.stringify(payload) });
     return r.ok;
   }catch(e){ return false; }
 }
@@ -1137,7 +1151,7 @@ async function mailMessage(it, note){
     <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir ma demande</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
-  return envoyerMail(to, "Message du trésorier — "+refOf(it), html);
+  return envoyerMail(to, "Message du trésorier — "+refOf(it), html, TRESO_EMAIL);
 }
 async function mailComplementRecu(it, remisEnAttente){
   const to = (state.profile && state.profile.email) || await emailDuDemandeur(it);
@@ -1151,6 +1165,51 @@ async function mailComplementRecu(it, remisEnAttente){
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
   return envoyerMail(to, "Compléments bien reçus — "+refOf(it), html);
+}
+async function mailContactTreso(it, message, nbPieces, membreEmail){
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Nouveau message d'un membre</h2>
+    <p><b>${mailEsc(it.requester_name || "Un membre")}</b> vous a contacté au sujet de la demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}).</p>
+    <p style="color:#555">Référence : ${mailEsc(refOf(it))} — statut : ${mailEsc(it.status || "")}</p>
+    ${message ? `<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(message).replace(/\n/g,"<br>")}</p>` : "<p style=\"color:#555\"><i>(Aucun message écrit — pièces jointes ajoutées.)</i></p>"}
+    ${nbPieces ? `<p style="color:#555">${nbPieces} pièce(s) ajoutée(s) à la demande.</p>` : ""}
+    <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la demande</a></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Vous pouvez répondre directement à cet e-mail : votre réponse ira au membre. — Caisse du bureau étudiant</p></div>`;
+  return envoyerMail(TRESO_EMAIL, "Nouveau message d'un membre — "+refOf(it), html, membreEmail || undefined);
+}
+
+async function envoyerAnnonceMembres(){
+  const subj = ($("#ann_subject") ? $("#ann_subject").value : "").trim();
+  const body = ($("#ann_body") ? $("#ann_body").value : "").trim();
+  if(!body){ toast("Écrivez d'abord le message de l'annonce."); return; }
+  const vus = new Set();
+  const dest = (state.members||[]).filter(m => {
+    if(!m.approved || !m.email) return false;
+    const k = m.email.trim().toLowerCase();
+    if(vus.has(k)) return false;
+    vus.add(k); return true;
+  });
+  if(!dest.length){ toast("Aucun membre actif avec e-mail."); return; }
+  if(!confirm(`Envoyer cette annonce par e-mail à ${dest.length} membre(s) ?`)) return;
+  const btn = $("#ann_send"); if(btn){ btn.disabled = true; btn.textContent = "Envoi…"; }
+  const sujet = subj || "Annonce du bureau étudiant";
+  let ok = 0;
+  for(const m of dest){
+    const prenom = m.first_name || String(m.name||"").split(" ")[0] || "";
+    const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+      <h2 style="margin:0 0 10px">${mailEsc(sujet)}</h2>
+      <p>Bonjour ${mailEsc(prenom)},</p>
+      <div style="white-space:pre-wrap;line-height:1.55">${mailEsc(body).replace(/\n/g,"<br>")}</div>
+      <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
+      <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+      <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
+    if(await envoyerMail(m.email, sujet, html)) ok++;
+    await new Promise(r => setTimeout(r, 120));
+  }
+  if(btn){ btn.disabled = false; btn.textContent = "Envoyer l'annonce par e-mail aux membres"; }
+  toast(ok + " membre(s) prévenu(s) par e-mail.");
+  if(ok){ if($("#ann_subject")) $("#ann_subject").value = ""; if($("#ann_body")) $("#ann_body").value = ""; }
 }
 function statsTreso(){
   const attente = state.items.filter(i=>i.status==="En attente");
@@ -2524,6 +2583,7 @@ $("#tabTreso").onclick = () => setView("treso");
 $("#tabReexam").onclick = () => setView("reexam");
 if($("#recapMailBtn")) $("#recapMailBtn").onclick = mailRecapTreso;
 if($("#relanceAllBtn")) $("#relanceAllBtn").onclick = () => relancerIncompletes(false);
+if($("#ann_send")) $("#ann_send").onclick = envoyerAnnonceMembres;
 $("#tabOverview").onclick = () => setView("overview");
 $("#tabExpenses").onclick = () => setView("expenses");
 $("#tabIncomes").onclick = () => setView("incomes");
@@ -2747,8 +2807,15 @@ function blocComplement(it){
     <div id="d_staged" class="staged"></div>
     <div class="field" style="margin-top:12px"><label for="d_reply">Message au trésorier</label>
       <textarea id="d_reply" placeholder="Ex. voici le ticket rephotographié, bien à plat."></textarea></div>
-    <div class="actions"><button class="btn" data-act="completer">Envoyer les compléments</button></div>
+    <div class="actions"><button class="btn" data-act="completer">Envoyer les compléments</button><button class="btn ghost" data-act="contacter">Contacter le trésorier</button></div>
   </div>`;
+}
+
+function blocContact(it){
+  return `<div class="callout"><b>Une question sur cette demande ?</b>
+    <p>Écrivez au trésorier : il recevra votre message par e-mail et pourra vous répondre.</p>
+    <div class="field"><textarea id="d_contact" placeholder="Votre message au trésorier…"></textarea></div>
+    <div class="actions"><button class="btn" data-act="contacter">Contacter le trésorier</button></div></div>`;
 }
 
 function champMotif(it){
@@ -2767,6 +2834,7 @@ function renderDrawer(it){
   let actions = "";
   const modifiable = sienne && (it.status === "En attente" || it.status === "Refusée");
   if(modifiable && !isTreso()) actions += blocComplement(it);
+  if(sienne && !isTreso() && !modifiable) actions += blocContact(it);
   if(isTreso() && sienne && it.status === "En attente"){
     actions += `<div class="callout"><b>Votre propre demande</b>
       <p>Vous vous apprêtez à valider une avance que vous avez engagée vous-même. C'est autorisé, mais la décision sera signalée comme telle dans le bilan, à l'attention du vérificateur aux comptes.</p></div>`;
@@ -2874,10 +2942,27 @@ $("#d_body").addEventListener("click", async e => {
       if(maj2){ state.proofUrls[it.id] = await afficherPieces(maj2); renderDrawer(maj2); }
       await loadEvents(it.id);
       mailComplementRecu(it, it.status === "Refusée");
+      mailContactTreso(it, mot, ajouts.length, state.profile.email);
       toast(it.status === "Refusée" ? "Demande complétée et remise en attente." : "Compléments envoyés au trésorier.");
     }catch(err){
       toast("Envoi impossible : " + (err.message || err));
     }finally{ b.disabled = false; b.textContent = "Envoyer les compléments"; }
+    return;
+  }
+
+  if(act === "contacter"){
+    const msg = ($("#d_contact")?.value || $("#d_reply")?.value || "").trim();
+    if(!msg){ toast("Écrivez d'abord votre message."); return; }
+    b.disabled = true; b.textContent = "Envoi…";
+    try{
+      await sb.from("events").insert({ request_id: it.id, who: state.profile.name, what: "Message au trésorier — " + msg });
+      const ok = await mailContactTreso(it, msg, 0, state.profile.email);
+      if($("#d_contact")) $("#d_contact").value = "";
+      if($("#d_reply")) $("#d_reply").value = "";
+      await loadEvents(it.id);
+      toast(ok ? "Message envoyé au trésorier." : "Message enregistré (e-mail non envoyé).");
+    }catch(err){ toast("Envoi impossible : " + (err.message || err)); }
+    finally{ b.disabled = false; b.textContent = "Contacter le trésorier"; }
     return;
   }
 
