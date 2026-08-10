@@ -505,7 +505,7 @@ function viewAdmin(){
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Bilans moraux</h2><span class="l"></span></div>
     <div class="compose"><h3 class="serif">${S.meta.bilanActif?"Onglet ouvert":"Onglet fermé"}</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Ouvre ou ferme l'onglet où chaque membre dépose un bilan <b>anonyme</b> (ce qui va / à changer). Vous seul voyez la compilation et générez le document à publier.</p>
-      <div class="row-btn"><button class="btn${S.meta.bilanActif?" ghost":""}" data-action="toggle-bilan">${S.meta.bilanActif?"Désactiver les Bilans moraux":"Activer les Bilans moraux"}</button></div></div>
+      <div class="row-btn"><button class="btn${S.meta.bilanActif?" ghost":""}" data-action="toggle-bilan">${S.meta.bilanActif?"Désactiver les Bilans moraux":"Activer les Bilans moraux"}</button><button class="btn ghost" data-action="reset-bilan">Réinitialiser les bilans</button></div></div>
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Liste e-mail (invités externes)</h2><span class="l"></span></div>
     <div class="compose">
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 10px">Ces adresses reçoivent aussi les annonces, documents et votes (en plus des membres inscrits). Une personne déjà inscrite n'est jamais contactée en double.</p>
@@ -1172,6 +1172,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       S.forcePwd=null; render(); break;
     }
     case "toggle-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break; const nv=!S.meta.bilanActif; await sb.from("ca_meta").update({bilan_actif:nv}).eq("id",1); S.meta.bilanActif=nv; logAct(nv?"Bilans moraux activés":"Bilans moraux désactivés"); render(); break; }
+    case "reset-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break; if(window.confirm && !window.confirm("Effacer TOUS les bilans moraux déjà déposés et remettre le compteur à zéro ? Action irréversible.")) break; const r=await sb.rpc("ca_reset_bilans"); if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; } await loadBilans(); logAct("Bilans moraux réinitialisés"); render(); break; }
     case "add-mail": { if(!(S.session&&S.session.role==="owner")||!sb) break; const em=val("mail_new").trim().toLowerCase(); const merr=m=>{const x=document.getElementById("mail_err");if(x){x.textContent=m;x.style.display="block";}}; if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return merr("Adresse e-mail invalide."); const r=await sb.from("ca_mailing").insert({email:em}); if(r&&r.error){ return merr(/duplicate|unique/i.test(r.error.message)?"Cette adresse est déjà dans la liste.":r.error.message); } await loadMailing(); render(); break; }
     case "del-mail": { if(!(S.session&&S.session.role==="owner")||!sb) break; await sb.from("ca_mailing").delete().eq("id",id); await loadMailing(); render(); break; }
     case "reset-data": {
@@ -1321,6 +1322,9 @@ ${sections||"<p>Aucun retour.</p>"}
 async function boot(){ if(!sb){ render(); return; } try{ await refreshSession(); }catch(e){} render(); try{ sb.auth.onAuthStateChange(async ()=>{ await refreshSession(); render(); }); }catch(e){} }
 boot();
 
+</script>
+<script>
+if("serviceWorker" in navigator){ window.addEventListener("load",function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }
 </script>
 </body>
 </html>
