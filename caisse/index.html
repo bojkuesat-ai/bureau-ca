@@ -602,7 +602,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         <div class="field"><label for="f_note">Commentaire (facultatif)</label>
           <textarea id="f_note" maxlength="400" placeholder="Contexte utile pour le trésorier"></textarea></div>
         <div class="err" id="reqErr" hidden></div>
-        <div><button class="btn" type="submit" id="submitBtn">Envoyer la demande</button></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" type="submit" id="submitBtn">Envoyer la demande</button><button class="btn ghost" type="button" id="btnCancelReq">Annuler</button></div>
       </form>
     </div>
     <div>
@@ -636,8 +636,18 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         </div>
         <div class="field"><label for="fd_note">Commentaire / lien (facultatif)</label>
           <textarea id="fd_note" maxlength="400" placeholder="Lien de paiement, devis, ou info utile au trésorier"></textarea></div>
+        <div class="field">
+          <label>Document justificatif (facultatif)</label>
+          <div class="hint" style="margin:0 0 8px">Facture, devis, extrait de compte… Tu peux en joindre un, mais ce n'est pas obligatoire.</div>
+          <div class="attach">
+            <select id="fd_kind"><option>Facture</option><option>Devis</option><option>Bon de commande</option><option>Extrait de compte</option><option>Autre pièce</option></select>
+            <input type="file" id="fd_proof" accept="image/*,application/pdf,.pdf">
+            <button type="button" class="btn ghost sm" id="fd_add">Joindre</button>
+          </div>
+          <div id="fd_staged" class="staged"></div>
+        </div>
         <div class="err" id="directErr" hidden></div>
-        <div><button class="btn" type="submit" id="directSubmitBtn">Envoyer au trésorier</button></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" type="submit" id="directSubmitBtn">Envoyer au trésorier</button><button class="btn ghost" type="button" id="btnCancelDirect">Annuler</button></div>
       </form>
     </div>
     <div>
@@ -725,6 +735,15 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       </div>
       <p class="hint" style="margin-top:10px">Cliquez sur une ligne pour retrouver les demandes de la personne dans l'onglet « À traiter ».</p>
     </div>
+
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">Toutes les demandes et dépenses</div></div>
+      <div class="card" style="overflow:hidden">
+        <div class="head"><span>Date</span><span>Objet</span><span>Statut</span><span class="r">Montant</span><span></span></div>
+        <div id="o_all"></div>
+      </div>
+      <p class="hint" style="margin-top:8px">Remboursements, paiements directs et dépenses directes réunis. Cliquez une demande pour l'ouvrir (les dépenses ne sont pas cliquables).</p>
+    </div>
   </section>
 
   <!-- dépenses directes -->
@@ -772,7 +791,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         <div class="field"><label for="e_note">Commentaire (facultatif)</label>
           <textarea id="e_note" maxlength="400" placeholder="Référence de facture, échéance, contexte…"></textarea></div>
         <div class="err" id="expErr" hidden></div>
-        <div><button class="btn" type="submit" id="expBtn">Enregistrer la dépense</button></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" type="submit" id="expBtn">Enregistrer la dépense</button><button class="btn ghost" type="button" id="btnCancelExp">Annuler</button></div>
       </form>
     </div>
 
@@ -1638,7 +1657,7 @@ $("#d_body").addEventListener("click", async e => {
 });
 
 /* ---------- pièces jointes multiples ---------- */
-const staged = { exp:[], inc:[], req:[], fix:[] };
+const staged = { exp:[], inc:[], req:[], fix:[], dir:[] };
 const PREUVE_ACHAT   = ["Facture","Ticket de caisse","Bon de commande"];
 const PREUVE_PAIEMENT = ["Extrait de compte","Preuve de virement","Reçu de paiement par carte","Reçu signé du commerçant"];
 
@@ -1682,7 +1701,7 @@ function majControle(){
 }
 
 function renderStaged(cle){
-  const el = $({exp:"#e_staged", inc:"#i_staged", req:"#r_staged", fix:"#d_staged"}[cle]);
+  const el = $({exp:"#e_staged", inc:"#i_staged", req:"#r_staged", fix:"#d_staged", dir:"#fd_staged"}[cle]);
   el.innerHTML = staged[cle].map((p,n) => `<div class="stitem">
     <span class="k">${esc(p.kind)}</span>
     <span class="f">${esc(p.file.name)} · ${Math.round(p.file.size/1024)} Ko</span>
@@ -1697,12 +1716,13 @@ function brancherAttache(cle, selKind, selFile, selBtn){
     $(selFile).value = "";
     renderStaged(cle);
     majControle();
-    if(cle!=="fix") erreurForm({exp:"#expErr", inc:"#incErr", req:"#reqErr"}[cle], null);
+    if(cle!=="fix") erreurForm({exp:"#expErr", inc:"#incErr", req:"#reqErr", dir:"#directErr"}[cle], null);
   };
 }
 brancherAttache("exp", "#e_kind", "#e_proof", "#e_add");
 brancherAttache("inc", "#i_kind", "#i_proof", "#i_add");
 brancherAttache("req", "#r_kind", "#f_proof", "#r_add");
+brancherAttache("dir", "#fd_kind", "#fd_proof", "#fd_add");
 
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-drop]"); if(!b) return;
@@ -2103,9 +2123,40 @@ function renderOverview(){
 
   const du = som(list,"Validée") + som(list,"En attente");
   $("#o_info").textContent = du ? "Reste à verser : " + euro(du) : "Rien en attente de versement.";
+
+  const exp = (state.expenses||[]).filter(e => an==="all" || String(e.expense_date).startsWith(an));
+  const all = [
+    ...list.map(i => ({ t: i.kind==="direct"?"direct":"remb", date:i.expense_date, obj:i.object,
+      who:(i.kind==="direct"?(i.beneficiary||i.requester_name):i.requester_name), amount:Number(i.amount||0), status:i.status, id:i.id })),
+    ...exp.map(e => ({ t:"dep", date:e.expense_date, obj:e.object, who:(e.payee||e.author_name||""), amount:Number(e.amount||0), status:"Payée", id:null }))
+  ].sort((a,b)=> String(b.date).localeCompare(String(a.date)));
+  const badge = t => t==="direct" ? '<span class="tag" style="background:#3a2d6e;color:#cdbcff">DIRECT</span>'
+    : t==="dep" ? '<span class="tag" style="background:#274b34;color:#bfe6c9">DÉPENSE</span>'
+    : '<span class="tag" style="background:#39323f;color:#e0d6ec">REMBOURS.</span>';
+  const oal = $("#o_all");
+  if(oal) oal.innerHTML = all.length ? all.map(r => {
+    const stCls = r.t==="dep" ? "t-paye" : tagClass(r.status);
+    return `<div class="row"${r.id?` data-id="${r.id}"`:""} tabindex="0" role="button">
+      <div class="date mono" style="font-size:13px">${fdate(r.date)}</div>
+      <div><div class="obj">${badge(r.t)} ${esc(r.obj||"")}</div><div class="meta">${esc(r.who||"")}</div></div>
+      <div><span class="tag ${stCls}">${esc(r.status)}</span></div>
+      <div class="amt">${euro(r.amount)}</div><div class="chev">${r.id?"›":""}</div></div>`;
+  }).join("") : emptyHTML("Rien à afficher","Les demandes et dépenses apparaîtront ici.");
 }
 
 $("#o_annee").onchange = renderOverview;
+
+if($("#btnCancelReq")) $("#btnCancelReq").onclick = () => {
+  $("#reqForm").reset(); staged.req = []; renderStaged("req"); majControle(); erreurForm("#reqErr", null);
+  $("#f_date").value = new Date().toISOString().slice(0,10); majFormulaire(); toast("Formulaire réinitialisé.");
+};
+if($("#btnCancelDirect")) $("#btnCancelDirect").onclick = () => {
+  $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display="";
+  staged.dir = []; renderStaged("dir"); erreurForm("#directErr", null); toast("Formulaire réinitialisé.");
+};
+if($("#btnCancelExp")) $("#btnCancelExp").onclick = () => {
+  $("#expForm").reset(); staged.exp = []; renderStaged("exp"); erreurForm("#expErr", null); toast("Formulaire réinitialisé.");
+};
 
 $("#o_list").addEventListener("click", e => {
   const r = e.target.closest(".orow[data-nom]"); if(!r) return;
@@ -2512,6 +2563,8 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     if(!object) throw new Error("Indiquez l'objet de la dépense.");
     if(mode==="virement" && iban.replace(/\s+/g,"").length < 14)
       throw new Error("Pour un virement, indiquez un IBAN valide du bénéficiaire.");
+    rattraperFichier("dir", "#fd_kind", "#fd_proof");
+    const attachments = await envoyerPieces("dir", "dir");
     const { data, error } = await sb.from("requests").insert({
       user_id: state.profile.id, requester_name: state.profile.name || "",
       requester_position: state.profile.position || "",
@@ -2522,12 +2575,13 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       communication:    mode==="virement" ? comm : null,
       iban:             mode==="virement" ? iban : null,
       note: $("#fd_note").value.trim(),
+      attachments,
       status: "En attente"
     }).select().single();
     if(error) throw error;
     try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name, what:"Demande de paiement direct envoyée" }); }catch(_){}
     mailAccuse(data, true);
-    $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display="";
+    $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display=""; staged.dir = []; renderStaged("dir");
     await refresh(); toast("Demande de paiement direct envoyée au trésorier.");
   }catch(err){
     let m = err.message || String(err);
@@ -2763,7 +2817,7 @@ $("#filterStatus").onchange = render;
 $("#search").oninput = render;
 
 /* ---------- panneau ---------- */
-document.addEventListener("click", e => { const r = e.target.closest(".row"); if(r) openDrawer(r.dataset.id); });
+document.addEventListener("click", e => { const r = e.target.closest(".row"); if(r && r.dataset.id) openDrawer(r.dataset.id); });
 document.addEventListener("keydown", e => {
   if(e.key==="Escape") closeDrawer();
   if((e.key==="Enter"||e.key===" ") && e.target.classList?.contains("row")){ e.preventDefault(); openDrawer(e.target.dataset.id); }
@@ -2847,7 +2901,17 @@ function renderDrawer(it){
       actions += `<div class="callout" style="border-color:#c47f17"><b style="color:#c47f17">Demande incomplète</b><p>Il manque ${manque.join(" et ")}. Le remboursement ne pourra pas être fait tant que ce n'est pas complété.</p><div class="actions"><button class="btn" data-act="relanceMail">Envoyer la relance par mail</button><button class="btn ghost" data-act="relance">Copier le message</button></div></div>`;
     }
     if(it.status === "En attente"){
-      actions += champMotif(it) +
+      const attachVal = (it.kind==="direct") ? `<div class="fixbox">
+        <b>Justificatif du paiement (facultatif)</b>
+        <p>Tu peux joindre un document pour justifier ce paiement (extrait de compte, facture, preuve de virement…). Ce n'est pas obligatoire.</p>
+        <div class="attach">
+          <select id="d_kind"><option>Extrait de compte</option><option>Facture</option><option>Preuve de virement</option><option>Reçu de paiement par carte</option><option>Bon de commande</option><option>Devis</option><option>Autre pièce</option></select>
+          <input type="file" id="d_file" accept="image/*,application/pdf,.pdf">
+          <button type="button" class="btn ghost sm" id="d_add">Joindre</button>
+        </div>
+        <div id="d_staged" class="staged"></div>
+      </div>` : "";
+      actions += champMotif(it) + attachVal +
         `<div class="actions"><button class="btn ok" data-act="valider">Valider la demande</button>
         <button class="btn no" data-act="refuser">Refuser</button></div>`;
     }else if(it.status === "Validée"){
@@ -3003,6 +3067,13 @@ $("#d_body").addEventListener("click", async e => {
     patch = { decision_note: note }; label = "Message envoyé au demandeur";
   }
 
+  if(act==="valider" && staged.fix.length){
+    try{
+      const ajoutsV = await envoyerPieces("fix", "val");
+      patch.attachments = [...piecesDe(it), ...ajoutsV];
+      staged.fix = [];
+    }catch(eV){ toast("Pièce non envoyée : "+(eV.message||eV)); }
+  }
   b.disabled = true;
   const { error } = await sb.from("requests").update(patch).eq("id", it.id);
   b.disabled = false;
