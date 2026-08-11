@@ -382,6 +382,10 @@ function notifAnnonceCA(texte){
   const corps=`<h2 style="margin:0 0 10px">Nouvelle annonce</h2><p style="white-space:pre-wrap;background:#f7f7fb;border-radius:8px;padding:12px">${caMailEsc(texte)}</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
   return envoyerNotifCA("Nouvelle annonce du bureau étudiant", corps, false);
 }
+function notifCreationCA(type, titre, extra){
+  const corps=`<h2 style="margin:0 0 10px">${caMailEsc(type)}</h2><p>${caMailEsc(type)} : <b>${caMailEsc(titre)}</b>${extra?` — ${caMailEsc(extra)}`:""}</p><p>Connectez-vous à l'espace CA pour voir le détail.</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
+  return envoyerNotifCA(type+" — "+titre, corps, false);
+}
 function notifVoteCA(question){
   const corps=`<h2 style="margin:0 0 10px">Nouveau vote / projet</h2><p>Un vote vient d'être lancé :</p><p style="font-size:16px"><b>${caMailEsc(question)}</b></p><p>Connectez-vous à l'espace CA pour donner votre voix.</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Voter sur l'espace CA</a></p>`;
   return envoyerNotifCA("Nouveau vote — "+question, corps, false);
@@ -657,6 +661,7 @@ function tabTaches(){
     <div class="two"><select class="f" id="t_poste">${TOUS_POSTES.map(p=>`<option value="${p.id}">${esc(p.titre)} — ${esc(p.qui)}</option>`).join("")}</select>
       <input class="f" id="t_ech" type="date" title="Échéance"></div>
     <select class="f" id="t_prio"><option value="normale">Priorité normale</option><option value="haute">Priorité haute</option><option value="basse">Priorité basse</option></select>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="t_notify"> Prévenir les membres par e-mail</label>
     <div class="row-btn"><button class="btn" data-action="add-tache">Ajouter la tâche</button></div></div>`;
   if(S.taches.length===0) return compose+`<div class="empty">Aucune tâche pour l’instant.</div>`;
   const cols=STATUTS.map(s=>{
@@ -684,6 +689,7 @@ function tabPlanning(){
   const compose=`<div class="compose"><h3 class="serif">Nouveau créneau ou événement</h3>
     <input class="f" id="cr_titre" placeholder="Ex. Permanence salle · Conférence · AG">
     <div class="two"><input class="f" id="cr_date" type="date"><input class="f" id="cr_lieu" placeholder="Lieu (facultatif)"></div>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="cr_notify"> Prévenir les membres par e-mail</label>
     <div class="row-btn"><button class="btn" data-action="add-creneau">Ajouter le créneau</button></div></div>`;
   if(S.creneaux.length===0) return compose+`<div class="empty">Aucun créneau pour l’instant.</div>`;
   const list=S.creneaux.map(c=>{
@@ -715,6 +721,7 @@ function tabBudgets(){
     <div class="two"><select class="f" id="b_type">${B_TYPES.map(t=>`<option>${t}</option>`).join("")}</select>
       <input class="f" id="b_cout" inputmode="decimal" placeholder="Coût estimé (€)"></div>
     <textarea id="b_desc" placeholder="Description : à quoi sert ce budget, ce que ça finance…"></textarea>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="b_notify"> Prévenir les membres par e-mail</label>
     <div class="row-btn"><button class="btn" data-action="add-budget">Soumettre au vote</button></div></div>`;
   const badge={vote:["open","En vote"],approuve:["ok","Approuvé"],refuse:["no","Refusé"]};
   if(S.budgets.length===0) return stats+compose+`<div class="empty">Aucune demande. Soumettez un budget ou un projet au vote.</div>`;
@@ -910,6 +917,7 @@ function tabReunions(){
     return `<div class="compose"><h3 class="serif">Nouvelle réunion</h3>
       <input class="f" id="reu_titre" placeholder="Ex. Réunion du bureau">
       <input class="f" id="reu_date" type="date">
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="reu_notify"> Prévenir les membres par e-mail</label>
       <div class="row-btn"><button class="btn" data-action="reu-create">Créer la réunion</button></div></div>
       ${R.length?`<div class="msg-list">${list}</div>`:`<div class="empty">Aucune réunion. Créez-en une ci-dessus.</div>`}`;
   }
@@ -949,6 +957,7 @@ function tabEvenements(){
     return `<div class="compose"><h3 class="serif">Nouvel événement</h3>
       <input class="f" id="ev_titre" placeholder="Ex. Events Week BE">
       <input class="f" id="ev_date" type="date">
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="ev_notify"> Prévenir les membres par e-mail</label>
       <div class="row-btn"><button class="btn" data-action="ev-create">Créer l'événement</button></div></div>
       ${E.length?`<div class="msg-list">${list}</div>`:`<div class="empty">Aucun événement. Créez-en un ci-dessus.</div>`}`;
   }
@@ -1092,7 +1101,7 @@ document.addEventListener("click", async e=>{
       try{ const blob=new Blob([JSON.stringify(dump,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="bureau-etudiant-sauvegarde-"+todayISO()+".json"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); logAct("Sauvegarde exportée"); }catch(e){}
       break;
     }
-    case "ev-create": { const t=val("ev_titre").trim(), dt=val("ev_date"); if(!t||!sb) break; const {data,error}=await sb.from("ca_evenements").insert({titre:t,date:dt||null,lieu:"",responsable:"",budget_prevu:0,budget_reel:0,checklist:[],notes:""}).select().single(); if(error||!data) break; await loadEvenements(); S.evUI={sel:data.id}; render(); break; }
+    case "ev-create": { const t=val("ev_titre").trim(), dt=val("ev_date"); if(!t||!sb) break; const {data,error}=await sb.from("ca_evenements").insert({titre:t,date:dt||null,lieu:"",responsable:"",budget_prevu:0,budget_reel:0,checklist:[],notes:""}).select().single(); if(error||!data) break; await loadEvenements(); { const n=document.getElementById("ev_notify"); if(n&&n.checked) notifCreationCA("Nouvel événement", t, dt||""); } S.evUI={sel:data.id}; render(); break; }
     case "ev-open": S.evUI={sel:el.dataset.id}; render(); break;
     case "ev-back": S.evUI={sel:null}; render(); break;
     case "ev-del": { if(!sb) break; if(window.confirm && !window.confirm("Supprimer cet événement ?")) break; await sb.from("ca_evenements").delete().eq("id",el.dataset.id); await loadEvenements(); S.evUI={sel:null}; render(); break; }
@@ -1101,7 +1110,7 @@ document.addEventListener("click", async e=>{
     case "ev-delitem": { const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev||!sb) break; ev.checklist=(ev.checklist||[]).filter(c=>c.id!==el.dataset.it); await sb.from("ca_evenements").update({checklist:ev.checklist}).eq("id",ev.id); render(); break; }
     case "contact-add": { const n=val("c_nom").trim(); if(!n) break; if(!sb) break; await sb.from("ca_contacts").insert({nom:n,type:val("c_type"),email:val("c_email").trim(),tel:val("c_tel").trim(),notes:val("c_notes").trim()}); await loadContacts(); render(); break; }
     case "contact-del": if(!sb) break; await sb.from("ca_contacts").delete().eq("id",el.dataset.id); await loadContacts(); render(); break;
-    case "reu-create": { const t=val("reu_titre").trim(), dt=val("reu_date"); if(!t||!sb) break; const {data,error}=await sb.from("ca_reunions").insert({titre:t,date:dt||null,ordre:[],presences:{}}).select().single(); if(error||!data) break; await loadReunions(); S.reuUI={sel:data.id}; render(); break; }
+    case "reu-create": { const t=val("reu_titre").trim(), dt=val("reu_date"); if(!t||!sb) break; const {data,error}=await sb.from("ca_reunions").insert({titre:t,date:dt||null,ordre:[],presences:{}}).select().single(); if(error||!data) break; await loadReunions(); { const n=document.getElementById("reu_notify"); if(n&&n.checked) notifCreationCA("Nouvelle réunion", t, dt||""); } S.reuUI={sel:data.id}; render(); break; }
     case "reu-open": S.reuUI={sel:el.dataset.id}; render(); break;
     case "reu-back": S.reuUI={sel:null}; render(); break;
     case "reu-del": { if(!sb) break; if(window.confirm && !window.confirm("Supprimer cette réunion ?")) break; await sb.from("ca_reunions").delete().eq("id",el.dataset.id); await loadReunions(); S.reuUI={sel:null}; render(); break; }
@@ -1260,15 +1269,15 @@ ${sections||"<p>Aucun retour.</p>"}
     case "cancel-edit": S.editPoste=null; render(); break;
     case "save-org": { if(!sb) break; const missions=val("m_"+id).trim(), contact=val("c_"+id).trim(); await sb.from("ca_org").upsert({poste_id:id,missions:missions,contact:contact}); S.org[id]={missions:missions,contact:contact}; S.editPoste=null; render(); break; }
     /* tâches */
-    case "add-tache": { const t=val("t_titre").trim(); if(!t) return; if(!sb) break; await sb.from("ca_taches").insert({titre:t,poste_id:val("t_poste"),statut:"todo",echeance:val("t_ech")||null,priorite:val("t_prio"),cree_par:me.sig}); await loadTaches(); render(); break; }
+    case "add-tache": { const t=val("t_titre").trim(); if(!t) return; if(!sb) break; await sb.from("ca_taches").insert({titre:t,poste_id:val("t_poste"),statut:"todo",echeance:val("t_ech")||null,priorite:val("t_prio"),cree_par:me.sig}); { const n=document.getElementById("t_notify"); if(n&&n.checked) notifCreationCA("Nouvelle tâche", t, ""); } await loadTaches(); render(); break; }
     case "move-tache": if(!sb) break; await sb.from("ca_taches").update({statut:el.dataset.to}).eq("id",id); await loadTaches(); render(); break;
     case "del-tache": if(!sb) break; await sb.from("ca_taches").delete().eq("id",id); await loadTaches(); render(); break;
     /* planning */
-    case "add-creneau": { const t=val("cr_titre").trim(), d=val("cr_date"); if(!t||!d||!sb) return; await sb.from("ca_creneaux").insert({titre:t,date:d,lieu:val("cr_lieu").trim(),cree_par:me.sig}); await loadCreneaux(); render(); break; }
+    case "add-creneau": { const t=val("cr_titre").trim(), d=val("cr_date"); if(!t||!d||!sb) return; await sb.from("ca_creneaux").insert({titre:t,date:d,lieu:val("cr_lieu").trim(),cree_par:me.sig}); { const n=document.getElementById("cr_notify"); if(n&&n.checked) notifCreationCA("Nouveau créneau", t, d||""); } await loadCreneaux(); render(); break; }
     case "rsvp": if(!sb) break; await sb.from("ca_dispos").upsert({creneau_id:id,membre_id:S.session.id,nom:me.sig,statut:el.dataset.st}); await loadCreneaux(); render(); break;
     case "del-creneau": if(!sb) break; await sb.from("ca_creneaux").delete().eq("id",id); await loadCreneaux(); render(); break;
     /* budgets */
-    case "add-budget": { const t=val("b_titre").trim(); if(!t||!sb) return; const cout=parseFloat(String(val("b_cout")).replace(",","."))||0; await sb.from("ca_budgets").insert({titre:t,type:val("b_type"),cout:cout,description:val("b_desc").trim(),demandeur:me.sig,statut:"vote",cree_par:S.session.id}); await loadBudgets(); render(); break; }
+    case "add-budget": { const t=val("b_titre").trim(); if(!t||!sb) return; const cout=parseFloat(String(val("b_cout")).replace(",","."))||0; await sb.from("ca_budgets").insert({titre:t,type:val("b_type"),cout:cout,description:val("b_desc").trim(),demandeur:me.sig,statut:"vote",cree_par:S.session.id}); { const n=document.getElementById("b_notify"); if(n&&n.checked) notifCreationCA("Nouveau budget/projet soumis au vote", t, ""); } await loadBudgets(); render(); break; }
     case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix}); await loadBudgets(); render(); break; }
     case "bdecide": { if(S.session.fonction!=="Président"||!sb) break; const st=el.dataset.st; await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id); await loadBudgets(); render(); break; }
     case "del-budget": if(S.session.fonction!=="Président"||!sb) break; await sb.from("ca_budgets").delete().eq("id",id); await loadBudgets(); render(); break;
