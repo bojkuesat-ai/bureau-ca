@@ -350,6 +350,9 @@ async function loadMailing(){ try{ const {data}=await sb.from("ca_mailing").sele
 /* ===== Notifications par e-mail (Amazon SES via Edge Function) ===== */
 const CA_SEND_FN = SB_URL + "/functions/v1/send-email";
 function caAppUrl(){ return window.location.origin + window.location.pathname; }
+function seenTs(k){ try{ return parseInt(localStorage.getItem("ca:seen:"+k)||"0",10)||0; }catch(e){ return 0; } }
+function unreadMessagesCA(){ const me=S.session&&S.session.id; if(!me) return 0; const t=seenTs("messages"); return (S.messages||[]).filter(m=>m.to===me && new Date(m.ts).getTime()>t).length; }
+function unreadAnnoncesCA(){ const me=S.session&&S.session.id; const t=seenTs("annonces"); return (S.annonces||[]).filter(a=>new Date(a.ts).getTime()>t && a.cree_par!==me).length; }
 function caMailEsc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function destinatairesCA(){
   const set=new Set();
@@ -374,6 +377,10 @@ async function envoyerNotifCA(subject, corpsHtml, avecCaisse){
     await new Promise(r=>setTimeout(r,120));
   }
 }
+async function envoyerNotifCAListe(dest, subject, corpsHtml){
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corpsHtml}${blocInvitationCA()}${blocNoReplyCA()}</div>`;
+  for(const to of dest){ try{ await fetch(CA_SEND_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+SB_KEY,"apikey":SB_KEY},body:JSON.stringify({to,subject,html})}); }catch(e){} await new Promise(r=>setTimeout(r,120)); }
+}
 function notifDocCA(titre, cat, avecCaisse){
   const corps=`<h2 style="margin:0 0 10px">Nouveau document</h2><p>Un nouveau document vient d'être déposé sur l'espace CA :</p><p style="font-size:16px"><b>${caMailEsc(titre)}</b>${cat?` <span style="color:#888">(${caMailEsc(cat)})</span>`:""}</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
   return envoyerNotifCA("Nouveau document — "+titre, corps, avecCaisse);
@@ -391,18 +398,20 @@ function notifVoteCA(question){
   return envoyerNotifCA("Nouveau vote — "+question, corps, false);
 }
 
-async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; S.needProfile=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; } S.needProfile=null; S.session=sess2session(user,prof); await loadAccounts(); await loadDocs(); await loadMessages(); await loadTaches(); await loadContacts(); await loadAnnonces(); await loadEvenements(); await loadReunions(); await loadCreneaux(); await loadOrg(); await loadBudgets(); await loadVotes(); await loadMeta(); await loadBilans(); await loadJournal(); await loadMailing(); }catch(e){ S.session=null; } }
+async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; S.needProfile=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; } S.needProfile=null; S.session=sess2session(user,prof); await loadAccounts(); await loadDocs(); await loadMessages(); await loadTaches(); await loadContacts(); await loadAnnonces(); await loadReactions(); await loadPresence(); await loadEvenements(); await loadReunions(); await loadCreneaux(); await loadOrg(); await loadBudgets(); await loadVotes(); await loadMeta(); await loadBilans(); await loadJournal(); await loadMailing(); }catch(e){ S.session=null; } }
 async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; if(data.nom) S.meta.nom=data.nom; } }catch(e){} }
 async function loadBilans(){ try{ const {data}=await sb.from("ca_bilans").select("*").order("created_at",{ascending:true}); S.bilans=(data||[]).map(b=>({id:b.id,cible:b.cible,positifs:b.positifs,ameliorer:b.ameliorer,ts:b.created_at})); }catch(e){ S.bilans=[]; } try{ const f=await sb.from("ca_bilan_faits").select("*"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){} }
 async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").select("*").order("created_at",{ascending:false}); S.journal=(data||[]).map(j=>({ts:j.created_at,who:j.who,txt:j.txt})); }catch(e){} }
 async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,decidePar:b.decide_par,decideLe:b.decide_le,votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix}))})); }catch(e){ S.budgets=[]; } }
-async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id}))}; }); }catch(e){ S.votes=[]; } }
+async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,creeParId:v.cree_par,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id}))}; }); }catch(e){ S.votes=[]; } }
 async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
 async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,ordre:m.ordre||[],presences:m.presences||{}})); }catch(e){ S.reunions=[]; } }
 async function loadCreneaux(){ try{ const c=await sb.from("ca_creneaux").select("*").order("date",{ascending:true}); const d=await sb.from("ca_dispos").select("*"); const dl=(d&&d.data)||[]; S.creneaux=(((c&&c.data))||[]).map(x=>({id:x.id,titre:x.titre,date:x.date,lieu:x.lieu,creePar:x.cree_par,dispos:dl.filter(y=>y.creneau_id===x.id).map(y=>({nom:y.nom,statut:y.statut}))})); }catch(e){ S.creneaux=[]; } }
 async function loadOrg(){ try{ const {data}=await sb.from("ca_org").select("*"); const o={}; (data||[]).forEach(r=>{ o[r.poste_id]={missions:r.missions,contact:r.contact}; }); S.org=o; }catch(e){} }
 async function loadTaches(){ try{ const {data}=await sb.from("ca_taches").select("*").order("created_at",{ascending:false}); S.taches=(data||[]).map(t=>({id:t.id,titre:t.titre,posteId:t.poste_id,statut:t.statut,echeance:t.echeance,priorite:t.priorite,creePar:t.cree_par})); }catch(e){ S.taches=[]; } }
 async function loadContacts(){ try{ const {data}=await sb.from("ca_contacts").select("*").order("nom",{ascending:true}); S.contacts=(data||[]).map(c=>({id:c.id,nom:c.nom,type:c.type,email:c.email,tel:c.tel,notes:c.notes})); }catch(e){ S.contacts=[]; } }
+async function loadReactions(){ try{ const {data}=await sb.from("ca_annonce_reactions").select("*"); S.reactions=data||[]; }catch(e){ S.reactions=[]; } }
+async function loadPresence(){ try{ const {data}=await sb.from("ca_event_presence").select("*"); S.presence=data||[]; }catch(e){ S.presence=[]; } }
 async function loadAnnonces(){ try{ const {data}=await sb.from("ca_annonces").select("*").order("created_at",{ascending:false}); S.annonces=(data||[]).map(a=>({id:a.id,auteur:a.auteur,texte:a.texte,ts:a.created_at})); }catch(e){ S.annonces=[]; } }
 async function loadMessages(){ try{ const {data}=await sb.from("ca_messages").select("*").order("created_at",{ascending:true}); S.messages=(data||[]).map(m=>({id:m.id,fromId:m.from_id,to:m.to_id,texte:m.texte,fichier:m.fichier,ts:m.created_at})); }catch(e){ S.messages=[]; } }
 async function loadDocs(){ try{ const {data}=await sb.from("ca_docs").select("*").order("created_at",{ascending:false}); S.docs=(data||[]).map(d=>({id:d.id,titre:d.titre,cat:d.categorie,chemin:d.chemin,cree_par_id:d.cree_par})); }catch(e){ S.docs=[]; } }
@@ -627,7 +636,7 @@ function viewDash(){
       <button class="logout" data-action="set-tab" data-tab="search" title="Recherche">🔍</button>
       <button class="logout" data-action="set-tab" data-tab="notifs" title="À traiter">🔔${notifTot?" "+notifTot:""}</button>
       <button class="logout" data-action="logout">Se déconnecter</button></div>
-    <div class="tabs">${tabs.map(([id,n,l])=>`<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"><span class="n">${n}</span>${l}</button>`).join("")}</div>
+    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
   </div></header>
   <main class="body">${body}</main>`;
 }
@@ -760,6 +769,7 @@ function tabVotes(){
     return `<div class="vote"><div class="vote-h"><h4 class="serif">${esc(v.question)}</h4><span class="badge ${open?"open":"closed"}">${open?"Ouvert":"Clos"}</span></div>
       ${opts}${total?`<p class="voters">${total} votant${total>1?"s":""} : ${esc(v.voters.map(x=>x.nom).join(", "))}</p>`:""}
       <div class="foot-line"><button class="link" data-action="vtoggle" data-id="${v.id}">${open?"Clore le vote":"Rouvrir"}</button>
+        ${open && (S.session.role==="owner" || v.creeParId===S.session.id) ? `<button class="link" data-action="vote-relance" data-id="${v.id}">Relancer les non-votants</button>` : ""}
         <button class="link" data-action="del-vote" data-id="${v.id}" style="margin-left:auto">Supprimer</button></div>
       ${v.creePar?`<p class="by">créé par ${esc(v.creePar)}</p>`:""}</div>`;
   }).join("");
@@ -796,8 +806,20 @@ function tabAnnonces(){
     <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="an_notify"> Prévenir les membres par e-mail</label>
     <div class="row-btn"><button class="btn" data-action="add-annonce">Publier en tant que ${esc(S.session.sig||S.session.nom)}</button></div></div>`;
   if(S.annonces.length===0) return compose+`<div class="empty">Pas encore d’annonce.</div>`;
-  const list=S.annonces.map(a=>`<div class="note"><div class="note-h"><span class="who">${esc(a.auteur)}</span><span class="when">${dateFR(a.ts)}</span></div>
-    <p>${esc(a.texte)}</p><div style="margin-top:8px;text-align:right"><button class="link" data-action="del-annonce" data-id="${a.id}">Supprimer</button></div></div>`).join("");
+  const meId=S.session&&S.session.id;
+  const list=S.annonces.map(a=>{
+    const R=(S.reactions||[]).filter(r=>r.annonce_id===a.id);
+    const up=R.filter(r=>r.reaction==="up").length, down=R.filter(r=>r.reaction==="down").length;
+    const mine=R.find(r=>r.membre_id===meId); const mr=mine?mine.reaction:null;
+    return `<div class="note"><div class="note-h"><span class="who">${esc(a.auteur)}</span><span class="when">${dateFR(a.ts)}</span></div>
+    <p>${esc(a.texte)}</p>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+      <button class="btn ghost sm" data-action="react-annonce" data-id="${a.id}" data-r="up" style="${mr==="up"?"border-color:var(--green);color:var(--green)":""}">👍 ${up}</button>
+      <button class="btn ghost sm" data-action="react-annonce" data-id="${a.id}" data-r="down" style="${mr==="down"?"border-color:var(--red);color:var(--red)":""}">👎 ${down}</button>
+      <button class="link" data-action="del-annonce" data-id="${a.id}" style="margin-left:auto">Supprimer</button>
+    </div></div>`;
+  }).join("");
+  try{ localStorage.setItem("ca:seen:annonces", String(Date.now())); }catch(e){}
   return compose+`<div class="feed">${list}</div>`;
 }
 
@@ -984,10 +1006,24 @@ function tabEvenements(){
     <div class="grp-h"><h2 class="serif">Checklist</h2><span class="c">${chk.filter(c=>c.fait).length}/${chk.length}</span><span class="l"></span></div>
     <div class="compose"><input class="f" id="ev_item" placeholder="Ajouter une tâche à la checklist…"><div class="row-btn"><button class="btn sm" data-action="ev-additem">Ajouter</button></div></div>
     ${chkHtml}
+    <div class="grp-h" style="margin-top:22px"><h2 class="serif">Présence</h2><span class="l"></span></div>
+    ${blocPresence(ev.id)}
     <div class="grp-h" style="margin-top:22px"><h2 class="serif">Notes</h2><span class="l"></span></div>
     <textarea data-change="evfield" data-field="notes" placeholder="Notes sur l'événement…">${esc(ev.notes||"")}</textarea>`;
 }
 
+function blocPresence(evId){
+  const P=(S.presence||[]).filter(x=>x.evenement_id===evId);
+  const meId=S.session&&S.session.id;
+  const mine=P.find(x=>x.membre_id===meId); const mr=mine?mine.reponse:null;
+  const c=r=>P.filter(x=>x.reponse===r).length;
+  const noms=r=>P.filter(x=>x.reponse===r).map(x=>esc(x.nom||"?")).join(", ")||"—";
+  const b=(r,lbl,col)=>`<button class="btn ghost sm" data-action="ev-presence" data-id="${evId}" data-r="${r}" style="${mr===r?("border-color:"+col+";color:"+col):""}">${lbl}</button>`;
+  return `<div class="compose" style="padding:12px 14px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${b("oui","✅ Je viens ("+c("oui")+")","var(--green)")}${b("non","❌ Je ne viens pas ("+c("non")+")","var(--red)")}${b("peut","🤔 Peut-être ("+c("peut")+")","var(--amber)")}</div>
+    <p class="by" style="margin-top:10px">Présents : ${noms("oui")}<br>Absents : ${noms("non")}<br>Peut-être : ${noms("peut")}</p>
+  </div>`;
+}
 /* ---- onglet CONTACTS (annuaire) ---- */
 function tabContacts(){
   const C=S.contacts||[];
@@ -1263,7 +1299,7 @@ ${sections||"<p>Aucun retour.</p>"}
       if(window.confirm && !window.confirm("Révoquer le compte de "+label+" ?")) break;
       try{ await sb.from("ca_membres").delete().eq("id",id); }catch(e){} await loadAccounts(); render(); break;
     }
-    case "set-tab": S.tab=el.dataset.tab; render(); break;
+    case "set-tab": S.tab=el.dataset.tab; if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
     /* organigramme */
     case "edit-poste": S.editPoste=id; render(); break;
     case "cancel-edit": S.editPoste=null; render(); break;
@@ -1324,6 +1360,25 @@ ${sections||"<p>Aucun retour.</p>"}
     }
     /* annonces */
     case "add-annonce": { const tx=val("a_txt").trim(); if(!tx) return; if(!sb) break; await sb.from("ca_annonces").insert({auteur:me.sig,texte:tx,cree_par:S.session.id}); await loadAnnonces(); { const an=document.getElementById("an_notify"); if(an&&an.checked){ notifAnnonceCA(tx); } } render(); break; }
+    case "react-annonce": { if(!sb||!me) break; const r=el.dataset.r; const mine=(S.reactions||[]).find(x=>x.annonce_id===id&&x.membre_id===me.id);
+      if(mine&&mine.reaction===r){ await sb.from("ca_annonce_reactions").delete().eq("annonce_id",id).eq("membre_id",me.id); }
+      else if(mine){ await sb.from("ca_annonce_reactions").update({reaction:r}).eq("annonce_id",id).eq("membre_id",me.id); }
+      else { await sb.from("ca_annonce_reactions").insert({annonce_id:id,membre_id:me.id,reaction:r}); }
+      await loadReactions(); render(); break; }
+    case "ev-presence": { if(!sb||!me) break; const r=el.dataset.r; const nom=(me.nom||me.sig||"").trim();
+      const mine=(S.presence||[]).find(x=>x.evenement_id===id&&x.membre_id===me.id);
+      if(mine&&mine.reponse===r){ await sb.from("ca_event_presence").delete().eq("evenement_id",id).eq("membre_id",me.id); }
+      else if(mine){ await sb.from("ca_event_presence").update({reponse:r,nom:nom}).eq("evenement_id",id).eq("membre_id",me.id); }
+      else { await sb.from("ca_event_presence").insert({evenement_id:id,membre_id:me.id,nom:nom,reponse:r}); }
+      await loadPresence(); render(); break; }
+    case "vote-relance": { if(!sb||!me) break; const v=(S.votes||[]).find(x=>x.id===id); if(!v) break;
+      const votants=new Set(v.voters.map(x=>String(x.nom||"").toLowerCase().trim()));
+      const dest=(S.admins||[]).filter(a=>a.statut==="actif"&&a.email).filter(a=>{ const sig=((a.prenom||a.nom||"")+(a.fonction?" \u00b7 "+a.fonction:"")).toLowerCase().trim(); return !votants.has(sig); }).map(a=>a.email);
+      if(!dest.length){ if(window.alert) window.alert("Tout le monde a déjà voté 🎉"); break; }
+      const corps=`<h2 style="margin:0 0 10px">Rappel : un vote attend votre voix</h2><p style="font-size:16px"><b>${caMailEsc(v.question)}</b></p><p>Vous n'avez pas encore voté. Merci de vous connecter à l'espace CA.</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Voter maintenant</a></p>`;
+      envoyerNotifCAListe(dest, "Rappel de vote — "+v.question, corps);
+      if(window.alert) window.alert("Relance envoyée à "+dest.length+" personne(s).");
+      break; }
     case "del-annonce": if(!sb) break; await sb.from("ca_annonces").delete().eq("id",id); await loadAnnonces(); render(); break;
   }
 });
