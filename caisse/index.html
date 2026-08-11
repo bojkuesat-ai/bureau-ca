@@ -696,6 +696,13 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         <button class="btn ghost sm" id="exportBtn">Exporter en CSV</button>
         <button class="btn ghost sm" id="exportXlsx">Exporter en Excel</button>
       </div>
+      <div id="bulkBar" style="display:none;align-items:center;gap:10px;margin:0 0 10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--line);border-radius:12px">
+        <b id="bulkCount">0 sélectionnée(s)</b>
+        <div class="spacer"></div>
+        <button class="btn ok sm" id="bulkValider">Valider la sélection</button>
+        <button class="btn ok sm" id="bulkPayer">Marquer payé</button>
+        <button class="btn ghost sm" id="bulkClear">Désélectionner</button>
+      </div>
       <div class="card" style="overflow:hidden">
         <div class="head"><span>Date</span><span>Objet / demandeur</span><span>Statut</span><span class="r">Montant</span><span></span></div>
         <div id="tresoList"></div>
@@ -722,6 +729,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       <div class="kpi wait"><div class="eyebrow">Validé, à virer</div><div class="n" id="o_valide">0 €</div></div>
       <div class="kpi wait"><div class="eyebrow">En attente de décision</div><div class="n" id="o_attente">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Refusé</div><div class="n" id="o_refuse">0 €</div></div>
+      <div class="kpi" id="o_soldeCard"><div class="eyebrow">Solde de la caisse</div><div class="n" id="o_solde">0 €</div></div>
     </div>
 
     <div>
@@ -1028,7 +1036,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = s => document.querySelector(s);
 const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], selected:null, view:"mine", proofUrls:{},
-                channel:null, lastStatus:{}, primed:false, lastSync:null };
+                channel:null, lastStatus:{}, primed:false, lastSync:null, sel:new Set() };
 
 const euro = n => (Number(n)||0).toLocaleString("fr-BE",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const fdate = iso => iso ? iso.split("-").reverse().join("/") : "—";
@@ -2172,6 +2180,9 @@ function renderOverview(){
 
   const du = som(list,"Validée") + som(list,"En attente");
   $("#o_info").textContent = du ? "Reste à verser : " + euro(du) : "Rien en attente de versement.";
+  const _solde = totalRecettes() - totalSorties();
+  if($("#o_solde")){ $("#o_solde").textContent = euro(_solde);
+    const cd=$("#o_soldeCard"); if(cd){ cd.className = "kpi " + (_solde<0?"wait":"done"); cd.style.borderTopColor = _solde<0?"var(--red)":"var(--green)"; } }
 
   const exp = (state.expenses||[]).filter(e => an==="all" || String(e.expense_date).startsWith(an));
   const all = [
@@ -2662,9 +2673,17 @@ function estIncomplet(it){
   const sansIban = String(it.iban||"").replace(/\s+/g,"").length < 14;
   return (it.status==="En attente" || it.status==="Validée") && (sansPiece || sansIban);
 }
+const barreAvancement = it => {
+  if(it.status==="Refusée")   return `<span style="color:var(--red);font-weight:700;font-size:11px">● Refusée</span>`;
+  if(it.status==="À corriger") return `<span style="color:#c47f17;font-weight:700;font-size:11px">● À corriger</span>`;
+  const step = it.status==="Remboursée" ? 3 : it.status==="Validée" ? 2 : 1;
+  const dot = (n,lbl) => `<span style="font-size:11px;color:${n<=step?"var(--green)":"var(--muted2)"};font-weight:${n<=step?700:400}">${n<=step?"●":"○"} ${lbl}</span>`;
+  const sep = `<span style="color:var(--line)">──</span>`;
+  return `<span style="display:inline-flex;gap:6px;align-items:center">${dot(1,"Envoyée")}${sep}${dot(2,"Validée")}${sep}${dot(3,"Payée")}</span>`;
+};
 const rowHTML = (it, showWho) => `<div class="row" data-id="${it.id}" tabindex="0" role="button">
-  <div class="date mono" style="font-size:13px">${fdate(it.expense_date)}</div>
-  <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div></div>
+  <div class="date mono" style="font-size:13px">${showWho?`<input type="checkbox" data-selchk data-id="${it.id}" ${state.sel&&state.sel.has(it.id)?"checked":""} style="margin-right:7px;vertical-align:middle;cursor:pointer">`:""}${fdate(it.expense_date)}</div>
+  <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div><div style="margin-top:4px">${barreAvancement(it)}</div></div>
   <div><span class="tag ${tagClass(it.status)}">${it.status}</span></div>
   <div class="amt">${euro(it.amount)}</div><div class="chev">›</div></div>`;
 const emptyHTML = (t,m) => `<div class="empty"><strong>${t}</strong>${m}</div>`;
@@ -2916,6 +2935,7 @@ function render(){
       const okQ = !q || slug(i.object).includes(q) || slug(i.requester_name).includes(q);
       return okS && okQ;
     });
+    renderBulk();
     $("#tresoList").innerHTML = list.length ? list.map(i=>rowHTML(i,true)).join("")
       : emptyHTML("Rien à afficher","Changez le filtre ou attendez de nouvelles demandes.");
 
@@ -3026,7 +3046,40 @@ $("#filterStatus").onchange = render;
 $("#search").oninput = render;
 
 /* ---------- panneau ---------- */
-document.addEventListener("click", e => { const r = e.target.closest(".row"); if(r && r.dataset.id) openDrawer(r.dataset.id); });
+document.addEventListener("click", e => { if(e.target.closest("[data-selchk]")) return; const r = e.target.closest(".row"); if(r && r.dataset.id) openDrawer(r.dataset.id); });
+document.addEventListener("change", e => { const c = e.target.closest("[data-selchk]"); if(!c) return; const id=c.dataset.id; if(c.checked) state.sel.add(id); else state.sel.delete(id); renderBulk(); });
+function selItems(){ return state.items.filter(i => state.sel.has(i.id)); }
+function renderBulk(){
+  const bar=$("#bulkBar"); if(!bar) return;
+  const n=state.sel.size;
+  bar.style.display = n ? "flex" : "none";
+  const cnt=$("#bulkCount"); if(cnt) cnt.textContent = n+" sélectionnée(s)";
+}
+async function bulkValider(){
+  const cibles=selItems().filter(i=>i.status==="En attente");
+  if(!cibles.length) return toast("Aucune demande « En attente » sélectionnée.");
+  if(window.confirm && !window.confirm("Valider "+cibles.length+" demande(s) ?")) return;
+  for(const it of cibles){
+    const { error } = await sb.from("requests").update({status:"Validée", decided_at:new Date().toISOString()}).eq("id", it.id);
+    if(!error){ try{ await sb.from("events").insert({request_id:it.id, who:"Trésorier", what:"Validée (lot)"}); }catch(_){}
+      try{ mailValide({...it, status:"Validée"}); }catch(_){} }
+  }
+  state.sel.clear(); await refresh(); renderBulk(); toast(cibles.length+" demande(s) validée(s).");
+}
+async function bulkPayer(){
+  const cibles=selItems().filter(i=>i.status==="Validée");
+  if(!cibles.length) return toast("Aucune demande « Validée » sélectionnée.");
+  if(window.confirm && !window.confirm("Marquer "+cibles.length+" demande(s) comme remboursée(s) ?")) return;
+  for(const it of cibles){
+    const { error } = await sb.from("requests").update({status:"Remboursée", paid_at:new Date().toISOString()}).eq("id", it.id);
+    if(!error){ try{ await sb.from("events").insert({request_id:it.id, who:"Trésorier", what:"Remboursée (lot)"}); }catch(_){}
+      try{ mailRembourse({...it, status:"Remboursée"}); }catch(_){} }
+  }
+  state.sel.clear(); await refresh(); renderBulk(); toast(cibles.length+" demande(s) remboursée(s).");
+}
+if($("#bulkValider")) $("#bulkValider").onclick = bulkValider;
+if($("#bulkPayer"))   $("#bulkPayer").onclick   = bulkPayer;
+if($("#bulkClear"))   $("#bulkClear").onclick   = () => { state.sel.clear(); renderBulk(); render(); };
 document.addEventListener("keydown", e => {
   if(e.key==="Escape") closeDrawer();
   if((e.key==="Enter"||e.key===" ") && e.target.classList?.contains("row")){ e.preventDefault(); openDrawer(e.target.dataset.id); }
