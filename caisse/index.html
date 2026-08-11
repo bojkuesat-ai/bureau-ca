@@ -1044,7 +1044,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = s => document.querySelector(s);
-const HORAIRES_DEFAUT = {1:{ouvert:true,limite:null},2:{ouvert:true,limite:null},3:{ouvert:true,limite:null},4:{ouvert:true,limite:null},5:{ouvert:true,limite:18},6:{ouvert:false,limite:null},7:{ouvert:false,limite:null}};
+const HORAIRES_DEFAUT = {1:{ouvert:true,limite:null},2:{ouvert:true,limite:null},3:{ouvert:true,limite:null},4:{ouvert:true,limite:null},5:{ouvert:true,limite:null},6:{ouvert:true,limite:null},7:{ouvert:true,limite:null}};
 const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], horaires:HORAIRES_DEFAUT, selected:null, view:"mine", proofUrls:{},
                 channel:null, lastStatus:{}, primed:false, lastSync:null, sel:new Set() };
 
