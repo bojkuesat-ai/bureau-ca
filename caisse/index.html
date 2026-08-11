@@ -754,6 +754,15 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       </div>
       <p class="hint" style="margin-top:8px">Remboursements, paiements directs et dépenses directes réunis. Cliquez une demande pour l'ouvrir (les dépenses ne sont pas cliquables).</p>
     </div>
+
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">Horaires de dépôt des demandes</div></div>
+      <div class="card" style="padding:14px 16px">
+        <p class="hint" style="margin:0 0 10px">Pour chaque jour : ouvert ou non, et l'heure limite (heure belge). « Sans limite » = ouvert toute la journée.</p>
+        <div id="horBox"></div>
+        <div style="display:flex;gap:10px;margin-top:12px"><button class="btn ok" id="horSave">Enregistrer les horaires</button><button class="btn ghost" id="horReset">Réglages par défaut</button></div>
+      </div>
+    </div>
   </section>
 
   <!-- messagerie -->
@@ -1035,7 +1044,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = s => document.querySelector(s);
-const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], selected:null, view:"mine", proofUrls:{},
+const HORAIRES_DEFAUT = {1:{ouvert:true,limite:null},2:{ouvert:true,limite:null},3:{ouvert:true,limite:null},4:{ouvert:true,limite:null},5:{ouvert:true,limite:18},6:{ouvert:false,limite:null},7:{ouvert:false,limite:null}};
+const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], horaires:HORAIRES_DEFAUT, selected:null, view:"mine", proofUrls:{},
                 channel:null, lastStatus:{}, primed:false, lastSync:null, sel:new Set() };
 
 const euro = n => (Number(n)||0).toLocaleString("fr-BE",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
@@ -1594,6 +1604,7 @@ async function refresh(){
   const r = await sb.from("requests").select("*").order("created_at",{ascending:false});
   if(r.error) return toast("Chargement impossible : "+r.error.message);
   state.items = r.data || [];
+  try{ const _hc = await sb.from("caisse_config").select("horaires").eq("id",1).maybeSingle(); if(_hc.data && _hc.data.horaires) state.horaires = _hc.data.horaires; }catch(_){}
   state.lastSync = new Date();
   detecterChangements();
   try{ const _m = await sb.from("messages").select("*").order("created_at",{ascending:true}); if(!_m.error) state.messages = _m.data || []; }catch(_){}
@@ -2131,6 +2142,38 @@ $("#payDone").onclick = async () => {
 };
 
 /* ---------- aperçu par membre ---------- */
+const JOURS_H = [[1,"Lundi"],[2,"Mardi"],[3,"Mercredi"],[4,"Jeudi"],[5,"Vendredi"],[6,"Samedi"],[7,"Dimanche"]];
+function renderHoraires(){
+  const box = $("#horBox"); if(!box) return;
+  const H = state.horaires || HORAIRES_DEFAUT;
+  const heures = ["","12","13","14","15","16","17","18","19","20","21","22","23"];
+  box.innerHTML = JOURS_H.map(([j,nom])=>{
+    const c = H[j] || H[String(j)] || {ouvert:false,limite:null};
+    const opts = heures.map(x=>`<option value="${x}" ${String(c.limite==null?"":c.limite)===x?"selected":""}>${x===""?"Sans limite":x+"h"}</option>`).join("");
+    return `<div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <label style="display:flex;align-items:center;gap:8px;min-width:150px;cursor:pointer"><input type="checkbox" data-hj="${j}" data-hf="ouvert" ${c.ouvert?"checked":""}> <b>${nom}</b></label>
+      <span style="color:var(--muted2)">Heure limite :</span>
+      <select data-hj="${j}" data-hf="limite" ${c.ouvert?"":"disabled"}>${opts}</select>
+    </div>`;
+  }).join("");
+}
+function lireHorairesUI(){
+  const H = {};
+  JOURS_H.forEach(([j])=>{
+    const chk = document.querySelector(`[data-hj="${j}"][data-hf="ouvert"]`);
+    const sel = document.querySelector(`[data-hj="${j}"][data-hf="limite"]`);
+    const ouvert = !!(chk && chk.checked);
+    const v = sel ? sel.value : "";
+    H[j] = { ouvert, limite: v==="" ? null : Number(v) };
+  });
+  return H;
+}
+async function saveHoraires(){
+  const H = lireHorairesUI();
+  const { error } = await sb.from("caisse_config").upsert({ id:1, horaires:H, updated_at:new Date().toISOString() });
+  if(error){ toast("Échec : "+error.message); return; }
+  state.horaires = H; renderHoraires(); majHoraire && majHoraire(); toast("Horaires enregistrés.");
+}
 function renderOverview(){
   const sel = $("#o_annee");
   const annees = [...new Set(state.items.map(i => String(i.expense_date).slice(0,4)))].sort().reverse();
@@ -2180,6 +2223,7 @@ function renderOverview(){
 
   const du = som(list,"Validée") + som(list,"En attente");
   $("#o_info").textContent = du ? "Reste à verser : " + euro(du) : "Rien en attente de versement.";
+  renderHoraires();
   const _solde = totalRecettes() - totalSorties();
   if($("#o_solde")){ $("#o_solde").textContent = euro(_solde);
     const cd=$("#o_soldeCard"); if(cd){ cd.className = "kpi " + (_solde<0?"wait":"done"); cd.style.borderTopColor = _solde<0?"var(--red)":"var(--green)"; } }
@@ -2205,6 +2249,9 @@ function renderOverview(){
 }
 
 $("#o_annee").onchange = renderOverview;
+if($("#horSave")) $("#horSave").onclick = saveHoraires;
+if($("#horReset")) $("#horReset").onclick = () => { state.horaires = JSON.parse(JSON.stringify(HORAIRES_DEFAUT)); renderHoraires(); toast("Réglages par défaut restaurés (pense à Enregistrer)."); };
+document.addEventListener("change", e => { const c = e.target.closest('[data-hf="ouvert"]'); if(!c) return; const j=c.dataset.hj; const sel=document.querySelector(`[data-hj="${j}"][data-hf="limite"]`); if(sel) sel.disabled = !c.checked; });
 
 if($("#btnCancelReq")) $("#btnCancelReq").onclick = () => {
   $("#reqForm").reset(); staged.req = []; renderStaged("req"); majControle(); erreurForm("#reqErr", null);
@@ -2474,9 +2521,11 @@ function heureBruxelles(){
 
 function fenetreOuverte(){
   const { j, h } = heureBruxelles();
-  if(j >= 1 && j <= 4) return true;   // lundi à jeudi : sans limite d'heure
-  if(j === 5) return h < 18;          // vendredi : jusqu'à 18h (heure belge)
-  return false;                       // samedi & dimanche : fermé
+  const H = state.horaires || HORAIRES_DEFAUT;
+  const c = H[j] || H[String(j)];
+  if(!c || !c.ouvert) return false;
+  if(c.limite===null || c.limite===undefined || c.limite==="") return true;
+  return h < Number(c.limite);
 }
 
 function periodeFermeture(){
