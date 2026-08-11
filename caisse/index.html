@@ -1409,6 +1409,7 @@ const slug = s => String(s??"").toLowerCase().normalize("NFD").replace(/[\u0300-
 const tagClass = s => ({"En attente":"t-attente","Validée":"t-valide","Remboursée":"t-paye","Refusée":"t-refuse"}[s]||"t-attente");
 const refOf = it => "DEM-" + String(it.expense_date || "").slice(0,4) + "-" +
   (it.seq ? String(it.seq).padStart(3,"0") : String(it.id).slice(0,4).toUpperCase());
+const bandeauRef = it => [refOf(it), (it.requester_name||"").trim(), (it.requester_position||"").trim()].filter(Boolean).join(" · ");
 let tt; function toast(m){ const t=$("#toast"); t.textContent=m; t.classList.add("show"); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),3600); }
 const isTreso = () => state.profile?.role === "tresorier";
 
@@ -1780,10 +1781,26 @@ function erreurForm(sel, msg){
   el.scrollIntoView({ block:"center", behavior:"smooth" });
 }
 
-async function envoyerPieces(cle, prefixe){
+async function tamponnerPdf(file, refLabel){
+  const { PDFDocument, rgb, StandardFonts } = await import("https://esm.sh/pdf-lib@1.17.1");
+  const buf = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(buf);
+  const font = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const txt = "Ref. " + refLabel;
+  const size = 11;
+  for(const page of pdf.getPages()){
+    const w = page.getWidth();
+    const tw = font.widthOfTextAtSize(txt, size);
+    page.drawRectangle({ x:0, y:0, width:w, height:20, color:rgb(0.07,0.07,0.07), opacity:0.88 });
+    page.drawText(txt, { x:8, y:6, size, font, color:rgb(1,1,1) });
+  }
+  const out = await pdf.save();
+  return new Blob([out], { type:"application/pdf" });
+}
+async function envoyerPieces(cle, prefixe, refLabel){
   const out = [];
   for(const p of staged[cle]){
-    const prep = await prepareProof(p.file);
+    const prep = await prepareProof(p.file, refLabel);
     const path = `${state.profile.id}/${prefixe}-${Date.now()}-${out.length}.${prep.ext}`;
     const up = await sb.storage.from("justificatifs").upload(path, prep.blob, { contentType:prep.type });
     if(up.error) throw up.error;
@@ -2496,13 +2513,15 @@ function majHoraire(){
 }
 
 /* ---------- justificatif ---------- */
-function prepareProof(file){
+function prepareProof(file, refLabel){
   return new Promise((resolve,reject)=>{
     if(!file) return reject(new Error("Joignez un justificatif."));
     if(!file.type.startsWith("image/")){
       if(file.type !== "application/pdf" && !/\.pdf$/i.test(file.name))
         return reject(new Error("Seules les photos et les PDF sont acceptés."));
       if(file.size > 5*1024*1024) return reject(new Error("Le fichier dépasse 5 Mo."));
+      if(refLabel){ return tamponnerPdf(file, refLabel).then(b => resolve({ blob:b, ext:"pdf", type:"application/pdf" }))
+        .catch(()=> resolve({ blob:file, ext:(file.name.split(".").pop()||"pdf").toLowerCase(), type:file.type })); }
       return resolve({ blob:file, ext:(file.name.split(".").pop()||"pdf").toLowerCase(), type:file.type });
     }
     const fr = new FileReader();
@@ -2511,9 +2530,18 @@ function prepareProof(file){
       img.onload = () => {
         const max=1600; let w=img.width, h=img.height;
         if(w>max||h>max){ const r=Math.min(max/w,max/h); w=Math.round(w*r); h=Math.round(h*r); }
-        const c=document.createElement("canvas"); c.width=w; c.height=h;
-        c.getContext("2d").drawImage(img,0,0,w,h);
-        c.toBlob(b => b ? resolve({blob:b, ext:"jpg", type:"image/jpeg"}) : reject(new Error("Compression impossible.")), "image/jpeg", 0.75);
+        const bh = refLabel ? Math.max(26, Math.round(w*0.045)) : 0;
+        const c=document.createElement("canvas"); c.width=w; c.height=h+bh;
+        const ctx=c.getContext("2d");
+        ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,w,h+bh);
+        ctx.drawImage(img,0,0,w,h);
+        if(refLabel){
+          ctx.fillStyle="rgba(17,17,17,.88)"; ctx.fillRect(0,h,w,bh);
+          ctx.fillStyle="#ffffff"; ctx.textBaseline="middle";
+          ctx.font="bold "+Math.round(bh*0.6)+"px Arial, sans-serif";
+          ctx.fillText("Réf. "+refLabel, 10, h+bh/2);
+        }
+        c.toBlob(b => b ? resolve({blob:b, ext:"jpg", type:"image/jpeg"}) : reject(new Error("Compression impossible.")), "image/jpeg", 0.78);
       };
       img.onerror = () => reject(new Error("Image illisible."));
       img.src = fr.result;
@@ -2545,9 +2573,8 @@ $("#reqForm").addEventListener("submit", async e => {
       throw new Error("Cochez la case confirmant que la pièce jointe fait apparaître le paiement en espèces.");
     if(!state.profile.iban)
       throw new Error("Renseignez d'abord votre IBAN avec le bouton Modifier.");
-    const attachments = await envoyerPieces("req", "dem");
     const { data, error } = await sb.from("requests").insert({
-      attachments,
+      attachments: [],
       user_id: state.profile.id, requester_name: state.profile.name || "",
       requester_position: state.profile.position || "",
       expense_date: $("#f_date").value, amount: parseFloat($("#f_amount").value),
@@ -2558,6 +2585,8 @@ $("#reqForm").addEventListener("submit", async e => {
       status: "En attente"
     }).select().single();
     if(error) throw error;
+    try{ const _att = await envoyerPieces("req", "dem", bandeauRef(data));
+         if(_att.length){ await sb.from("requests").update({ attachments:_att }).eq("id", data.id); data.attachments=_att; } }catch(_){}
     await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
       what: especes() ? "Demande envoyée · paiement en espèces confirmé sur la pièce jointe" : "Demande envoyée" });
     mailAccuse(data, false);
@@ -2596,7 +2625,6 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     if(mode==="virement" && iban.replace(/\s+/g,"").length < 14)
       throw new Error("Pour un virement, indiquez un IBAN valide du bénéficiaire.");
     rattraperFichier("dir", "#fd_kind", "#fd_proof");
-    const attachments = await envoyerPieces("dir", "dir");
     const { data, error } = await sb.from("requests").insert({
       user_id: state.profile.id, requester_name: state.profile.name || "",
       requester_position: state.profile.position || "",
@@ -2607,10 +2635,12 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       communication:    mode==="virement" ? comm : null,
       iban:             mode==="virement" ? iban : null,
       note: $("#fd_note").value.trim(),
-      attachments,
+      attachments: [],
       status: "En attente"
     }).select().single();
     if(error) throw error;
+    try{ const _att = await envoyerPieces("dir", "dir", bandeauRef(data));
+         if(_att.length){ await sb.from("requests").update({ attachments:_att }).eq("id", data.id); data.attachments=_att; } }catch(_){}
     try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name, what:"Demande de paiement direct envoyée" }); }catch(_){}
     mailAccuse(data, true);
     $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display=""; staged.dir = []; renderStaged("dir");
@@ -3173,7 +3203,7 @@ $("#d_body").addEventListener("click", async e => {
     if(!staged.fix.length && !mot) return toast("Joignez une pièce ou écrivez un message.");
     b.disabled = true; b.textContent = "Envoi…";
     try{
-      const ajouts = await envoyerPieces("fix", "dem");
+      const ajouts = await envoyerPieces("fix", "dem", bandeauRef(it));
       const maj = { attachments: [...piecesDe(it), ...ajouts] };
       if(it.status === "Refusée") maj.status = "En attente";
       const { error } = await sb.from("requests").update(maj).eq("id", it.id);
@@ -3254,7 +3284,7 @@ $("#d_body").addEventListener("click", async e => {
 
   if(act==="valider" && staged.fix.length){
     try{
-      const ajoutsV = await envoyerPieces("fix", "val");
+      const ajoutsV = await envoyerPieces("fix", "val", bandeauRef(it));
       patch.attachments = [...piecesDe(it), ...ajoutsV];
       staged.fix = [];
     }catch(eV){ toast("Pièce non envoyée : "+(eV.message||eV)); }
