@@ -949,8 +949,8 @@ function tabReunions(){
   const points=ordre.length?ordre.map(pt=>`<div class="vote">
       <div class="vote-h" style="align-items:flex-start;gap:8px">
         <button class="link" data-action="reu-togglepoint" data-pt="${pt.id}" style="font-size:17px;text-decoration:none">${pt.fait?"☑":"☐"}</button>
-        <span class="serif" style="font-size:15px;flex:1;${pt.fait?"opacity:.55;text-decoration:line-through":""}">${esc(pt.texte)}</span>
-        <button class="link" data-action="reu-delpoint" data-pt="${pt.id}">✕</button></div>
+        <span style="flex:1"><span class="serif" style="font-size:15px;display:block;${pt.fait?"opacity:.55;text-decoration:line-through":""}">${esc(pt.texte)}</span>${pt.par?`<span class="du" style="font-size:11.5px;color:var(--slate)">proposé par ${esc(pt.par)}</span>`:""}</span>
+        ${(!pt.parId || (S.session && (S.session.id===pt.parId || S.session.role==="owner"))) ? `<button class="link" data-action="reu-delpoint" data-pt="${pt.id}">✕</button>` : ""}</div>
       <textarea data-change="reunote" data-pt="${pt.id}" placeholder="Notes / décisions (pour le PV)…">${esc(pt.notes||"")}</textarea></div>`).join(""):`<div class="empty">Aucun point à l'ordre du jour.</div>`;
   const presRows=PERSONNES.map(p=>{const v=pres[p.id];return `<div class="doc" style="cursor:default;padding:9px 13px">
       <span class="meta"><p class="dt" style="font-size:13.5px">${esc(p.prenom)} ${esc(p.nom)}</p><p class="du">${esc(p.fonction)}</p></span>
@@ -1150,14 +1150,17 @@ document.addEventListener("click", async e=>{
     case "reu-open": S.reuUI={sel:el.dataset.id}; render(); break;
     case "reu-back": S.reuUI={sel:null}; render(); break;
     case "reu-del": { if(!sb) break; if(window.confirm && !window.confirm("Supprimer cette réunion ?")) break; await sb.from("ca_reunions").delete().eq("id",el.dataset.id); await loadReunions(); S.reuUI={sel:null}; render(); break; }
-    case "reu-addpoint": { const t=val("reu_point").trim(); if(!t||!sb) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break; m.ordre=[...(m.ordre||[]),{id:uid(),texte:t,fait:false,notes:""}]; await sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); render(); break; }
+    case "reu-addpoint": { const t=val("reu_point").trim(); if(!t||!sb) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break; m.ordre=[...(m.ordre||[]),{id:uid(),texte:t,fait:false,notes:"",parId:(me&&me.id)||null,par:(me&&me.sig)||""}]; await sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); render(); break; }
     case "reu-togglepoint": { const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break; m.ordre=(m.ordre||[]).map(p=>p.id===el.dataset.pt?{...p,fait:!p.fait}:p); await sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); render(); break; }
-    case "reu-delpoint": { const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break; m.ordre=(m.ordre||[]).filter(p=>p.id!==el.dataset.pt); await sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); render(); break; }
+    case "reu-delpoint": { const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break;
+      const _pt=(m.ordre||[]).find(p=>p.id===el.dataset.pt);
+      if(_pt && _pt.parId && !(me && (me.id===_pt.parId || me.role==="owner"))){ if(window.alert) window.alert("Seul l'auteur du point (ou le responsable) peut le supprimer."); break; }
+      m.ordre=(m.ordre||[]).filter(p=>p.id!==el.dataset.pt); await sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); render(); break; }
     case "reu-pres": { const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break; const pr={...(m.presences||{})}; pr[el.dataset.person]= pr[el.dataset.person]===el.dataset.val?undefined:el.dataset.val; m.presences=pr; await sb.from("ca_reunions").update({presences:pr}).eq("id",m.id); render(); break; }
     case "reu-gen": {
       const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
       const pres=m.presences||{}; const names=v=>PERSONNES.filter(p=>pres[p.id]===v).map(p=>esc(p.prenom+" "+p.nom));
-      const pts=(m.ordre||[]).map((p,i)=>`<div class="pt"><h3>${i+1}. ${esc(p.texte)} ${p.fait?"<span class='ok'>✓ traité</span>":""}</h3>${p.notes?`<p>${esc(p.notes)}</p>`:"<p class='muted'>—</p>"}</div>`).join("");
+      const pts=(m.ordre||[]).map((p,i)=>`<div class="pt"><h3>${i+1}. ${esc(p.texte)} ${p.fait?"<span class='ok'>✓ traité</span>":""}</h3>${p.par?`<p class='muted' style='font-size:12px;margin:0 0 4px'>Proposé par ${esc(p.par)}</p>`:""}${p.notes?`<p>${esc(p.notes)}</p>`:"<p class='muted'>—</p>"}</div>`).join("");
       const doc=`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>PV — ${esc(m.titre)}</title>
 <style>body{font-family:Georgia,serif;max-width:780px;margin:40px auto;padding:0 24px;color:#1b2338;line-height:1.55}
 h1{font-size:24px;margin:0 0 2px}.d{color:#6a7182;font-size:13px;margin:0 0 20px}
