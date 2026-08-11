@@ -532,8 +532,9 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
     <button id="tabExpenses" aria-pressed="false" hidden>Dépenses</button>
     <button id="tabIncomes" aria-pressed="false" hidden>Recettes</button>
     <button id="tabMembers" aria-pressed="false" hidden>Membres<span class="pill" id="pillMem" hidden>0</span></button>
+    <button id="tabMessages" aria-pressed="false" hidden>Messages<span class="pill" id="pillMsg" hidden>0</span></button>
   </div>
-  <div class="who"><b id="whoName">—</b><span id="whoRole">—</span></div>
+  <div class="who"><b id="whoName">—</b><span id="whoRole">—</span><button id="btnMsg" class="btn ghost sm" style="display:none;margin-left:auto">✉️ Messagerie<span class="pill" id="btnMsgPill" hidden>0</span></button></div>
   <button class="btn ghost sm" id="changePass">Mot de passe</button>
   <button class="btn ghost sm" id="signOut">Se déconnecter</button>
 </header>
@@ -683,6 +684,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
           <option value="Validée">Validée — à payer</option>
           <option value="Remboursée">Remboursée</option>
           <option value="Refusée">Refusée</option>
+          <option value="À corriger">À corriger ⚠</option>
           <option value="reexamen">Réexamens ⚠</option>
           <option value="direct">Paiements directs</option>
         </select>
@@ -743,6 +745,18 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         <div id="o_all"></div>
       </div>
       <p class="hint" style="margin-top:8px">Remboursements, paiements directs et dépenses directes réunis. Cliquez une demande pour l'ouvrir (les dépenses ne sont pas cliquables).</p>
+    </div>
+  </section>
+
+  <!-- messagerie -->
+  <section id="viewMessages" class="stack" hidden>
+    <div>
+      <div class="section-title"><div class="eyebrow">Messagerie</div></div>
+      <div class="card" style="overflow:hidden">
+        <div class="head"><span>Membre</span><span></span><span class="r"></span><span></span></div>
+        <div id="msgList"></div>
+      </div>
+      <p class="hint" style="margin-top:8px">Clique un membre pour ouvrir la conversation et lui écrire (tu peux démarrer la discussion). Les non-lus remontent en haut.</p>
     </div>
   </section>
 
@@ -1013,7 +1027,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = s => document.querySelector(s);
-const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], selected:null, view:"mine", proofUrls:{},
+const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], selected:null, view:"mine", proofUrls:{},
                 channel:null, lastStatus:{}, primed:false, lastSync:null };
 
 const euro = n => (Number(n)||0).toLocaleString("fr-BE",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
@@ -1057,6 +1071,20 @@ async function mailRembourse(it){
     <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
   return envoyerMail(to, "Remboursement effectué — "+refOf(it), html);
 }
+async function mailCorriger(it, motif){
+  const to = await emailDuDemandeur(it); if(!to) return false;
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Demande à corriger</h2>
+    <p>Bonjour ${mailEsc(prenomDe(it))},</p>
+    <p>Votre demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}) doit être <b>corrigée</b> avant d'être traitée.</p>
+    <p style="background:#fdf6ec;border:1px solid #e8d3ab;border-radius:8px;padding:12px"><b>À corriger :</b><br>${mailEsc(motif).replace(/\\n/g,"<br>")}</p>
+    <p>Ouvrez votre demande dans l'application : vous pouvez <b>ajouter de nouvelles pièces</b> et compléter, puis renvoyer. Elle repassera automatiquement en attente de décision.</p>
+    <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#c47f17;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Corriger ma demande</a></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+  return envoyerMail(to, "Demande à corriger — "+refOf(it), html);
+}
+
 async function mailRefuse(it, motif){
   const to = await emailDuDemandeur(it); if(!to) return false;
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
@@ -1544,6 +1572,8 @@ async function loadProfile(user){
   $("#tabExpenses").hidden = !isTreso();
   $("#tabIncomes").hidden = !isTreso();
   $("#tabMembers").hidden = !isTreso();
+  $("#tabMessages").hidden = !isTreso();
+  if($("#btnMsg")) $("#btnMsg").style.display = isTreso() ? "none" : "inline-flex";
   if(!$("#f_date").value) $("#f_date").value = new Date().toISOString().slice(0,10);
   majFormulaire();
   majHoraire();
@@ -1557,6 +1587,7 @@ async function refresh(){
   state.items = r.data || [];
   state.lastSync = new Date();
   detecterChangements();
+  try{ const _m = await sb.from("messages").select("*").order("created_at",{ascending:true}); if(!_m.error) state.messages = _m.data || []; }catch(_){}
   if(isTreso()){
     const m = await sb.from("profiles").select("*").order("created_at",{ascending:true});
     state.members = m.data || [];
@@ -1569,6 +1600,7 @@ async function refresh(){
     if(!state.relanceAutoFaite){ state.relanceAutoFaite = true; relancerIncompletes(true); }
   }
   render();
+  renderMessagesUI();
   verifierLienRecu();
   verifierLienReexamen();
 }
@@ -2414,7 +2446,9 @@ function heureBruxelles(){
 
 function fenetreOuverte(){
   const { j, h } = heureBruxelles();
-  return j <= 5 && h < 18;
+  if(j >= 1 && j <= 4) return true;   // lundi à jeudi : sans limite d'heure
+  if(j === 5) return h < 18;          // vendredi : jusqu'à 18h (heure belge)
+  return false;                       // samedi & dimanche : fermé
 }
 
 function periodeFermeture(){
@@ -2432,9 +2466,7 @@ function avertirFermeture(){
   try{ vu = localStorage.getItem("caisse.ferm"); }catch(e){}
   if(vu === cle) return;                              // déjà averti pour cette fermeture
   const { j } = heureBruxelles();
-  $("#closedInfoTxt").innerHTML = j > 5
-    ? "Aucune nouvelle demande de remboursement ne peut être introduite <b>du vendredi 18h01, toute la journée du samedi et du dimanche</b>. Le dépôt rouvrira lundi matin."
-    : "Il est plus de 18h : le dépôt est fermé jusqu'au prochain jour ouvré. Pour rappel, aucune demande n'est possible <b>du vendredi 18h01, tout le samedi et tout le dimanche</b>.";
+  $("#closedInfoTxt").innerHTML = "Le dépôt est fermé. Les demandes se font <b>du lundi au jeudi sans limite d'heure</b>, et <b>le vendredi jusqu'à 18h00 (heure belge)</b>. <b>Samedi et dimanche</b>, aucune demande n'est possible : vous pouvez uniquement consulter l'état d'avancement. Le dépôt rouvre lundi.";
   $("#closedInfo").classList.add("open");
   try{ localStorage.setItem("caisse.ferm", cle); }catch(e){}
 }
@@ -2450,10 +2482,10 @@ function majHoraire(){
   const { j } = heureBruxelles();
   box.className = "horaire " + (ouvert ? "ouvert" : "ferme");
   box.innerHTML = ouvert
-    ? `<span class="hic">🟢</span><div><b>Dépôt ouvert</b><span>Vous pouvez introduire une demande jusqu'à 18h. Les demandes sont acceptées du lundi au vendredi.</span></div>`
+    ? `<span class="hic">🟢</span><div><b>Dépôt ouvert</b><span>${ j === 5 ? "Vendredi : dernières demandes jusqu'à 18h00 (heure belge)." : "Du lundi au jeudi, aucune limite d'heure ; le vendredi jusqu'à 18h00." }</span></div>`
     : `<span class="hic">🔒</span><div><b>Dépôt fermé</b><span>${
-        j > 5 ? "Les demandes ne sont pas acceptées le week-end."
-              : "Il est plus de 18h."} Vous pouvez consulter votre compte, mais l'envoi rouvrira du lundi au vendredi avant 18h (heure belge). Le formulaire ci-dessous est momentanément désactivé.</span></div>`;
+        (j === 0 || j === 6) ? "Aucune demande le week-end."
+              : "Vendredi, il est plus de 18h."} Vous pouvez consulter l'état d'avancement. Rappel : lun–jeu sans limite, vendredi jusqu'à 18h. Le formulaire est momentanément désactivé.</span></div>`;
 
   // activer/désactiver le formulaire
   const form = $("#reqForm");
@@ -2616,6 +2648,7 @@ function setView(v){
   $("#tabExpenses").setAttribute("aria-pressed", v==="expenses");
   $("#tabIncomes").setAttribute("aria-pressed", v==="incomes");
   $("#tabMembers").setAttribute("aria-pressed", v==="members");
+  $("#tabMessages").setAttribute("aria-pressed", v==="messages");
   $("#tabDirect").setAttribute("aria-pressed", v==="direct");
   $("#viewMine").hidden = v!=="mine";
   $("#viewTreso").hidden = v!=="treso";
@@ -2624,11 +2657,13 @@ function setView(v){
   $("#viewExpenses").hidden = v!=="expenses";
   $("#viewIncomes").hidden = v!=="incomes";
   $("#viewMembers").hidden = v!=="members";
+  $("#viewMessages").hidden = v!=="messages";
   $("#viewDirect").hidden = v!=="direct";
   if(v==="expenses" && !$("#e_date").value) $("#e_date").value = new Date().toISOString().slice(0,10);
   if(v==="incomes" && !$("#i_date").value) $("#i_date").value = new Date().toISOString().slice(0,10);
   if(v==="mine"){ majHoraire(); avertirFermeture(); }
   render();
+  renderMessagesUI();
 }
 $("#tabMine").onclick = () => setView("mine");
 $("#tabDirect").onclick = () => setView("direct");
@@ -2642,6 +2677,116 @@ $("#tabOverview").onclick = () => setView("overview");
 $("#tabExpenses").onclick = () => setView("expenses");
 $("#tabIncomes").onclick = () => setView("incomes");
 $("#tabMembers").onclick = () => setView("members");
+$("#tabMessages").onclick = () => setView("messages");
+
+/* ---------- Messagerie membre ↔ trésorier ---------- */
+function threadOf(memberId){
+  return (state.messages||[]).filter(m => m.member_id===memberId)
+    .sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+}
+function unreadTreso(){ return (state.messages||[]).filter(m => m.sender==="membre" && !m.read_by_treso).length; }
+function unreadMembre(){ return (state.messages||[]).filter(m => m.sender==="tresorier" && !m.read_by_member && m.member_id===state.profile?.id).length; }
+
+async function marquerLu(memberId){
+  const treso = isTreso();
+  const cibles = (state.messages||[]).filter(m => m.member_id===memberId &&
+    (treso ? (m.sender==="membre" && !m.read_by_treso) : (m.sender==="tresorier" && !m.read_by_member)));
+  for(const m of cibles){
+    const patch = treso ? { read_by_treso:true } : { read_by_member:true };
+    try{ await sb.from("messages").update(patch).eq("id", m.id); Object.assign(m, patch); }catch(_){}
+  }
+  renderMessagesUI();
+}
+
+function renderMessagesUI(){
+  const pt = $("#pillMsg");
+  if(pt){ const u = isTreso() ? unreadTreso() : 0; pt.textContent = u; pt.hidden = u===0; }
+  const bp = $("#btnMsgPill");
+  if(bp){ const u = isTreso() ? 0 : unreadMembre(); bp.textContent = u; bp.hidden = u===0; }
+  const wrap = $("#msgList");
+  if(wrap && isTreso()){
+    const membres = (state.members||[]).filter(m => m.approved !== false && m.role !== "tresorier");
+    const rows = membres.map(m => {
+      const th = threadOf(m.id);
+      const last = th.length ? th[th.length-1] : null;
+      const unread = th.filter(x => x.sender==="membre" && !x.read_by_treso).length;
+      return { m, last, unread, when: last ? new Date(last.created_at).getTime() : 0 };
+    }).sort((a,b) => (b.unread>0)-(a.unread>0) || b.when - a.when);
+    wrap.innerHTML = rows.length ? rows.map(r => `<div class="row" data-msgmember="${r.m.id}" tabindex="0" role="button">
+      <div><div class="obj">${esc(r.m.name || r.m.email || "Membre")}${r.unread?` <span class="pill" style="background:#c0392b;color:#fff">${r.unread}</span>`:""}</div>
+        <div class="meta">${r.last ? esc((r.last.sender==="tresorier"?"Vous : ":"")+String(r.last.body||"").slice(0,60)) : "Démarrer la conversation"}</div></div>
+      <div class="amt" style="font-size:12px;color:#9b93bd">${r.last ? fstamp(r.last.created_at) : ""}</div><div class="chev">›</div></div>`).join("")
+      : emptyHTML("Aucun membre", "Les membres actifs apparaîtront ici.");
+  }
+}
+
+function ouvrirMessagerie(memberId, memberName, memberEmail){
+  if(!memberId) return;
+  let ov = document.getElementById("msgOverlay");
+  if(!ov){ ov = document.createElement("div"); ov.id="msgOverlay";
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;z-index:99998";
+    document.body.appendChild(ov);
+  }
+  function draw(){
+    const msgs = threadOf(memberId);
+    const bulles = msgs.length ? msgs.map(m => {
+      const mine = (isTreso() && m.sender==="tresorier") || (!isTreso() && m.sender==="membre");
+      const who = m.sender==="tresorier" ? "Trésorier" : (m.member_name || memberName || "Membre");
+      return `<div style="display:flex;justify-content:${mine?"flex-end":"flex-start"};margin:6px 0">
+        <div style="max-width:80%;background:${mine?"#2d6a4f":"#eceef4"};color:${mine?"#fff":"#1a1a2e"};padding:9px 12px;border-radius:13px">
+          <div style="font-size:11px;opacity:.75;margin-bottom:3px">${esc(who)} · ${fstamp(m.created_at)}</div>
+          <div style="white-space:pre-wrap;line-height:1.45">${esc(m.body)}</div></div></div>`;
+    }).join("") : `<p class="hint" style="text-align:center;padding:24px 10px">Aucun message pour l'instant. Écrivez le premier ci-dessous.</p>`;
+    const titre = isTreso() ? ("Conversation avec " + esc(memberName || memberEmail || "membre")) : "Messagerie — Trésorier";
+    ov.innerHTML = `<div style="background:#fff;color:#1a1a2e;width:100%;max-width:560px;max-height:86vh;border-radius:16px 16px 0 0;display:flex;flex-direction:column;box-shadow:0 -8px 40px rgba(0,0,0,.35)">
+      <div style="padding:14px 16px;border-bottom:1px solid #e6e6f0;display:flex;justify-content:space-between;align-items:center">
+        <b>${titre}</b>
+        <button id="msgClose" style="background:#eee;border:none;border-radius:8px;padding:7px 13px;cursor:pointer">Fermer</button>
+      </div>
+      <div id="msgBody" style="flex:1;overflow:auto;padding:12px 16px;background:#fafafe">${bulles}</div>
+      <div style="padding:12px 16px;border-top:1px solid #e6e6f0;display:flex;gap:8px;align-items:flex-end">
+        <textarea id="msgInput" placeholder="Votre message…" style="flex:1;min-height:44px;max-height:130px;border:1px solid #ccc;border-radius:11px;padding:11px;font-family:inherit;font-size:14px;box-sizing:border-box"></textarea>
+        <button id="msgSend" style="background:#2d6a4f;color:#fff;border:none;border-radius:11px;padding:0 20px;height:46px;font-weight:bold;cursor:pointer">Envoyer</button>
+      </div></div>`;
+    ov.style.display = "flex";
+    const bd = document.getElementById("msgBody"); if(bd) bd.scrollTop = bd.scrollHeight;
+    document.getElementById("msgClose").onclick = () => { ov.style.display="none"; };
+    document.getElementById("msgSend").onclick = async () => {
+      const inp = document.getElementById("msgInput");
+      const body = (inp.value || "").trim(); if(!body) return;
+      const btn = document.getElementById("msgSend"); btn.disabled = true; btn.textContent = "…";
+      const treso = isTreso();
+      const row = { member_id:memberId, member_name:(memberName||""), member_email:(memberEmail||""), sender: treso?"tresorier":"membre", body:body };
+      const { error } = await sb.from("messages").insert(row);
+      if(error){ btn.disabled=false; btn.textContent="Envoyer"; toast("Envoi impossible : "+error.message); return; }
+      const lien = window.location.origin + window.location.pathname;
+      if(treso){
+        if(memberEmail){
+          envoyerMail(memberEmail, "Message du trésorier — Bureau étudiant",
+            `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a2e"><h2 style="margin:0 0 10px">Message du trésorier</h2><p>Bonjour ${mailEsc(memberName||"")},</p><p>Le trésorier vous a écrit dans la messagerie de la Caisse :</p><p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(body).replace(/\n/g,"<br>")}</p><p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:12px 22px;border-radius:9px;text-decoration:none;font-weight:bold">Répondre dans l'app</a></p><hr style="border:none;border-top:1px solid #eee;margin:18px 0"><p style="color:#999;font-size:12px">Bureau étudiant — Trésorerie</p></div>`,
+            TRESO_EMAIL);
+        }
+      } else {
+        envoyerMail(TRESO_EMAIL, "Nouveau message d'un membre — " + (memberName||""),
+          `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a2e"><h2 style="margin:0 0 10px">Nouveau message d'un membre</h2><p><b>${mailEsc(memberName||"Un membre")}</b> vous a écrit :</p><p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(body).replace(/\n/g,"<br>")}</p><p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:12px 22px;border-radius:9px;text-decoration:none;font-weight:bold">Ouvrir la messagerie</a></p></div>`,
+          memberEmail || undefined);
+      }
+      inp.value = "";
+      try{ await refresh(); }catch(_){}
+      draw();
+    };
+  }
+  draw();
+  marquerLu(memberId).then(()=>{ try{ draw(); }catch(_){} });
+}
+
+document.addEventListener("click", e => {
+  const r = e.target.closest("[data-msgmember]");
+  if(r){ const id = r.dataset.msgmember; const m = (state.members||[]).find(x => x.id===id);
+    ouvrirMessagerie(id, m ? m.name : "", m ? m.email : ""); }
+});
+if($("#btnMsg")) $("#btnMsg").onclick = () => { if(state.profile) ouvrirMessagerie(state.profile.id, state.profile.name, state.profile.email); };
+
 
 function render(){
   if(!state.profile?.approved) return;
@@ -2841,6 +2986,7 @@ function stampHTML(it){
   if(it.status==="Remboursée") return `<div class="stamp paye">Remboursé<small>${it.paid_at?fstamp(it.paid_at):""}</small></div>`;
   if(it.status==="Validée")    return `<div class="stamp valide">Validé<small>à payer</small></div>`;
   if(it.status==="Refusée")    return `<div class="stamp refuse">Refusé</div>`;
+  if(it.status==="À corriger") return `<div class="stamp refuse" style="background:#c47f17;border-color:#c47f17">À corriger</div>`;
   return "";
 }
 
@@ -2848,7 +2994,7 @@ function blocComplement(it){
   return `<div class="fixbox">
     <b>Compléter ou corriger votre demande</b>
     <p>Ajoutez une pièce plus lisible et expliquez ce que vous avez changé. Le trésorier en est prévenu.${
-      it.status==="Refusée" ? " Votre demande repassera automatiquement en attente de décision." : ""}</p>
+      (it.status==="Refusée"||it.status==="À corriger") ? " Votre demande repassera automatiquement en attente de décision." : ""}</p>
     <div class="attach">
       <select id="d_kind">
         <option>Facture</option><option>Ticket de caisse</option><option>Extrait de compte</option>
@@ -2886,7 +3032,7 @@ function renderDrawer(it){
 
   const sienne = it.user_id === state.profile.id;
   let actions = "";
-  const modifiable = sienne && (it.status === "En attente" || it.status === "Refusée");
+  const modifiable = sienne && (it.status === "En attente" || it.status === "Refusée" || it.status === "À corriger");
   if(modifiable && !isTreso()) actions += blocComplement(it);
   if(sienne && !isTreso() && !modifiable) actions += blocContact(it);
   if(isTreso() && sienne && it.status === "En attente"){
@@ -2913,6 +3059,7 @@ function renderDrawer(it){
       </div>` : "";
       actions += champMotif(it) + attachVal +
         `<div class="actions"><button class="btn ok" data-act="valider">Valider la demande</button>
+        <button class="btn" data-act="corriger" style="background:#c47f17;border-color:#c47f17;color:#fff">Renvoyer pour correction</button>
         <button class="btn no" data-act="refuser">Refuser</button></div>`;
     }else if(it.status === "Validée"){
       actions += champMotif(it) +
@@ -3059,6 +3206,10 @@ $("#d_body").addEventListener("click", async e => {
     if(!note){ noteEl?.focus(); return toast("Indiquez le motif du refus avant de refuser."); }
     patch={status:"Refusée", decision_note:note, decided_at:new Date().toISOString()}; label="Demande refusée";
   }
+  if(act==="corriger"){
+    if(!note){ noteEl?.focus(); return toast("Expliquez ce qui doit être corrigé avant de renvoyer."); }
+    patch={status:"À corriger", decision_note:note, decided_at:new Date().toISOString()}; label="Demande renvoyée pour correction";
+  }
   if(act==="payer"){   patch={status:"Remboursée", paid_at:new Date().toISOString()};
     label = sienne ? "Remboursement effectué au trésorier lui-même" : "Remboursement effectué"; }
   if(act==="rouvrir"){ patch={status:"En attente", paid_at:null, reexamen_msg:null, reexamen_at:null}; label="Remise en attente"; }
@@ -3081,6 +3232,7 @@ $("#d_body").addEventListener("click", async e => {
   await sb.from("events").insert({ request_id:it.id, who:state.profile.name, what:label });
   if(act==="valider"){ mailValide(it); }
   if(act==="refuser"){ mailRefuse(it, note); }
+  if(act==="corriger"){ mailCorriger(it, note); }
   if(act==="payer"){ mailRembourse(it); }
   if(act==="rouvrir"){ mailRouvert(it); }
   if(act==="message"){ mailMessage(it, note); }
