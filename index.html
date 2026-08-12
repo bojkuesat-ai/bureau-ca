@@ -352,6 +352,8 @@ const CA_SEND_FN = SB_URL + "/functions/v1/send-email";
 function caAppUrl(){ return window.location.origin + window.location.pathname; }
 function secretairesExtra(){ return (S.meta && Array.isArray(S.meta.secretaires)) ? S.meta.secretaires : []; }
 function estPresidente(){ const u=S.session; if(!u) return false; return String(u.fonction||"").toLowerCase().indexOf("pr\u00e9sident")===0 || String(u.fonction||"").toLowerCase().indexOf("president")===0; }
+function estDirection(){ const f=String((S.session&&S.session.fonction)||"").toLowerCase();
+  return f.indexOf("pr\u00e9sident")===0 || f.indexOf("president")===0 || f.indexOf("vice-pr\u00e9sident")===0 || f.indexOf("vice pr\u00e9sident")===0 || f.indexOf("vice-president")===0; }
 function peutVoirRapports(){ return estPresidente()||estSecretaire()||(S.session&&S.session.role==="owner"); }
 function ordreFerme(m){
   if(!m||!m.date) return false;
@@ -364,6 +366,7 @@ function estSecretaire(){
   if(String(u.fonction||"").toLowerCase().indexOf("secr")===0) return true;
   return secretairesExtra().indexOf(u.id)>=0;
 }
+function dejaVuGuide(k){ try{ return localStorage.getItem("ca:guide:"+k)==="1"; }catch(e){ return false; } }
 function seenTs(k){ try{ return parseInt(localStorage.getItem("ca:seen:"+k)||"0",10)||0; }catch(e){ return 0; } }
 function unreadMessagesCA(){ const me=S.session&&S.session.id; if(!me) return 0; const t=seenTs("messages"); return (S.messages||[]).filter(m=>m.to===me && new Date(m.ts).getTime()>t).length; }
 function unreadAnnoncesCA(){ const me=S.session&&S.session.id; const t=seenTs("annonces"); return (S.annonces||[]).filter(a=>new Date(a.ts).getTime()>t && a.cree_par!==me).length; }
@@ -421,7 +424,7 @@ function notifVoteCA(question){
   return envoyerNotifCA("Nouveau vote — "+question, corps, false);
 }
 
-async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; S.needProfile=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; } S.needProfile=null; S.session=sess2session(user,prof); await loadAccounts(); await loadDocs(); await loadMessages(); await loadTaches(); await loadContacts(); await loadAnnonces(); await loadReactions(); await loadPresence(); await loadEvenements(); await loadReunions(); await loadCreneaux(); await loadOrg(); await loadBudgets(); await loadVotes(); await loadMeta(); await loadBilans(); await loadJournal(); await loadMailing(); }catch(e){ S.session=null; } }
+async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; S.needProfile=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; } S.needProfile=null; S.session=sess2session(user,prof); await loadAccounts(); await loadDocs(); await loadMessages(); await loadConflits(); await loadTaches(); await loadContacts(); await loadAnnonces(); await loadReactions(); await loadPresence(); await loadEvenements(); await loadReunions(); await loadCreneaux(); await loadOrg(); await loadBudgets(); await loadVotes(); await loadMeta(); await loadBilans(); await loadJournal(); await loadMailing(); }catch(e){ S.session=null; } }
 async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; } }catch(e){} }
 async function loadBilans(){ try{ const {data}=await sb.from("ca_bilans").select("*").order("created_at",{ascending:true}); S.bilans=(data||[]).map(b=>({id:b.id,cible:b.cible,positifs:b.positifs,ameliorer:b.ameliorer,ts:b.created_at})); }catch(e){ S.bilans=[]; } try{ const f=await sb.from("ca_bilan_faits").select("*"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){} }
 async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").select("*").order("created_at",{ascending:false}); S.journal=(data||[]).map(j=>({ts:j.created_at,who:j.who,txt:j.txt})); }catch(e){} }
@@ -436,6 +439,7 @@ async function loadContacts(){ try{ const {data}=await sb.from("ca_contacts").se
 async function loadReactions(){ try{ const {data}=await sb.from("ca_annonce_reactions").select("*"); S.reactions=data||[]; }catch(e){ S.reactions=[]; } }
 async function loadPresence(){ try{ const {data}=await sb.from("ca_event_presence").select("*"); S.presence=data||[]; }catch(e){ S.presence=[]; } }
 async function loadAnnonces(){ try{ const {data}=await sb.from("ca_annonces").select("*").order("created_at",{ascending:false}); S.annonces=(data||[]).map(a=>({id:a.id,auteur:a.auteur,texte:a.texte,ts:a.created_at})); }catch(e){ S.annonces=[]; } }
+async function loadConflits(){ try{ const {data}=await sb.from("ca_conflits").select("*").order("created_at",{ascending:true}); S.conflits=data||[]; }catch(e){ S.conflits=[]; } }
 async function loadMessages(){ try{ const {data}=await sb.from("ca_messages").select("*").order("created_at",{ascending:true}); S.messages=(data||[]).map(m=>({id:m.id,fromId:m.from_id,to:m.to_id,texte:m.texte,fichier:m.fichier,ts:m.created_at})); }catch(e){ S.messages=[]; } }
 async function loadDocs(){ try{ const {data}=await sb.from("ca_docs").select("*").order("created_at",{ascending:false}); S.docs=(data||[]).map(d=>({id:d.id,titre:d.titre,cat:d.categorie,chemin:d.chemin,cree_par_id:d.cree_par})); }catch(e){ S.docs=[]; } }
 
@@ -657,15 +661,32 @@ function viewAuth(){
 function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textContent=msg; e.style.display="block"; } }
 
 /* ---- DASHBOARD ---- */
-const TABS = [["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["docs","09","Documents"],["annonces","10","Annonces"],["messages","11","Messages"]];
+const TABS = [["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["docs","09","Documents"],["annonces","10","Annonces"],["messages","11","Messages"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,reunions:tabReunions,evenements:tabEvenements,contacts:tabContacts,notifs:tabNotifs,search:tabSearch};
+  const map={org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,evenements:tabEvenements,contacts:tabContacts,notifs:tabNotifs,search:tabSearch};
   const tabs = S.meta.bilanActif ? [...TABS,["bilan","12","Bilans moraux"]] : TABS;
   if(S.tab==="bilan" && !S.meta.bilanActif) S.tab="org";
   const notifOwner = S.session.role==="owner" ? (S.admins||[]).filter(a=>a.statut==="attente").length : 0;
   const notifBud = (S.budgets||[]).filter(b=>b.statut==="vote" && !(b.votes||[]).some(v=>(v.nom||"").toLowerCase()===(S.session.sig||"").toLowerCase())).length;
   const notifTot = notifOwner + notifBud;
   const body = (map[S.tab]||tabOrg)();
+  const bienvenue = (estSecretaire() && !dejaVuGuide("secr")) ? `
+    <div class="card2" style="border-left:4px solid var(--or,#c9a227);margin-bottom:16px">
+      <h3 class="serif" style="margin-top:0">Bienvenue \u2014 vos fonctions de secr\u00e9tariat</h3>
+      <p class="du">Vous \u00eates la seule \u00e0 pouvoir effectuer les actions suivantes ; les autres membres sont en lecture seule.</p>
+      <ul style="margin:8px 0 0;padding-left:20px;line-height:1.75">
+        <li><b>R\u00e9unions</b> : les cr\u00e9er, les modifier, les supprimer</li>
+        <li><b>Convocations</b> : envoyer le mail avec date, lieu et ordre du jour</li>
+        <li><b>Ordre du jour</b> : cocher les points trait\u00e9s et fixer l'heure de cl\u00f4ture des propositions <span class="du">(chacun peut proposer un point)</span></li>
+        <li><b>PV</b> : r\u00e9diger les notes et d\u00e9cisions, g\u00e9n\u00e9rer et diffuser le proc\u00e8s-verbal</li>
+        <li><b>Pr\u00e9sences</b> : pointer pr\u00e9sent / absent / excus\u00e9</li>
+        <li><b>D\u00e9cisions</b> : transformer une d\u00e9cision en t\u00e2che assign\u00e9e</li>
+        <li><b>Agenda</b> : ajouter ou retirer les cr\u00e9neaux et \u00e9v\u00e9nements</li>
+        <li><b>Mod\u00e8le de r\u00e9union</b> : d\u00e9finir les points r\u00e9currents pr\u00e9-remplis</li>
+        <li><b>Rapports</b> : rapport d'activit\u00e9 et suivi de pr\u00e9sence <span class="du">(avec la pr\u00e9sidence)</span></li>
+      </ul>
+      <div class="row-btn"><button class="btn sm" data-action="guide-ok" data-guide="secr">J'ai compris</button></div>
+    </div>` : "";
   return `<header class="hd"><div class="hd-in">
     <div class="hd-top"><button class="back" data-action="go-home">← Accueil</button><span class="eyebrow">Espace CA</span></div>
     <input class="title serif" id="nomInput" value="${esc(S.meta.nom)}" data-change="nom" aria-label="Nom du bureau étudiant">
@@ -677,7 +698,7 @@ function viewDash(){
       <button class="logout" data-action="logout">Se déconnecter</button></div>
     <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
   </div></header>
-  <main class="body">${body}</main>`;
+  <main class="body">${bienvenue}${body}</main>`;
 }
 
 /* ---- onglet ORGANIGRAMME ---- */
@@ -941,6 +962,44 @@ function tabBilan(){
 
 /* ---- onglet MESSAGES (directs 1 à 1, démo locale) ---- */
 function msgMeId(){ const k=((S.session&&S.session.nom)||"").trim().toLowerCase(); const p=PERSONNES.find(x=>(x.prenom+" "+x.nom).toLowerCase()===k); return p?p.id:S.session.id; }
+function tabConflits(){
+  const me=S.session; const dir=estDirection();
+  const C=(S.conflits||[]);
+  if(dir){
+    const fils={}; C.forEach(m=>{ (fils[m.fil_id]=fils[m.fil_id]||[]).push(m); });
+    const cles=Object.keys(fils).sort((a,b)=> new Date(fils[b][fils[b].length-1].created_at)-new Date(fils[a][fils[a].length-1].created_at));
+    const blocs=cles.map(k=>{
+      const msgs=fils[k].sort((x,y)=> new Date(x.created_at)-new Date(y.created_at));
+      const p=msgs[0];
+      const bulles=msgs.map(m=>`<div style="margin:7px 0;padding:9px 12px;border-radius:11px;background:${m.de_direction?"var(--or-soft,#efe9d8)":"#f3f1fa"}">
+        <div style="font-size:11.5px;color:#666;margin-bottom:3px">${m.de_direction?esc(m.auteur||"Direction"):(p.anonyme?"Membre (anonyme)":esc(m.auteur||"Membre"))} \u00b7 ${dateFR(m.created_at)}</div>
+        <div style="white-space:pre-wrap">${esc(m.texte)}</div></div>`).join("");
+      return `<div class="card2"><h3 class="serif">${p.anonyme?"Signalement anonyme":esc(p.auteur||"Membre")}</h3>
+        ${bulles}
+        <textarea id="cf_rep_${k}" placeholder="R\u00e9pondre\u2026"></textarea>
+        <div class="row-btn"><button class="btn sm" data-action="cf-repondre" data-fil="${k}">R\u00e9pondre</button></div></div>`;
+    }).join("");
+    return `<p class="du">Espace confidentiel : seuls la pr\u00e9sidence et la vice-pr\u00e9sidence voient ces \u00e9changes.</p>`
+      + (cles.length?blocs:`<div class="empty">Aucun signalement.</div>`);
+  }
+  const miens=C.filter(m=> m.fil_id && (S.conflits||[]).some(x=>x.fil_id===m.fil_id && x.membre_id===(me&&me.id)));
+  const fils={}; miens.forEach(m=>{ (fils[m.fil_id]=fils[m.fil_id]||[]).push(m); });
+  const cles=Object.keys(fils);
+  const historique=cles.map(k=>{
+    const msgs=fils[k].sort((x,y)=> new Date(x.created_at)-new Date(y.created_at));
+    return `<div class="card2">${msgs.map(m=>`<div style="margin:7px 0;padding:9px 12px;border-radius:11px;background:${m.de_direction?"#efe9d8":"#f3f1fa"}">
+      <div style="font-size:11.5px;color:#666;margin-bottom:3px">${m.de_direction?"Pr\u00e9sidence":"Vous"} \u00b7 ${dateFR(m.created_at)}</div>
+      <div style="white-space:pre-wrap">${esc(m.texte)}</div></div>`).join("")}
+      <textarea id="cf_suite_${k}" placeholder="Ajouter un message\u2026"></textarea>
+      <div class="row-btn"><button class="btn sm" data-action="cf-suite" data-fil="${k}">Envoyer</button></div></div>`;
+  }).join("");
+  return `<div class="compose"><h3 class="serif">Signaler un probl\u00e8me</h3>
+    <p class="du">Votre message est envoy\u00e9 uniquement \u00e0 la pr\u00e9sidence et \u00e0 la vice-pr\u00e9sidence. Aucun autre membre n'y a acc\u00e8s.</p>
+    <textarea id="cf_texte" placeholder="D\u00e9crivez la situation\u2026"></textarea>
+    <label style="display:flex;align-items:center;gap:9px;margin:8px 0;font-size:14px;cursor:pointer"><input type="checkbox" id="cf_anon"> Envoyer de mani\u00e8re anonyme</label>
+    <div class="row-btn"><button class="btn" data-action="cf-envoyer">Envoyer</button></div></div>
+    ${cles.length?`<h3 class="serif" style="margin-top:20px">Vos \u00e9changes</h3>${historique}`:""}`;
+}
 function tabMessages(){
   if(!S.msgUI) S.msgUI={sel:null,draft:"",file:null};
   const meId=S.session.id;
@@ -1273,6 +1332,30 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       S.forcePwd=null; render(); break;
     }
     case "toggle-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break; const nv=!S.meta.bilanActif; await sb.from("ca_meta").update({bilan_actif:nv}).eq("id",1); S.meta.bilanActif=nv; logAct(nv?"Bilans moraux activés":"Bilans moraux désactivés"); render(); break; }
+    case "cf-envoyer": { if(!sb||!me) break;
+      const t=(val("cf_texte")||"").trim(); if(!t){ if(window.alert) window.alert("\u00c9crivez votre message."); break; }
+      const anon=!!(document.getElementById("cf_anon")&&document.getElementById("cf_anon").checked);
+      const fil=uid();
+      const {error}=await sb.from("ca_conflits").insert({fil_id:fil,membre_id:me.id,auteur:anon?null:me.sig,anonyme:anon,de_direction:false,texte:t});
+      if(error){ if(window.alert) window.alert("Envoi impossible : "+error.message); break; }
+      await loadConflits(); render();
+      const dests=(S.admins||[]).filter(a=>a.statut==="actif"&&a.email&&/^(vice[- ]?)?pr\u00e9sident|^(vice[- ]?)?president/i.test(a.fonction||"")).map(a=>a.email);
+      if(dests.length){
+        const corps=`<h2 style="margin:0 0 10px">Nouveau signalement (m\u00e9diation)</h2><p>Un membre a signal\u00e9 une situation${anon?" de mani\u00e8re <b>anonyme</b>":""}.</p><p>Le contenu est consultable uniquement dans l'espace CA, onglet M\u00e9diation.</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
+        envoyerNotifCAListe(dests,"Nouveau signalement \u2014 m\u00e9diation",corps);
+      }
+      if(window.alert) window.alert("Message envoy\u00e9 \u00e0 la pr\u00e9sidence."); break; }
+    case "cf-repondre": { if(!sb||!estDirection()) break;
+      const fil=el.dataset.fil; const t=(val("cf_rep_"+fil)||"").trim(); if(!t) break;
+      const prem=(S.conflits||[]).find(x=>x.fil_id===fil);
+      await sb.from("ca_conflits").insert({fil_id:fil,membre_id:prem?prem.membre_id:null,auteur:me.sig,anonyme:false,de_direction:true,texte:t});
+      await loadConflits(); render(); break; }
+    case "cf-suite": { if(!sb||!me) break;
+      const fil=el.dataset.fil; const t=(val("cf_suite_"+fil)||"").trim(); if(!t) break;
+      const prem=(S.conflits||[]).find(x=>x.fil_id===fil);
+      await sb.from("ca_conflits").insert({fil_id:fil,membre_id:me.id,auteur:(prem&&prem.anonyme)?null:me.sig,anonyme:!!(prem&&prem.anonyme),de_direction:false,texte:t});
+      await loadConflits(); render(); break; }
+    case "guide-ok": { try{ localStorage.setItem("ca:guide:"+el.dataset.guide,"1"); }catch(e){} render(); break; }
     case "registre-pv": {
       const R=(S.reunions||[]).filter(m=>(m.ordre||[]).some(p=>p.fait||p.notes)).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
       const blocs=R.map(m=>{
