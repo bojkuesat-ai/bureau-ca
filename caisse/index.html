@@ -1116,6 +1116,55 @@ async function mailRefuse(it, motif){
     <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
   return envoyerMail(to, "Demande refusée — "+refOf(it), html);
 }
+async function mailModifiee(it, avant){
+  const to = (state.profile && state.profile.email) || await emailDuDemandeur(it);
+  const lignes = [];
+  if(avant.object !== it.object)   lignes.push(["Objet", avant.object, it.object]);
+  if(Number(avant.amount) !== Number(it.amount)) lignes.push(["Montant", euro(avant.amount), euro(it.amount)]);
+  if(avant.expense_date !== it.expense_date) lignes.push(["Date", fdate(avant.expense_date), fdate(it.expense_date)]);
+  const tab = lignes.length ? `<table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:14px">
+      ${lignes.map(l=>`<tr><td style="padding:6px 0;color:#666">${mailEsc(l[0])}</td><td style="padding:6px 0;color:#999;text-decoration:line-through">${mailEsc(l[1])}</td><td style="padding:6px 0"><b>${mailEsc(l[2])}</b></td></tr>`).join("")}
+    </table>` : "";
+  if(to){
+    const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+      <h2 style="margin:0 0 10px">Demande modifiée</h2>
+      <p>Bonjour ${mailEsc(prenomDe(it))},</p>
+      <p>Votre demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}) a bien été modifiée.</p>
+      ${tab}
+      <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
+      <p>Elle reste en attente de décision du trésorier.</p>
+      <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+      <p style="color:#999;font-size:12px">Envoi automatique — Le bureau étudiant, Trésorerie</p></div>`;
+    envoyerMail(to, "Demande modifiée — "+refOf(it), html);
+  }
+  const htmlT = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Demande modifiée par le demandeur</h2>
+    <p><b>${mailEsc(it.requester_name||"")}</b> a modifié sa demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}).</p>
+    ${tab}
+    <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
+    <p style="text-align:center;margin:22px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir la demande</a></p></div>`;
+  return envoyerMail(TRESO_EMAIL, "Demande modifiée — "+mailEsc(it.requester_name||"")+" ("+euro(it.amount)+")", htmlT, to || undefined);
+}
+async function mailSupprimee(it){
+  const to = (state.profile && state.profile.email) || await emailDuDemandeur(it);
+  if(to){
+    const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+      <h2 style="margin:0 0 10px">Demande supprimée</h2>
+      <p>Bonjour ${mailEsc(prenomDe(it))},</p>
+      <p>Votre demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}) a été <b>supprimée</b> à votre initiative.</p>
+      <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
+      <p>Elle ne sera pas traitée. Vous pouvez en introduire une nouvelle à tout moment.</p>
+      <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+      <p style="color:#999;font-size:12px">Envoi automatique — Le bureau étudiant, Trésorerie</p></div>`;
+    envoyerMail(to, "Demande supprimée — "+refOf(it), html);
+  }
+  const htmlT = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Demande supprimée par le demandeur</h2>
+    <p><b>${mailEsc(it.requester_name||"")}</b> a supprimé sa demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}).</p>
+    <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
+    <p>Aucune action n'est requise de votre part.</p></div>`;
+  return envoyerMail(TRESO_EMAIL, "Demande supprimée — "+mailEsc(it.requester_name||"")+" ("+euro(it.amount)+")", htmlT, to || undefined);
+}
 async function mailAlerteTreso(it, isDirect){
   const quoi = isDirect ? "paiement direct" : "remboursement";
   const lien = window.location.origin + window.location.pathname;
@@ -3179,6 +3228,46 @@ function stampHTML(it){
   return "";
 }
 
+function blocEditer(it){
+  const direct = it.kind === "direct";
+  const cats = ["Fournitures","Transport","Repas & réception","Matériel","Communication","Frais bancaires","Autre"];
+  return `<div class="fixbox">
+    <b>Modifier ou retirer ma demande</b>
+    <p>Tant que le trésorier n'a pas décidé, vous pouvez corriger les informations ou supprimer complètement la demande.</p>
+    <div id="editZone" hidden class="stack" style="gap:12px;margin-top:10px">
+      <div class="field"><label for="ed_object">Objet</label>
+        <input type="text" id="ed_object" maxlength="90" value="${esc(it.object||"")}"></div>
+      <div class="field"><label for="ed_amount">Montant (€)</label>
+        <input type="number" id="ed_amount" step="0.01" min="0.01" value="${Number(it.amount||0)}"></div>
+      <div class="field"><label for="ed_date">Date</label>
+        <input type="date" id="ed_date" value="${esc(it.expense_date||"")}"></div>
+      ${direct ? `
+        <div class="field"><label for="ed_benef">Bénéficiaire</label>
+          <input type="text" id="ed_benef" maxlength="90" value="${esc(it.beneficiary||"")}"></div>
+        <div class="field"><label for="ed_iban">IBAN du bénéficiaire</label>
+          <input type="text" id="ed_iban" maxlength="40" value="${esc(it.iban||"")}"></div>
+        <div class="field"><label for="ed_comm">Communication</label>
+          <input type="text" id="ed_comm" maxlength="140" value="${esc(it.communication||"")}"></div>
+      ` : `
+        <div class="field"><label for="ed_cat">Catégorie</label>
+          <select id="ed_cat">${cats.map(c=>`<option${c===it.category?" selected":""}>${esc(c)}</option>`).join("")}</select></div>
+        <div class="field"><label for="ed_iban">Votre IBAN</label>
+          <input type="text" id="ed_iban" maxlength="40" value="${esc(it.iban||"")}"></div>
+      `}
+      <div class="field"><label for="ed_note">Commentaire</label>
+        <textarea id="ed_note" maxlength="400">${esc(it.note||"")}</textarea></div>
+      <div class="err" id="editErr" hidden></div>
+      <div class="actions">
+        <button class="btn ok" data-act="edit-save">Enregistrer les modifications</button>
+        <button class="btn ghost" data-act="edit-cancel">Annuler</button>
+      </div>
+    </div>
+    <div class="actions" id="editBtns">
+      <button class="btn" data-act="edit-open">Modifier la demande</button>
+      <button class="btn no" data-act="edit-delete">Supprimer la demande</button>
+    </div>
+  </div>`;
+}
 function blocComplement(it){
   return `<div class="fixbox">
     <b>Compléter ou corriger votre demande</b>
@@ -3223,6 +3312,7 @@ function renderDrawer(it){
   let actions = "";
   const modifiable = sienne && (it.status === "En attente" || it.status === "Refusée" || it.status === "À corriger");
   if(modifiable && !isTreso()) actions += blocComplement(it);
+  if(sienne && !isTreso() && it.status === "En attente") actions += blocEditer(it);
   if(sienne && !isTreso() && !modifiable) actions += blocContact(it);
   if(isTreso() && sienne && it.status === "En attente"){
     actions += `<div class="callout"><b>Votre propre demande</b>
@@ -3321,6 +3411,67 @@ $("#d_body").addEventListener("click", async e => {
   const it = state.items.find(i=>i.id===state.selected); if(!it) return;
   const noteEl = $("#d_note"); const note = noteEl ? noteEl.value.trim() : "";
   const act = b.dataset.act; let patch, label;
+
+  // --- modifier / supprimer sa propre demande (tant qu'elle est En attente) ---
+  if(act === "edit-open"){ $("#editZone").hidden = false; $("#editBtns").hidden = true; return; }
+  if(act === "edit-cancel"){ $("#editZone").hidden = true; $("#editBtns").hidden = false; erreurForm("#editErr", null); return; }
+
+  if(act === "edit-save"){
+    if(it.user_id !== state.profile.id || it.status !== "En attente"){ return toast("Cette demande n'est plus modifiable."); }
+    const obj = $("#ed_object").value.trim();
+    const mnt = Number($("#ed_amount").value);
+    const dte = $("#ed_date").value;
+    const iban = $("#ed_iban") ? $("#ed_iban").value.trim() : "";
+    if(!obj) return erreurForm("#editErr", "Indiquez l'objet de la demande.");
+    if(!(mnt > 0)) return erreurForm("#editErr", "Le montant doit être supérieur à 0.");
+    if(!dte) return erreurForm("#editErr", "Indiquez la date.");
+    const maj = { object: obj, amount: mnt, expense_date: dte, note: $("#ed_note").value.trim() };
+    if(it.kind === "direct"){
+      const ben = $("#ed_benef") ? $("#ed_benef").value.trim() : "";
+      if(!ben) return erreurForm("#editErr", "Indiquez le bénéficiaire.");
+      maj.beneficiary = ben; maj.iban = iban;
+      maj.communication = $("#ed_comm") ? $("#ed_comm").value.trim() : "";
+    } else {
+      maj.category = $("#ed_cat") ? $("#ed_cat").value : it.category;
+      maj.iban = iban;
+    }
+    const avant = { object: it.object, amount: it.amount, expense_date: it.expense_date };
+    b.disabled = true; b.textContent = "Enregistrement…";
+    const { error } = await sb.from("requests").update(maj).eq("id", it.id);
+    if(error){ b.disabled = false; b.textContent = "Enregistrer les modifications"; return toast("Échec : " + error.message); }
+    try{ await sb.from("events").insert({ request_id: it.id, who: state.profile.name, what: "Demande modifiée par le demandeur" }); }catch(_){}
+    try{ mailModifiee({ ...it, ...maj }, avant); }catch(_){}
+    await refresh();
+    const maj2 = state.items.find(i => i.id === it.id);
+    if(maj2) renderDrawer(maj2);
+    alert("Votre demande a bien été modifiée.\n\n" + maj.object + " — " + euro(maj.amount)
+      + "\n\nUn e-mail de confirmation vient de vous être envoyé. Le trésorier en a été informé.");
+    toast("Demande modifiée.");
+    return;
+  }
+
+  if(act === "edit-delete"){
+    if(it.user_id !== state.profile.id || it.status !== "En attente"){ return toast("Cette demande n'est plus supprimable."); }
+    if(!confirm("Supprimer définitivement cette demande ?\n\n" + (it.object||"") + " — " + euro(it.amount) + "\n\nCette action est irréversible.")) return;
+    b.disabled = true; b.textContent = "Suppression…";
+    try{
+      const chemins = (piecesDe(it) || []).map(p => p.path).filter(Boolean);
+      if(chemins.length){ try{ await sb.storage.from("justificatifs").remove(chemins); }catch(_){} }
+      try{ await sb.from("events").delete().eq("request_id", it.id); }catch(_){}
+      const { error } = await sb.from("requests").delete().eq("id", it.id);
+      if(error) throw error;
+      try{ mailSupprimee(it); }catch(_){}
+      closeDrawer();
+      await refresh();
+      alert("Votre demande a bien été supprimée.\n\n" + (it.object||"") + " — " + euro(it.amount)
+        + "\n\nUn e-mail de confirmation vient de vous être envoyé. Elle ne sera pas traitée.");
+      toast("Demande supprimée.");
+    }catch(err){
+      b.disabled = false; b.textContent = "Supprimer la demande";
+      toast("Échec : " + (err.message || err));
+    }
+    return;
+  }
 
   // --- complément envoyé par le demandeur ---
   if(act === "completer"){
