@@ -1116,6 +1116,27 @@ async function mailRefuse(it, motif){
     <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
   return envoyerMail(to, "Demande refusée — "+refOf(it), html);
 }
+async function mailAlerteTreso(it, isDirect){
+  const quoi = isDirect ? "paiement direct" : "remboursement";
+  const lien = window.location.origin + window.location.pathname;
+  const dem = it.requester_name || (state.profile && state.profile.name) || "Un membre";
+  const mailDem = (state.profile && state.profile.email) || "";
+  const nbPieces = (piecesDe(it) || []).length;
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Nouvelle demande de ${quoi}</h2>
+    <p><b>${mailEsc(dem)}</b> vient d'introduire une demande.</p>
+    <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:14px">
+      <tr><td style="padding:6px 0;color:#666">Objet</td><td style="padding:6px 0"><b>${mailEsc(it.object||"")}</b></td></tr>
+      <tr><td style="padding:6px 0;color:#666">Montant</td><td style="padding:6px 0"><b>${euro(it.amount)}</b></td></tr>
+      <tr><td style="padding:6px 0;color:#666">Référence</td><td style="padding:6px 0">${mailEsc(refOf(it))}</td></tr>
+      <tr><td style="padding:6px 0;color:#666">Justificatifs</td><td style="padding:6px 0">${nbPieces ? nbPieces+" pièce(s) jointe(s)" : "aucune pièce"}</td></tr>
+    </table>
+    ${it.note ? `<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(it.note)}</p>` : ""}
+    <p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Traiter la demande</a></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant</p></div>`;
+  return envoyerMail(TRESO_EMAIL, "Nouvelle demande de "+quoi+" — "+mailEsc(dem)+" ("+euro(it.amount)+")", html, mailDem || undefined);
+}
 async function mailAccuse(it, isDirect){
   const to = (state.profile && state.profile.email) || await emailDuDemandeur(it);
   if(!to) return false;
@@ -2650,6 +2671,7 @@ $("#reqForm").addEventListener("submit", async e => {
     await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
       what: especes() ? "Demande envoyée · paiement en espèces confirmé sur la pièce jointe" : "Demande envoyée" });
     mailAccuse(data, false);
+    mailAlerteTreso(data, false);
     $("#reqForm").reset(); staged.req = []; renderStaged("req"); majControle();
     $("#f_date").value = new Date().toISOString().slice(0,10); majFormulaire();
     await refresh(); toast("Demande envoyée au trésorier.");
@@ -2703,6 +2725,7 @@ $("#directForm")?.addEventListener("submit", async (e) => {
          if(_att.length){ await sb.from("requests").update({ attachments:_att }).eq("id", data.id); data.attachments=_att; } }catch(_){}
     try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name, what:"Demande de paiement direct envoyée" }); }catch(_){}
     mailAccuse(data, true);
+    mailAlerteTreso(data, true);
     $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display=""; staged.dir = []; renderStaged("dir");
     await refresh(); toast("Demande de paiement direct envoyée au trésorier.");
   }catch(err){
