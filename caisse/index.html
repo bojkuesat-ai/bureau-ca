@@ -586,7 +586,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
               <option>Bon de commande</option>
               <option>Autre pièce</option>
             </select>
-            <input type="file" id="f_proof" accept="image/*,application/pdf,.pdf">
+            <input type="file" id="f_proof" accept="image/*,application/pdf,.pdf" capture="environment">
             <button type="button" class="btn ghost sm" id="r_add">Joindre</button>
           </div>
           <p class="photo-tip">Sur téléphone, « Choisir le fichier » vous propose <b>Prendre une photo</b>. Posez le ticket à plat, bien éclairé, et cadrez-le en entier — un justificatif illisible sera refusé.</p>
@@ -602,6 +602,10 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         </div>
         <div class="field"><label for="f_note">Commentaire (facultatif)</label>
           <textarea id="f_note" maxlength="400" placeholder="Contexte utile pour le trésorier"></textarea></div>
+        <div class="callout" id="brouillonReq" hidden style="border-left:4px solid var(--gold)">
+          <b>Brouillon restauré</b>
+          <p>Vos informations non envoyées ont été récupérées. <button type="button" class="btn ghost sm" id="viderBrouillonReq">Repartir de zéro</button></p>
+        </div>
         <div class="err" id="reqErr" hidden></div>
         <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" type="submit" id="submitBtn">Envoyer la demande</button><button class="btn ghost" type="button" id="btnCancelReq">Annuler</button></div>
       </form>
@@ -642,10 +646,14 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
           <div class="hint" style="margin:0 0 8px">Facture, devis, extrait de compte… Tu peux en joindre un, mais ce n'est pas obligatoire.</div>
           <div class="attach">
             <select id="fd_kind"><option>Facture</option><option>Devis</option><option>Bon de commande</option><option>Extrait de compte</option><option>Autre pièce</option></select>
-            <input type="file" id="fd_proof" accept="image/*,application/pdf,.pdf">
+            <input type="file" id="fd_proof" accept="image/*,application/pdf,.pdf" capture="environment">
             <button type="button" class="btn ghost sm" id="fd_add">Joindre</button>
           </div>
           <div id="fd_staged" class="staged"></div>
+        </div>
+        <div class="callout" id="brouillonDir" hidden style="border-left:4px solid var(--gold)">
+          <b>Brouillon restauré</b>
+          <p>Vos informations non envoyées ont été récupérées. <button type="button" class="btn ghost sm" id="viderBrouillonDir">Repartir de zéro</button></p>
         </div>
         <div class="err" id="directErr" hidden></div>
         <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" type="submit" id="directSubmitBtn">Envoyer au trésorier</button><button class="btn ghost" type="button" id="btnCancelDirect">Annuler</button></div>
@@ -1663,6 +1671,7 @@ async function loadProfile(user){
   $("#tabMembers").hidden = !isTreso();
   $("#tabMessages").hidden = !isTreso();
   if($("#btnMsg")) $("#btnMsg").style.display = isTreso() ? "none" : "inline-flex";
+  try{ brancherBrouillon("req"); brancherBrouillon("dir"); restaurerBrouillon("req"); restaurerBrouillon("dir"); }catch(_){}
   if(!$("#f_date").value) $("#f_date").value = new Date().toISOString().slice(0,10);
   majFormulaire();
   majHoraire();
@@ -2319,16 +2328,25 @@ function renderOverview(){
 }
 
 $("#o_annee").onchange = renderOverview;
+
+// brouillons : restauration + sauvegarde auto
+if($("#viderBrouillonReq")) $("#viderBrouillonReq").onclick = () => {
+  effacerBrouillon("req"); $("#reqForm").reset(); staged.req = []; renderStaged("req");
+  $("#f_date").value = new Date().toISOString().slice(0,10); majFormulaire(); majControle(); toast("Formulaire réinitialisé.");
+};
+if($("#viderBrouillonDir")) $("#viderBrouillonDir").onclick = () => {
+  effacerBrouillon("dir"); $("#directForm").reset(); staged.dir = []; renderStaged("dir"); toast("Formulaire réinitialisé.");
+};
 if($("#horSave")) $("#horSave").onclick = saveHoraires;
 if($("#horReset")) $("#horReset").onclick = () => { state.horaires = JSON.parse(JSON.stringify(HORAIRES_DEFAUT)); renderHoraires(); toast("Réglages par défaut restaurés (pense à Enregistrer)."); };
 document.addEventListener("change", e => { const c = e.target.closest('[data-hf="ouvert"]'); if(!c) return; const j=c.dataset.hj; const sel=document.querySelector(`[data-hj="${j}"][data-hf="limite"]`); if(sel) sel.disabled = !c.checked; });
 
 if($("#btnCancelReq")) $("#btnCancelReq").onclick = () => {
-  $("#reqForm").reset(); staged.req = []; renderStaged("req"); majControle(); erreurForm("#reqErr", null);
+  effacerBrouillon("req"); $("#reqForm").reset(); staged.req = []; renderStaged("req"); majControle(); erreurForm("#reqErr", null);
   $("#f_date").value = new Date().toISOString().slice(0,10); majFormulaire(); toast("Formulaire réinitialisé.");
 };
 if($("#btnCancelDirect")) $("#btnCancelDirect").onclick = () => {
-  $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display="";
+  effacerBrouillon("dir"); $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display="";
   staged.dir = []; renderStaged("dir"); erreurForm("#directErr", null); toast("Formulaire réinitialisé.");
 };
 if($("#btnCancelExp")) $("#btnCancelExp").onclick = () => {
@@ -2642,6 +2660,86 @@ function majHoraire(){
   });
 }
 
+/* ---------- IBAN : validation (format belge + IBAN international) ---------- */
+function ibanPropre(v){ return String(v||"").replace(/[\s.-]/g,"").toUpperCase(); }
+function ibanValide(v){
+  const x = ibanPropre(v);
+  if(!/^[A-Z]{2}[0-9A-Z]{12,32}$/.test(x)) return false;
+  if(x.startsWith("BE") && x.length !== 16) return false;          // un IBAN belge fait 16 caractères
+  const r = x.slice(4) + x.slice(0,4);
+  let reste = 0;
+  for(const c of r){
+    const d = /[0-9]/.test(c) ? c : String(c.charCodeAt(0) - 55);
+    for(const ch of d) reste = (reste * 10 + Number(ch)) % 97;
+  }
+  return reste === 1;
+}
+function ibanFormate(v){ return ibanPropre(v).replace(/(.{4})/g, "$1 ").trim(); }
+function messageIban(v){
+  const x = ibanPropre(v);
+  if(!x) return "Indiquez un IBAN.";
+  if(x.startsWith("BE") && x.length !== 16) return "Un IBAN belge comporte 16 caractères (ex. BE68 5390 0754 7034). Vous en avez " + x.length + ".";
+  if(!/^[A-Z]{2}/.test(x)) return "L'IBAN doit commencer par le code du pays (BE pour la Belgique).";
+  return "Cet IBAN est incorrect : vérifiez les chiffres, une erreur de saisie s'est glissée.";
+}
+
+/* ---------- doublon : demande similaire ce mois-ci ---------- */
+function chercherDoublon(objet, montant, dateStr, exclureId){
+  const mois = String(dateStr||"").slice(0,7);
+  const obj = slug(objet||"");
+  return (state.items||[]).find(i =>
+    i.id !== exclureId &&
+    i.user_id === state.profile.id &&
+    i.status !== "Refusée" &&
+    String(i.expense_date||"").slice(0,7) === mois &&
+    (slug(i.object||"") === obj || Math.abs(Number(i.amount||0) - Number(montant||0)) < 0.01)
+  );
+}
+function confirmerDoublon(d){
+  return confirm("Attention — demande similaire ce mois-ci\n\n"
+    + "« " + (d.object||"") + " » — " + euro(d.amount) + " (" + fdate(d.expense_date) + ") · " + d.status
+    + "\n\nSouhaitez-vous quand même envoyer cette nouvelle demande ?");
+}
+
+/* ---------- brouillon automatique ---------- */
+const BROUILLONS = { req: ["#f_date","#f_amount","#f_object","#f_cat","#f_pay","#f_iban","#f_note"],
+                     dir: ["#fd_amount","#fd_benef","#fd_object","#fd_mode","#fd_iban","#fd_comm","#fd_note"] };
+function cleBrouillon(cle){ return "caisse.brouillon." + cle + "." + (state.profile ? state.profile.id : "x"); }
+function sauverBrouillon(cle){
+  try{
+    const d = {};
+    BROUILLONS[cle].forEach(sel => { const el = $(sel); if(el) d[sel] = el.value; });
+    const vide = Object.values(d).every(v => !String(v||"").trim());
+    if(vide) localStorage.removeItem(cleBrouillon(cle));
+    else localStorage.setItem(cleBrouillon(cle), JSON.stringify(d));
+  }catch(_){}
+}
+function restaurerBrouillon(cle){
+  try{
+    const raw = localStorage.getItem(cleBrouillon(cle)); if(!raw) return false;
+    const d = JSON.parse(raw); let rempli = false;
+    BROUILLONS[cle].forEach(sel => {
+      const el = $(sel);
+      if(el && d[sel] != null && String(d[sel]).trim() && sel !== "#f_date"){ el.value = d[sel]; rempli = true; }
+    });
+    if(rempli){
+      const box = $(cle === "req" ? "#brouillonReq" : "#brouillonDir");
+      if(box) box.hidden = false;
+    }
+    return rempli;
+  }catch(_){ return false; }
+}
+function effacerBrouillon(cle){ try{ localStorage.removeItem(cleBrouillon(cle)); }catch(_){}
+  const box = $(cle === "req" ? "#brouillonReq" : "#brouillonDir"); if(box) box.hidden = true; }
+function brancherBrouillon(cle){
+  BROUILLONS[cle].forEach(sel => {
+    const el = $(sel); if(!el || el.dataset.br) return;
+    el.dataset.br = "1";
+    el.addEventListener("input", () => sauverBrouillon(cle));
+    el.addEventListener("change", () => sauverBrouillon(cle));
+  });
+}
+
 /* ---------- justificatif ---------- */
 function prepareProof(file, refLabel){
   return new Promise((resolve,reject)=>{
@@ -2690,6 +2788,10 @@ $("#reqForm").addEventListener("submit", async e => {
       majHoraire();
       throw new Error("Les demandes sont acceptées du lundi au vendredi jusqu'à 18h (heure belge). Réessayez pendant cette plage.");
     }
+    const _ibanR = ($("#f_iban") && $("#f_iban").value || state.profile.iban || "").trim();
+    if(_ibanR && !ibanValide(_ibanR)) throw new Error(messageIban(_ibanR));
+    const _dbl = chercherDoublon($("#f_object").value.trim(), parseFloat($("#f_amount").value), $("#f_date").value);
+    if(_dbl && !confirmerDoublon(_dbl)) throw new Error("__annule__");
     rattraperFichier("req", "#r_kind", "#f_proof");
     if(!staged.req.length) throw new Error("Joignez au moins une pièce justificative avec le bouton « Joindre ».");
     const kinds = staged.req.map(p => p.kind);
@@ -2721,6 +2823,7 @@ $("#reqForm").addEventListener("submit", async e => {
       what: especes() ? "Demande envoyée · paiement en espèces confirmé sur la pièce jointe" : "Demande envoyée" });
     mailAccuse(data, false);
     mailAlerteTreso(data, false);
+    effacerBrouillon("req");
     $("#reqForm").reset(); staged.req = []; renderStaged("req"); majControle();
     $("#f_date").value = new Date().toISOString().slice(0,10); majFormulaire();
     await refresh(); toast("Demande envoyée au trésorier.");
@@ -2753,8 +2856,11 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     if(!(amount>0)) throw new Error("Indiquez un montant valide.");
     if(!benef)  throw new Error("Indiquez le bénéficiaire à payer.");
     if(!object) throw new Error("Indiquez l'objet de la dépense.");
-    if(mode==="virement" && iban.replace(/\s+/g,"").length < 14)
-      throw new Error("Pour un virement, indiquez un IBAN valide du bénéficiaire.");
+    if(mode==="virement"){
+      if(!ibanValide(iban)) throw new Error("IBAN du bénéficiaire : " + messageIban(iban));
+    }
+    const _dblD = chercherDoublon(object, amount, new Date().toISOString().slice(0,10));
+    if(_dblD && !confirmerDoublon(_dblD)) throw new Error("__annule__");
     rattraperFichier("dir", "#fd_kind", "#fd_proof");
     const { data, error } = await sb.from("requests").insert({
       user_id: state.profile.id, requester_name: state.profile.name || "",
@@ -2775,6 +2881,7 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name, what:"Demande de paiement direct envoyée" }); }catch(_){}
     mailAccuse(data, true);
     mailAlerteTreso(data, true);
+    effacerBrouillon("dir");
     $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display=""; staged.dir = []; renderStaged("dir");
     await refresh(); toast("Demande de paiement direct envoyée au trésorier.");
   }catch(err){
