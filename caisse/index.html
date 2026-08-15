@@ -533,6 +533,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
     <button id="tabIncomes" aria-pressed="false" hidden>Recettes</button>
     <button id="tabMembers" aria-pressed="false" hidden>Membres<span class="pill" id="pillMem" hidden>0</span></button>
     <button id="tabMessages" aria-pressed="false" hidden>Messages<span class="pill" id="pillMsg" hidden>0</span></button>
+    <button id="tabFacture" aria-pressed="false" hidden>Facturation</button>
   </div>
   <div class="who"><b id="whoName">—</b><span id="whoRole">—</span><button id="btnMsg" class="btn ghost sm" style="display:none;margin-left:auto">✉️ Messagerie<span class="pill" id="btnMsgPill" hidden>0</span></button></div>
   <button class="btn ghost sm" id="changePass">Mot de passe</button>
@@ -763,6 +764,15 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       <p class="hint" style="margin-top:8px">Remboursements, paiements directs et dépenses directes réunis. Cliquez une demande pour l'ouvrir (les dépenses ne sont pas cliquables).</p>
     </div>
 
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">Horaires de dépôt des demandes</div></div>
+      <div class="card" style="padding:14px 16px">
+        <p class="hint" style="margin:0 0 10px">Pour chaque jour : ouvert ou non, et l'heure limite (heure belge). « Sans limite » = ouvert toute la journée. En tant que trésorier, vous n'êtes jamais bloqué par ces horaires.</p>
+        <div id="horBox"></div>
+        <div style="display:flex;gap:10px;margin-top:12px"><button class="btn ok" id="horSave">Enregistrer les horaires</button><button class="btn ghost" id="horReset">Tout ouvrir (défaut)</button></div>
+      </div>
+    </div>
+
   </section>
 
   <!-- messagerie -->
@@ -937,6 +947,66 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       <div class="section-title"><div class="eyebrow">Membres actifs</div></div>
       <div class="card" style="overflow:hidden"><div id="activeList"></div></div>
       <p class="hint" style="margin-top:10px">Retirer l'accès conserve les demandes déjà envoyées : la personne ne peut simplement plus se servir de l'application.</p>
+    </div>
+  </section>
+
+  <section id="viewFacture" class="stack" hidden>
+    <div>
+      <div class="section-title"><div class="eyebrow">Émetteur (votre ASBL)</div></div>
+      <div class="card" style="padding:16px">
+        <p class="hint" style="margin:0 0 12px">Ces informations apparaissent sur toutes vos factures. Enregistrées sur cet appareil.</p>
+        <div class="field"><label for="em_nom">Nom de l'ASBL</label><input type="text" id="em_nom" maxlength="120" placeholder="Bureau étudiant ASBL"></div>
+        <div class="field" style="margin-top:8px"><label for="em_adr">Adresse complète</label><textarea id="em_adr" maxlength="240" placeholder="Rue, numéro&#10;Code postal Ville&#10;Belgique"></textarea></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+          <div class="field" style="flex:1;min-width:180px"><label for="em_bce">N° d'entreprise (BCE)</label><input type="text" id="em_bce" maxlength="20" placeholder="BE 0123.456.789"></div>
+          <div class="field" style="flex:1;min-width:180px"><label for="em_peppol">Votre Peppol ID (facultatif)</label><input type="text" id="em_peppol" maxlength="40" placeholder="0208:0123456789"></div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+          <div class="field" style="flex:1;min-width:180px"><label for="em_iban">IBAN</label><input type="text" id="em_iban" maxlength="40" placeholder="BE.. .... .... ...."></div>
+          <div class="field" style="flex:1;min-width:180px"><label for="em_email">E-mail de contact</label><input type="email" id="em_email" maxlength="120" placeholder="tresorerie@..."></div>
+        </div>
+        <div class="actions" style="margin-top:12px"><button class="btn ok" id="em_save">Enregistrer l'émetteur</button></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title"><div class="eyebrow">Nouvelle facture</div></div>
+      <div class="card" style="padding:16px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <div class="field" style="flex:1;min-width:150px"><label for="f_num">Numéro</label><input type="text" id="f_num" readonly></div>
+          <div class="field" style="flex:1;min-width:150px"><label for="f_date">Date</label><input type="date" id="f_date"></div>
+          <div class="field" style="flex:1;min-width:150px"><label for="f_echeance">Échéance</label><input type="date" id="f_echeance"></div>
+        </div>
+
+        <div class="section-title" style="margin-top:14px"><div class="eyebrow">Client</div></div>
+        <div class="field"><label for="c_nom">Nom / raison sociale</label><input type="text" id="c_nom" maxlength="120" placeholder="Nom du client"></div>
+        <div class="field" style="margin-top:8px"><label for="c_adr">Adresse</label><textarea id="c_adr" maxlength="240" placeholder="Rue, numéro&#10;Code postal Ville&#10;Pays"></textarea></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+          <div class="field" style="flex:1;min-width:160px"><label for="c_tva">N° d'entreprise / TVA (si pro)</label><input type="text" id="c_tva" maxlength="20" placeholder="BE 0..."></div>
+          <div class="field" style="flex:1;min-width:160px"><label for="c_peppol">Peppol ID du client (pour envoi Peppol)</label><input type="text" id="c_peppol" maxlength="40" placeholder="0208:0..."></div>
+        </div>
+        <div class="field" style="margin-top:8px"><label for="c_email">E-mail du client (pour envoi par mail)</label><input type="email" id="c_email" maxlength="120" placeholder="client@..."></div>
+
+        <div class="section-title" style="margin-top:14px"><div class="eyebrow">Lignes</div></div>
+        <div id="f_lignes"></div>
+        <div class="actions" style="margin-top:8px"><button class="btn ghost sm" id="f_addLigne">+ Ajouter une ligne</button></div>
+
+        <div class="field" style="margin-top:12px"><label for="f_note">Note / communication (facultatif)</label><textarea id="f_note" maxlength="300" placeholder="Merci de votre confiance, référence…"></textarea></div>
+
+        <div style="margin-top:14px;padding:12px 14px;background:var(--green-bg,#eef6f0);border:1px solid #cfe6d8;border-radius:10px;display:flex;justify-content:space-between;align-items:center">
+          <b>Total à payer</b><b id="f_total" style="font-size:20px">0,00 €</b>
+        </div>
+        <p class="hint" style="margin-top:8px">Sans TVA — mention légale ajoutée automatiquement : « Petite entreprise soumise au régime de la franchise de taxe. TVA non applicable — Article 56bis du Code TVA ».</p>
+
+        <div class="err" id="f_err" hidden></div>
+        <div class="actions" style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn" id="f_apercu">Aperçu / PDF</button>
+          <button class="btn ghost" id="f_xml">Télécharger le XML Peppol</button>
+          <button class="btn ok" id="f_mail">Envoyer par e-mail</button>
+          <button class="btn" id="f_peppol" style="background:#8b5cf6;border-color:#8b5cf6">Envoyer via Peppol</button>
+        </div>
+        <p class="hint" id="f_peppolHint" style="margin-top:8px">L'envoi Peppol nécessite un Access Point configuré (fonction Supabase <code>peppol-send</code>). Sans cela, ce bouton vous préviendra simplement que ce n'est pas encore branché.</p>
+      </div>
     </div>
   </section>
 </main>
@@ -2246,7 +2316,7 @@ const JOURS_H = [[1,"Lundi"],[2,"Mardi"],[3,"Mercredi"],[4,"Jeudi"],[5,"Vendredi
 function renderHoraires(){
   const box = $("#horBox"); if(!box) return;
   const H = state.horaires || HORAIRES_DEFAUT;
-  const heures = ["","12","13","14","15","16","17","18","19","20","21","22","23"];
+  const heures = ["","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23"];
   box.innerHTML = JOURS_H.map(([j,nom])=>{
     const c = H[j] || H[String(j)] || {ouvert:false,limite:null};
     const opts = heures.map(x=>`<option value="${x}" ${String(c.limite==null?"":c.limite)===x?"selected":""}>${x===""?"Sans limite":x+"h"}</option>`).join("");
@@ -2629,8 +2699,12 @@ function heureBruxelles(){
 }
 
 function fenetreOuverte(){
-  // Restrictions horaires supprimées : le dépôt est toujours ouvert.
-  return true;
+  const { j, h } = heureBruxelles();
+  const H = state.horaires || HORAIRES_DEFAUT;
+  const c = H[j] || H[String(j)];
+  if(!c || !c.ouvert) return false;                       // jour fermé
+  if(c.limite === null || c.limite === undefined || c.limite === "") return true;  // ouvert toute la journée
+  return h < Number(c.limite);                            // avant l'heure limite (ex. 16 → fermé dès 16h00)
 }
 
 function periodeFermeture(){
@@ -2647,8 +2721,7 @@ function avertirFermeture(){
   let vu = null;
   try{ vu = localStorage.getItem("caisse.ferm"); }catch(e){}
   if(vu === cle) return;                              // déjà averti pour cette fermeture
-  const { j } = heureBruxelles();
-  $("#closedInfoTxt").innerHTML = "Le dépôt est fermé. Les demandes se font <b>du lundi au jeudi sans limite d'heure</b>, et <b>le vendredi jusqu'à 18h00 (heure belge)</b>. <b>Samedi et dimanche</b>, aucune demande n'est possible : vous pouvez uniquement consulter l'état d'avancement. Le dépôt rouvre lundi.";
+  $("#closedInfoTxt").innerHTML = "L'introduction de demandes est actuellement fermée selon les horaires fixés par la trésorerie. Vous gardez l'accès à votre compte et pouvez consulter l'état d'avancement de vos demandes. Le dépôt rouvrira automatiquement à la prochaine plage d'ouverture.";
   $("#closedInfo").classList.add("open");
   try{ localStorage.setItem("caisse.ferm", cle); }catch(e){}
 }
@@ -2657,13 +2730,20 @@ $("#closedInfoOk").onclick = () => $("#closedInfo").classList.remove("open");
 $("#closedInfo").addEventListener("click", e => { if(e.target.id === "closedInfo") $("#closedInfo").classList.remove("open"); });
 
 function majHoraire(){
-  const box = $("#horaire"); if(box) box.hidden = true;   // plus aucun bandeau d'horaires
-
-  // le formulaire reste toujours actif (aucune restriction horaire)
+  const box = $("#horaire");
+  if(isTreso()){ if(box) box.hidden = true; return; }     // le trésorier n'est jamais soumis aux horaires
+  const ouvert = fenetreOuverte();
+  if(box){
+    box.hidden = false;
+    box.className = "horaire " + (ouvert ? "ouvert" : "ferme");
+    box.innerHTML = ouvert
+      ? `<span class="hic">🟢</span><div><b>Dépôt ouvert</b><span>Vous pouvez introduire une demande.</span></div>`
+      : `<span class="hic">🔒</span><div><b>Dépôt fermé</b><span>L'introduction de demandes est momentanément fermée. Vous pouvez consulter l'état d'avancement ; le dépôt rouvrira selon les horaires fixés par la trésorerie.</span></div>`;
+  }
   const form = $("#reqForm");
   if(form) [...form.querySelectorAll("input,select,textarea,button")].forEach(el => {
     if(el.id === "editIban") return;
-    el.disabled = false;
+    el.disabled = !ouvert;
   });
 }
 
