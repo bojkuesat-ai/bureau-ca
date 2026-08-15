@@ -763,14 +763,6 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       <p class="hint" style="margin-top:8px">Remboursements, paiements directs et dépenses directes réunis. Cliquez une demande pour l'ouvrir (les dépenses ne sont pas cliquables).</p>
     </div>
 
-    <div>
-      <div class="section-title" style="margin-top:8px"><div class="eyebrow">Horaires de dépôt des demandes</div></div>
-      <div class="card" style="padding:14px 16px">
-        <p class="hint" style="margin:0 0 10px">Pour chaque jour : ouvert ou non, et l'heure limite (heure belge). « Sans limite » = ouvert toute la journée.</p>
-        <div id="horBox"></div>
-        <div style="display:flex;gap:10px;margin-top:12px"><button class="btn ok" id="horSave">Enregistrer les horaires</button><button class="btn ghost" id="horReset">Réglages par défaut</button></div>
-      </div>
-    </div>
   </section>
 
   <!-- messagerie -->
@@ -1322,6 +1314,34 @@ async function mailContactTreso(it, message, nbPieces, membreEmail){
   return envoyerMail(TRESO_EMAIL, "Nouveau message d'un membre — "+refOf(it), html, membreEmail || undefined);
 }
 
+async function mailReexamenTreso(it, msg){
+  const membreEmail = await emailDuDemandeur(it);
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Demande de réexamen</h2>
+    <p><b>${mailEsc(it.requester_name || "Un membre")}</b> demande le réexamen d'un dossier refusé : <b>${mailEsc(it.object)}</b> (${euro(it.amount)}).</p>
+    <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
+    ${msg ? `<p style="background:#fff7ec;border:1px solid #e8d3ab;border-radius:8px;padding:12px">${mailEsc(msg).replace(/\n/g,"<br>")}</p>` : ""}
+    <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#c47f17;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'onglet Réexamens</a></p>
+    <p style="color:#666;font-size:13px">Le dossier apparaît dans l'onglet <b>Réexamens</b>. Ouvrez-le pour le retraiter puis « Remettre en attente » si vous décidez de le réexaminer.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Vous pouvez répondre directement à cet e-mail : votre réponse ira au membre. — Caisse du bureau étudiant</p></div>`;
+  return envoyerMail(TRESO_EMAIL, "Demande de réexamen — "+refOf(it), html, membreEmail || undefined);
+}
+
+async function mailInscriptionValidee(m){
+  if(!m || !m.email) return false;
+  const prenom = mailEsc((m.first_name || String(m.name||"").split(" ")[0] || "").trim());
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Inscription validée ✅</h2>
+    <p>Bonjour ${prenom},</p>
+    <p>Votre inscription à la <b>Caisse du bureau étudiant</b> a été <b>validée</b> par le trésorier.</p>
+    <p>Vous pouvez dès à présent vous connecter et <b>déposer vos demandes de remboursement</b>.</p>
+    <p style="text-align:center;margin:26px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Accéder à l'application</a></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+  return envoyerMail(m.email, "Votre inscription est validée — Caisse du bureau étudiant", html);
+}
+
 async function envoyerAnnonceMembres(){
   const subj = ($("#ann_subject") ? $("#ann_subject").value : "").trim();
   const body = ($("#ann_body") ? $("#ann_body").value : "").trim();
@@ -1491,6 +1511,7 @@ function ouvrirReexamenModal(it){
     const { error } = await sb.from("requests").update({ reexamen_msg: msg, reexamen_at: new Date().toISOString() }).eq("id", it.id);
     if(error){ btn.disabled=false; btn.textContent="Envoyer la demande"; err.textContent="Envoi impossible : "+error.message; err.style.display="block"; return; }
     try{ await sb.from("events").insert({ request_id:it.id, who:(state.profile&&state.profile.name)||it.requester_name||"", what:"Demande de réexamen envoyée par le demandeur" }); }catch(_){}
+    try{ mailReexamenTreso(it, msg); }catch(_){}
     ov.innerHTML = `<div style="background:#fff;color:#1a1a1a;max-width:460px;width:100%;border-radius:14px;padding:26px;font-family:Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.4);text-align:center">
       <h2 style="margin:0 0 10px">Demande envoyée ✅</h2>
       <p style="color:#555">Le trésorier a été informé et réexaminera votre dossier. Vous recevrez un e-mail s'il est remis en traitement.</p>
@@ -2608,12 +2629,8 @@ function heureBruxelles(){
 }
 
 function fenetreOuverte(){
-  const { j, h } = heureBruxelles();
-  const H = state.horaires || HORAIRES_DEFAUT;
-  const c = H[j] || H[String(j)];
-  if(!c || !c.ouvert) return false;
-  if(c.limite===null || c.limite===undefined || c.limite==="") return true;
-  return h < Number(c.limite);
+  // Restrictions horaires supprimées : le dépôt est toujours ouvert.
+  return true;
 }
 
 function periodeFermeture(){
@@ -2640,23 +2657,13 @@ $("#closedInfoOk").onclick = () => $("#closedInfo").classList.remove("open");
 $("#closedInfo").addEventListener("click", e => { if(e.target.id === "closedInfo") $("#closedInfo").classList.remove("open"); });
 
 function majHoraire(){
-  const box = $("#horaire"); if(!box) return;
-  if(isTreso()){ box.hidden = true; return; }        // le trésorier n'est jamais bloqué
-  box.hidden = false;
-  const ouvert = fenetreOuverte();
-  const { j } = heureBruxelles();
-  box.className = "horaire " + (ouvert ? "ouvert" : "ferme");
-  box.innerHTML = ouvert
-    ? `<span class="hic">🟢</span><div><b>Dépôt ouvert</b><span>${ j === 5 ? "Vendredi : dernières demandes jusqu'à 18h00 (heure belge)." : "Du lundi au jeudi, aucune limite d'heure ; le vendredi jusqu'à 18h00." }</span></div>`
-    : `<span class="hic">🔒</span><div><b>Dépôt fermé</b><span>${
-        (j === 0 || j === 6) ? "Aucune demande le week-end."
-              : "Vendredi, il est plus de 18h."} Vous pouvez consulter l'état d'avancement. Rappel : lun–jeu sans limite, vendredi jusqu'à 18h. Le formulaire est momentanément désactivé.</span></div>`;
+  const box = $("#horaire"); if(box) box.hidden = true;   // plus aucun bandeau d'horaires
 
-  // activer/désactiver le formulaire
+  // le formulaire reste toujours actif (aucune restriction horaire)
   const form = $("#reqForm");
-  [...form.querySelectorAll("input,select,textarea,button")].forEach(el => {
+  if(form) [...form.querySelectorAll("input,select,textarea,button")].forEach(el => {
     if(el.id === "editIban") return;
-    el.disabled = !ouvert;
+    el.disabled = false;
   });
 }
 
@@ -3266,8 +3273,9 @@ $("#viewMembers").addEventListener("click", async e => {
   const { error } = await sb.from("profiles").update(patch).eq("id", id);
   b.disabled = false;
   if(error) return toast("Impossible : "+error.message);
+  if(act==="approve"){ try{ await mailInscriptionValidee(m); }catch(_){} }
   await refresh();
-  toast(act==="approve" ? "Accès confirmé." : act==="revoke" ? "Accès retiré." : "Membre mis à jour.");
+  toast(act==="approve" ? "Accès confirmé — le membre a été prévenu par e-mail." : act==="revoke" ? "Accès retiré." : "Membre mis à jour.");
 });
 
 $("#filterStatus").onchange = render;
@@ -3340,7 +3348,7 @@ function blocEditer(it){
   const cats = ["Fournitures","Transport","Repas & réception","Matériel","Communication","Frais bancaires","Autre"];
   return `<div class="fixbox">
     <b>Modifier ou retirer ma demande</b>
-    <p>Tant que le trésorier n'a pas décidé, vous pouvez corriger les informations ou supprimer complètement la demande.</p>
+    <p>Tant que la demande n'a pas été validée ou remboursée, vous pouvez corriger les informations ou la supprimer complètement.${(it.status==="Refusée"||it.status==="À corriger")?" Après modification, elle repartira automatiquement en attente de décision du trésorier." : ""}</p>
     <div id="editZone" hidden class="stack" style="gap:12px;margin-top:10px">
       <div class="field"><label for="ed_object">Objet</label>
         <input type="text" id="ed_object" maxlength="90" value="${esc(it.object||"")}"></div>
@@ -3419,7 +3427,7 @@ function renderDrawer(it){
   let actions = "";
   const modifiable = sienne && (it.status === "En attente" || it.status === "Refusée" || it.status === "À corriger");
   if(modifiable && !isTreso()) actions += blocComplement(it);
-  if(sienne && !isTreso() && it.status === "En attente") actions += blocEditer(it);
+  if(modifiable) actions += blocEditer(it);   // propriétaire (membre OU trésorier) : modifier/supprimer sa demande tant qu'elle n'est ni validée ni remboursée
   if(sienne && !isTreso() && !modifiable) actions += blocContact(it);
   if(isTreso() && sienne && it.status === "En attente"){
     actions += `<div class="callout"><b>Votre propre demande</b>
@@ -3524,7 +3532,7 @@ $("#d_body").addEventListener("click", async e => {
   if(act === "edit-cancel"){ $("#editZone").hidden = true; $("#editBtns").hidden = false; erreurForm("#editErr", null); return; }
 
   if(act === "edit-save"){
-    if(it.user_id !== state.profile.id || it.status !== "En attente"){ return toast("Cette demande n'est plus modifiable."); }
+    if(it.user_id !== state.profile.id || !["En attente","Refusée","À corriger"].includes(it.status)){ return toast("Cette demande n'est plus modifiable."); }
     const obj = $("#ed_object").value.trim();
     const mnt = Number($("#ed_amount").value);
     const dte = $("#ed_date").value;
@@ -3533,6 +3541,15 @@ $("#d_body").addEventListener("click", async e => {
     if(!(mnt > 0)) return erreurForm("#editErr", "Le montant doit être supérieur à 0.");
     if(!dte) return erreurForm("#editErr", "Indiquez la date.");
     const maj = { object: obj, amount: mnt, expense_date: dte, note: $("#ed_note").value.trim() };
+    let versReexamen = false;
+    if(it.status === "Refusée"){
+      // demande refusée modifiée → part dans l'onglet Réexamens (reste "Refusée" + signalée), trésorier prévenu par mail
+      maj.reexamen_at = new Date().toISOString();
+      maj.reexamen_msg = "Demande modifiée par le demandeur après refus.";
+      versReexamen = true;
+    } else if(it.status === "À corriger"){
+      maj.status = "En attente"; maj.decision_note = null; maj.decided_at = null;
+    }
     if(it.kind === "direct"){
       const ben = $("#ed_benef") ? $("#ed_benef").value.trim() : "";
       if(!ben) return erreurForm("#editErr", "Indiquez le bénéficiaire.");
@@ -3546,19 +3563,21 @@ $("#d_body").addEventListener("click", async e => {
     b.disabled = true; b.textContent = "Enregistrement…";
     const { error } = await sb.from("requests").update(maj).eq("id", it.id);
     if(error){ b.disabled = false; b.textContent = "Enregistrer les modifications"; return toast("Échec : " + error.message); }
-    try{ await sb.from("events").insert({ request_id: it.id, who: state.profile.name, what: "Demande modifiée par le demandeur" }); }catch(_){}
-    try{ mailModifiee({ ...it, ...maj }, avant); }catch(_){}
+    try{ await sb.from("events").insert({ request_id: it.id, who: state.profile.name, what: versReexamen ? "Demande modifiée et envoyée en réexamen" : "Demande modifiée par le demandeur" }); }catch(_){}
+    try{ if(versReexamen) mailReexamenTreso({ ...it, ...maj }, "Demande modifiée par le demandeur après refus."); else mailModifiee({ ...it, ...maj }, avant); }catch(_){}
     await refresh();
     const maj2 = state.items.find(i => i.id === it.id);
     if(maj2) renderDrawer(maj2);
     alert("Votre demande a bien été modifiée.\n\n" + maj.object + " — " + euro(maj.amount)
-      + "\n\nUn e-mail de confirmation vient de vous être envoyé. Le trésorier en a été informé.");
-    toast("Demande modifiée.");
+      + (versReexamen
+          ? "\n\nElle a été envoyée au trésorier pour réexamen. Vous serez informé de sa décision par e-mail."
+          : "\n\nUn e-mail de confirmation vient de vous être envoyé. Le trésorier en a été informé."));
+    toast(versReexamen ? "Demande envoyée en réexamen." : "Demande modifiée.");
     return;
   }
 
   if(act === "edit-delete"){
-    if(it.user_id !== state.profile.id || it.status !== "En attente"){ return toast("Cette demande n'est plus supprimable."); }
+    if(it.user_id !== state.profile.id || !["En attente","Refusée","À corriger"].includes(it.status)){ return toast("Cette demande n'est plus supprimable."); }
     if(!confirm("Supprimer définitivement cette demande ?\n\n" + (it.object||"") + " — " + euro(it.amount) + "\n\nCette action est irréversible.")) return;
     b.disabled = true; b.textContent = "Suppression…";
     try{
