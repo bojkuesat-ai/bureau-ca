@@ -1070,6 +1070,22 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
   </div>
 </div>
 
+<!-- ============ MOT DE PASSE OUBLIÉ ============ -->
+<div class="overlay" id="forgotModal">
+  <div class="sheetd" style="max-width:440px">
+    <div class="sb" style="padding:28px 26px">
+      <div style="font-size:34px;line-height:1;margin-bottom:12px;text-align:center">🔑</div>
+      <h2 style="font-size:21px;margin-bottom:8px;text-align:center">Réinitialiser le mot de passe</h2>
+      <p style="color:var(--muted);font-size:13.5px;margin:0 0 18px;text-align:center">Indiquez l'adresse e-mail de votre compte. Un lien pour choisir un nouveau mot de passe vous sera envoyé par e-mail.</p>
+      <div class="err" id="forgotErr" hidden></div>
+      <div class="field"><label for="forgot_email">Adresse e-mail</label>
+        <input type="email" id="forgot_email" autocomplete="email" placeholder="vous@exemple.be"></div>
+      <button class="btn wide" id="forgotSend" style="margin-top:14px">Envoyer le lien</button>
+      <button class="linkbtn" id="forgotCancel" style="display:block;margin:12px auto 0">Annuler</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="payrun">
   <div class="sheetd">
     <div class="sh">
@@ -1666,13 +1682,24 @@ function fenetre(titre, texte){
 $("#modalOk").onclick = () => $("#modal").classList.remove("open");
 $("#modal").addEventListener("click", e => { if(e.target.id === "modal") $("#modal").classList.remove("open"); });
 
-$("#forgotBtn").onclick = async () => {
-  const email = $("#a_email").value.trim();
-  if(!email) { $("#a_email").focus(); return afficherErreur("Saisissez d'abord votre adresse e-mail ci-dessus."); }
+$("#forgotBtn").onclick = () => {
+  $("#forgot_email").value = $("#a_email").value.trim();   // pré-remplit si déjà saisi
+  $("#forgotErr").hidden = true;
+  $("#forgotModal").classList.add("open");
+  setTimeout(() => $("#forgot_email").focus(), 50);
+};
+$("#forgotCancel").onclick = () => $("#forgotModal").classList.remove("open");
+$("#forgotModal").addEventListener("click", e => { if(e.target.id === "forgotModal") $("#forgotModal").classList.remove("open"); });
+$("#forgot_email").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); $("#forgotSend").click(); } });
+$("#forgotSend").onclick = async () => {
+  const email = $("#forgot_email").value.trim();
+  if(!email || !email.includes("@")){ $("#forgotErr").textContent = "Saisissez une adresse e-mail valide."; $("#forgotErr").hidden = false; return; }
+  const btn = $("#forgotSend"); btn.disabled = true; btn.textContent = "Envoi…";
   const base = window.location.origin + window.location.pathname;
   const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: base });
-  if(error) return afficherErreur(traduire(error.message));
-  $("#authErr").hidden = true;
+  btn.disabled = false; btn.textContent = "Envoyer le lien";
+  if(error){ $("#forgotErr").textContent = traduire(error.message); $("#forgotErr").hidden = false; return; }
+  $("#forgotModal").classList.remove("open");
   fenetre("E-mail envoyé",
     "Si un compte existe pour " + email + ", un lien de réinitialisation vient d'y être envoyé. " +
     "Vérifiez vos indésirables : le message arrive parfois avec quelques minutes de retard. " +
