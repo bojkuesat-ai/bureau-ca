@@ -974,7 +974,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       <div class="card" style="padding:16px">
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <div class="field" style="flex:1;min-width:150px"><label for="f_num">Numéro</label><input type="text" id="f_num" readonly></div>
-          <div class="field" style="flex:1;min-width:150px"><label for="f_date">Date</label><input type="date" id="f_date"></div>
+          <div class="field" style="flex:1;min-width:150px"><label for="fa_date">Date</label><input type="date" id="fa_date"></div>
           <div class="field" style="flex:1;min-width:150px"><label for="f_echeance">Échéance</label><input type="date" id="f_echeance"></div>
         </div>
 
@@ -991,7 +991,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         <div id="f_lignes"></div>
         <div class="actions" style="margin-top:8px"><button class="btn ghost sm" id="f_addLigne">+ Ajouter une ligne</button></div>
 
-        <div class="field" style="margin-top:12px"><label for="f_note">Note / communication (facultatif)</label><textarea id="f_note" maxlength="300" placeholder="Merci de votre confiance, référence…"></textarea></div>
+        <div class="field" style="margin-top:12px"><label for="fa_note">Note / communication (facultatif)</label><textarea id="fa_note" maxlength="300" placeholder="Merci de votre confiance, référence…"></textarea></div>
 
         <div style="margin-top:14px;padding:12px 14px;background:var(--green-bg,#eef6f0);border:1px solid #cfe6d8;border-radius:10px;display:flex;justify-content:space-between;align-items:center">
           <b>Total à payer</b><b id="f_total" style="font-size:20px">0,00 €</b>
@@ -1132,14 +1132,23 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = s => document.querySelector(s);
 const HORAIRES_DEFAUT = {1:{ouvert:true,limite:null},2:{ouvert:true,limite:null},3:{ouvert:true,limite:null},4:{ouvert:true,limite:null},5:{ouvert:true,limite:null},6:{ouvert:true,limite:null},7:{ouvert:true,limite:null}};
 const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], horaires:HORAIRES_DEFAUT, selected:null, view:"mine", proofUrls:{},
-                channel:null, lastStatus:{}, primed:false, lastSync:null, sel:new Set() };
+                channel:null, lastStatus:{}, primed:false, lastSync:null, sel:new Set(),
+                drawerDirty:false, tresoEmail:null, tronque:null };
 
 const euro = n => (Number(n)||0).toLocaleString("fr-BE",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const fdate = iso => iso ? iso.split("-").reverse().join("/") : "—";
 
 /* ===== E-mails (Amazon SES via Edge Function) + reçu par lien ===== */
 const SEND_FN = SUPABASE_URL + "/functions/v1/send-email";
-const TRESO_EMAIL = "bojkuesat@gmail.com";
+const TRESO_EMAIL_DEFAUT = "bojkuesat@gmail.com";
+/* Adresse du trésorier : lue dans caisse_config.treso_email si la colonne existe,
+   sinon déduite du membre portant le rôle « tresorier », sinon valeur de repli.
+   Plus rien n'est figé dans le code lors d'une passation. */
+function emailTreso(){
+  if(state.tresoEmail) return state.tresoEmail;
+  const t = (state.members||[]).find(m => m.role === "tresorier" && m.approved && m.email);
+  return (t && t.email) || TRESO_EMAIL_DEFAUT;
+}
 const mailEsc = x => String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const prenomDe = it => String(it && it.requester_name || "").split(" ")[0] || "";
 async function envoyerMail(to, subject, html, reply_to){
@@ -1147,8 +1156,12 @@ async function envoyerMail(to, subject, html, reply_to){
   try{
     const payload = { to, subject, html };
     if(reply_to) payload.reply_to = reply_to;
+    // On présente le jeton de session de l'utilisateur connecté plutôt que la clé publique :
+    // la fonction send-email peut ainsi refuser les appels anonymes (usurpation du domaine d'envoi).
+    let jeton = SUPABASE_ANON_KEY;
+    try{ const { data:{ session } } = await sb.auth.getSession(); if(session && session.access_token) jeton = session.access_token; }catch(_){}
     const r = await fetch(SEND_FN, { method:"POST",
-      headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+SUPABASE_ANON_KEY, "apikey":SUPABASE_ANON_KEY },
+      headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+jeton, "apikey":SUPABASE_ANON_KEY },
       body: JSON.stringify(payload) });
     return r.ok;
   }catch(e){ return false; }
@@ -1229,7 +1242,7 @@ async function mailModifiee(it, avant){
     ${tab}
     <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
     <p style="text-align:center;margin:22px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir la demande</a></p></div>`;
-  return envoyerMail(TRESO_EMAIL, "Demande modifiée — "+mailEsc(it.requester_name||"")+" ("+euro(it.amount)+")", htmlT, to || undefined);
+  return envoyerMail(emailTreso(), "Demande modifiée — "+mailEsc(it.requester_name||"")+" ("+euro(it.amount)+")", htmlT, to || undefined);
 }
 async function mailSupprimee(it){
   const to = (state.profile && state.profile.email) || await emailDuDemandeur(it);
@@ -1249,7 +1262,7 @@ async function mailSupprimee(it){
     <p><b>${mailEsc(it.requester_name||"")}</b> a supprimé sa demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}).</p>
     <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
     <p>Aucune action n'est requise de votre part.</p></div>`;
-  return envoyerMail(TRESO_EMAIL, "Demande supprimée — "+mailEsc(it.requester_name||"")+" ("+euro(it.amount)+")", htmlT, to || undefined);
+  return envoyerMail(emailTreso(), "Demande supprimée — "+mailEsc(it.requester_name||"")+" ("+euro(it.amount)+")", htmlT, to || undefined);
 }
 async function mailAlerteTreso(it, isDirect){
   const quoi = isDirect ? "paiement direct" : "remboursement";
@@ -1270,7 +1283,7 @@ async function mailAlerteTreso(it, isDirect){
     <p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Traiter la demande</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant</p></div>`;
-  return envoyerMail(TRESO_EMAIL, "Nouvelle demande de "+quoi+" — "+mailEsc(dem)+" ("+euro(it.amount)+")", html, mailDem || undefined);
+  return envoyerMail(emailTreso(), "Nouvelle demande de "+quoi+" — "+mailEsc(dem)+" ("+euro(it.amount)+")", html, mailDem || undefined);
 }
 async function mailAccuse(it, isDirect){
   const to = (state.profile && state.profile.email) || await emailDuDemandeur(it);
@@ -1372,7 +1385,7 @@ async function mailMessage(it, note){
     <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir ma demande</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
-  return envoyerMail(to, "Message du trésorier — "+refOf(it), html, TRESO_EMAIL);
+  return envoyerMail(to, "Message du trésorier — "+refOf(it), html, emailTreso());
 }
 async function mailComplementRecu(it, remisEnAttente){
   const to = (state.profile && state.profile.email) || await emailDuDemandeur(it);
@@ -1397,7 +1410,7 @@ async function mailContactTreso(it, message, nbPieces, membreEmail){
     <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la demande</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Vous pouvez répondre directement à cet e-mail : votre réponse ira au membre. — Caisse du bureau étudiant</p></div>`;
-  return envoyerMail(TRESO_EMAIL, "Nouveau message d'un membre — "+refOf(it), html, membreEmail || undefined);
+  return envoyerMail(emailTreso(), "Nouveau message d'un membre — "+refOf(it), html, membreEmail || undefined);
 }
 
 async function mailReexamenTreso(it, msg){
@@ -1411,7 +1424,7 @@ async function mailReexamenTreso(it, msg){
     <p style="color:#666;font-size:13px">Le dossier apparaît dans l'onglet <b>Réexamens</b>. Ouvrez-le pour le retraiter puis « Remettre en attente » si vous décidez de le réexaminer.</p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Vous pouvez répondre directement à cet e-mail : votre réponse ira au membre. — Caisse du bureau étudiant</p></div>`;
-  return envoyerMail(TRESO_EMAIL, "Demande de réexamen — "+refOf(it), html, membreEmail || undefined);
+  return envoyerMail(emailTreso(), "Demande de réexamen — "+refOf(it), html, membreEmail || undefined);
 }
 
 async function mailInscriptionValidee(m){
@@ -1649,12 +1662,12 @@ $("#authForm").addEventListener("submit", async e => {
       !prenom ? ["Indiquez votre prénom.", "#a_first"] :
       !nom    ? ["Indiquez votre nom.", "#a_last"] :
       !poste  ? ["Choisissez le poste que vous occupez.", "#a_pos"] :
-      iban.replace(/\s/g,"").length < 14 ? ["Saisissez un IBAN complet.", "#a_iban"] :
+      !ibanValide(iban) ? [messageIban(iban), "#a_iban"] :
       !email  ? ["Indiquez votre adresse e-mail.", "#a_email"] :
       password.length < 8 ? ["Le mot de passe doit faire au moins huit caractères.", "#a_pass"] : null;
     if(manque){ btn.disabled = false; $(manque[1]).focus(); return afficherErreur(manque[0]); }
     ({ error } = await sb.auth.signUp({ email, password, options:{ data:{
-      first_name: prenom, last_name: nom, position: poste, iban
+      first_name: prenom, last_name: nom, position: poste, iban: ibanFormate(iban)
     }}}));
   }else{
     ({ error } = await sb.auth.signInWithPassword({ email, password }));
@@ -1796,23 +1809,46 @@ async function loadProfile(user){
   if(!isTreso()) setTimeout(avertirFermeture, 600);
 }
 
+/* PostgREST plafonne une requête à 1000 lignes : au-delà, les totaux et le bilan
+   seraient faux sans le moindre message. On lit donc chaque table page par page. */
+const PAGE_SQL = 1000;
+async function chargerTout(table, colOrdre, asc){
+  let out = [], debut = 0;
+  for(;;){
+    const q = await sb.from(table).select("*").order(colOrdre,{ascending:asc}).range(debut, debut + PAGE_SQL - 1);
+    if(q.error) return { data: out, error: q.error };
+    const lot = q.data || [];
+    out = out.concat(lot);
+    if(lot.length < PAGE_SQL) break;
+    debut += PAGE_SQL;
+    if(debut >= 100000){ return { data: out, error: null, tronque: true }; }   // garde-fou
+  }
+  return { data: out, error: null };
+}
+
 async function refresh(){
   if(!state.profile?.approved) return;
-  const r = await sb.from("requests").select("*").order("created_at",{ascending:false});
+  state.tronque = null;
+  const r = await chargerTout("requests", "created_at", false);
   if(r.error) return toast("Chargement impossible : "+r.error.message);
   state.items = r.data || [];
+  if(r.tronque) state.tronque = "demandes";
   try{ const _hc = await sb.from("caisse_config").select("horaires").eq("id",1).maybeSingle(); if(_hc.data && _hc.data.horaires) state.horaires = _hc.data.horaires; }catch(_){}
+  try{ const _tc = await sb.from("caisse_config").select("treso_email").eq("id",1).maybeSingle();
+       if(_tc.data && _tc.data.treso_email) state.tresoEmail = String(_tc.data.treso_email).trim() || null; }catch(_){}
   state.lastSync = new Date();
   detecterChangements();
-  try{ const _m = await sb.from("messages").select("*").order("created_at",{ascending:true}); if(!_m.error) state.messages = _m.data || []; }catch(_){}
+  try{ const _m = await chargerTout("messages", "created_at", true); if(!_m.error) state.messages = _m.data || []; }catch(_){}
   if(isTreso()){
-    const m = await sb.from("profiles").select("*").order("created_at",{ascending:true});
+    const m = await chargerTout("profiles", "created_at", true);
     state.members = m.data || [];
-    const x = await sb.from("expenses").select("*").order("expense_date",{ascending:false});
+    const x = await chargerTout("expenses", "expense_date", false);
     state.expenses = x.data || [];
-    const y = await sb.from("incomes").select("*").order("income_date",{ascending:false});
+    if(x.tronque) state.tronque = "dépenses";
+    const y = await chargerTout("incomes", "income_date", false);
     state.incomes = y.data || [];
-    const c = await sb.from("closures").select("*").order("year",{ascending:false});
+    if(y.tronque) state.tronque = "recettes";
+    const c = await chargerTout("closures", "year", false);
     state.closures = c.data || [];
     if(!state.relanceAutoFaite){ state.relanceAutoFaite = true; relancerIncompletes(true); }
   }
@@ -1929,8 +1965,8 @@ $("#f_pay").addEventListener("change", majFormulaire);
 $("#editIban").onclick = async () => {
   const v = prompt("IBAN sur lequel vous souhaitez être remboursé :", state.profile.iban || "");
   if(v === null) return;
-  const iban = v.trim().toUpperCase();
-  if(iban.length < 8) return toast("Cet IBAN semble incomplet.");
+  const iban = ibanFormate(v);
+  if(!ibanValide(iban)) return alert("IBAN refusé.\n\n" + messageIban(v));
   const { error } = await sb.from("profiles").update({ iban }).eq("id", state.profile.id);
   if(error) return toast("Modification impossible : " + error.message);
   state.profile.iban = iban; majFormulaire(); toast("IBAN mis à jour.");
@@ -2223,7 +2259,19 @@ const payeeIban = i => i.kind==="direct" ? (i.beneficiary_iban||i.iban||"") : (i
 const payeeComm = i => (i.kind==="direct" && i.communication) ? i.communication : (refOf(i)+" "+(i.object||""));
 const ibanClean = v => String(v||"").replace(/\s+/g,"").toUpperCase();
 const xmlEsc = v => String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const refClean = v => String(v??"").replace(/[^A-Za-z0-9\/\-?:().,'+ ]/g," ").trim().slice(0,35);
+/* SEPA n'accepte qu'un jeu de caractères restreint : on translittère les accents
+   (« réception » → « reception ») au lieu de les remplacer par des espaces,
+   sinon la communication arrive illisible sur l'extrait bancaire. */
+const sepaTxt = v => String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+  .replace(/[œŒ]/g,m=>m==="œ"?"oe":"OE").replace(/[æÆ]/g,m=>m==="æ"?"ae":"AE")
+  .replace(/[’‘‚]/g,"'").replace(/[“”„]/g,'"').replace(/[–—−]/g,"-")
+  .replace(/[^A-Za-z0-9\/\-?:().,'+ ]/g," ").replace(/\s{2,}/g," ").trim();
+const refClean = v => sepaTxt(v).slice(0,35);
+const nomClean = v => sepaTxt(v).slice(0,70);
+/* Arrondi bancaire : un montant à 3 décimales rendait CtrlSum ≠ somme des lignes
+   et faisait rejeter le fichier par la banque. */
+const cents = v => Math.round(Number(v||0) * 100);
+const montantSepa = v => (cents(v) / 100).toFixed(2);
 function telechargerFichier(nom, contenu, type){
   const blob = new Blob([contenu], {type});
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
@@ -2233,29 +2281,38 @@ function telechargerFichier(nom, contenu, type){
 function preparerVirements(){
   const l = payCoches();
   if(!l.length){ toast("Aucune ligne cochée."); return null; }
-  const bons = l.filter(i => ibanClean(payeeIban(i)).length >= 14);
-  const sansIban = l.length - bons.length;
+  const bons = l.filter(i => ibanValide(payeeIban(i)));
+  const mauvais = l.filter(i => !ibanValide(payeeIban(i)));
+  const sansIban = mauvais.length;
   if(!bons.length){ toast("Aucune ligne avec un IBAN valide."); return null; }
   const dejaExp = bons.filter(i => i.exported_at).length;
   let msg = "";
-  if(sansIban) msg += sansIban + " demande(s) sans IBAN valide seront ignorées.\n";
+  if(sansIban) msg += sansIban + " demande(s) au format d'IBAN incorrect seront IGNORÉES par le fichier :\n"
+    + mauvais.slice(0,8).map(i => "  · " + payeeName(i) + " — " + (payeeIban(i) || "aucun IBAN")).join("\n")
+    + (sansIban > 8 ? "\n  · … et " + (sansIban-8) + " autre(s)" : "") + "\n\n";
   if(dejaExp)  msg += dejaExp + " demande(s) ont déjà été exportées : vous risquez un double paiement si les virements ont déjà été faits.\n";
   if(msg && !confirm(msg + "\nContinuer et générer le fichier ?")) return null;
   return bons;
 }
 async function marquerExporte(list){
   const now = new Date().toISOString();
+  let rates = 0;
   for(const i of list){
-    await sb.from("requests").update({ exported_at: now }).eq("id", i.id);
+    const { error } = await sb.from("requests").update({ exported_at: now }).eq("id", i.id);
+    if(error){ rates++; continue; }          // sans ce contrôle, une ligne pouvait être exportée deux fois
     i.exported_at = now;
   }
+  if(rates) alert("Attention : " + rates + " demande(s) n'ont pas pu être marquées comme exportées.\n\n"
+    + "Le fichier est correct, mais ces lignes ne porteront pas l'avertissement « déjà exporté ». "
+    + "Notez-les avant de refaire un export, pour éviter un double virement.");
+  return rates;
 }
 /* CSV pensé pour ING / tableur : une ligne par bénéficiaire */
 $("#payCsv").onclick = async () => {
   const l = preparerVirements(); if(!l) return;
   const cols = ["Bénéficiaire","IBAN","Montant","Devise","Communication"];
   const rows = l.map(i => [
-      payeeName(i), ibanClean(payeeIban(i)), Number(i.amount||0).toFixed(2), "EUR", payeeComm(i)
+      payeeName(i), ibanClean(payeeIban(i)), montantSepa(i.amount), "EUR", payeeComm(i)
     ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(";"));
   telechargerFichier("virements-ING-"+new Date().toISOString().slice(0,10)+".csv",
     "\uFEFF"+cols.join(";")+"\n"+rows.join("\n"), "text/csv;charset=utf-8");
@@ -2269,15 +2326,16 @@ function buildSepaXml(list){
   const dttm = jour+"T"+p(now.getHours())+":"+p(now.getMinutes())+":"+p(now.getSeconds());
   const msgId = ("BECAISSE"+now.getTime());
   const nb = list.length;
-  const ctrl = list.reduce((s,i)=>s+Number(i.amount||0),0).toFixed(2);
+  // CtrlSum doit être EXACTEMENT la somme des InstdAmt : on additionne en centimes entiers
+  const ctrl = (list.reduce((s,i)=>s+cents(i.amount),0) / 100).toFixed(2);
   const tx = list.map((i,n) => {
-    const amt = Number(i.amount||0).toFixed(2);
+    const amt = montantSepa(i.amount);
     const e2e = refClean(refOf(i)) || ("REF"+(n+1));
     const rmt = refClean(payeeComm(i));
     return "      <CdtTrfTxInf>\n"
       + "        <PmtId><EndToEndId>"+xmlEsc(e2e)+"</EndToEndId></PmtId>\n"
       + "        <Amt><InstdAmt Ccy=\"EUR\">"+amt+"</InstdAmt></Amt>\n"
-      + "        <Cdtr><Nm>"+xmlEsc(String(payeeName(i)||"").slice(0,70))+"</Nm></Cdtr>\n"
+      + "        <Cdtr><Nm>"+xmlEsc(nomClean(payeeName(i)))+"</Nm></Cdtr>\n"
       + "        <CdtrAcct><Id><IBAN>"+xmlEsc(ibanClean(payeeIban(i)))+"</IBAN></Id></CdtrAcct>\n"
       + "        <RmtInf><Ustrd>"+xmlEsc(rmt)+"</Ustrd></RmtInf>\n"
       + "      </CdtTrfTxInf>";
@@ -2319,18 +2377,32 @@ $("#paySepa").onclick = async () => {
 
 $("#payDone").onclick = async () => {
   const l = payCoches(); if(!l.length) return toast("Aucune ligne cochée.");
+  // L'export écarte silencieusement les IBAN invalides : sans ce contrôle, on marquait
+  // « remboursée » une demande dont le virement n'a jamais été généré.
+  const invalides = l.filter(i => !ibanValide(payeeIban(i)));
+  const jamaisExp = l.filter(i => ibanValide(payeeIban(i)) && !i.exported_at);
+  let alerte = "";
+  if(invalides.length) alerte += "⚠ " + invalides.length + " demande(s) ont un IBAN invalide et n'ont donc JAMAIS pu figurer dans un fichier de virements :\n"
+    + invalides.slice(0,8).map(i => "  · " + payeeName(i) + " — " + euro(i.amount)).join("\n")
+    + (invalides.length > 8 ? "\n  · …" : "") + "\n\n";
+  if(jamaisExp.length) alerte += "⚠ " + jamaisExp.length + " demande(s) n'ont jamais été exportées vers la banque :\n"
+    + jamaisExp.slice(0,8).map(i => "  · " + payeeName(i) + " — " + euro(i.amount)).join("\n")
+    + (jamaisExp.length > 8 ? "\n  · …" : "") + "\n\n";
+  if(alerte && !confirm(alerte + "Les marquer quand même comme remboursées ?\n\n"
+    + "Ne confirmez que si vous avez effectué ces virements à la main.")) return;
   if(!confirm(l.length + " demande(s) seront marquées comme remboursées, pour un total de "
     + euro(l.reduce((s,i)=>s+Number(i.amount||0),0)) + ".\n\nConfirmez seulement après avoir effectué les virements.")) return;
   const btn = $("#payDone"); btn.disabled = true; btn.textContent = "En cours…";
   let ok = 0;
   for(const i of l){
+    const quand = new Date().toISOString();
     const { error } = await sb.from("requests")
-      .update({ status:"Remboursée", paid_at:new Date().toISOString() }).eq("id", i.id);
+      .update({ status:"Remboursée", paid_at:quand }).eq("id", i.id);
     if(!error){
       ok++;
       await sb.from("events").insert({ request_id:i.id, who:state.profile.name,
         what: i.user_id === state.profile.id ? "Remboursement effectué au trésorier lui-même" : "Remboursement effectué (série de virements)" });
-      mailRembourse(i);
+      mailRembourse({ ...i, status:"Remboursée", paid_at:quand });
     }
   }
   btn.disabled = false; btn.textContent = "Marquer comme remboursés";
@@ -2734,6 +2806,21 @@ function fenetreOuverte(){
   return h < Number(c.limite);                            // avant l'heure limite (ex. 16 → fermé dès 16h00)
 }
 
+/* Le message « du lundi au vendredi jusqu'à 18h » était figé dans le code alors que
+   les horaires sont réglables : il devient faux dès que le trésorier les change. */
+function texteHoraires(){
+  const H = state.horaires || HORAIRES_DEFAUT;
+  const jours = [[1,"lundi"],[2,"mardi"],[3,"mercredi"],[4,"jeudi"],[5,"vendredi"],[6,"samedi"],[7,"dimanche"]];
+  const ouverts = jours.filter(([n]) => { const c = H[n] || H[String(n)]; return c && c.ouvert; });
+  if(!ouverts.length) return "Le dépôt de demandes est actuellement fermé tous les jours.";
+  const parts = ouverts.map(([n,nom]) => {
+    const c = H[n] || H[String(n)];
+    const sansLimite = c.limite === null || c.limite === undefined || c.limite === "";
+    return nom + (sansLimite ? "" : " jusqu'à " + c.limite + "h");
+  });
+  return "Dépôt ouvert : " + parts.join(", ") + " (heure belge).";
+}
+
 function periodeFermeture(){
   // identifiant unique de la fenêtre de fermeture en cours, pour n'avertir qu'une fois
   const { j } = heureBruxelles();
@@ -2748,7 +2835,8 @@ function avertirFermeture(){
   let vu = null;
   try{ vu = localStorage.getItem("caisse.ferm"); }catch(e){}
   if(vu === cle) return;                              // déjà averti pour cette fermeture
-  $("#closedInfoTxt").innerHTML = "L'introduction de demandes est actuellement fermée selon les horaires fixés par la trésorerie. Vous gardez l'accès à votre compte et pouvez consulter l'état d'avancement de vos demandes. Le dépôt rouvrira automatiquement à la prochaine plage d'ouverture.";
+  $("#closedInfoTxt").textContent = "L'introduction de demandes est actuellement fermée. " + texteHoraires()
+    + " Vous gardez l'accès à votre compte et pouvez consulter l'état d'avancement de vos demandes.";
   $("#closedInfo").classList.add("open");
   try{ localStorage.setItem("caisse.ferm", cle); }catch(e){}
 }
@@ -2765,7 +2853,7 @@ function majHoraire(){
     box.className = "horaire " + (ouvert ? "ouvert" : "ferme");
     box.innerHTML = ouvert
       ? `<span class="hic">🟢</span><div><b>Dépôt ouvert</b><span>Vous pouvez introduire une demande.</span></div>`
-      : `<span class="hic">🔒</span><div><b>Dépôt fermé</b><span>L'introduction de demandes est momentanément fermée. Vous pouvez consulter l'état d'avancement ; le dépôt rouvrira selon les horaires fixés par la trésorerie.</span></div>`;
+      : `<span class="hic">🔒</span><div><b>Dépôt fermé</b><span>L'introduction de demandes est momentanément fermée. ${esc(texteHoraires())}</span></div>`;
   }
   const form = $("#reqForm");
   if(form) [...form.querySelectorAll("input,select,textarea,button")].forEach(el => {
@@ -2816,7 +2904,7 @@ function confirmerDoublon(d){
 }
 
 /* ---------- brouillon automatique ---------- */
-const BROUILLONS = { req: ["#f_date","#f_amount","#f_object","#f_cat","#f_pay","#f_iban","#f_note"],
+const BROUILLONS = { req: ["#f_date","#f_amount","#f_object","#f_cat","#f_pay","#f_note"],
                      dir: ["#fd_amount","#fd_benef","#fd_object","#fd_mode","#fd_iban","#fd_comm","#fd_note"] };
 function cleBrouillon(cle){ return "caisse.brouillon." + cle + "." + (state.profile ? state.profile.id : "x"); }
 function sauverBrouillon(cle){
@@ -2900,10 +2988,10 @@ $("#reqForm").addEventListener("submit", async e => {
   try{
     if(!isTreso() && !fenetreOuverte()){
       majHoraire();
-      throw new Error("Les demandes sont acceptées du lundi au vendredi jusqu'à 18h (heure belge). Réessayez pendant cette plage.");
+      throw new Error("Le dépôt de demandes est fermé pour le moment. " + texteHoraires());
     }
-    const _ibanR = ($("#f_iban") && $("#f_iban").value || state.profile.iban || "").trim();
-    if(_ibanR && !ibanValide(_ibanR)) throw new Error(messageIban(_ibanR));
+    const _ibanR = String(state.profile.iban || "").trim();
+    if(_ibanR && !ibanValide(_ibanR)) throw new Error("Votre IBAN enregistré est incorrect. " + messageIban(_ibanR) + "\nCorrigez-le avec le bouton « Modifier ».");
     const _dbl = chercherDoublon($("#f_object").value.trim(), parseFloat($("#f_amount").value), $("#f_date").value);
     if(_dbl && !confirmerDoublon(_dbl)) throw new Error("__annule__");
     rattraperFichier("req", "#r_kind", "#f_proof");
@@ -2931,22 +3019,34 @@ $("#reqForm").addEventListener("submit", async e => {
       status: "En attente"
     }).select().single();
     if(error) throw error;
+    // L'échec d'envoi des pièces était avalé : la demande partait sans justificatif
+    // et le membre lisait « Demande envoyée ». On le lui dit maintenant.
+    let piecesOk = true, piecesErr = "";
     try{ const _att = await envoyerPieces("req", "dem", bandeauRef(data));
-         if(_att.length){ await sb.from("requests").update({ attachments:_att }).eq("id", data.id); data.attachments=_att; } }catch(_){}
+         if(_att.length){ await sb.from("requests").update({ attachments:_att }).eq("id", data.id); data.attachments=_att; }
+         else piecesOk = false; }
+    catch(ep){ piecesOk = false; piecesErr = ep.message || String(ep); }
     await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
-      what: especes() ? "Demande envoyée · paiement en espèces confirmé sur la pièce jointe" : "Demande envoyée" });
+      what: !piecesOk ? "Demande envoyée SANS justificatif (échec de l'envoi des pièces)"
+          : especes() ? "Demande envoyée · paiement en espèces confirmé sur la pièce jointe" : "Demande envoyée" });
     mailAccuse(data, false);
     mailAlerteTreso(data, false);
     effacerBrouillon("req");
     $("#reqForm").reset(); staged.req = []; renderStaged("req"); majControle();
     $("#f_date").value = new Date().toISOString().slice(0,10); majFormulaire();
-    await refresh(); toast("Demande envoyée au trésorier.");
+    await refresh();
+    if(!piecesOk){
+      alert("Votre demande a bien été enregistrée, MAIS le justificatif n'a pas pu être envoyé"
+        + (piecesErr ? " (" + piecesErr + ")" : "") + ".\n\n"
+        + "Ouvrez votre demande dans « Mes demandes » et joignez-le avec « Compléter ou corriger votre demande », "
+        + "sinon elle ne pourra pas être remboursée.");
+      toast("Demande enregistrée sans justificatif.");
+    } else toast("Demande envoyée au trésorier.");
   }catch(err){
     let m = err.message || String(err);
     if(m === "__pieces__"){ btn.disabled = false; btn.textContent = "Envoyer la demande"; return; }
     if(/doublon|identique/i.test(m)) m = "Vous venez d'envoyer une demande identique. Attendez cinq minutes ou modifiez l'objet si c'est bien une seconde dépense.";
-    if(/HORS_HORAIRE_WEEKEND/.test(m)) m = "Les demandes ne sont pas acceptées le week-end. Réessayez du lundi au vendredi avant 18h (heure belge).";
-    if(/HORS_HORAIRE_SOIR/.test(m))    m = "Il est plus de 18h (heure belge). Les demandes rouvrent le prochain jour ouvré.";
+    if(/HORS_HORAIRE_WEEKEND|HORS_HORAIRE_SOIR/.test(m)) m = "Le dépôt de demandes est fermé pour le moment. " + texteHoraires();
     erreurForm("#reqErr", m);
     toast("Envoi impossible.");
   }
@@ -2959,7 +3059,7 @@ $("#directForm")?.addEventListener("submit", async (e) => {
   try{
     if(!isTreso() && !fenetreOuverte()){
       majHoraire();
-      throw new Error("Les demandes sont acceptées du lundi au vendredi jusqu'à 18h (heure belge). Réessayez pendant cette plage.");
+      throw new Error("Le dépôt de demandes est fermé pour le moment. " + texteHoraires());
     }
     const amount = parseFloat($("#fd_amount").value);
     const benef  = $("#fd_benef").value.trim();
@@ -2990,14 +3090,25 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       status: "En attente"
     }).select().single();
     if(error) throw error;
-    try{ const _att = await envoyerPieces("dir", "dir", bandeauRef(data));
-         if(_att.length){ await sb.from("requests").update({ attachments:_att }).eq("id", data.id); data.attachments=_att; } }catch(_){}
-    try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name, what:"Demande de paiement direct envoyée" }); }catch(_){}
+    let dirPiecesOk = true, dirErr = "";
+    if(staged.dir.length){
+      try{ const _att = await envoyerPieces("dir", "dir", bandeauRef(data));
+           if(_att.length){ await sb.from("requests").update({ attachments:_att }).eq("id", data.id); data.attachments=_att; }
+           else dirPiecesOk = false; }
+      catch(ep){ dirPiecesOk = false; dirErr = ep.message || String(ep); }
+    }
+    try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
+      what: dirPiecesOk ? "Demande de paiement direct envoyée" : "Paiement direct envoyé SANS pièce (échec de l'envoi)" }); }catch(_){}
     mailAccuse(data, true);
     mailAlerteTreso(data, true);
     effacerBrouillon("dir");
     $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display=""; staged.dir = []; renderStaged("dir");
-    await refresh(); toast("Demande de paiement direct envoyée au trésorier.");
+    await refresh();
+    if(!dirPiecesOk){
+      alert("La demande a bien été enregistrée, MAIS la pièce jointe n'a pas pu être envoyée"
+        + (dirErr ? " (" + dirErr + ")" : "") + ".\n\nOuvrez la demande pour la joindre à nouveau.");
+      toast("Demande enregistrée sans pièce jointe.");
+    } else toast("Demande de paiement direct envoyée au trésorier.");
   }catch(err){
     let m = err.message || String(err);
     if(/doublon|identique/i.test(m)) m = "Demande identique déjà envoyée récemment.";
@@ -3008,12 +3119,12 @@ $("#directForm")?.addEventListener("submit", async (e) => {
 /* ---------- rendu ---------- */
 function estIncomplet(it){
   if(it.kind==="direct"){
-    if(it.pay_mode==="virement") return (it.status==="En attente"||it.status==="Validée") && String(it.iban||"").replace(/\s+/g,"").length < 14;
+    if(it.pay_mode==="virement") return (it.status==="En attente"||it.status==="Validée"||it.status==="À corriger") && !ibanValide(it.iban);
     return false;
   }
   const sansPiece = piecesDe(it).length === 0;
-  const sansIban = String(it.iban||"").replace(/\s+/g,"").length < 14;
-  return (it.status==="En attente" || it.status==="Validée") && (sansPiece || sansIban);
+  const sansIban = !ibanValide(it.iban);
+  return (it.status==="En attente" || it.status==="Validée" || it.status==="À corriger") && (sansPiece || sansIban);
 }
 const barreAvancement = it => {
   if(it.status==="Refusée")   return `<span style="color:var(--red);font-weight:700;font-size:11px">● Refusée</span>`;
@@ -3189,10 +3300,10 @@ function ouvrirMessagerie(memberId, memberName, memberEmail){
         if(memberEmail){
           envoyerMail(memberEmail, "Message du trésorier — Bureau étudiant",
             `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a2e"><h2 style="margin:0 0 10px">Message du trésorier</h2><p>Bonjour ${mailEsc(memberName||"")},</p><p>Le trésorier vous a écrit dans la messagerie de la Caisse :</p><p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(body).replace(/\n/g,"<br>")}</p><p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:12px 22px;border-radius:9px;text-decoration:none;font-weight:bold">Répondre dans l'app</a></p><hr style="border:none;border-top:1px solid #eee;margin:18px 0"><p style="color:#999;font-size:12px">Bureau étudiant — Trésorerie</p></div>`,
-            TRESO_EMAIL);
+            emailTreso());
         }
       } else {
-        envoyerMail(TRESO_EMAIL, "Nouveau message d'un membre — " + (memberName||""),
+        envoyerMail(emailTreso(), "Nouveau message d'un membre — " + (memberName||""),
           `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a2e"><h2 style="margin:0 0 10px">Nouveau message d'un membre</h2><p><b>${mailEsc(memberName||"Un membre")}</b> vous a écrit :</p><p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(body).replace(/\n/g,"<br>")}</p><p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:12px 22px;border-radius:9px;text-decoration:none;font-weight:bold">Ouvrir la messagerie</a></p></div>`,
           memberEmail || undefined);
       }
@@ -3273,7 +3384,7 @@ function render(){
 
     const f = $("#filterStatus").value, q = slug($("#search").value.trim());
     const list = ouvert(state.items).filter(i => {
-      const okS = f==="all" ? true : f==="a_traiter" ? (i.status==="En attente"||i.status==="Validée") : f==="incomplet" ? estIncomplet(i) : f==="reexamen" ? (i.reexamen_at && i.status==="Refusée") : f==="direct" ? (i.kind==="direct") : i.status===f;
+      const okS = f==="all" ? true : f==="a_traiter" ? (i.status==="En attente"||i.status==="Validée"||i.status==="À corriger") : f==="incomplet" ? estIncomplet(i) : f==="reexamen" ? (i.reexamen_at && i.status==="Refusée") : f==="direct" ? (i.kind==="direct") : i.status===f;
       const okQ = !q || slug(i.object).includes(q) || slug(i.requester_name).includes(q);
       return okS && okQ;
     });
@@ -3293,12 +3404,31 @@ function render(){
                      + state.incomes.length - ouvert(state.incomes).length;
   const heure = state.lastSync ? state.lastSync.toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "—";
   $("#syncHint").textContent = state.items.length + " demande(s) · mise à jour en direct · dernière synchronisation à " + heure
-    + (verrouillees ? ` · ${verrouillees} écriture(s) dans des exercices clôturés, visibles dans le bilan` : "");
+    + (verrouillees ? ` · ${verrouillees} écriture(s) dans des exercices clôturés, visibles dans le bilan` : "")
+    + (state.tronque ? ` · ⚠ chargement incomplet (${state.tronque}) : les totaux et le bilan sont partiels` : "");
   if("Notification" in window) $("#notifBtn").hidden = Notification.permission !== "default";
   if(state.selected){
     const still = state.items.find(i=>i.id===state.selected);
-    if(still) renderDrawer(still); else closeDrawer();
+    if(!still) closeDrawer();
+    else if(tiroirOccupe()){
+      // saisie en cours : on ne réécrit pas le panneau, on signale juste qu'il a bougé
+      if(state.lastStatus[still.id] !== undefined && still.status !== state.tiroirStatut && state.tiroirStatut)
+        toast("Cette demande est passée à « " + still.status + " ». Fermez et rouvrez le panneau pour voir la mise à jour.");
+    }
+    else renderDrawer(still);
   }
+}
+
+/* Le panneau est réécrit à chaque synchronisation (toutes les 30 s, et à chaque
+   retour sur l'onglet). Sans ce garde-fou, tout ce que l'on est en train de taper
+   — motif de refus, message, formulaire « Modifier ma demande » — disparaît. */
+function tiroirOccupe(){
+  const body = $("#d_body"); if(!body) return false;
+  if(state.drawerDirty) return true;
+  if(staged.fix && staged.fix.length) return true;
+  const ez = $("#editZone"); if(ez && !ez.hidden) return true;
+  if(document.activeElement && body.contains(document.activeElement)) return true;
+  return false;
 }
 
 function memberHTML(m, pending){
@@ -3314,7 +3444,7 @@ function memberHTML(m, pending){
   const role = m.role==="tresorier" ? `<span class="tag t-valide" style="margin-left:8px">Trésorier</span>` : "";
   const poste = m.position ? `<b style="font-weight:600">${esc(m.position)}</b> · ` : "";
   return `<div class="mrow">
-    <div><div class="nm">${esc(m.name)||"<sans nom>"}${role}${me?' <span class="hint">(vous)</span>':''}</div>
+    <div><div class="nm">${esc(m.name) || '<i style="color:var(--muted2)">sans nom</i>'}${role}${me?' <span class="hint">(vous)</span>':''}</div>
     <div class="em">${poste}${esc(m.email)} · inscrit le ${fdate(String(m.created_at).slice(0,10))}</div>
     <div class="em mono" style="margin-top:2px">${esc(m.iban)||'<span style="color:var(--red)">IBAN manquant</span>'}</div></div>
     <div class="btns">${btns}</div></div>`;
@@ -3373,7 +3503,8 @@ $("#viewMembers").addEventListener("click", async e => {
   if(act==="iban"){
     const v = prompt("IBAN de " + (m.name||m.email) + " :", m.iban || "");
     if(v===null) return;
-    patch = { iban: v.trim().toUpperCase() };
+    if(!ibanValide(v)) return alert("IBAN refusé.\n\n" + messageIban(v));
+    patch = { iban: ibanFormate(v) };
   }
 
   b.disabled = true;
@@ -3398,27 +3529,54 @@ function renderBulk(){
   bar.style.display = n ? "flex" : "none";
   const cnt=$("#bulkCount"); if(cnt) cnt.textContent = n+" sélectionnée(s)";
 }
+/* Résumé des demandes incomplètes d'un lot, pour la confirmation. */
+function detailIncompletes(cibles){
+  const ko = cibles.filter(estIncomplet);
+  if(!ko.length) return "";
+  return "⚠ " + ko.length + " demande(s) sont INCOMPLÈTES (justificatif ou IBAN manquant) :\n"
+    + ko.slice(0,8).map(i => "  · " + (i.requester_name||"") + " — " + (i.object||"") + " — " + euro(i.amount)).join("\n")
+    + (ko.length > 8 ? "\n  · … et " + (ko.length-8) + " autre(s)" : "") + "\n\n";
+}
 async function bulkValider(){
-  const cibles=selItems().filter(i=>i.status==="En attente");
+  const cibles=selItems().filter(i=>i.status==="En attente"||i.status==="À corriger");
   if(!cibles.length) return toast("Aucune demande « En attente » sélectionnée.");
+  // La validation en lot ignorait totalement estIncomplet : on validait sans pièce ni IBAN.
+  const alerte = detailIncompletes(cibles);
+  if(alerte && !confirm(alerte + "Les valider quand même ?\n\nElles ne pourront pas être virées tant qu'elles ne sont pas complétées.")) return;
   if(window.confirm && !window.confirm("Valider "+cibles.length+" demande(s) ?")) return;
+  let ok = 0, ko = 0;
   for(const it of cibles){
     const { error } = await sb.from("requests").update({status:"Validée", decided_at:new Date().toISOString()}).eq("id", it.id);
-    if(!error){ try{ await sb.from("events").insert({request_id:it.id, who:"Trésorier", what:"Validée (lot)"}); }catch(_){}
-      try{ mailValide({...it, status:"Validée"}); }catch(_){} }
+    if(error){ ko++; continue; }
+    ok++;
+    const sienne = it.user_id === state.profile.id;
+    try{ await sb.from("events").insert({request_id:it.id, who:state.profile.name,
+      what: sienne ? "Demande validée par le trésorier lui-même (lot)" : "Demande validée (lot)"}); }catch(_){}
+    try{ mailValide({...it, status:"Validée"}); }catch(_){}
   }
-  state.sel.clear(); await refresh(); renderBulk(); toast(cibles.length+" demande(s) validée(s).");
+  state.sel.clear(); await refresh(); renderBulk();
+  toast(ok+" demande(s) validée(s)." + (ko ? " " + ko + " échec(s)." : ""));
 }
 async function bulkPayer(){
   const cibles=selItems().filter(i=>i.status==="Validée");
   if(!cibles.length) return toast("Aucune demande « Validée » sélectionnée.");
+  const alerte = detailIncompletes(cibles);
+  if(alerte && !confirm(alerte + "Les marquer quand même comme remboursées ?")) return;
   if(window.confirm && !window.confirm("Marquer "+cibles.length+" demande(s) comme remboursée(s) ?")) return;
+  let ok = 0, ko = 0;
   for(const it of cibles){
-    const { error } = await sb.from("requests").update({status:"Remboursée", paid_at:new Date().toISOString()}).eq("id", it.id);
-    if(!error){ try{ await sb.from("events").insert({request_id:it.id, who:"Trésorier", what:"Remboursée (lot)"}); }catch(_){}
-      try{ mailRembourse({...it, status:"Remboursée"}); }catch(_){} }
+    const quand = new Date().toISOString();
+    const { error } = await sb.from("requests").update({status:"Remboursée", paid_at:quand}).eq("id", it.id);
+    if(error){ ko++; continue; }
+    ok++;
+    const sienne = it.user_id === state.profile.id;
+    try{ await sb.from("events").insert({request_id:it.id, who:state.profile.name,
+      what: sienne ? "Remboursement effectué au trésorier lui-même (lot)" : "Remboursement effectué (lot)"}); }catch(_){}
+    // paid_at manquait : le reçu envoyé par mail portait une date vide
+    try{ mailRembourse({...it, status:"Remboursée", paid_at:quand}); }catch(_){}
   }
-  state.sel.clear(); await refresh(); renderBulk(); toast(cibles.length+" demande(s) remboursée(s).");
+  state.sel.clear(); await refresh(); renderBulk();
+  toast(ok+" demande(s) remboursée(s)." + (ko ? " " + ko + " échec(s)." : ""));
 }
 if($("#bulkValider")) $("#bulkValider").onclick = bulkValider;
 if($("#bulkPayer"))   $("#bulkPayer").onclick   = bulkPayer;
@@ -3440,7 +3598,8 @@ async function openDrawer(id){
   }
   if(isTreso()) loadEvents(id);
 }
-function closeDrawer(){ staged.fix = []; state.selected=null; $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); }
+function closeDrawer(){ staged.fix = []; state.selected=null; state.drawerDirty=false; state.tiroirStatut=null; $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); }
+$("#d_body").addEventListener("input", () => { state.drawerDirty = true; });
 
 function stampHTML(it){
   if(it.status==="Remboursée") return `<div class="stamp paye">Remboursé<small>${it.paid_at?fstamp(it.paid_at):""}</small></div>`;
@@ -3460,7 +3619,7 @@ function blocEditer(it){
       <div class="field"><label for="ed_object">Objet</label>
         <input type="text" id="ed_object" maxlength="90" value="${esc(it.object||"")}"></div>
       <div class="field"><label for="ed_amount">Montant (€)</label>
-        <input type="number" id="ed_amount" step="0.01" min="0.01" value="${Number(it.amount||0)}"></div>
+        <input type="number" id="ed_amount" step="0.01" min="0.01" inputmode="decimal" value="${(Math.round(Number(it.amount||0)*100)/100).toFixed(2)}"></div>
       <div class="field"><label for="ed_date">Date</label>
         <input type="date" id="ed_date" value="${esc(it.expense_date||"")}"></div>
       ${direct ? `
@@ -3519,7 +3678,7 @@ function blocContact(it){
 }
 
 function champMotif(it){
-  return `<div class="field"><label for="d_note">Message au demandeur${it.status==="En attente"?" (obligatoire en cas de refus)":""}</label>
+  return `<div class="field"><label for="d_note">Message au demandeur${(it.status==="En attente"||it.status==="À corriger")?" (obligatoire en cas de refus)":""}</label>
     <textarea id="d_note" placeholder="Motif du refus, pièce manquante, montant ajusté, date du virement…">${esc(it.decision_note||"")}</textarea>
     <span class="hint">Ce texte s'affiche en grand sur la demande du membre et figure dans le bilan.</span></div>`;
 }
@@ -3547,7 +3706,7 @@ function renderDrawer(it){
       if(String(it.iban||"").replace(/\s+/g,"").length<14) manque.push("un IBAN valide");
       actions += `<div class="callout" style="border-color:#c47f17"><b style="color:#c47f17">Demande incomplète</b><p>Il manque ${manque.join(" et ")}. Le remboursement ne pourra pas être fait tant que ce n'est pas complété.</p><div class="actions"><button class="btn" data-act="relanceMail">Envoyer la relance par mail</button><button class="btn ghost" data-act="relance">Copier le message</button></div></div>`;
     }
-    if(it.status === "En attente"){
+    if(it.status === "En attente" || it.status === "À corriger"){
       const attachVal = (it.kind==="direct") ? `<div class="fixbox">
         <b>Justificatif du paiement (facultatif)</b>
         <p>Tu peux joindre un document pour justifier ce paiement (extrait de compte, facture, preuve de virement…). Ce n'est pas obligatoire.</p>
@@ -3598,6 +3757,8 @@ function renderDrawer(it){
     <div><div class="eyebrow" style="margin-bottom:7px">Pièces justificatives</div>${proofHTML}</div>
     ${actions}
     <div><div class="eyebrow" style="margin-bottom:9px">Historique</div><div class="timeline" id="d_events">${isTreso()?"…":timelineMembre(it)}</div></div>`;
+  state.drawerDirty = false;
+  state.tiroirStatut = it.status;
 }
 
 function timelineMembre(it){
@@ -3647,7 +3808,10 @@ $("#d_body").addEventListener("click", async e => {
     if(!obj) return erreurForm("#editErr", "Indiquez l'objet de la demande.");
     if(!(mnt > 0)) return erreurForm("#editErr", "Le montant doit être supérieur à 0.");
     if(!dte) return erreurForm("#editErr", "Indiquez la date.");
-    const maj = { object: obj, amount: mnt, expense_date: dte, note: $("#ed_note").value.trim() };
+    // un IBAN erroné saisi ici partait tel quel dans le fichier de virements
+    if(iban && !ibanValide(iban)) return erreurForm("#editErr", messageIban(iban));
+    const mntArrondi = Math.round(mnt * 100) / 100;   // jamais plus de 2 décimales (fichier SEPA)
+    const maj = { object: obj, amount: mntArrondi, expense_date: dte, note: $("#ed_note").value.trim() };
     let versReexamen = false;
     if(it.status === "Refusée"){
       // demande refusée modifiée → part dans l'onglet Réexamens (reste "Refusée" + signalée), trésorier prévenu par mail
@@ -3714,7 +3878,13 @@ $("#d_body").addEventListener("click", async e => {
     try{
       const ajouts = await envoyerPieces("fix", "dem", bandeauRef(it));
       const maj = { attachments: [...piecesDe(it), ...ajouts] };
-      if(it.status === "Refusée") maj.status = "En attente";
+      // « À corriger » était oublié ici : la demande gardait ce statut et disparaissait
+      // de tous les filtres du trésorier, sans plus aucun bouton pour la traiter.
+      if(it.status === "Refusée" || it.status === "À corriger"){
+        maj.status = "En attente";
+        maj.decision_note = null;
+        maj.decided_at = null;
+      }
       const { error } = await sb.from("requests").update(maj).eq("id", it.id);
       if(error) throw error;
       await sb.from("events").insert({ request_id: it.id, who: state.profile.name,
@@ -3725,9 +3895,9 @@ $("#d_body").addEventListener("click", async e => {
       const maj2 = state.items.find(x => x.id === it.id);
       if(maj2){ state.proofUrls[it.id] = await afficherPieces(maj2); renderDrawer(maj2); }
       await loadEvents(it.id);
-      mailComplementRecu(it, it.status === "Refusée");
+      mailComplementRecu(it, it.status === "Refusée" || it.status === "À corriger");
       mailContactTreso(it, mot, ajouts.length, state.profile.email);
-      toast(it.status === "Refusée" ? "Demande complétée et remise en attente." : "Compléments envoyés au trésorier.");
+      toast((it.status === "Refusée" || it.status === "À corriger") ? "Demande complétée et remise en attente." : "Compléments envoyés au trésorier.");
     }catch(err){
       toast("Envoi impossible : " + (err.message || err));
     }finally{ b.disabled = false; b.textContent = "Envoyer les compléments"; }
@@ -3785,7 +3955,7 @@ $("#d_body").addEventListener("click", async e => {
   }
   if(act==="payer"){   patch={status:"Remboursée", paid_at:new Date().toISOString()};
     label = sienne ? "Remboursement effectué au trésorier lui-même" : "Remboursement effectué"; }
-  if(act==="rouvrir"){ patch={status:"En attente", paid_at:null, reexamen_msg:null, reexamen_at:null}; label="Remise en attente"; }
+  if(act==="rouvrir"){ patch={status:"En attente", paid_at:null, reexamen_msg:null, reexamen_at:null, exported_at:null}; label="Remise en attente"; }
   if(act==="message"){
     if(!note){ noteEl?.focus(); return toast("Écrivez d'abord votre message."); }
     patch = { decision_note: note }; label = "Message envoyé au demandeur";
@@ -3802,6 +3972,7 @@ $("#d_body").addEventListener("click", async e => {
   const { error } = await sb.from("requests").update(patch).eq("id", it.id);
   b.disabled = false;
   if(error) return toast("Action impossible : "+error.message);
+  state.drawerDirty = false;   // l'action est enregistrée : le panneau peut être réécrit
   await sb.from("events").insert({ request_id:it.id, who:state.profile.name, what:label });
   if(act==="valider"){ mailValide(it); }
   if(act==="refuser"){ mailRefuse(it, note); }
