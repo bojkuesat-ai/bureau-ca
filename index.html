@@ -2147,7 +2147,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       logAct(nv==="ouvert"?"Campagne de bilans moraux ouverte":"Campagne de bilans moraux fermée"); render(); break; }
     case "bilan-cloturer": { if(!(estSecretaire()||(S.session&&S.session.role==="owner"))||!sb) break;
       if(window.confirm && !window.confirm("Clôturer la campagne ? Plus personne ne pourra déposer de bilan, et le secrétariat pourra les lire.")) break;
-      const r=await sb.from("ca_meta").update({bilan_actif:false, bilan_etat:"cloture"}).eq("id",1);
+      const r=await sb.rpc("ca_bilans_cloturer");
       if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
       S.meta.bilanEtat="cloture"; S.meta.bilanActif=false;
       await loadBilans(); logAct("Campagne de bilans moraux clôturée"); render(); break; }
@@ -2159,9 +2159,9 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       const txt=String(val("bil_pub")||"").trim();
       if(!txt){ if(window.alert) window.alert("Le texte à publier est vide. Cliquez d'abord sur « Préparer le texte »."); break; }
       if(window.confirm && !window.confirm("Publier ce texte ? Il deviendra visible par tous les membres et leur sera envoyé par e-mail.")) break;
-      const quand=new Date().toISOString();
-      const r=await sb.from("ca_meta").update({bilan_publie:txt, bilan_publie_le:quand}).eq("id",1);
+      const r=await sb.rpc("ca_bilans_publier",{p_texte:txt});
       if(r&&r.error){ if(window.alert) window.alert("Publication impossible : "+r.error.message); break; }
+      const quand=(r&&r.data)||new Date().toISOString();
       S.meta.bilanPublie=txt; S.meta.bilanPublieLe=quand; S.bilanPubDraft=undefined;
       const corps=`<h2 style="margin:0 0 10px">Bilans moraux \u2014 synth\u00e8se</h2><p>La synth\u00e8se des bilans moraux vient d'\u00eatre publi\u00e9e sur l'espace CA.</p><div style="white-space:pre-wrap;background:#f7f7fb;border-radius:8px;padding:12px;font-size:13px">${caMailEsc(txt)}</div>`;
       const res=await envoyerNotifCAListe(destinatairesMembres(), "Bilans moraux \u2014 synth\u00e8se publi\u00e9e", corps);
@@ -2254,8 +2254,9 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
     case "save-secr-cfg": { if(!estSecretaire()||!sb) break;
       const h=parseInt(val("cfg_cloture")||"0",10)||0;
       const mo=(val("cfg_modele")||"").split("\n").map(x=>x.trim()).filter(Boolean);
+      const r=await sb.rpc("ca_secretariat_reglages",{p_cloture:h, p_modele:mo});
+      if(r&&r.error){ if(window.alert) window.alert("Enregistrement impossible : "+r.error.message); break; }
       S.meta.clotureOdj=h; S.meta.modeleOdj=mo;
-      await sb.from("ca_meta").update({cloture_odj:h, modele_odj:mo}).eq("id",1);
       logAct("R\u00e9glages secr\u00e9tariat modifi\u00e9s"); render();
       if(window.alert) window.alert("Enregistr\u00e9."); break; }
     case "toggle-secretaire": { if(!(S.session&&S.session.role==="owner")||!sb) break;
