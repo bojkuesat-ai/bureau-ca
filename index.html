@@ -356,19 +356,13 @@ const uid = () => Math.random().toString(36).slice(2,9);
 const dateFR = ts => new Date(ts).toLocaleDateString("fr-BE",{day:"2-digit",month:"short",year:"numeric"});
 function fmtDateLong(d){ try{ return new Date(d+"T00:00").toLocaleDateString("fr-BE",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}); }catch(e){ return d; } }
 function fmtQuand(ts){ try{ return new Date(ts).toLocaleString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
+function todayISO(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
 function dShort(d){ try{ return new Date(d+"T00:00").toLocaleDateString("fr-BE",{day:"2-digit",month:"short"}); }catch(e){ return d; } }
-function logAct(txt,who){ const w=who||((S.session&&S.session.sig)||"\u2014"); try{ if(typeof sb!=="undefined" && sb) sb.from("ca_journal").insert({who:w,txt:txt}); }catch(e){} const j=(S.journal||[]).slice(); j.unshift({ts:Date.now(),who:w,txt:txt}); S.journal=j.slice(0,200); }
+function logAct(txt,who){ const w=who||((S.session&&S.session.sig)||"\u2014"); try{ if(typeof sb!=="undefined" && sb) sb.from("ca_journal").insert({who:w,txt:txt}); }catch(e){} const j=(S.journal||[]).slice(); j.unshift({ts:new Date().toISOString(),who:w,txt:txt}); S.journal=j.slice(0,200); }
 const eur = n => new Intl.NumberFormat("fr-BE",{style:"currency",currency:"EUR"}).format(n||0);
 const normId = s => s.trim().toLowerCase();
-function genPwd(){ const c="ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let r=""; for(let i=0;i<8;i++) r+=c[Math.floor(Math.random()*c.length)]; return r; }
 const initials = name => (name||"?").split(/[ &-]/).filter(Boolean).slice(0,2).map(w=>w[0]).join("").toUpperCase();
 const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-async function hashPwd(pwd){
-  try{ const d=new TextEncoder().encode("be::"+pwd); const b=await crypto.subtle.digest("SHA-256",d);
-    return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,"0")).join(""); }
-  catch(e){ let h=0; for(let i=0;i<pwd.length;i++) h=(h*31+pwd.charCodeAt(i))|0; return "x"+(h>>>0).toString(16); }
-}
 const PFX = "be:";
 const store = {
   get(k,f){ try{ const v=localStorage.getItem(PFX+k); return v==null?f:JSON.parse(v); }catch(e){ return f; } },
@@ -414,11 +408,18 @@ function seenTs(k){ try{ return parseInt(localStorage.getItem("ca:seen:"+k)||"0"
 function unreadMessagesCA(){ const me=S.session&&S.session.id; if(!me) return 0; const t=seenTs("messages"); return (S.messages||[]).filter(m=>m.to===me && new Date(m.ts).getTime()>t).length; }
 function unreadAnnoncesCA(){ const me=S.session&&S.session.id; const t=seenTs("annonces"); return (S.annonces||[]).filter(a=>new Date(a.ts).getTime()>t && a.cree_par!==me).length; }
 function caMailEsc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-function destinatairesCA(){
+function membresActifs(){ return (S.admins||[]).filter(a=>a.email && a.statut==="actif"); }
+/* Membres inscrits uniquement (convocations, rappels internes, bilans). */
+function destinatairesMembres(){
   const set=new Set();
-  (S.admins||[]).forEach(a=>{ if(a.email && a.statut==="actif") set.add(String(a.email).toLowerCase().trim()); });
+  membresActifs().forEach(a=>set.add(String(a.email).toLowerCase().trim()));
+  return [...set].filter(Boolean).filter(e=>!estDesabonne(e));
+}
+/* Membres + liste de diffusion externe (annonces, documents, votes). */
+function destinatairesCA(){
+  const set=new Set(destinatairesMembres());
   (S.mailing||[]).forEach(m=>{ if(m.email) set.add(String(m.email).toLowerCase().trim()); });
-  return [...set].filter(Boolean);
+  return [...set].filter(Boolean).filter(e=>!estDesabonne(e));
 }
 function blocInvitationCA(){ const url=caAppUrl();
   return `<div style="background:#f5f4fb;border:1px solid #e2e0ef;border-radius:8px;padding:14px;margin:18px 0;font-size:13px;color:#3a3a5a"><b>Pas encore de compte sur l'espace CA ?</b><br>Toutes nos communications (annonces, documents, votes) passent par l'espace CA. Pour y accéder :<br>&bull; <b>Créez un compte</b> ici : <a href="${url}">${url}</a><br>&bull; Si vous avez déjà un compte pour la <b>Caisse</b>, connectez-vous avec les mêmes identifiants et <b>finalisez votre profil CA</b>.</div>`;
@@ -462,7 +463,8 @@ async function envoyerMailComposeCA({toList, ccList, bccList, objet, corpsTexte,
   let ok=0, err=0, i=0;
   const base=(function(){ try{ return caAppUrl(); }catch(e){ return ""; } })();
   for(const dest of tous){
-    const desabo = base ? `<p style="color:#bbb;font-size:11px;margin-top:14px">Vous recevez ce message en tant que contact du Bureau étudiant. <a href="${base}?desabo=${encodeURIComponent(dest)}" style="color:#999">Se désabonner</a>.</p>` : "";
+    const url = base ? await lienDesabo(dest) : "";
+    const desabo = url ? `<p style="color:#bbb;font-size:11px;margin-top:14px">Vous recevez ce message en tant que contact du Bureau étudiant. <a href="${url}" style="color:#999">Se désabonner</a>.</p>` : "";
     const html=corpsHtml+desabo+`</div>`;
     try{
       const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,
@@ -532,9 +534,13 @@ async function envoyerNotifCA(subject, corpsHtml, avecCaisse){
   }
 }
 async function envoyerNotifCAListe(dest, subject, corpsHtml){
+  const liste=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))].filter(e=>!estDesabonne(e));
+  if(!liste.length) return {ok:0,err:0};
   const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corpsHtml}${blocInvitationCA()}${blocNoReplyCA()}</div>`;
   const headers=await caSendHeaders();
-  for(const to of dest){ try{ await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html})}); }catch(e){} await new Promise(r=>setTimeout(r,120)); }
+  let ok=0,err=0;
+  for(const to of liste){ try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html})}); if(r&&r.ok===false) err++; else ok++; }catch(e){ err++; } await new Promise(r=>setTimeout(r,120)); }
+  return {ok,err};
 }
 function notifDocCA(titre, cat, avecCaisse){
   const corps=`<h2 style="margin:0 0 10px">Nouveau document</h2><p>Un nouveau document vient d'être déposé sur l'espace CA :</p><p style="font-size:16px"><b>${caMailEsc(titre)}</b>${cat?` <span style="color:#888">(${caMailEsc(cat)})</span>`:""}</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
@@ -551,7 +557,7 @@ function convocationCA(m){
     +(m.lieu?`<p><b>Lieu :</b> ${caMailEsc(m.lieu)}</p>`:"")
     +(pts?`<p><b>Ordre du jour :</b></p><ul>${pts}</ul>`:`<p>L'ordre du jour sera compl\u00e9t\u00e9 prochainement. Vous pouvez proposer un point dans l'application.</p>`)
     +`<p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-  return envoyerNotifCA("Convocation \u2014 "+m.titre, corps, false);
+  return envoyerNotifCAListe(destinatairesMembres(), "Convocation \u2014 "+m.titre, corps);
 }
 function notifCreationCA(type, titre, extra){
   const corps=`<h2 style="margin:0 0 10px">${caMailEsc(type)}</h2><p>${caMailEsc(type)} : <b>${caMailEsc(titre)}</b>${extra?` — ${caMailEsc(extra)}`:""}</p><p>Connectez-vous à l'espace CA pour voir le détail.</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
@@ -562,24 +568,81 @@ function notifVoteCA(question){
   return envoyerNotifCA("Nouveau vote — "+question, corps, false);
 }
 
-async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; S.needProfile=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; } S.needProfile=null; S.session=sess2session(user,prof); await loadAccounts(); await loadDocs(); await loadMessages(); await loadConflits(); await loadTaches(); await loadContacts(); await loadAnnonces(); await loadReactions(); await loadPresence(); await loadEvenements(); await loadReunions(); await loadCreneaux(); await loadOrg(); await loadBudgets(); await loadVotes(); await loadMeta(); await loadBilans(); await loadJournal(); await loadMailing(); await loadGroupes(); await loadProgrammes(); await loadDesabonnes(); }catch(e){ S.session=null; } }
-async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; } }catch(e){} }
-async function loadBilans(){ try{ const {data}=await sb.from("ca_bilans").select("*").order("created_at",{ascending:true}); S.bilans=(data||[]).map(b=>({id:b.id,cible:b.cible,positifs:b.positifs,ameliorer:b.ameliorer,ts:b.created_at})); }catch(e){ S.bilans=[]; } try{ const f=await sb.from("ca_bilan_faits").select("*"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){} }
+async function refreshSession(){
+  if(!sb) return;
+  let user=null;
+  try{ const {data}=await sb.auth.getUser(); user=(data&&data.user)||null; }
+  catch(e){ return; }                                   // incident réseau : on garde la session en cours
+  if(!user){ S.session=null; S.needProfile=null; return; }
+  let prof=null;
+  try{ const r=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); prof=(r&&r.data)||null; }
+  catch(e){ return; }
+  if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; }
+  S.needProfile=null; S.session=sess2session(user,prof);
+  await loadAccounts();
+  const jobs=[loadDocs,loadMessages,loadConflits,loadTaches,loadContacts,loadAnnonces,loadReactions,loadPresence,
+    loadEvenements,loadReunions,loadCreneaux,loadOrg,loadBudgets,loadVotes,loadMeta,loadBilans,loadJournal,
+    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes];
+  await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
+}
+async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; } }catch(e){} }
+async function loadBilans(){
+  /* Aucun tri : l'ordre de lecture ne doit rien laisser deviner de l'ordre de dépôt.
+     La base ne renvoie ces lignes qu'au secrétariat, et seulement après clôture. */
+  try{ const {data}=await sb.from("ca_bilans").select("cible,positifs,ameliorer"); S.bilans=(data||[]).map(b=>({cible:b.cible,positifs:b.positifs,ameliorer:b.ameliorer})); }catch(e){ S.bilans=[]; }
+  /* On ne lit que sa propre ligne de dépôt (savoir si on a déjà répondu) ; le nombre
+     total passe par une fonction qui ne renvoie qu'un compteur, jamais la liste. */
+  try{ const f=await sb.from("ca_bilan_faits").select("membre_id"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){ S.meta.bilanSubmitters=[]; }
+  try{ const c=await sb.rpc("ca_bilans_nb_deposes"); S.meta.bilanNbDeposes=(c&&typeof c.data==="number")?c.data:(S.meta.bilanSubmitters||[]).length; }catch(e){ S.meta.bilanNbDeposes=(S.meta.bilanSubmitters||[]).length; } }
 async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").select("*").order("created_at",{ascending:false}); S.journal=(data||[]).map(j=>({ts:j.created_at,who:j.who,txt:j.txt})); }catch(e){} }
-async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,decidePar:b.decide_par,decideLe:b.decide_le,votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix}))})); }catch(e){ S.budgets=[]; } }
-async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id}))}; }); }catch(e){ S.votes=[]; } }
+async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,decidePar:b.decide_par,decideLe:b.decide_le,votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id}))})); }catch(e){ S.budgets=[]; } }
+async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
 async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
 async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,lieu:m.lieu||"",ordre:m.ordre||[],presences:m.presences||{}})); }catch(e){ S.reunions=[]; } }
-async function loadCreneaux(){ try{ const c=await sb.from("ca_creneaux").select("*").order("date",{ascending:true}); const d=await sb.from("ca_dispos").select("*"); const dl=(d&&d.data)||[]; S.creneaux=(((c&&c.data))||[]).map(x=>({id:x.id,titre:x.titre,date:x.date,lieu:x.lieu,creePar:x.cree_par,dispos:dl.filter(y=>y.creneau_id===x.id).map(y=>({nom:y.nom,statut:y.statut}))})); }catch(e){ S.creneaux=[]; } }
+async function loadCreneaux(){ try{ const c=await sb.from("ca_creneaux").select("*").order("date",{ascending:true}); const d=await sb.from("ca_dispos").select("*"); const dl=(d&&d.data)||[]; S.creneaux=(((c&&c.data))||[]).map(x=>({id:x.id,titre:x.titre,date:x.date,lieu:x.lieu,creePar:x.cree_par,dispos:dl.filter(y=>y.creneau_id===x.id).map(y=>({nom:y.nom,statut:y.statut,membreId:y.membre_id}))})); }catch(e){ S.creneaux=[]; } }
 async function loadOrg(){ try{ const {data}=await sb.from("ca_org").select("*"); const o={}; (data||[]).forEach(r=>{ o[r.poste_id]={missions:r.missions,contact:r.contact}; }); S.org=o; }catch(e){} }
 async function loadTaches(){ try{ const {data}=await sb.from("ca_taches").select("*").order("created_at",{ascending:false}); S.taches=(data||[]).map(t=>({id:t.id,titre:t.titre,posteId:t.poste_id,statut:t.statut,echeance:t.echeance,priorite:t.priorite,creePar:t.cree_par})); }catch(e){ S.taches=[]; } }
 async function loadContacts(){ try{ const {data}=await sb.from("ca_contacts").select("*").order("nom",{ascending:true}); S.contacts=(data||[]).map(c=>({id:c.id,nom:c.nom,type:c.type,email:c.email,tel:c.tel,notes:c.notes})); }catch(e){ S.contacts=[]; } }
 
 /* ============================ GROUPES D'ENVOI / PROGRAMMÉS / DÉSABONNÉS ============================ */
 async function loadGroupes(){ try{ const {data}=await sb.from("ca_mail_groupes").select("*").order("nom",{ascending:true}); S.groupes=(data||[]).map(g=>({id:g.id,nom:g.nom,emails:Array.isArray(g.emails)?g.emails:[]})); }catch(e){ S.groupes=[]; } }
-async function loadProgrammes(){ try{ const {data}=await sb.from("ca_mail_programmes").select("*").order("envoi_at",{ascending:true}); S.programmes=(data||[]).map(p=>({id:p.id,dest:p.destinataires||{},objet:p.objet,corps:p.corps,lienPiece:p.lien_piece,nomPiece:p.nom_piece,envoiAt:p.envoi_at,statut:p.statut})); }catch(e){ S.programmes=[]; } }
+async function loadProgrammes(){ try{ const {data}=await sb.from("ca_mail_programmes").select("*").order("envoi_at",{ascending:true}); S.programmes=(data||[]).map(p=>({id:p.id,dest:p.destinataires||{},objet:p.objet,corps:p.corps,piecePath:p.piece_path,nomPiece:p.nom_piece,envoiAt:p.envoi_at,statut:p.statut})); }catch(e){ S.programmes=[]; } }
 async function loadDesabonnes(){ try{ const {data}=await sb.from("ca_desabonnes").select("email"); S.desabonnes=new Set((data||[]).map(d=>String(d.email||"").toLowerCase())); }catch(e){ S.desabonnes=new Set(); } }
+function monVote(v){ const me=(S.session&&S.session.id)||null; return (v&&v.voters||[]).find(x=>x.membreId?x.membreId===me:String(x.nom||"").toLowerCase()===String((S.session&&S.session.sig)||"").toLowerCase()); }
+function aDejaVote(v){ return !!monVote(v); }
+function monVoteBudget(b){ const me=(S.session&&S.session.id)||null; return (b&&b.votes||[]).find(x=>x.membreId?x.membreId===me:String(x.nom||"").toLowerCase()===String((S.session&&S.session.sig)||"").toLowerCase()); }
+function aDejaVoteBudget(b){ return !!monVoteBudget(b); }
+function peutModifier(creeParId){ const me=S.session; if(!me) return false; return me.role==="owner" || (creeParId && creeParId===me.id); }
 function estDesabonne(email){ return (S.desabonnes||new Set()).has(String(email||"").toLowerCase()); }
+
+/* Écriture sûre d'une colonne JSON : on relit la ligne juste avant d'écrire, pour ne
+   pas effacer ce qu'un autre membre vient d'ajouter depuis un autre appareil. */
+async function majReunion(id, transforme){
+  if(!sb||!id) return false;
+  const {data,error}=await sb.from("ca_reunions").select("ordre,presences").eq("id",id).maybeSingle();
+  if(error||!data){ if(window.alert) window.alert("Réunion introuvable ou lecture impossible."); return false; }
+  const frais={ ordre:Array.isArray(data.ordre)?data.ordre:[], presences:data.presences||{} };
+  const patch=transforme(frais);
+  if(!patch) return false;
+  const up=await sb.from("ca_reunions").update(patch).eq("id",id);
+  if(up&&up.error){ if(window.alert) window.alert("Enregistrement impossible : "+up.error.message); return false; }
+  const loc=(S.reunions||[]).find(x=>x.id===id);
+  if(loc){ if(patch.ordre) loc.ordre=patch.ordre; if(patch.presences) loc.presences=patch.presences; }
+  return true;
+}
+async function majEvenement(id, transforme){
+  if(!sb||!id) return false;
+  const {data,error}=await sb.from("ca_evenements").select("checklist").eq("id",id).maybeSingle();
+  if(error||!data){ if(window.alert) window.alert("Événement introuvable ou lecture impossible."); return false; }
+  const liste=Array.isArray(data.checklist)?data.checklist:[];
+  const nouvelle=transforme(liste);
+  if(!nouvelle) return false;
+  const up=await sb.from("ca_evenements").update({checklist:nouvelle}).eq("id",id);
+  if(up&&up.error){ if(window.alert) window.alert("Enregistrement impossible : "+up.error.message); return false; }
+  const loc=(S.evenements||[]).find(x=>x.id===id);
+  if(loc) loc.checklist=nouvelle;
+  return true;
+}
 
 /* Traitement des envois programmés arrivés à échéance (déclenché à l'ouverture de l'app). */
 async function traiterEnvoisProgrammes(){
@@ -590,7 +653,9 @@ async function traiterEnvoisProgrammes(){
       const {data:claim}=await sb.from("ca_mail_programmes").update({statut:"en_cours"}).eq("id",p.id).eq("statut","en_attente").select();
       if(!claim||!claim.length) continue;               // déjà pris par un autre appareil
       const d=p.dest||{};
-      const res=await envoyerMailComposeCA({toList:d.to||[],ccList:d.cc||[],bccList:d.cci||[],objet:p.objet,corpsTexte:p.corps,lienPiece:p.lienPiece,nomPiece:p.nomPiece});
+      let lien="";
+      if(p.piecePath){ try{ const su=await sb.storage.from("ca-documents").createSignedUrl(p.piecePath, 7776000); if(su&&su.data&&su.data.signedUrl) lien=su.data.signedUrl; }catch(e){} }
+      const res=await envoyerMailComposeCA({toList:d.to||[],ccList:d.cc||[],bccList:d.cci||[],objet:p.objet,corpsTexte:p.corps,lienPiece:lien,nomPiece:p.nomPiece});
       await sb.from("ca_mail_programmes").update({statut:"envoye"}).eq("id",p.id);
       logAct("Mail programmé envoyé : « "+p.objet+" » à "+res.total+" destinataire(s)");
     }catch(e){ try{ await sb.from("ca_mail_programmes").update({statut:"erreur"}).eq("id",p.id); }catch(_){} }
@@ -605,17 +670,28 @@ async function traiterRappels(){
   const demain=new Date(today.getTime()+86400000);
   const isDay=(dstr,d)=>{ if(!dstr) return false; const x=new Date(String(dstr).slice(0,10)+"T00:00"); return x.getFullYear()===d.getFullYear()&&x.getMonth()===d.getMonth()&&x.getDate()===d.getDate(); };
   const jobs=[];
-  (S.reunions||[]).forEach(m=>{ if(isDay(m.date,demain)) jobs.push({cle:"reunion:"+m.id+":"+m.date, sujet:"Rappel : réunion demain", corps:"Rappel : la réunion « "+(m.titre||"")+" » a lieu demain"+(m.lieu?(" à "+m.lieu):"")+"."}); });
-  (S.taches||[]).forEach(t=>{ if(t.statut!=="fait" && isDay(t.echeance,demain)) jobs.push({cle:"tache:"+t.id+":"+t.echeance, sujet:"Rappel : échéance demain", corps:"Rappel : la tâche « "+(t.titre||"")+" » arrive à échéance demain."}); });
+  (S.reunions||[]).forEach(m=>{ if(isDay(m.date,demain)) jobs.push({cle:"reunion:"+m.id+":"+m.date, sujet:"Rappel : réunion demain", corps:"Rappel : la réunion « "+(m.titre||"")+" » a lieu demain"+(m.lieu?(" à "+m.lieu):"")+".", dest:destinatairesMembres()}); });
+  (S.taches||[]).forEach(t=>{ if(t.statut!=="done" && isDay(t.echeance,demain)){
+    const d=destinatairesTache(t);
+    if(d.length) jobs.push({cle:"tache:"+t.id+":"+t.echeance, sujet:"Rappel : échéance demain", corps:"Rappel : la tâche « "+(t.titre||"")+" » arrive à échéance demain.", dest:d});
+  } });
   for(const j of jobs){
     try{
       const ins=await sb.from("ca_rappels_envoyes").insert({cle:j.cle}).select();
       if(ins&&ins.error) continue;                       // déjà envoyé (clé en doublon)
       if(!ins||!ins.data||!ins.data.length) continue;
-      await envoyerNotifCA(j.sujet, "<p>"+caMailEsc(j.corps)+"</p>", false);
+      await envoyerNotifCAListe(j.dest, j.sujet, "<p>"+caMailEsc(j.corps)+"</p>");
       logAct("Rappel automatique envoyé : "+j.sujet);
     }catch(e){}
   }
+}
+/* Une tâche ne concerne que le titulaire du poste et la personne qui l'a créée. */
+function destinatairesTache(t){
+  const set=new Set();
+  const poste=POSTE_PAR_ID[t.posteId];
+  if(poste){ membresActifs().forEach(a=>{ if(String(a.fonction||"").trim()===String(poste.titre||"").trim()) set.add(String(a.email).toLowerCase().trim()); }); }
+  if(t.creePar){ const c=String(t.creePar||"").toLowerCase(); membresActifs().forEach(a=>{ const sig=((a.prenom||a.nom||"")+(a.fonction?" \u00b7 "+a.fonction:"")).toLowerCase().trim(); if(sig===c) set.add(String(a.email).toLowerCase().trim()); }); }
+  return [...set].filter(Boolean).filter(e=>!estDesabonne(e));
 }
 
 /* Bandeau de rappels dans l'app (fiable, sans e-mail) : ce qui arrive sous 48 h. */
@@ -624,7 +700,7 @@ function bandeauRappels(){
   const dansXjours=d=>{ if(!d) return 999; const x=new Date(String(d).slice(0,10)+"T00:00"); return Math.round((x-now)/86400000); };
   const items=[];
   (S.reunions||[]).forEach(m=>{ const n=dansXjours(m.date); if(n>=0&&n<=2) items.push({q:n,t:"Réunion « "+(m.titre||"")+" »"+(m.lieu?(" — "+m.lieu):""),n}); });
-  (S.taches||[]).forEach(t=>{ if(t.statut==="fait") return; const n=dansXjours(t.echeance); if(n>=0&&n<=2) items.push({q:n,t:"Tâche « "+(t.titre||"")+" »",n}); });
+  (S.taches||[]).forEach(t=>{ if(t.statut==="done") return; const n=dansXjours(t.echeance); if(n>=0&&n<=2) items.push({q:n,t:"Tâche « "+(t.titre||"")+" »",n}); });
   if(!items.length) return "";
   items.sort((a,b)=>a.n-b.n);
   const quand=n=>n===0?"aujourd'hui":n===1?"demain":"dans "+n+" jours";
@@ -639,7 +715,7 @@ function evenementsCalendrier(){
   const items=[];
   (S.reunions||[]).forEach(m=>{ if(m.date) items.push({date:String(m.date).slice(0,10),type:"Réunion",titre:m.titre||"Réunion",lieu:m.lieu||"",cls:"cal-reu"}); });
   (S.evenements||[]).forEach(e=>{ if(e.date) items.push({date:String(e.date).slice(0,10),type:"Événement",titre:e.titre||"Événement",lieu:e.lieu||"",cls:"cal-ev"}); });
-  (S.taches||[]).forEach(t=>{ if(t.echeance && t.statut!=="fait") items.push({date:String(t.echeance).slice(0,10),type:"Échéance tâche",titre:t.titre||"Tâche",lieu:"",cls:"cal-tache"}); });
+  (S.taches||[]).forEach(t=>{ if(t.echeance && t.statut!=="done") items.push({date:String(t.echeance).slice(0,10),type:"Échéance tâche",titre:t.titre||"Tâche",lieu:"",cls:"cal-tache"}); });
   return items;
 }
 function icsDate(d){ return String(d).slice(0,10).replace(/-/g,""); }
@@ -667,24 +743,48 @@ function telechargerJSON(nom, obj){
 }
 
 /* ============================ PAGE PUBLIQUE DE DÉSABONNEMENT ============================ */
-async function pageDesabo(email){
+/* Jeton lié à l'adresse : empêche de désabonner quelqu'un en devinant simplement son e-mail. */
+async function jetonDesabo(email){
   const e=String(email||"").toLowerCase().trim();
-  let ok=false;
-  if(sb && e){ try{ const r=await sb.from("ca_desabonnes").upsert({email:e},{onConflict:"email"}); ok=!(r&&r.error); }catch(_){ ok=false; } }
+  try{
+    const d=new TextEncoder().encode("be-desabo::"+e);
+    const b=await crypto.subtle.digest("SHA-256",d);
+    return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,"0")).join("").slice(0,16);
+  }catch(err){ let h=0; for(let i=0;i<e.length;i++) h=(h*31+e.charCodeAt(i))|0; return "x"+(h>>>0).toString(16); }
+}
+async function lienDesabo(email){
+  const base=(function(){ try{ return caAppUrl(); }catch(e){ return ""; } })();
+  if(!base) return "";
+  return base+"?desabo="+encodeURIComponent(email)+"&t="+(await jetonDesabo(email));
+}
+function ecranDesabo(corps){
   const html=`<div style="max-width:520px;margin:12vh auto;padding:28px;font-family:'Inter',system-ui,sans-serif;text-align:center;color:#1a1a2e">
-    <h1 style="font-family:'Fraunces',serif;font-size:22px">Désabonnement</h1>
-    ${e? (ok? `<p>L'adresse <b>${esc(e)}</b> a bien été désabonnée. Vous ne recevrez plus d'e-mails du Bureau étudiant.</p>`
-             : `<p>Nous n'avons pas pu enregistrer votre désabonnement automatiquement. Merci de contacter le Bureau étudiant.</p>`)
-         : `<p>Adresse manquante.</p>`}
+    <h1 style="font-family:'Fraunces',serif;font-size:22px">Désabonnement</h1>${corps}
     <p style="margin-top:22px"><a href="${esc(location.pathname)}" style="color:#241c46;font-weight:bold">Retour</a></p>
   </div>`;
   const r=root(); if(r) r.innerHTML=html; else document.body.innerHTML=html;
 }
+async function pageDesabo(email, jeton){
+  const e=String(email||"").toLowerCase().trim();
+  if(!e) return ecranDesabo(`<p>Adresse manquante.</p>`);
+  if(jeton!==(await jetonDesabo(e))) return ecranDesabo(`<p>Ce lien de désabonnement n'est pas valide. Contactez le Bureau étudiant.</p>`);
+  ecranDesabo(`<p>Confirmez le désabonnement de <b>${esc(e)}</b> : vous ne recevrez plus aucun e-mail du Bureau étudiant.</p>
+    <p><button id="desabo_ok" style="background:#241c46;color:#fff;border:none;padding:11px 20px;border-radius:8px;font:inherit;cursor:pointer">Confirmer mon désabonnement</button></p>
+    <p id="desabo_msg" style="font-size:13px;color:#666"></p>`);
+  const b=document.getElementById("desabo_ok");
+  if(b) b.addEventListener("click", async ()=>{
+    const m=document.getElementById("desabo_msg"); if(m) m.textContent="Enregistrement…";
+    let ok=false;
+    if(sb){ try{ const r=await sb.from("ca_desabonnes").upsert({email:e},{onConflict:"email"}); ok=!(r&&r.error); }catch(_){ ok=false; } }
+    ecranDesabo(ok? `<p>L'adresse <b>${esc(e)}</b> a bien été désabonnée.</p>`
+                  : `<p>Nous n'avons pas pu enregistrer votre désabonnement. Merci de contacter le Bureau étudiant.</p>`);
+  });
+}
 async function loadReactions(){ try{ const {data}=await sb.from("ca_annonce_reactions").select("*"); S.reactions=data||[]; }catch(e){ S.reactions=[]; } }
 async function loadPresence(){ try{ const {data}=await sb.from("ca_event_presence").select("*"); S.presence=data||[]; }catch(e){ S.presence=[]; } }
-async function loadAnnonces(){ try{ const {data}=await sb.from("ca_annonces").select("*").order("created_at",{ascending:false}); S.annonces=(data||[]).map(a=>({id:a.id,auteur:a.auteur,texte:a.texte,ts:a.created_at})); }catch(e){ S.annonces=[]; } }
+async function loadAnnonces(){ try{ const {data}=await sb.from("ca_annonces").select("*").order("created_at",{ascending:false}); S.annonces=(data||[]).map(a=>({id:a.id,auteur:a.auteur,texte:a.texte,ts:a.created_at,creeParId:a.cree_par})); }catch(e){ S.annonces=[]; } }
 async function loadConflits(){ try{ const {data}=await sb.from("ca_conflits").select("*").order("created_at",{ascending:true}); S.conflits=data||[]; }catch(e){ S.conflits=[]; } }
-async function loadMessages(){ try{ const {data}=await sb.from("ca_messages").select("*").order("created_at",{ascending:true}); S.messages=(data||[]).map(m=>({id:m.id,fromId:m.from_id,to:m.to_id,texte:m.texte,fichier:m.fichier,ts:m.created_at})); }catch(e){ S.messages=[]; } }
+async function loadMessages(){ try{ const moi=(S.session&&S.session.id)||""; if(!moi){ S.messages=[]; return; } const {data}=await sb.from("ca_messages").select("*").or("from_id.eq."+moi+",to_id.eq."+moi).order("created_at",{ascending:true}); S.messages=(data||[]).map(m=>({id:m.id,fromId:m.from_id,to:m.to_id,texte:m.texte,fichier:m.fichier,ts:m.created_at})); }catch(e){ S.messages=[]; } }
 async function loadDocs(){ try{ const {data}=await sb.from("ca_docs").select("*").order("created_at",{ascending:false}); S.docs=(data||[]).map(d=>({id:d.id,titre:d.titre,cat:d.categorie,chemin:d.chemin,cree_par_id:d.cree_par})); }catch(e){ S.docs=[]; } }
 
 /* ============================ ÉTAT ============================ */
@@ -721,18 +821,17 @@ const val = id => { const e=document.getElementById(id); return e ? e.value : ""
 
 /* ============================ RENDU ============================ */
 const root = () => document.getElementById("root");
-function render(){ root().innerHTML = S.view==="home" ? viewHome() : S.view==="admin" ? viewAdmin() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.needProfile ? viewCompleteProfile() : (S.forcePwd ? viewNewPwd() : viewAuth())) : (S.session.statut==="attente" ? viewPending() : viewDash())); }
+function render(){ if(S.recovery){ root().innerHTML = viewNewPwd(); return; } root().innerHTML = S.view==="home" ? viewHome() : S.view==="admin" ? viewAdmin() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.needProfile ? viewCompleteProfile() : viewAuth()) : (S.session.statut==="attente" ? viewPending() : viewDash())); }
 function viewNewPwd(){
   return `<div class="auth-wrap"><div class="auth">
     <div class="top"><span class="eyebrow">${esc(S.meta.nom||"Bureau étudiant")} · CA</span><button class="link" data-action="go-home">← Accueil</button></div>
     <h1 class="serif">Nouveau mot de passe</h1>
-    <p class="lead">Votre mot de passe a été réinitialisé par l'administrateur. Choisissez-en un nouveau pour accéder à l'espace CA.</p>
+    <p class="lead">Vous avez ouvert le lien de réinitialisation. Choisissez un nouveau mot de passe pour accéder à l'espace CA.</p>
     <div class="auth-card">
-      <p class="hint" style="margin:0 0 4px">Compte : <b style="color:var(--ink)">${esc(S.forcePwd.nom)}</b></p>
-      <label>Nouveau mot de passe</label><input class="f" id="np_pwd" type="password" placeholder="6 caractères minimum">
+      <label>Nouveau mot de passe</label><input class="f" id="np_pwd" type="password" placeholder="8 caractères minimum">
       <label>Confirmer</label><input class="f" id="np_pwd2" type="password" placeholder="Retapez le mot de passe">
       <p class="err" id="np_err" style="display:none"></p>
-      <button class="btn" data-action="set-new-pwd">Définir mon mot de passe</button>
+      <button class="btn" data-action="set-new-pwd">Enregistrer mon mot de passe</button>
     </div>
   </div></div>`;
 }
@@ -780,22 +879,26 @@ function viewAdmin(){
     return `<div class="doc" style="cursor:default">
       <span class="ic">${a.role==="owner"?"★":"✓"}</span>
       <span class="meta"><p class="dt">${esc(a.prenom?a.prenom+" "+a.nom:a.nom)}${self?" (vous)":""}</p><p class="du">${esc([a.fonction,a.email||a.id].filter(Boolean).join(" · "))}</p></span>
+      ${a.email?`<button class="link" data-action="reset-pwd" data-id="${esc(a.id)}">Réinitialiser le mot de passe</button>`:""}
       ${(!self && a.role!=="owner")?`<button class="link" data-action="revoke-admin" data-id="${esc(a.id)}">Révoquer</button>`:""}
     </div>`;
   }).join("");
   return `<div class="body" style="max-width:720px;margin:0 auto">
     <div class="hd-top" style="margin:22px 0 6px"><button class="back" data-action="go-home">← Accueil</button><span class="eyebrow">Espace admin · Propriétaire</span></div>
     <h1 class="serif" style="font-size:30px;margin:4px 0 18px">Validation des comptes</h1>
-    <p style="color:var(--slate);font-size:12px;margin:2px 0 0">Mot de passe oublié d'un membre ? Réinitialisez-le dans Supabase, menu Authentication puis Users.</p>
+    <p style="color:var(--slate);font-size:12px;margin:2px 0 0">Mot de passe oublié d'un membre ? Le bouton « Réinitialiser le mot de passe » lui envoie un lien par e-mail ; chacun peut aussi le demander depuis l'écran de connexion.</p>
     <div class="compose"><h3 class="serif">Comptes en attente</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0">Vous seul validez les accès. Les comptes validés peuvent entrer dans l\'espace CA.</p></div>
     ${pendHtml}
     <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Comptes validés</h2><span class="c">${actifs.length}</span><span class="l"></span></div>
     ${actHtml}
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Bilans moraux</h2><span class="l"></span></div>
-    <div class="compose"><h3 class="serif">${S.meta.bilanActif?"Onglet ouvert":"Onglet fermé"}</h3>
-      <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Ouvre ou ferme l'onglet où chaque membre dépose un bilan <b>anonyme</b> (ce qui va / à changer). Vous seul voyez la compilation et générez le document à publier.</p>
-      <div class="row-btn"><button class="btn${S.meta.bilanActif?" ghost":""}" data-action="toggle-bilan">${S.meta.bilanActif?"Désactiver les Bilans moraux":"Activer les Bilans moraux"}</button><button class="btn ghost" data-action="reset-bilan">Réinitialiser les bilans</button></div></div>
+    <div class="compose"><h3 class="serif">${bilanEtat()==="ouvert"?"Collecte en cours":(bilanEtat()==="cloture"?"Campagne clôturée":"Fermé")}</h3>
+      <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Chaque membre dépose un bilan <b>anonyme</b> sur les autres (ce qui a fonctionné / à améliorer). <b>Pendant la collecte, personne ne lit rien.</b> Après la clôture, seul le secrétariat lit les retours, prépare le texte et le publie aux membres.</p>
+      <p style="color:var(--slate);font-size:12px;margin:0 0 8px">${(S.meta.bilanNbDeposes!==undefined)?S.meta.bilanNbDeposes:(S.meta.bilanSubmitters||[]).length} bilan(s) déposé(s)${bilanPublie()?" · synthèse publiée":""}</p>
+      <div class="row-btn"><button class="btn${bilanEtat()==="ouvert"?" ghost":""}" data-action="toggle-bilan">${bilanEtat()==="ouvert"?"Fermer la collecte":"Ouvrir la collecte"}</button>
+        ${bilanEtat()==="ouvert"?`<button class="btn ghost" data-action="bilan-cloturer">Clôturer (lecture secrétariat)</button>`:""}
+        <button class="btn ghost" data-action="reset-bilan">Tout réinitialiser</button></div></div>
     ${estSecretaire()?`<div class="card2"><h3 class="serif">R\u00e9glages du secr\u00e9tariat</h3>
       <label class="fld">Cl\u00f4ture de l'ordre du jour (heures avant la r\u00e9union — 0 = jamais)</label>
       <input class="f" id="cfg_cloture" type="number" min="0" value="${(S.meta.clotureOdj||0)}">
@@ -880,15 +983,14 @@ function viewHome(){
 
 /* ---- AUTH ---- */
 function viewAuth(){
-  const premier = S.admins.length===0;
   const card = S.authMode==="signup" ? `
     <h2 class="serif">Créer un compte</h2>
-    <p class="hint">${premier?"Premier compte du bureau (vous serez le propriétaire).":"Votre inscription sera validée par le propriétaire."}</p>
+    <p class="hint">Votre inscription devra être validée par le propriétaire du bureau avant de pouvoir entrer.</p>
     <label>Nom</label><input class="f" id="au_nom" placeholder="Ex. Drissi">
     <label>Prénom</label><input class="f" id="au_prenom" placeholder="Ex. Rania">
     <label>Fonction</label><select class="f" id="au_fonction"><option value="">— choisir une fonction —</option>${TOUS_POSTES.map(p=>`<option value="${esc(p.titre)}">${esc(p.titre)}</option>`).join("")}</select>
     <label>Adresse e-mail</label><input class="f" id="au_email" type="email" placeholder="prenom.nom@exemple.com" autocapitalize="none">
-    <label>Mot de passe</label><input class="f" id="au_pwd" type="password" placeholder="6 caractères minimum">
+    <label>Mot de passe</label><input class="f" id="au_pwd" type="password" placeholder="8 caractères minimum">
     <p class="err" id="au_err" style="display:none"></p>
     <button class="btn" data-action="signup">Créer le compte</button>
     <p class="swap">Déjà un compte ? <button data-action="set-mode" data-mode="login">Se connecter</button></p>`
@@ -899,6 +1001,7 @@ function viewAuth(){
     <label>Mot de passe</label><input class="f" id="au_pwd" type="password" placeholder="Votre mot de passe">
     <p class="err" id="au_err" style="display:none"></p>
     <button class="btn" data-action="login">Se connecter</button>
+    <p class="swap" style="margin-top:8px"><button data-action="forgot-pwd">Mot de passe oublié ?</button></p>
     <p class="swap">Pas encore de compte ? <button data-action="set-mode" data-mode="signup">Créer un compte</button></p>`;
   return `<div class="auth-wrap"><div class="auth">
     <div class="top"><span class="eyebrow">${esc(S.meta.nom||"Bureau étudiant")} · CA</span>
@@ -915,8 +1018,8 @@ function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textC
 const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
   const map={org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,notifs:tabNotifs,search:tabSearch};
-  const tabs = S.meta.bilanActif ? [...TABS,["bilan","12","Bilans moraux"]] : TABS;
-  if(S.tab==="bilan" && !S.meta.bilanActif) S.tab="org";
+  const tabs = bilanOnglet() ? [...TABS,["bilan","13","Bilans moraux"]] : TABS;
+  if(S.tab==="bilan" && !bilanOnglet()) S.tab="org";
   const notifOwner = S.session.role==="owner" ? (S.admins||[]).filter(a=>a.statut==="attente").length : 0;
   const notifBud = (S.budgets||[]).filter(b=>b.statut==="vote" && !(b.votes||[]).some(v=>(v.nom||"").toLowerCase()===(S.session.sig||"").toLowerCase())).length;
   const notifTot = notifOwner + notifBud;
@@ -940,7 +1043,7 @@ function viewDash(){
     </div>` : "";
   return `<header class="hd"><div class="hd-in">
     <div class="hd-top"><button class="back" data-action="go-home">← Accueil</button><span class="eyebrow">Espace CA</span></div>
-    <input class="title serif" id="nomInput" value="${esc(S.meta.nom)}" data-change="nom" aria-label="Nom du bureau étudiant">
+    <input class="title serif" id="nomInput" value="${esc(S.meta.nom)}" data-change="nom" ${S.session.role==="owner"?"":"readonly"} aria-label="Nom du bureau étudiant">
     <p class="sub"><b>${TOUS_POSTES.length} postes</b> · organigramme, budgets, votes et plus.</p>
     <div class="userbar"><span class="u-av">${esc(initials(S.session.nom))}</span>
       <span><span class="u-nom">${esc(S.session.nom)}</span> <span class="u-id">${esc(S.session.fonction||"")}</span></span>
@@ -987,14 +1090,14 @@ function tabTaches(){
   const cols=STATUTS.map(s=>{
     const list=S.taches.filter(t=>t.statut===s.id);
     return `<div><div class="col-h"><span class="pill" style="background:var(${s.v})">${s.label}</span><span class="ct">${list.length}</span></div>
-      ${list.map(t=>{const p=POSTE_PAR_ID[t.posteId];
+      ${list.map(t=>{const p=POSTE_PAR_ID[t.posteId]||{titre:"Sans poste"};
         const overdue=t.echeance&&t.statut!=="done"&&t.echeance<todayISO();
         const bits=[];
         if(t.priorite==="haute") bits.push('<span style="color:var(--red)">Priorité haute</span>');
         if(t.priorite==="basse") bits.push('<span style="color:var(--slate)">Priorité basse</span>');
         if(t.echeance) bits.push(`<span style="color:${overdue?"var(--red)":"var(--slate)"}">${overdue?"⚠ en retard":"échéance "+dShort(t.echeance)}</span>`);
         return `<div class="task"${overdue?' style="border-color:var(--red)"':''}>
-        <span class="tag">N°${NUM[t.posteId]} · ${esc(p.titre)}${t.creePar?" · ajouté par "+esc(t.creePar):""}</span><p>${esc(t.titre)}</p>
+        <span class="tag">${NUM[t.posteId]?"N°"+NUM[t.posteId]+" · ":""}${esc(p.titre)}${t.creePar?" · ajouté par "+esc(t.creePar):""}</span><p>${esc(t.titre)}</p>
         ${bits.length?`<span class="tag" style="margin:-2px 0 8px;display:block">${bits.join(" · ")}</span>`:""}
         <div class="task-act">${STATUTS.filter(x=>x.id!==t.statut).map(x=>`<button class="chip" data-action="move-tache" data-id="${t.id}" data-to="${x.id}">→ ${x.label}</button>`).join("")}
           <button class="x" data-action="del-tache" data-id="${t.id}">✕</button></div></div>`;}).join("")||'<div style="font-size:12px;color:var(--slate)">—</div>'}
@@ -1004,7 +1107,7 @@ function tabTaches(){
 }
 
 /* ---- onglet PLANNING ---- */
-function fmtDate(d){ return new Date(d+"T00:00").toLocaleDateString("fr-BE",{weekday:"long",day:"2-digit",month:"long"}); }
+function fmtDate(d){ try{ if(!d) return "date ?"; const x=new Date(d+"T00:00"); if(isNaN(x.getTime())) return String(d); return x.toLocaleDateString("fr-BE",{weekday:"long",day:"2-digit",month:"long"}); }catch(e){ return String(d||""); } }
 function tabPlanning(){
   const compose=estSecretaire()?`<div class="compose"><h3 class="serif">Nouveau créneau ou événement</h3>
     <input class="f" id="cr_titre" placeholder="Ex. Permanence salle · Conférence · AG">
@@ -1015,7 +1118,7 @@ function tabPlanning(){
   if(S.creneaux.length===0) return compose+`<div class="empty">Aucun créneau pour l’instant.</div>`;
   const list=S.creneaux.map(c=>{
     const count=st=>c.dispos.filter(d=>d.statut===st).length;
-    const mien=c.dispos.find(d=>d.nom.toLowerCase()===(S.session.sig||"").toLowerCase());
+    const moi=(S.session&&S.session.id)||null; const mien=c.dispos.find(d=>d.membreId?d.membreId===moi:String(d.nom||"").toLowerCase()===String(S.session.sig||"").toLowerCase());
     const varOf=st=>(DISPOS.find(x=>x.id===st)||{}).v||"--slate";
     return `<div class="slot"><div class="slot-h"><div><h4 class="serif">${esc(c.titre)}</h4>${c.lieu?`<p class="lieu">${esc(c.lieu)}</p>`:""}</div>
       <span class="when">${fmtDate(c.date)}</span></div>
@@ -1030,7 +1133,7 @@ function tabPlanning(){
 
 /* ---- onglet BUDGETS ---- */
 function tabBudgets(){
-  const peutDecider = S.session.fonction==="Président";
+  const peutDecider = estPresidente();
   const totalApp=S.budgets.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(b.cout||0),0);
   const enVote=S.budgets.filter(b=>b.statut==="vote").length;
   const stats=`<div class="stat-row">
@@ -1076,16 +1179,16 @@ function tabVotes(){
   const list=S.votes.map(v=>{
     const total=v.voters.length; const count=oid=>v.voters.filter(x=>x.optionId===oid).length;
     const max=Math.max(0,...v.options.map(o=>count(o.id))); const open=v.statut==="open";
-    const mien=v.voters.find(x=>x.nom.toLowerCase()===(S.session.sig||"").toLowerCase());
+    const mien=monVote(v);
     const opts=v.options.map(o=>{const c=count(o.id);const pct=total?Math.round(c/total*100):0;const picked=mien&&mien.optionId===o.id;
       return `<div class="opt${c===max&&c>0?" lead":""}">${open?`<button class="pick" data-action="vpick" data-id="${v.id}" data-opt="${o.id}">${picked?"◉ ":"○ "}${esc(o.label)}</button>`:""}
         ${(!open||total>0)?`<div class="opt-top"><span class="ol">${esc(o.label)}</span><span class="oc">${c} · ${pct}%</span></div><div class="bar"><span style="width:${pct}%"></span></div>`:""}</div>`;}).join("");
     return `<div class="vote"><div class="vote-h"><h4 class="serif">${esc(v.question)}</h4><span class="badge ${open?"open":"closed"}">${open?"Ouvert":"Clos"}</span></div>
       ${(v.docs&&v.docs.length)?`<div style="margin:10px 0;display:flex;flex-wrap:wrap;gap:7px">${v.docs.map(d=>`<button class="chip" data-action="vdoc" data-path="${esc(d.path)}">📎 ${esc(d.name)}</button>`).join("")}</div>`:""}
       ${opts}${total?`<p class="voters">${total} votant${total>1?"s":""} : ${esc(v.voters.map(x=>x.nom).join(", "))}</p>`:""}
-      <div class="foot-line"><button class="link" data-action="vtoggle" data-id="${v.id}">${open?"Clore le vote":"Rouvrir"}</button>
-        ${open && (S.session.role==="owner" || v.creeParId===S.session.id) ? `<button class="link" data-action="vote-relance" data-id="${v.id}">Relancer les non-votants</button>` : ""}
-        <button class="link" data-action="del-vote" data-id="${v.id}" style="margin-left:auto">Supprimer</button></div>
+      <div class="foot-line">${peutModifier(v.creeParId)?`<button class="link" data-action="vtoggle" data-id="${v.id}">${open?"Clore le vote":"Rouvrir"}</button>`:""}
+        ${open && peutModifier(v.creeParId) ? `<button class="link" data-action="vote-relance" data-id="${v.id}">Relancer les non-votants</button>` : ""}
+        ${peutModifier(v.creeParId)?`<button class="link" data-action="del-vote" data-id="${v.id}" style="margin-left:auto">Supprimer</button>`:""}</div>
       ${v.creePar?`<p class="by">créé par ${esc(v.creePar)}</p>`:""}</div>`;
   }).join("");
   return compose+list;
@@ -1125,7 +1228,7 @@ function tabAnnonces(){
     return `<div class="note"><div class="note-h"><span class="who">${esc(a.auteur)}</span><span class="when">${dateFR(a.ts)}</span></div>
     <p>${esc(a.texte)}</p>
     <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
-      <button class="link" data-action="del-annonce" data-id="${a.id}" style="margin-left:auto">Supprimer</button>
+      ${peutModifier(a.creeParId)?`<button class="link" data-action="del-annonce" data-id="${a.id}" style="margin-left:auto">Supprimer</button>`:""}
     </div></div>`;
   }).join("");
   try{ localStorage.setItem("ca:seen:annonces", String(Date.now())); }catch(e){}
@@ -1133,11 +1236,50 @@ function tabAnnonces(){
 }
 
 /* ---- onglet BILANS MORAUX (assistant anonyme) ---- */
+function bilanEtat(){ return S.meta.bilanEtat || (S.meta.bilanActif?"ouvert":"ferme"); }
+function bilanPublie(){ return String(S.meta.bilanPublie||""); }
+/* Les bilans bruts ne sont lisibles que par le secrétariat, et seulement après clôture. */
+function peutLireBilans(){ return bilanEtat()==="cloture" && estSecretaire(); }
+function bilanOnglet(){ return bilanEtat()!=="ferme" || !!bilanPublie(); }
 function bilanTargets(){
-  const key=((S.session&&S.session.nom)||"").trim().toLowerCase();
-  const self=PERSONNES.find(p=>(p.prenom+" "+p.nom).toLowerCase()===key);
-  const selfId=self?self.id:null;
-  return PERSONNES.filter(p=>p.id!==selfId);
+  const moi=(S.session&&S.session.id)||null;
+  return membresActifs().filter(a=>a.id!==moi).map(a=>({
+    id:a.id,
+    prenom:a.prenom||"",
+    nom:a.nom||"",
+    fonction:a.fonction||"",
+    label:(((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||"Membre")
+  }));
+}
+/* Nom affiché d'une cible : membre inscrit, ou ancienne liste pour les bilans déjà déposés. */
+function bilanNomCible(cid){
+  const a=(S.admins||[]).find(x=>x.id===cid);
+  if(a) return (((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||"Membre");
+  const p=PERSONNES.find(x=>x.id===cid);
+  return p?(p.prenom+" "+p.nom):"Membre supprimé";
+}
+function bilanFonctionCible(cid){
+  const a=(S.admins||[]).find(x=>x.id===cid);
+  if(a) return a.fonction||"";
+  const p=PERSONNES.find(x=>x.id===cid);
+  return p?p.fonction:"";
+}
+/* Texte compilé, proposé à la secrétaire avant publication (elle peut le retoucher). */
+function bilanTexteCompile(){
+  const byCible={}; (S.bilans||[]).forEach(b=>{ (byCible[b.cible]=byCible[b.cible]||[]).push(b); });
+  const lignes=[];
+  Object.keys(byCible).forEach(cid=>{
+    const l=byCible[cid];
+    lignes.push(bilanNomCible(cid)+(bilanFonctionCible(cid)?" — "+bilanFonctionCible(cid):""));
+    lignes.push("Points positifs :");
+    const pos=l.map(x=>x.positifs).filter(Boolean);
+    lignes.push(...(pos.length?pos.map(t=>"- "+t):["- —"]));
+    lignes.push("Points à améliorer :");
+    const am=l.map(x=>x.ameliorer).filter(Boolean);
+    lignes.push(...(am.length?am.map(t=>"- "+t):["- —"]));
+    lignes.push("");
+  });
+  return lignes.join("\n").trim();
 }
 function bilanCapture(){
   const ui=S.bilanUI; if(!ui) return; const T=bilanTargets();
@@ -1147,38 +1289,44 @@ function bilanCapture(){
   }
 }
 function tabBilan(){
-  const owner = S.session.role==="owner";
+  const etat=bilanEtat();
   const dejaFait = (S.meta.bilanSubmitters||[]).includes(S.session.id);
   if(!S.bilanUI) S.bilanUI={step:-1,draft:{}};
   const ui=S.bilanUI; const T=bilanTargets();
   let html="";
-  if(!dejaFait){
-    if(ui.step===-1){
+
+  /* 1. Phase de collecte : chacun écrit, personne ne lit. */
+  if(etat==="ouvert"){
+    if(!T.length){
+      html += `<div class="compose"><h3 class="serif">Bilans moraux</h3><p class="hint" style="margin:8px 0 0">Aucun autre membre validé pour l'instant.</p></div>`;
+    } else if(dejaFait){
+      html += `<div class="compose"><h3 class="serif">Bilans moraux</h3><p class="hint" style="margin:8px 0 0;color:var(--green)">✓ Merci, vos bilans ont bien été envoyés (anonymes). Ils seront lus par le secrétariat après la clôture.</p></div>`;
+    } else if(ui.step===-1){
       html += `<div class="compose" style="text-align:center">
         <h3 class="serif" style="font-size:20px">Bilans moraux</h3>
-        <p style="color:var(--ink-soft);font-size:14px;line-height:1.55;margin:8px auto 0;max-width:520px">Vous allez remplir un court bilan pour chaque membre du bureau. Pour chacun, indiquez ses <b style="color:var(--green)">points positifs</b> et ses <b style="color:var(--stamp)">points à améliorer</b>. Vos réponses sont <b>anonymes</b> : personne ne saura qui les a écrites.</p>
+        <p style="color:var(--ink-soft);font-size:14px;line-height:1.55;margin:8px auto 0;max-width:520px">Vous allez remplir un court bilan pour chaque membre du bureau. Pour chacun, indiquez ses <b style="color:var(--green)">points positifs</b> et ses <b style="color:var(--stamp)">points à améliorer</b>. Vos réponses sont <b>anonymes</b> : elles ne portent aucune trace de leur auteur, elles sont mélangées à celles des autres dès l'envoi, et personne ne peut les lire pendant la collecte. Après la clôture, le secrétariat lit l'ensemble sans savoir qui a écrit quoi, puis publie une synthèse.</p>
         <div class="row-btn" style="justify-content:center;margin-top:16px"><button class="btn" data-action="bilan-start">Commencer →</button></div></div>`;
     } else if(ui.step>=0 && ui.step<T.length){
       const p=T[ui.step]; const d=ui.draft[p.id]||{};
       html += `<div class="compose">
         <p class="by" style="margin:0 0 4px">Étape ${ui.step+1} / ${T.length}</p>
-        <h3 class="serif" style="font-size:20px;margin:0">Bilan de ${esc(p.prenom)} ${esc(p.nom)}</h3>
+        <h3 class="serif" style="font-size:20px;margin:0">Bilan de ${esc(p.label)}</h3>
         <p style="color:var(--ink-soft);font-size:12.5px;margin:2px 0 10px">${esc(p.fonction)}</p>
         <label style="display:block;font-size:12px;font-weight:600;color:var(--green)">Points positifs</label>
         <p style="color:var(--slate);font-size:11.5px;margin:2px 0 0">Ce qui a bien fonctionné, à conserver.</p>
         <textarea id="bil_pos" placeholder="Ses points forts…">${esc(d.positifs||"")}</textarea>
         <label style="display:block;font-size:12px;font-weight:600;color:var(--stamp);margin:8px 0 0">Points à améliorer</label>
         <p style="color:var(--slate);font-size:11.5px;margin:2px 0 0">Ce qui n'a pas marché ou pourrait être mieux.</p>
-        <textarea id="bil_amel" placeholder="Ce qu'il pourrait améliorer…">${esc(d.ameliorer||"")}</textarea>
+        <textarea id="bil_amel" placeholder="Ce qui pourrait être amélioré…">${esc(d.ameliorer||"")}</textarea>
         <div class="foot-line" style="border-top:none;padding-top:6px">
           <button class="btn ghost sm" data-action="bilan-prev">← Précédent</button>
           <button class="btn sm" data-action="bilan-next" style="margin-left:auto">${ui.step===T.length-1?"Voir le récapitulatif →":"Suivant →"}</button>
         </div></div>`;
     } else {
       html += `<div class="compose"><h3 class="serif">Récapitulatif</h3>
-        <p style="color:var(--ink-soft);font-size:13px;margin:0">Relisez vos réponses. Vous pouvez revenir en modifier une, puis envoyer.</p></div>`;
+        <p style="color:var(--ink-soft);font-size:13px;margin:0">Relisez vos réponses. Vous pouvez revenir en modifier une, puis envoyer. <b>L'envoi est définitif.</b></p></div>`;
       html += T.map((p,i)=>{ const d=ui.draft[p.id]||{}; return `<div class="vote"><div class="vote-h"><div>
-          <h4 class="serif" style="font-size:16px">${esc(p.prenom)} ${esc(p.nom)}</h4>
+          <h4 class="serif" style="font-size:16px">${esc(p.label)}</h4>
           <p class="by" style="margin:2px 0 0">${esc(p.fonction)}</p></div>
           <button class="link" data-action="bilan-goto" data-i="${i}">Modifier</button></div>
         <p class="b-desc"><b style="color:var(--green)">Positifs — </b>${d.positifs?esc(d.positifs):"<span style='color:var(--slate)'>—</span>"}</p>
@@ -1187,27 +1335,53 @@ function tabBilan(){
         <button class="btn ghost sm" data-action="bilan-prev">← Revenir</button>
         <button class="btn" data-action="bilan-send" style="margin-left:auto">Envoyer mes bilans (anonyme)</button></div>`;
     }
-  } else {
-    html += `<div class="compose"><h3 class="serif">Bilans moraux</h3><p class="hint" style="margin:8px 0 0;color:var(--green)">✓ Merci, vos bilans ont bien été envoyés (anonymes).</p></div>`;
-  }
-  {
-    const canGen = owner || S.session.fonction==="Secrétaire";
-    const byCible={}; (S.bilans||[]).forEach(b=>{ (byCible[b.cible]=byCible[b.cible]||[]).push(b); });
-    const total=(S.bilans||[]).length;
-    html += `<div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Retours reçus (anonymes)</h2><span class="c">${total}</span><span class="l"></span></div>`;
-    if(total===0){ html += `<div class="empty">Aucun retour pour l'instant.</div>`; }
-    else {
-      if(canGen) html += `<div class="row-btn" style="margin-bottom:14px"><button class="btn" data-action="generate-bilan">Générer le document à publier</button></div>`;
-      html += PERSONNES.filter(p=>byCible[p.id]&&byCible[p.id].length).map(p=>{
-        const list=byCible[p.id];
-        const pos=list.map(x=>x.positifs).filter(Boolean);
-        const am=list.map(x=>x.ameliorer).filter(Boolean);
-        return `<div class="vote"><div class="vote-h"><div><h4 class="serif" style="font-size:16px">${esc(p.prenom)} ${esc(p.nom)}</h4><p class="by" style="margin:2px 0 0">${esc(p.fonction)} · ${list.length} retour(s)</p></div></div>
-          ${pos.length?`<p class="b-desc"><b style="color:var(--green)">Points positifs</b></p><ul style="margin:2px 0 6px;padding-left:18px">${pos.map(t=>`<li style="font-size:13px;color:var(--ink-soft);margin:0 0 3px">${esc(t)}</li>`).join("")}</ul>`:""}
-          ${am.length?`<p class="b-desc"><b style="color:var(--stamp)">Points à améliorer</b></p><ul style="margin:2px 0 0;padding-left:18px">${am.map(t=>`<li style="font-size:13px;color:var(--ink-soft);margin:0 0 3px">${esc(t)}</li>`).join("")}</ul>`:""}</div>`;
-      }).join("");
+    if(estSecretaire()||(S.session&&S.session.role==="owner")){
+      const rendus=(S.meta.bilanNbDeposes!==undefined)?S.meta.bilanNbDeposes:(S.meta.bilanSubmitters||[]).length;
+      html += `<div class="card2" style="margin-top:22px"><h3 class="serif" style="margin-top:0">Suivi de la campagne</h3>
+        <p class="du">${rendus} membre(s) ont déposé leur bilan. Le contenu reste illisible tant que la campagne n'est pas clôturée.</p>
+        ${estSecretaire()?`<div class="row-btn"><button class="btn" data-action="bilan-cloturer">Clôturer la campagne</button></div>`:""}</div>`;
     }
   }
+
+  /* 2. Après clôture : le secrétariat lit, prépare et publie. */
+  if(etat==="cloture"){
+    if(peutLireBilans()){
+      const byCible={}; (S.bilans||[]).forEach(b=>{ (byCible[b.cible]=byCible[b.cible]||[]).push(b); });
+      const total=(S.bilans||[]).length;
+      html += `<div class="compose"><h3 class="serif">Bilans moraux — campagne clôturée</h3>
+        <p style="color:var(--ink-soft);font-size:13px;margin:4px 0 0">Vous êtes la seule personne à voir ces retours bruts. Ils sont <b>anonymes et mélangés</b> : rien n'indique qui a écrit quoi, et l'ordre d'affichage ne suit pas l'ordre des dépôts. Relisez-les, préparez le texte à publier (vous pouvez retirer ou reformuler ce qui doit l'être), puis publiez-le : il devient alors visible par tous les membres et leur est envoyé par e-mail.</p></div>`;
+      html += `<div class="grp-h" style="margin:24px 0 12px"><h2 class="serif">Retours reçus (anonymes)</h2><span class="c">${total}</span><span class="l"></span></div>`;
+      if(!total){ html += `<div class="empty">Aucun retour déposé.</div>`; }
+      else {
+        html += Object.keys(byCible).map(cid=>{
+          const list=byCible[cid];
+          const pos=list.map(x=>x.positifs).filter(Boolean);
+          const am=list.map(x=>x.ameliorer).filter(Boolean);
+          return `<div class="vote"><div class="vote-h"><div><h4 class="serif" style="font-size:16px">${esc(bilanNomCible(cid))}</h4><p class="by" style="margin:2px 0 0">${esc(bilanFonctionCible(cid))} · ${list.length} retour(s)</p></div></div>
+            ${pos.length?`<p class="b-desc"><b style="color:var(--green)">Points positifs</b></p><ul style="margin:2px 0 6px;padding-left:18px">${pos.map(t=>`<li style="font-size:13px;color:var(--ink-soft);margin:0 0 3px">${esc(t)}</li>`).join("")}</ul>`:""}
+            ${am.length?`<p class="b-desc"><b style="color:var(--stamp)">Points à améliorer</b></p><ul style="margin:2px 0 0;padding-left:18px">${am.map(t=>`<li style="font-size:13px;color:var(--ink-soft);margin:0 0 3px">${esc(t)}</li>`).join("")}</ul>`:""}</div>`;
+        }).join("");
+        html += `<div class="compose" style="margin-top:22px"><h3 class="serif">Texte à publier</h3>
+          <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Cliquez sur « Préparer » pour pré-remplir le texte à partir des retours, corrigez-le librement, puis publiez.</p>
+          <textarea id="bil_pub" data-change="bilpub" style="min-height:220px" placeholder="Le texte publié apparaîtra ici…">${esc(S.bilanPubDraft!==undefined?S.bilanPubDraft:bilanPublie())}</textarea>
+          <div class="row-btn"><button class="btn ghost" data-action="bilan-preparer">Préparer le texte</button>
+            <button class="btn ghost" data-action="generate-bilan">Version imprimable</button>
+            <button class="btn" data-action="bilan-publier">Publier et prévenir les membres</button></div>
+          ${bilanPublie()?`<p class="hint" style="margin:10px 0 0;color:var(--green)">✓ Une version est déjà publiée${S.meta.bilanPublieLe?" ("+esc(fmtQuand(S.meta.bilanPublieLe))+")":""}. Republier remplace la précédente.</p>`:""}</div>`;
+      }
+    } else if(!bilanPublie()){
+      html += `<div class="compose"><h3 class="serif">Bilans moraux</h3><p class="hint" style="margin:8px 0 0">La campagne est clôturée. Le secrétariat relit les retours ; la synthèse sera publiée ici.</p></div>`;
+    }
+  }
+
+  /* 3. Synthèse publiée : visible par tous les membres. */
+  if(bilanPublie() && !(etat==="cloture" && peutLireBilans())){
+    html += `<div class="compose"><h3 class="serif">Bilans moraux — synthèse publiée</h3>
+      ${S.meta.bilanPublieLe?`<p class="by" style="margin:2px 0 8px">Publiée le ${esc(fmtQuand(S.meta.bilanPublieLe))}</p>`:""}
+      <p style="white-space:pre-wrap;font-size:13.5px;line-height:1.6;color:var(--ink);margin:0">${esc(bilanPublie())}</p></div>`;
+  }
+
+  if(!html) html = `<div class="compose"><h3 class="serif">Bilans moraux</h3><p class="hint" style="margin:8px 0 0">Les bilans moraux ne sont pas ouverts pour le moment.</p></div>`;
   return html;
 }
 
@@ -1295,7 +1469,7 @@ function tabReunions(){
   }
   const m=R.find(x=>x.id===S.reuUI.sel); if(!m){ S.reuUI.sel=null; return tabReunions(); }
   const ordre=m.ordre||[]; const pres=m.presences||{};
-  const cnt=v=>PERSONNES.filter(p=>pres[p.id]===v).length;
+  const cnt=v=>Object.keys(pres).filter(k=>pres[k]===v).length;
   const points=ordre.length?ordre.map(pt=>`<div class="vote">
       <div class="vote-h" style="align-items:flex-start;gap:8px">
         <button class="link" ${estSecretaire()?"":"disabled style=\"opacity:.5;cursor:default\""} data-action="reu-togglepoint" data-pt="${pt.id}" style="font-size:17px;text-decoration:none">${pt.fait?"☑":"☐"}</button>
@@ -1303,13 +1477,14 @@ function tabReunions(){
         ${(!pt.parId || (S.session && (S.session.id===pt.parId || S.session.role==="owner"))) ? `<button class="link" data-action="reu-delpoint" data-pt="${pt.id}">✕</button>` : ""}</div>
       ${(estSecretaire()&&pt.fait&&pt.notes)?`<button class="link" data-action="pt-tache" data-pt="${pt.id}" style="font-size:12px">➕ Cr\u00e9er une t\u00e2che depuis cette d\u00e9cision</button>`:""}
       <textarea data-change="reunote" data-pt="${pt.id}" ${estSecretaire()?"":"readonly style=\"opacity:.75\""} placeholder="${estSecretaire()?"Notes / décisions (pour le PV)…":"Notes rédigées par le secrétariat"}">${esc(pt.notes||"")}</textarea></div>`).join(""):`<div class="empty">Aucun point à l'ordre du jour.</div>`;
-  const presRows=PERSONNES.map(p=>{const v=pres[p.id];return `<div class="doc" style="cursor:default;padding:9px 13px">
-      <span class="meta"><p class="dt" style="font-size:13.5px">${esc(p.prenom)} ${esc(p.nom)}</p><p class="du">${esc(p.fonction)}</p></span>
+  const presRows=membresActifs().map(a=>{const v=pres[a.id]; const nom=((a.prenom||"")+" "+(a.nom||"")).trim()||a.email;
+    return `<div class="doc" style="cursor:default;padding:9px 13px">
+      <span class="meta"><p class="dt" style="font-size:13.5px">${esc(nom)}</p><p class="du">${esc(a.fonction||"")}</p></span>
       <div class="mini">
-        <button aria-pressed="${v==='present'}" ${estSecretaire()?"":"disabled"} data-action="reu-pres" data-person="${p.id}" data-val="present">Présent</button>
-        <button aria-pressed="${v==='absent'}" ${estSecretaire()?"":"disabled"} data-action="reu-pres" data-person="${p.id}" data-val="absent">Absent</button>
-        <button aria-pressed="${v==='excuse'}" ${estSecretaire()?"":"disabled"} data-action="reu-pres" data-person="${p.id}" data-val="excuse">Excusé</button>
-      </div></div>`;}).join("");
+        <button aria-pressed="${v==='present'}" ${estSecretaire()?"":"disabled"} data-action="reu-pres" data-person="${esc(a.id)}" data-val="present">Présent</button>
+        <button aria-pressed="${v==='absent'}" ${estSecretaire()?"":"disabled"} data-action="reu-pres" data-person="${esc(a.id)}" data-val="absent">Absent</button>
+        <button aria-pressed="${v==='excuse'}" ${estSecretaire()?"":"disabled"} data-action="reu-pres" data-person="${esc(a.id)}" data-val="excuse">Excusé</button>
+      </div></div>`;}).join("")||`<div class="empty">Aucun membre validé à pointer.</div>`;
   return `<div class="msg-head"><button class="btn ghost sm" data-action="reu-back">← Réunions</button>
       <span><span class="u-nom">${esc(m.titre)}</span> <span class="u-id">${m.date?fmtDateLong(m.date):""}</span></span>
       ${estSecretaire()?`<button class="link" data-action="reu-del" data-id="${m.id}" style="margin-left:auto">Supprimer</button>`:""}</div>
@@ -1418,9 +1593,9 @@ function tabMail(){
     <label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:8px 0 0">À (destinataires)</label>
     <textarea id="mail_to" data-change="mailfield" data-k="to" placeholder="adresse1@exemple.be, adresse2@exemple.be…" style="min-height:44px">${esc(m.to)}</textarea>
     <div class="two">
-      <div><label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:6px 0 0">CC (copie visible)</label>
+      <div><label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:6px 0 0">CC (copie)</label>
       <textarea id="mail_cc" data-change="mailfield" data-k="cc" placeholder="copie@exemple.be…" style="min-height:40px">${esc(m.cc)}</textarea></div>
-      <div><label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:6px 0 0">CCI (copie cachée)</label>
+      <div><label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:6px 0 0">CCI (copie)</label>
       <textarea id="mail_cci" data-change="mailfield" data-k="cci" placeholder="copie.cachee@exemple.be…" style="min-height:40px">${esc(m.cci)}</textarea></div>
     </div>
 
@@ -1567,7 +1742,7 @@ function tabRgpd(){
   </div>
   <div class="compose">
     <h3 class="serif">D\u00e9sabonn\u00e9s</h3>
-    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Ces adresses se sont d\u00e9sabonn\u00e9es ; elles sont automatiquement exclues de tous les envois.</p>
+    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Ces adresses se sont d\u00e9sabonn\u00e9es ; elles sont exclues de tous les envois de l'application (mails compos\u00e9s, notifications et rappels).</p>
     ${desab.length? `<div class="mail-chips">${desab.map(e=>`<span class="mail-chip" style="cursor:default">${esc(e)}</span>`).join("")}</div>` : `<div class="empty">Aucun d\u00e9sabonn\u00e9.</div>`}
   </div>`;
 }
@@ -1575,21 +1750,22 @@ function tabRgpd(){
 
 /* ---- Page d'accueil « ma semaine » ---- */
 function mesPostesIds(){
+  const f=((S.session&&S.session.fonction)||"").trim().toLowerCase();
+  const parFonction=(TOUS_POSTES||[]).filter(po=>String(po.titre||"").trim().toLowerCase()===f).map(po=>po.id);
+  if(parFonction.length) return parFonction;
   const n=((S.session&&S.session.nom)||"").trim().toLowerCase();
-  const p=((S.session&&S.session.prenom)||"").trim().toLowerCase();
-  return (TOUS_POSTES||[]).filter(po=>{ const q=(po.qui||"").trim().toLowerCase(); return q && (q===n || (p && q.indexOf(p)>=0)); }).map(po=>po.id);
+  return (TOUS_POSTES||[]).filter(po=>{ const q=(po.qui||"").trim().toLowerCase(); return q && q===n; }).map(po=>po.id);
 }
 function tabAccueil(){
   const prenom=(S.session&&S.session.prenom)||"";
   const myPostes=mesPostesIds();
   const myId=S.session&&S.session.id;
-  const taches=(S.taches||[]).filter(t=>t.statut!=="fait" && (myPostes.indexOf(t.posteId)>=0 || t.creePar===myId))
+  const taches=(S.taches||[]).filter(t=>t.statut!=="done" && (myPostes.indexOf(t.posteId)>=0 || t.creePar===myId))
     .sort((a,b)=>String(a.echeance||"9999").localeCompare(String(b.echeance||"9999"))).slice(0,8);
-  const today=new Date(); today.setHours(0,0,0,0); const tstr=today.toISOString().slice(0,10);
+  const tstr=todayISO();
   const reus=(S.reunions||[]).filter(m=>m.date && String(m.date).slice(0,10)>=tstr).sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(0,4);
-  const monSig=((S.session&&S.session.sig)||"").toLowerCase();
-  const votes=(S.votes||[]).filter(v=>v.statut==="open" && !(v.voters||[]).some(x=>(x.nom||"").toLowerCase()===monSig)).slice(0,6);
-  const budgets=(S.budgets||[]).filter(b=>b.statut==="vote" && !(b.votes||[]).some(x=>(x.nom||"").toLowerCase()===monSig)).slice(0,6);
+  const votes=(S.votes||[]).filter(v=>v.statut==="open" && !aDejaVote(v)).slice(0,6);
+  const budgets=(S.budgets||[]).filter(b=>b.statut==="vote" && !aDejaVoteBudget(b)).slice(0,6);
   const posteTitres=(TOUS_POSTES||[]).filter(po=>myPostes.indexOf(po.id)>=0).map(po=>po.titre);
   const tacheLigne=t=>{ const po=(TOUS_POSTES||[]).find(x=>x.id===t.posteId); const ech=t.echeance?fmtDateLong(t.echeance):"sans \u00e9ch\u00e9ance"; return `<div class="mail-hist-row"><span class="mail-hist-txt">${esc(t.titre)}${po?` <span style="color:var(--slate)">\u00b7 ${esc(po.titre)}</span>`:""}</span><span class="mail-hist-meta">${esc(ech)}</span></div>`; };
   return `<div class="compose">
@@ -1697,14 +1873,32 @@ function tabSearch(){
 /* ============================ ACTIONS ============================ */
 document.addEventListener("change", e=>{
   const el=e.target.closest("[data-change]"); if(!el) return;
-  if(el.dataset.change==="nom"){ S.meta.nom=el.value; persist("meta"); }
+  if(el.dataset.change==="nom"){
+    if(!(S.session&&S.session.role==="owner")){ el.value=S.meta.nom||""; if(window.alert) window.alert("Seul le propriétaire peut renommer le bureau."); return; }
+    const v=el.value.trim(); if(!v){ el.value=S.meta.nom||""; return; }
+    S.meta.nom=v; persist("meta");
+    if(sb) sb.from("ca_meta").update({nom:v}).eq("id",1).then(r=>{ if(r&&r.error&&window.alert) window.alert("Nom non enregistré : "+r.error.message); });
+    return; }
   if(el.dataset.change==="search"){ S.searchQ=el.value; render(); return; }
-  if(el.dataset.change==="importfile"){ const fl=el.files&&el.files[0]; if(!fl) return; const rd=new FileReader(); rd.onload=()=>{ try{ const d=JSON.parse(rd.result); Object.keys(d).forEach(k=>{ S[k]=d[k]; persist(k); }); logAct("Données importées"); render(); }catch(e){ if(window.alert) window.alert("Fichier de sauvegarde invalide."); } }; rd.readAsText(fl); return; }
+  if(el.dataset.change==="importfile"){
+    const fl=el.files&&el.files[0]; el.value=""; if(!fl) return;
+    if(!(S.session&&S.session.role==="owner")){ if(window.alert) window.alert("Réservé au propriétaire."); return; }
+    if(window.confirm && !window.confirm("Un import ne réécrit PAS la base de données : il affiche seulement le contenu du fichier sur cet appareil, jusqu'au prochain rechargement. Continuer ?")) return;
+    const rd=new FileReader();
+    rd.onload=()=>{ try{
+      const d=JSON.parse(rd.result);
+      const permis=["meta","org","taches","annonces","creneaux","docs","budgets","votes","reunions","evenements","contacts","bilans","journal"];
+      permis.forEach(k=>{ if(Object.prototype.hasOwnProperty.call(d,k)) S[k]=d[k]; });
+      logAct("Sauvegarde consultée (affichage local)"); render();
+      if(window.alert) window.alert("Affichage local uniquement. Rechargez la page pour revenir aux données réelles.");
+    }catch(e){ if(window.alert) window.alert("Fichier de sauvegarde invalide."); } };
+    rd.readAsText(fl); return; }
   if(el.dataset.change==="evfield"){ const ev=(S.evenements||[]).find(x=>x.id===(S.evUI&&S.evUI.sel)); if(ev){ ev[el.dataset.field]=el.value; if(sb){ const col=({budgetPrevu:"budget_prevu",budgetReel:"budget_reel"})[el.dataset.field]||el.dataset.field; const v=(col==="budget_prevu"||col==="budget_reel")?(parseFloat(String(el.value).replace(",","."))||0):el.value; sb.from("ca_evenements").update({[col]:v}).eq("id",ev.id); } } return; }
-  if(el.dataset.change==="reunote"){ if(!estSecretaire()) return; const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(m){ const pt=(m.ordre||[]).find(p=>p.id===el.dataset.pt); if(pt){ pt.notes=el.value; if(sb) sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); } } return; }
+  if(el.dataset.change==="reunote"){ if(!estSecretaire()) return; const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(m&&sb){ const pid=el.dataset.pt, txt=el.value; majReunion(m.id, f=>({ordre:f.ordre.map(p=>p.id===pid?{...p,notes:txt}:p)})); } return; }
   if(el.dataset.change==="msgfile"){ S.msgUI=S.msgUI||{sel:null,draft:"",file:null}; S.msgUI.draft=val("msg_txt"); const fl=el.files&&el.files[0]; S.msgUI.file=fl||null; render(); return; }
   if(el.dataset.change==="mailfield"){ S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; S.mailUI[el.dataset.k]=el.value; S.mailFlash=null; persistMailDraft(); return; }
   if(el.dataset.change==="mailattach"){ const fl=el.files&&el.files[0]; if(!fl) return; captureMailFields(); if(fl.size>15*1024*1024){ if(window.alert) window.alert("Fichier trop volumineux (max 15 Mo)."); el.value=""; return; } S.mailUI.pieceFile=fl; S.mailUI.pieceName=fl.name; S.mailFlash=null; render(); return; }
+  if(el.dataset.change==="bilpub"){ S.bilanPubDraft=el.value; return; }
   if(el.dataset.change==="progfield"){ S.progUI=S.progUI||{date:"",heure:""}; S.progUI[el.dataset.k]=el.value; return; }
   if(el.dataset.change==="mailimport"){ const fl=el.files&&el.files[0]; if(!fl) return; captureMailFields(); const tgt=(S.mailUI.target)||"to"; const tgtNom={to:"À",cc:"CC",cci:"CCI"}[tgt];
     extraireEmailsDepuisFichier(fl).then(list=>{ if(!list.length){ if(window.alert) window.alert("Aucune adresse e-mail trouvée dans ce fichier."); return; } const avant=compterEmails(S.mailUI[tgt]); ajouterEmailsChamp(tgt,list); const apres=compterEmails(S.mailUI[tgt]); persistMailDraft(); render(); if(window.alert) window.alert((apres-avant)+" adresse(s) ajoutée(s) au champ « "+tgtNom+" » ("+list.length+" trouvée(s) dans le fichier)."); })
@@ -1727,7 +1921,7 @@ document.addEventListener("click", async e=>{
       if(!nom||!prenom) return authErr("Indiquez votre nom et votre prénom.");
       if(!fonction) return authErr("Choisissez votre fonction.");
       if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return authErr("Adresse e-mail invalide.");
-      if(pwd.length<6) return authErr("Le mot de passe doit faire au moins 6 caractères.");
+      if(pwd.length<8) return authErr("Le mot de passe doit faire au moins 8 caractères.");
       if(!sb) return authErr("Connexion au serveur indisponible. Réessayez.");
       authErr("Création du compte en cours…");
       const { data, error } = await sb.auth.signUp({ email:email, password:pwd, options:{ data:{ prenom:prenom, nom:nom, fonction:fonction } } });
@@ -1753,6 +1947,14 @@ document.addEventListener("click", async e=>{
       if(r && r.error) return cerr("Erreur : "+r.error.message);
       await refreshSession(); render(); break;
     }
+    case "forgot-pwd": {
+      const email=normId(val("au_email"));
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return authErr("Saisissez d'abord votre adresse e-mail, puis recliquez.");
+      if(!sb) return authErr("Serveur indisponible.");
+      const r=await sb.auth.resetPasswordForEmail(email,{redirectTo:caAppUrl()});
+      if(r&&r.error) return authErr("Envoi impossible : "+r.error.message);
+      return authErr("Si un compte existe pour cette adresse, un lien de réinitialisation vient d'être envoyé. Pensez à vérifier vos spams.");
+    }
     case "logout": { if(sb){ try{ await sb.auth.signOut(); }catch(e){} } S.session=null; S.view="home"; render(); break; }
     case "noop": render(); break;
     case "export-data": {
@@ -1765,9 +1967,9 @@ document.addEventListener("click", async e=>{
     case "ev-open": S.evUI={sel:el.dataset.id}; render(); break;
     case "ev-back": S.evUI={sel:null}; render(); break;
     case "ev-del": { if(!sb) break; if(window.confirm && !window.confirm("Supprimer cet événement ?")) break; await sb.from("ca_evenements").delete().eq("id",el.dataset.id); await loadEvenements(); S.evUI={sel:null}; render(); break; }
-    case "ev-additem": { const t=val("ev_item").trim(); if(!t||!sb) break; const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev) break; ev.checklist=[...(ev.checklist||[]),{id:uid(),texte:t,fait:false}]; await sb.from("ca_evenements").update({checklist:ev.checklist}).eq("id",ev.id); render(); break; }
-    case "ev-toggleitem": { const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev||!sb) break; ev.checklist=(ev.checklist||[]).map(c=>c.id===el.dataset.it?{...c,fait:!c.fait}:c); await sb.from("ca_evenements").update({checklist:ev.checklist}).eq("id",ev.id); render(); break; }
-    case "ev-delitem": { const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev||!sb) break; ev.checklist=(ev.checklist||[]).filter(c=>c.id!==el.dataset.it); await sb.from("ca_evenements").update({checklist:ev.checklist}).eq("id",ev.id); render(); break; }
+    case "ev-additem": { const t=val("ev_item").trim(); if(!t||!sb) break; const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev) break; await majEvenement(ev.id, l=>[...l,{id:uid(),texte:t,fait:false}]); render(); break; }
+    case "ev-toggleitem": { const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev||!sb) break; const it=el.dataset.it; await majEvenement(ev.id, l=>l.map(c=>c.id===it?{...c,fait:!c.fait}:c)); render(); break; }
+    case "ev-delitem": { const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev||!sb) break; const it=el.dataset.it; await majEvenement(ev.id, l=>l.filter(c=>c.id!==it)); render(); break; }
     case "contact-add": { const n=val("c_nom").trim(); if(!n) break; if(!sb) break; await sb.from("ca_contacts").insert({nom:n,type:val("c_type"),email:val("c_email").trim(),tel:val("c_tel").trim(),notes:val("c_notes").trim()}); await loadContacts(); render(); break; }
     case "mail-target": { S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; captureMailFields(); S.mailUI.target=el.dataset.tgt||"to"; render(); break; }
     case "mail-template": { S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; captureMailFields(); const t=MAIL_TEMPLATES[parseInt(el.dataset.tpl,10)]; if(!t) break;
@@ -1787,7 +1989,16 @@ document.addEventListener("click", async e=>{
       const pu=S.progUI||{}; if(!pu.date||!pu.heure){ S.mailFlash={type:"err",msg:"Choisissez une date et une heure d'envoi."}; render(); break; }
       const when=new Date(pu.date+"T"+pu.heure); if(isNaN(when.getTime())||when.getTime()<=Date.now()){ S.mailFlash={type:"err",msg:"La date/heure doit être dans le futur."}; render(); break; }
       if(!sb){ break; }
-      try{ await sb.from("ca_mail_programmes").insert({destinataires:{to:toL,cc:ccL,cci:cciL},objet:mu.objet.trim(),corps:mu.corps,envoi_at:when.toISOString(),statut:"en_attente",cree_par:(me&&me.id)||null});
+      let piecePath=null, piece=null;
+      if(mu.pieceFile){
+        try{
+          const safe=mu.pieceFile.name.replace(/[^a-zA-Z0-9._-]/g,"_"); piecePath=uid()+"-"+safe;
+          const up=await sb.storage.from("ca-documents").upload(piecePath, mu.pieceFile);
+          if(up&&up.error) throw up.error;
+          piece=mu.pieceFile.name;
+        }catch(e){ S.mailFlash={type:"err",msg:"Échec de l'envoi de la pièce jointe. Réessayez ou retirez le fichier."}; render(); break; }
+      }
+      try{ await sb.from("ca_mail_programmes").insert({destinataires:{to:toL,cc:ccL,cci:cciL},objet:mu.objet.trim(),corps:mu.corps,piece_path:piecePath,nom_piece:piece,envoi_at:when.toISOString(),statut:"en_attente",cree_par:(me&&me.id)||null});
         await loadProgrammes(); clearMailDraft(); S.mailUI={to:"",cc:"",cci:"",objet:"",corps:"",target:mu.target}; S.progUI={date:"",heure:""}; S.mailFlash={type:"ok",msg:"✓ Envoi programmé pour le "+fmtQuand(when.toISOString())+"."};
       }catch(e){ S.mailFlash={type:"err",msg:"Impossible de programmer (table manquante ?)."}; }
       render(); break; }
@@ -1821,7 +2032,7 @@ document.addEventListener("click", async e=>{
           const safe=mu.pieceFile.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=uid()+"-"+safe;
           const up=await sb.storage.from("ca-documents").upload(path, mu.pieceFile);
           if(up && up.error){ throw up.error; }
-          const su=await sb.storage.from("ca-documents").createSignedUrl(path, 604800);
+          const su=await sb.storage.from("ca-documents").createSignedUrl(path, 7776000);
           if(su && su.data && su.data.signedUrl){ lienPiece=su.data.signedUrl; nomPiece=mu.pieceFile.name; }
         }catch(e){ S.mailSending=false; S.mailFlash={type:"err",msg:"Échec de l'envoi de la pièce jointe. Réessayez ou retirez le fichier."}; render(); break; }
       }
@@ -1838,7 +2049,7 @@ document.addEventListener("click", async e=>{
       else { S.mailFlash={type:"ok",msg:"✓ Mail envoyé à "+res.total+" destinataire(s)."+suffixe}; clearMailDraft(); S.mailUI={to:"",cc:"",cci:"",objet:"",corps:"",target:mu.target}; }
       render();
       break; }
-    case "contact-del": if(!sb) break; await sb.from("ca_contacts").delete().eq("id",el.dataset.id); await loadContacts(); render(); break;
+    case "contact-del": { if(!sb) break; if(window.confirm && !window.confirm("Supprimer définitivement ce contact et ses données ?")) break; await sb.from("ca_contacts").delete().eq("id",el.dataset.id); logAct("Contact supprimé (RGPD)"); await loadContacts(); render(); break; }
     case "reu-create": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut créer une réunion."); break; } const t=val("reu_titre").trim(), dt=val("reu_date"); if(!t||!sb) break; const lieu=val("reu_lieu")||null;
       const mod=document.getElementById("reu_modele");
       const base=(mod&&mod.checked&&Array.isArray(S.meta.modeleOdj))?S.meta.modeleOdj.map(x=>({id:uid(),texte:x,fait:false,notes:"",parId:null,par:"Mod\u00e8le"})):[];
@@ -1846,25 +2057,29 @@ document.addEventListener("click", async e=>{
     case "reu-open": S.reuUI={sel:el.dataset.id}; render(); break;
     case "reu-back": S.reuUI={sel:null}; render(); break;
     case "reu-del": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut supprimer une réunion."); break; } if(!sb) break; if(window.confirm && !window.confirm("Supprimer cette réunion ?")) break; await sb.from("ca_reunions").delete().eq("id",el.dataset.id); await loadReunions(); S.reuUI={sel:null}; render(); break; }
-    case "reu-addpoint": { const t=val("reu_point").trim(); if(!t||!sb) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break; if(ordreFerme(m)&&!estSecretaire()){ if(window.alert) window.alert("L'ordre du jour est cl\u00f4tur\u00e9 pour cette r\u00e9union."); break; } m.ordre=[...(m.ordre||[]),{id:uid(),texte:t,fait:false,notes:"",parId:(me&&me.id)||null,par:(me&&me.sig)||""}]; await sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); render(); break; }
+    case "reu-addpoint": { const t=val("reu_point").trim(); if(!t||!sb) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break; if(ordreFerme(m)&&!estSecretaire()){ if(window.alert) window.alert("L'ordre du jour est cl\u00f4tur\u00e9 pour cette r\u00e9union."); break; } await majReunion(m.id, f=>({ordre:[...f.ordre,{id:uid(),texte:t,fait:false,notes:"",parId:(me&&me.id)||null,par:(me&&me.sig)||""}]})); render(); break; }
     case "pt-tache": { if(!estSecretaire()||!sb) break;
       const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
       const pt=(m.ordre||[]).find(p=>p.id===el.dataset.pt); if(!pt) break;
       const titre=window.prompt?window.prompt("Intitul\u00e9 de la t\u00e2che :", pt.texte):pt.texte;
       if(!titre) break;
       const ech=window.prompt?window.prompt("\u00c9ch\u00e9ance (AAAA-MM-JJ, laisser vide si aucune) :",""):"";
-      await sb.from("ca_taches").insert({titre:titre,poste_id:null,statut:"todo",echeance:(ech&&/^\d{4}-\d{2}-\d{2}$/.test(ech))?ech:null,priorite:"normale",cree_par:(me&&me.sig)||""});
+      const monPoste=(mesPostesIds()[0])||(TOUS_POSTES[0]&&TOUS_POSTES[0].id)||null;
+      await sb.from("ca_taches").insert({titre:titre,poste_id:monPoste,statut:"todo",echeance:(ech&&/^\d{4}-\d{2}-\d{2}$/.test(ech))?ech:null,priorite:"normale",cree_par:(me&&me.sig)||""});
       await loadTaches(); logAct("T\u00e2che cr\u00e9\u00e9e depuis une d\u00e9cision"); render();
       if(window.alert) window.alert("T\u00e2che cr\u00e9\u00e9e."); break; }
-    case "reu-togglepoint": { if(!estSecretaire()) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break; m.ordre=(m.ordre||[]).map(p=>p.id===el.dataset.pt?{...p,fait:!p.fait}:p); await sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); render(); break; }
+    case "reu-togglepoint": { if(!estSecretaire()) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break; const pid=el.dataset.pt; await majReunion(m.id, f=>({ordre:f.ordre.map(p=>p.id===pid?{...p,fait:!p.fait}:p)})); render(); break; }
     case "reu-delpoint": { const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break;
-      const _pt=(m.ordre||[]).find(p=>p.id===el.dataset.pt);
-      if(_pt && _pt.parId && !(me && (me.id===_pt.parId || me.role==="owner"))){ if(window.alert) window.alert("Seul l'auteur du point (ou le responsable) peut le supprimer."); break; }
-      m.ordre=(m.ordre||[]).filter(p=>p.id!==el.dataset.pt); await sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); render(); break; }
-    case "reu-pres": { if(!estSecretaire()) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break; const pr={...(m.presences||{})}; pr[el.dataset.person]= pr[el.dataset.person]===el.dataset.val?undefined:el.dataset.val; m.presences=pr; await sb.from("ca_reunions").update({presences:pr}).eq("id",m.id); render(); break; }
+      const pid=el.dataset.pt; const _pt=(m.ordre||[]).find(p=>p.id===pid);
+      const autorise = _pt && (_pt.parId ? (me && (me.id===_pt.parId || me.role==="owner")) : (estSecretaire() || (me&&me.role==="owner")));
+      if(!autorise){ if(window.alert) window.alert("Seul l'auteur du point (ou le secrétariat) peut le supprimer."); break; }
+      await majReunion(m.id, f=>({ordre:f.ordre.filter(p=>p.id!==pid)})); render(); break; }
+    case "reu-pres": { if(!estSecretaire()) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break; const who=el.dataset.person, v=el.dataset.val; await majReunion(m.id, f=>{ const pr={...f.presences}; if(pr[who]===v) delete pr[who]; else pr[who]=v; return {presences:pr}; }); render(); break; }
     case "reu-gen": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut générer le PV."); break; }
       const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
-      const pres=m.presences||{}; const names=v=>PERSONNES.filter(p=>pres[p.id]===v).map(p=>esc(p.prenom+" "+p.nom));
+      const pres=m.presences||{};
+      const nomDeCle=k=>{ const a=(S.admins||[]).find(x=>x.id===k); if(a) return ((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||k; const p=PERSONNES.find(x=>x.id===k); return p?(p.prenom+" "+p.nom):k; };
+      const names=v=>Object.keys(pres).filter(k=>pres[k]===v).map(k=>esc(nomDeCle(k)));
       const pts=(m.ordre||[]).map((p,i)=>`<div class="pt"><h3>${i+1}. ${esc(p.texte)} ${p.fait?"<span class='ok'>✓ traité</span>":""}</h3>${p.par?`<p class='muted' style='font-size:12px;margin:0 0 4px'>Proposé par ${esc(p.par)}</p>`:""}${p.notes?`<p>${esc(p.notes)}</p>`:"<p class='muted'>—</p>"}</div>`).join("");
       const doc=`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>PV — ${esc(m.titre)}</title>
 <style>body{font-family:Georgia,serif;max-width:780px;margin:40px auto;padding:0 24px;color:#1b2338;line-height:1.55}
@@ -1904,27 +2119,55 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       window.open(data.signedUrl,"_blank"); break;
     }
     case "reset-pwd": {
-      if(!(S.session&&S.session.role==="owner")) break;
-      const ad=S.admins.find(a=>a.id===id); if(!ad) break;
-      const tmp=genPwd(); const h=await hashPwd(tmp);
-      S.admins=S.admins.map(a=>a.id===id?{...a,hash:h,mustChange:true}:a); persist("admins");
-      S.resetInfo={id:ad.id,nom:(ad.prenom?ad.prenom+" "+ad.nom:ad.nom),pwd:tmp};
-      logAct("Mot de passe réinitialisé pour "+(ad.prenom?ad.prenom+" "+ad.nom:ad.nom)); render(); break;
+      if(!(S.session&&S.session.role==="owner")||!sb) break;
+      const ad=S.admins.find(a=>a.id===id); if(!ad||!ad.email) break;
+      const r=await sb.auth.resetPasswordForEmail(ad.email,{redirectTo:caAppUrl()});
+      if(window.alert) window.alert(r&&r.error ? ("Envoi impossible : "+r.error.message)
+        : ("Un lien de réinitialisation a été envoyé à "+ad.email+"."));
+      if(!(r&&r.error)) logAct("Lien de réinitialisation envoyé à "+(((ad.prenom||"")+" "+(ad.nom||"")).trim()||ad.email));
+      render(); break;
     }
-    case "clear-reset": S.resetInfo=null; render(); break;
     case "set-new-pwd": {
-      if(!S.forcePwd) break;
       const p1=val("np_pwd"), p2=val("np_pwd2");
       const nerr=m=>{ const e=document.getElementById("np_err"); if(e){e.textContent=m;e.style.display="block";} };
-      if(p1.length<6) return nerr("Le mot de passe doit faire au moins 6 caractères.");
+      if(p1.length<8) return nerr("Le mot de passe doit faire au moins 8 caractères.");
       if(p1!==p2) return nerr("Les deux mots de passe ne correspondent pas.");
-      const h=await hashPwd(p1); const idf=S.forcePwd.id;
-      S.admins=S.admins.map(a=>a.id===idf?{...a,hash:h,mustChange:false}:a); persist("admins");
-      const ad=S.admins.find(a=>a.id===idf);
-      S.session={id:ad.id,nom:(ad.prenom?ad.prenom+" "+ad.nom:ad.nom),prenom:ad.prenom,fonction:ad.fonction,sig:((ad.prenom||ad.nom||"")+(ad.fonction?" · "+ad.fonction:"")),statut:ad.statut||"actif",role:ad.role||"membre"};
-      S.forcePwd=null; render(); break;
+      if(!sb) return nerr("Serveur indisponible.");
+      const r=await sb.auth.updateUser({password:p1});
+      if(r&&r.error) return nerr("Échec : "+r.error.message);
+      S.recovery=false;
+      try{ history.replaceState(null,"",location.pathname); }catch(e){}
+      await refreshSession(); S.view="ca"; render(); break;
     }
-    case "toggle-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break; const nv=!S.meta.bilanActif; await sb.from("ca_meta").update({bilan_actif:nv}).eq("id",1); S.meta.bilanActif=nv; logAct(nv?"Bilans moraux activés":"Bilans moraux désactivés"); render(); break; }
+    case "toggle-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break;
+      const nv = bilanEtat()==="ouvert" ? "ferme" : "ouvert";
+      const r=await sb.from("ca_meta").update({bilan_actif:nv==="ouvert", bilan_etat:nv}).eq("id",1);
+      if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
+      S.meta.bilanEtat=nv; S.meta.bilanActif=(nv==="ouvert");
+      logAct(nv==="ouvert"?"Campagne de bilans moraux ouverte":"Campagne de bilans moraux fermée"); render(); break; }
+    case "bilan-cloturer": { if(!(estSecretaire()||(S.session&&S.session.role==="owner"))||!sb) break;
+      if(window.confirm && !window.confirm("Clôturer la campagne ? Plus personne ne pourra déposer de bilan, et le secrétariat pourra les lire.")) break;
+      const r=await sb.from("ca_meta").update({bilan_actif:false, bilan_etat:"cloture"}).eq("id",1);
+      if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
+      S.meta.bilanEtat="cloture"; S.meta.bilanActif=false;
+      await loadBilans(); logAct("Campagne de bilans moraux clôturée"); render(); break; }
+    case "bilan-preparer": { if(!peutLireBilans()) break;
+      S.bilanPubDraft=bilanTexteCompile();
+      if(!S.bilanPubDraft && window.alert) window.alert("Aucun retour à compiler.");
+      render(); break; }
+    case "bilan-publier": { if(!peutLireBilans()||!sb) break;
+      const txt=String(val("bil_pub")||"").trim();
+      if(!txt){ if(window.alert) window.alert("Le texte à publier est vide. Cliquez d'abord sur « Préparer le texte »."); break; }
+      if(window.confirm && !window.confirm("Publier ce texte ? Il deviendra visible par tous les membres et leur sera envoyé par e-mail.")) break;
+      const quand=new Date().toISOString();
+      const r=await sb.from("ca_meta").update({bilan_publie:txt, bilan_publie_le:quand}).eq("id",1);
+      if(r&&r.error){ if(window.alert) window.alert("Publication impossible : "+r.error.message); break; }
+      S.meta.bilanPublie=txt; S.meta.bilanPublieLe=quand; S.bilanPubDraft=undefined;
+      const corps=`<h2 style="margin:0 0 10px">Bilans moraux \u2014 synth\u00e8se</h2><p>La synth\u00e8se des bilans moraux vient d'\u00eatre publi\u00e9e sur l'espace CA.</p><div style="white-space:pre-wrap;background:#f7f7fb;border-radius:8px;padding:12px;font-size:13px">${caMailEsc(txt)}</div>`;
+      const res=await envoyerNotifCAListe(destinatairesMembres(), "Bilans moraux \u2014 synth\u00e8se publi\u00e9e", corps);
+      logAct("Synthèse des bilans moraux publiée");
+      if(window.alert) window.alert("Publié. "+((res&&res.ok)||0)+" membre(s) prévenu(s) par e-mail.");
+      render(); break; }
     case "cf-envoyer": { if(!sb||!me) break;
       const t=(val("cf_texte")||"").trim(); if(!t){ if(window.alert) window.alert("\u00c9crivez votre message."); break; }
       const anon=!!(document.getElementById("cf_anon")&&document.getElementById("cf_anon").checked);
@@ -2021,7 +2264,10 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       S.meta.secretaires=cur;
       await sb.from("ca_meta").update({secretaires:cur}).eq("id",1);
       logAct("Droits secrétariat modifiés"); render(); break; }
-    case "reset-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break; if(window.confirm && !window.confirm("Effacer TOUS les bilans moraux déjà déposés et remettre le compteur à zéro ? Action irréversible.")) break; const r=await sb.rpc("ca_reset_bilans"); if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; } await loadBilans(); logAct("Bilans moraux réinitialisés"); render(); break; }
+    case "reset-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break; if(window.confirm && !window.confirm("Effacer TOUS les bilans moraux déjà déposés et remettre le compteur à zéro ? Action irréversible.")) break; const r=await sb.rpc("ca_reset_bilans"); if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
+      await sb.from("ca_meta").update({bilan_publie:null, bilan_publie_le:null, bilan_etat:"ferme", bilan_actif:false}).eq("id",1);
+      S.meta.bilanPublie=""; S.meta.bilanPublieLe=null; S.meta.bilanEtat="ferme"; S.meta.bilanActif=false; S.bilanPubDraft=undefined;
+      await loadBilans(); logAct("Bilans moraux réinitialisés"); render(); break; }
     case "add-mail": { if(!(S.session&&S.session.role==="owner")||!sb) break; const em=val("mail_new").trim().toLowerCase(); const merr=m=>{const x=document.getElementById("mail_err");if(x){x.textContent=m;x.style.display="block";}}; if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return merr("Adresse e-mail invalide."); const r=await sb.from("ca_mailing").insert({email:em}); if(r&&r.error){ return merr(/duplicate|unique/i.test(r.error.message)?"Cette adresse est déjà dans la liste.":r.error.message); } await loadMailing(); render(); break; }
     case "del-mail": { if(!(S.session&&S.session.role==="owner")||!sb) break; await sb.from("ca_mailing").delete().eq("id",id); await loadMailing(); render(); break; }
     case "reset-data": {
@@ -2038,30 +2284,33 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
     case "bilan-prev": bilanCapture(); S.bilanUI.step=Math.max((S.bilanUI.step||0)-1,-1); render(); break;
     case "bilan-goto": bilanCapture(); S.bilanUI.step=parseInt(el.dataset.i,10)||0; render(); break;
     case "bilan-send": {
-      if(!S.meta.bilanActif||!sb) break;
+      if(bilanEtat()!=="ouvert"||!sb) break;
       const subs=S.meta.bilanSubmitters||[];
       if(subs.includes(me.id)) break;
       bilanCapture();
       const draft=(S.bilanUI&&S.bilanUI.draft)||{};
       const rows=[]; Object.keys(draft).forEach(pid=>{ const d=draft[pid]; if(d && (d.positifs||d.ameliorer)) rows.push({cible:pid,positifs:d.positifs||"",ameliorer:d.ameliorer||""}); });
       for(let i=rows.length-1;i>0;i--){ const k=Math.floor(Math.random()*(i+1)); const tmp=rows[i]; rows[i]=rows[k]; rows[k]=tmp; }
-      if(rows.length){ const ins=await sb.from("ca_bilans").insert(rows); if(ins&&ins.error){ if(window.alert) window.alert("Envoi impossible : "+ins.error.message); break; } }
-      await sb.from("ca_bilan_faits").insert({membre_id:me.id});
+      if(!rows.length){ if(window.alert) window.alert("Écrivez au moins un retour avant d'envoyer."); break; }
+      /* Un seul appel : le serveur enregistre le dépôt puis remélange immédiatement
+         toute la table, pour qu'aucun lot de lignes ne reste rattachable à qui que ce soit. */
+      const r=await sb.rpc("ca_deposer_bilans",{p_rows:rows});
+      if(r&&r.error){ if(window.alert) window.alert("Envoi impossible : "+r.error.message); break; }
       S.meta.bilanSubmitters=[...subs,me.id];
       S.bilanUI={step:-1,draft:{}};
       await loadBilans();
       render(); break;
     }
     case "generate-bilan": {
-      if(!(S.session&&(S.session.role==="owner"||S.session.fonction==="Secrétaire"))) break;
+      if(!peutLireBilans()) break;
       const byCible={}; (S.bilans||[]).forEach(b=>{ (byCible[b.cible]=byCible[b.cible]||[]).push(b); });
       const d=new Date().toLocaleDateString("fr-BE",{day:"2-digit",month:"long",year:"numeric"});
       const li=t=>`<li>${esc(t)}</li>`;
-      const sections=PERSONNES.filter(p=>byCible[p.id]&&byCible[p.id].length).map(p=>{
-        const list=byCible[p.id];
+      const sections=Object.keys(byCible).map(cid=>{
+        const list=byCible[cid];
         const pos=list.map(x=>x.positifs).filter(Boolean);
         const am=list.map(x=>x.ameliorer).filter(Boolean);
-        return `<section><h2>${esc(p.prenom)} ${esc(p.nom)} <span class="f">${esc(p.fonction)}</span></h2>
+        return `<section><h2>${esc(bilanNomCible(cid))} <span class="f">${esc(bilanFonctionCible(cid))}</span></h2>
           <h3 style="color:#3c7a58">Points positifs</h3><ul>${pos.map(li).join("")||"<li>—</li>"}</ul>
           <h3 style="color:#a6323f">Points à améliorer</h3><ul>${am.map(li).join("")||"<li>—</li>"}</ul></section>`;
       }).join("");
@@ -2113,20 +2362,26 @@ ${sections||"<p>Aucun retour.</p>"}
     /* organigramme */
     case "edit-poste": S.editPoste=id; render(); break;
     case "cancel-edit": S.editPoste=null; render(); break;
-    case "save-org": { if(!sb) break; const missions=val("m_"+id).trim(), contact=val("c_"+id).trim(); await sb.from("ca_org").upsert({poste_id:id,missions:missions,contact:contact}); S.org[id]={missions:missions,contact:contact}; S.editPoste=null; render(); break; }
+    case "save-org": { if(!sb) break; const missions=val("m_"+id).trim(), contact=val("c_"+id).trim(); const r=await sb.from("ca_org").upsert({poste_id:id,missions:missions,contact:contact},{onConflict:"poste_id"}); if(r&&r.error){ if(window.alert) window.alert("Enregistrement impossible : "+r.error.message); break; } S.org[id]={missions:missions,contact:contact}; S.editPoste=null; logAct("Fiche de poste modifiée : "+((POSTE_PAR_ID[id]||{}).titre||id)); render(); break; }
     /* tâches */
     case "add-tache": { const t=val("t_titre").trim(); if(!t) return; if(!sb) break; await sb.from("ca_taches").insert({titre:t,poste_id:val("t_poste"),statut:"todo",echeance:val("t_ech")||null,priorite:val("t_prio"),cree_par:me.sig}); { const n=document.getElementById("t_notify"); if(n&&n.checked) notifCreationCA("Nouvelle tâche", t, ""); } await loadTaches(); render(); break; }
     case "move-tache": if(!sb) break; await sb.from("ca_taches").update({statut:el.dataset.to}).eq("id",id); await loadTaches(); render(); break;
-    case "del-tache": if(!sb) break; await sb.from("ca_taches").delete().eq("id",id); await loadTaches(); render(); break;
+    case "del-tache": { if(!sb) break;
+      const t=(S.taches||[]).find(x=>x.id===id);
+      const monSig=String((me&&me.sig)||"").toLowerCase();
+      const aMoi=t && (mesPostesIds().indexOf(t.posteId)>=0 || String(t.creePar||"").toLowerCase()===monSig);
+      if(!(aMoi || (me&&me.role==="owner"))){ if(window.alert) window.alert("Seuls la personne qui a créé la tâche, le titulaire du poste ou le responsable peuvent la supprimer."); break; }
+      if(window.confirm && !window.confirm("Supprimer cette tâche ?")) break;
+      await sb.from("ca_taches").delete().eq("id",id); logAct("Tâche supprimée"); await loadTaches(); render(); break; }
     /* planning */
     case "add-creneau": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secr\u00e9tariat peut ajouter \u00e0 l'agenda."); break; } const t=val("cr_titre").trim(), d=val("cr_date"); if(!t||!d||!sb) return; await sb.from("ca_creneaux").insert({titre:t,date:d,lieu:val("cr_lieu").trim(),cree_par:me.sig}); { const n=document.getElementById("cr_notify"); if(n&&n.checked) notifCreationCA("Nouvel \u00e9l\u00e9ment \u00e0 l'agenda", t, (d?fmtDateLong(d):"")+(val("cr_lieu").trim()?" \u00b7 "+val("cr_lieu").trim():"")); } await loadCreneaux(); render(); break; }
-    case "rsvp": if(!sb) break; await sb.from("ca_dispos").upsert({creneau_id:id,membre_id:S.session.id,nom:me.sig,statut:el.dataset.st}); await loadCreneaux(); render(); break;
+    case "rsvp": { if(!sb) break; const r=await sb.from("ca_dispos").upsert({creneau_id:id,membre_id:S.session.id,nom:me.sig,statut:el.dataset.st},{onConflict:"creneau_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Disponibilité non enregistrée : "+r.error.message); break; } await loadCreneaux(); render(); break; }
     case "del-creneau": if(!estSecretaire()){ if(window.alert) window.alert("Seul le secr\u00e9tariat peut retirer un cr\u00e9neau."); break; } if(!sb) break; await sb.from("ca_creneaux").delete().eq("id",id); await loadCreneaux(); render(); break;
     /* budgets */
     case "add-budget": { const t=val("b_titre").trim(); if(!t||!sb) return; const cout=parseFloat(String(val("b_cout")).replace(",","."))||0; await sb.from("ca_budgets").insert({titre:t,type:val("b_type"),cout:cout,description:val("b_desc").trim(),demandeur:me.sig,statut:"vote",cree_par:S.session.id}); { const n=document.getElementById("b_notify"); if(n&&n.checked) notifCreationCA("Nouveau budget/projet soumis au vote", t, ""); } await loadBudgets(); render(); break; }
-    case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix}); await loadBudgets(); render(); break; }
-    case "bdecide": { if(S.session.fonction!=="Président"||!sb) break; const st=el.dataset.st; await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id); await loadBudgets(); render(); break; }
-    case "del-budget": if(S.session.fonction!=="Président"||!sb) break; await sb.from("ca_budgets").delete().eq("id",id); await loadBudgets(); render(); break;
+    case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; const r=await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix},{onConflict:"budget_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadBudgets(); render(); break; }
+    case "bdecide": { if(!estPresidente()||!sb) break; const st=el.dataset.st; await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id); await loadBudgets(); render(); break; }
+    case "del-budget": { if(!estPresidente()||!sb) break; if(window.confirm && !window.confirm("Supprimer cette demande de budget ?")) break; await sb.from("ca_budgets").delete().eq("id",id); logAct("Budget supprimé"); await loadBudgets(); render(); break; }
     /* votes */
     case "add-vote": { const q=val("v_q").trim(); const opts=[0,1,2,3,4].map(i=>val("v_o"+i).trim()).filter(Boolean); if(!q||opts.length<2||!sb) return;
       let vdocs=[];
@@ -2140,16 +2395,14 @@ ${sections||"<p>Aucun retour.</p>"}
         }
       }
       const {data,error}=await sb.from("ca_votes").insert({question:q,statut:"open",cree_par:S.session.id,docs:vdocs}).select().single(); if(error||!data) break; await sb.from("ca_vote_options").insert(opts.map(l=>({vote_id:data.id,label:l}))); await loadVotes(); { const vn=document.getElementById("v_notify"); if(vn&&vn.checked){ notifVoteCA(q); } } render(); break; }
-    case "vpick": { if(!sb) break; const v=(S.votes||[]).find(x=>x.id===id); if(!v||v.statut!=="open") break; await sb.from("ca_vote_ballots").upsert({vote_id:id,membre_id:S.session.id,option_id:el.dataset.opt,nom:me.sig}); await loadVotes(); render(); break; }
+    case "vpick": { if(!sb) break; const v=(S.votes||[]).find(x=>x.id===id); if(!v||v.statut!=="open") break; const r=await sb.from("ca_vote_ballots").upsert({vote_id:id,membre_id:S.session.id,option_id:el.dataset.opt,nom:me.sig},{onConflict:"vote_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadVotes(); render(); break; }
     case "vdoc": { if(!sb) break; const {data,error}=await sb.storage.from("ca-documents").createSignedUrl(el.dataset.path,3600);
       if(error||!data){ if(window.alert) window.alert("Document introuvable."); break; }
       window.open(data.signedUrl,"_blank","noopener"); break; }
     case "vtoggle": { if(!sb) break; const v=(S.votes||[]).find(x=>x.id===id); if(!v) break; await sb.from("ca_votes").update({statut:v.statut==="open"?"closed":"open"}).eq("id",id); await loadVotes(); render(); break; }
     case "del-vote": if(!sb) break; await sb.from("ca_votes").delete().eq("id",id); await loadVotes(); render(); break;
     /* documents */
-    case "add-doc": { const t=val("d_titre").trim(); let u=val("d_url").trim(); if(!t||!u) return; if(!/^https?:\/\//i.test(u)) u="https://"+u;
-      S.docs.unshift({id:uid(),titre:t,url:u,cat:val("d_cat"),creePar:me.sig,ts:Date.now()}); persist("docs"); render(); break; }
-    case "open-url": if(el.dataset.url) window.open(el.dataset.url,"_blank","noopener"); break;
+
     case "upload-doc": {
       const t=val("d_titre").trim(), cat=val("d_cat");
       const derr=m=>{ const el2=document.getElementById("d_err"); if(el2){el2.textContent=m;el2.style.display="block";} };
@@ -2191,23 +2444,25 @@ ${sections||"<p>Aucun retour.</p>"}
       else { await sb.from("ca_event_presence").insert({evenement_id:id,membre_id:me.id,nom:nom,reponse:r}); }
       await loadPresence(); render(); break; }
     case "vote-relance": { if(!sb||!me) break; const v=(S.votes||[]).find(x=>x.id===id); if(!v) break;
-      const votants=new Set(v.voters.map(x=>String(x.nom||"").toLowerCase().trim()));
-      const dest=(S.admins||[]).filter(a=>a.statut==="actif"&&a.email).filter(a=>{ const sig=((a.prenom||a.nom||"")+(a.fonction?" \u00b7 "+a.fonction:"")).toLowerCase().trim(); return !votants.has(sig); }).map(a=>a.email);
+      const ids=new Set(v.voters.map(x=>x.membreId).filter(Boolean));
+      const noms=new Set(v.voters.map(x=>String(x.nom||"").toLowerCase().trim()).filter(Boolean));
+      const dest=membresActifs().filter(a=>{ if(ids.has(a.id)) return false; const sig=((a.prenom||a.nom||"")+(a.fonction?" \u00b7 "+a.fonction:"")).toLowerCase().trim(); return !noms.has(sig); }).map(a=>a.email);
       if(!dest.length){ if(window.alert) window.alert("Tout le monde a déjà voté 🎉"); break; }
       const corps=`<h2 style="margin:0 0 10px">Rappel : un vote attend votre voix</h2><p style="font-size:16px"><b>${caMailEsc(v.question)}</b></p><p>Vous n'avez pas encore voté. Merci de vous connecter à l'espace CA.</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Voter maintenant</a></p>`;
       envoyerNotifCAListe(dest, "Rappel de vote — "+v.question, corps);
       if(window.alert) window.alert("Relance envoyée à "+dest.length+" personne(s).");
       break; }
-    case "del-annonce": if(!sb) break; await sb.from("ca_annonces").delete().eq("id",id); await loadAnnonces(); render(); break;
+    case "del-annonce": { if(!sb) break; const a=(S.annonces||[]).find(x=>x.id===id); if(!peutModifier(a&&a.creeParId)) break; if(window.confirm && !window.confirm("Supprimer cette annonce ?")) break; await sb.from("ca_annonces").delete().eq("id",id); await loadAnnonces(); render(); break; }
   }
 });
 
 async function boot(){
-  try{ const params=new URLSearchParams(location.search); if(params.get("desabo")!=null){ await pageDesabo(params.get("desabo")); return; } }catch(e){}
+  try{ const params=new URLSearchParams(location.search); if(params.get("desabo")!=null){ await pageDesabo(params.get("desabo"), params.get("t")||""); return; } }catch(e){}
   if(!sb){ render(); return; }
+  try{ const h=String(location.hash||""); if(/type=recovery/.test(h)||/[?&]type=recovery/.test(location.search)){ S.recovery=true; } }catch(e){}
   try{ await refreshSession(); }catch(e){} render();
   if(S.session){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") render(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterInscriptions().catch(()=>{}); }
-  try{ sb.auth.onAuthStateChange(async ()=>{ await refreshSession(); render(); }); }catch(e){} }
+  try{ sb.auth.onAuthStateChange(async (evt)=>{ if(evt==="PASSWORD_RECOVERY"){ S.recovery=true; render(); return; } if(S.recovery) return; await refreshSession(); render(); }); }catch(e){} }
 boot();
 
 </script>
