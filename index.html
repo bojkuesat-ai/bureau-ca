@@ -689,7 +689,7 @@ async function loadDocs(){ try{ const {data}=await sb.from("ca_docs").select("*"
 
 /* ============================ ÉTAT ============================ */
 const S = {
-  view:"home", tab:"org", authMode:"login", showCfg:false, editPoste:null,
+  view:"home", tab:"accueil", authMode:"login", showCfg:false, editPoste:null,
   session:null,
   meta:   store.get("meta",{nom:"Bureau étudiant",caisseUrl:"https://bojkuesat-ai.github.io/bureau-ca/caisse/"}),
   admins: [],
@@ -841,6 +841,7 @@ function viewPending(){
     <div class="top"><span class="eyebrow">${esc(S.meta.nom||"Bureau étudiant")} · CA</span><button class="link" data-action="logout">← Accueil</button></div>
     <h1 class="serif">Compte en attente</h1>
     <p class="lead">Votre inscription est enregistrée. Un administrateur doit valider votre accès avant que vous puissiez entrer dans l\'espace CA. Reconnectez-vous une fois validé.</p>
+    <div class="auth-card" style="border-left:3px solid var(--stamp);margin-bottom:12px"><p class="hint" style="margin:0">📬 <b>Pensez à vérifier vos spams</b> (courrier indésirable) : l'e-mail de confirmation de validation peut s'y trouver.</p></div>
     <div class="auth-card"><p class="hint" style="margin:0">Connecté·e en tant que <b style="color:var(--ink)">${esc(S.session.nom)}</b> (${esc(S.session.email||"")}).</p>
       <button class="btn" data-action="logout" style="margin-top:14px">Se déconnecter</button></div>
   </div></div>`;
@@ -911,9 +912,9 @@ function viewAuth(){
 function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textContent=msg; e.style.display="block"; } }
 
 /* ---- DASHBOARD ---- */
-const TABS = [["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["conflits","12","M\u00e9diation"]];
+const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,evenements:tabEvenements,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,notifs:tabNotifs,search:tabSearch};
+  const map={org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,notifs:tabNotifs,search:tabSearch};
   const tabs = S.meta.bilanActif ? [...TABS,["bilan","12","Bilans moraux"]] : TABS;
   if(S.tab==="bilan" && !S.meta.bilanActif) S.tab="org";
   const notifOwner = S.session.role==="owner" ? (S.admins||[]).filter(a=>a.statut==="attente").length : 0;
@@ -1042,7 +1043,7 @@ function tabBudgets(){
       <input class="f" id="b_cout" inputmode="decimal" placeholder="Coût estimé (€)"></div>
     <textarea id="b_desc" placeholder="Description : à quoi sert ce budget, ce que ça finance…"></textarea>
     <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="b_notify"> Prévenir les membres par e-mail</label>
-    <div class="row-btn"><button class="btn" data-action="add-budget">Soumettre au vote</button></div></div>`;
+    <div class="row-btn"><button class="btn" data-action="add-budget">Soumettre au vote</button><button class="btn ghost" data-action="budgets-pdf">⬇ Export PDF</button></div></div>`;
   const badge={vote:["open","En vote"],approuve:["ok","Approuvé"],refuse:["no","Refusé"]};
   if(S.budgets.length===0) return stats+compose+`<div class="empty">Aucune demande. Soumettez un budget ou un projet au vote.</div>`;
   const list=S.budgets.map(b=>{
@@ -1571,6 +1572,93 @@ function tabRgpd(){
   </div>`;
 }
 
+
+/* ---- Page d'accueil « ma semaine » ---- */
+function mesPostesIds(){
+  const n=((S.session&&S.session.nom)||"").trim().toLowerCase();
+  const p=((S.session&&S.session.prenom)||"").trim().toLowerCase();
+  return (TOUS_POSTES||[]).filter(po=>{ const q=(po.qui||"").trim().toLowerCase(); return q && (q===n || (p && q.indexOf(p)>=0)); }).map(po=>po.id);
+}
+function tabAccueil(){
+  const prenom=(S.session&&S.session.prenom)||"";
+  const myPostes=mesPostesIds();
+  const myId=S.session&&S.session.id;
+  const taches=(S.taches||[]).filter(t=>t.statut!=="fait" && (myPostes.indexOf(t.posteId)>=0 || t.creePar===myId))
+    .sort((a,b)=>String(a.echeance||"9999").localeCompare(String(b.echeance||"9999"))).slice(0,8);
+  const today=new Date(); today.setHours(0,0,0,0); const tstr=today.toISOString().slice(0,10);
+  const reus=(S.reunions||[]).filter(m=>m.date && String(m.date).slice(0,10)>=tstr).sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(0,4);
+  const monSig=((S.session&&S.session.sig)||"").toLowerCase();
+  const votes=(S.votes||[]).filter(v=>v.statut==="open" && !(v.voters||[]).some(x=>(x.nom||"").toLowerCase()===monSig)).slice(0,6);
+  const budgets=(S.budgets||[]).filter(b=>b.statut==="vote" && !(b.votes||[]).some(x=>(x.nom||"").toLowerCase()===monSig)).slice(0,6);
+  const posteTitres=(TOUS_POSTES||[]).filter(po=>myPostes.indexOf(po.id)>=0).map(po=>po.titre);
+  const tacheLigne=t=>{ const po=(TOUS_POSTES||[]).find(x=>x.id===t.posteId); const ech=t.echeance?fmtDateLong(t.echeance):"sans \u00e9ch\u00e9ance"; return `<div class="mail-hist-row"><span class="mail-hist-txt">${esc(t.titre)}${po?` <span style="color:var(--slate)">\u00b7 ${esc(po.titre)}</span>`:""}</span><span class="mail-hist-meta">${esc(ech)}</span></div>`; };
+  return `<div class="compose">
+    <h3 class="serif" style="margin:0">Bonjour ${esc(prenom||"")} \ud83d\udc4b</h3>
+    <p style="color:var(--ink-soft);font-size:13px;margin:4px 0 0">Voici votre semaine en un coup d'\u0153il.${posteTitres.length?` Vous \u00eates rattach\u00e9\u00b7e \u00e0 : <b>${esc(posteTitres.join(", "))}</b>.`:""}</p>
+  </div>
+  <div class="compose">
+    <h3 class="serif">Mes t\u00e2ches</h3>
+    ${taches.length?`<div class="mail-hist">${taches.map(tacheLigne).join("")}</div>`:`<div class="empty">Aucune t\u00e2che en cours pour vous.</div>`}
+  </div>
+  <div class="compose">
+    <h3 class="serif">Prochaines r\u00e9unions</h3>
+    ${reus.length?`<div class="mail-hist">${reus.map(m=>`<div class="mail-hist-row"><span class="mail-hist-txt">${esc(m.titre)}${m.lieu?` <span style="color:var(--slate)">\u00b7 ${esc(m.lieu)}</span>`:""}</span><span class="mail-hist-meta">${esc(fmtDateLong(m.date))}</span></div>`).join("")}</div>`:`<div class="empty">Aucune r\u00e9union \u00e0 venir.</div>`}
+  </div>
+  <div class="compose">
+    <h3 class="serif">\u00c0 voter</h3>
+    ${(votes.length||budgets.length)?`<div class="mail-hist">${votes.map(v=>`<div class="mail-hist-row"><span class="mail-hist-txt">\ud83d\uddf3\ufe0f ${esc(v.question)}</span><button class="link" data-action="set-tab" data-tab="votes">voter</button></div>`).join("")}${budgets.map(b=>`<div class="mail-hist-row"><span class="mail-hist-txt">\ud83d\udcb6 ${esc(b.titre)}</span><button class="link" data-action="set-tab" data-tab="budgets">voter</button></div>`).join("")}</div>`:`<div class="empty">Rien \u00e0 voter pour le moment.</div>`}
+  </div>`;
+}
+
+/* ---- Document imprimable (PDF via le navigateur) ---- */
+function ouvrirDocImprimable(titre, corpsHTML){
+  const doc=`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>${esc(titre)}</title>
+<style>body{font-family:Georgia,serif;max-width:820px;margin:40px auto;padding:0 24px;color:#1b2338;line-height:1.55}
+h1{font-size:24px;margin:0 0 2px}.d{color:#6a7182;font-size:13px;margin:0 0 20px}
+h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bottom:4px}
+table{width:100%;border-collapse:collapse;margin:8px 0 16px;font-size:13px}
+th,td{border:1px solid #d8dae2;padding:7px 9px;text-align:left;vertical-align:top}
+th{background:#f3f2f8}
+@media print{.noprint{display:none}}.noprint{background:#1b2338;color:#fff;border:none;padding:10px 16px;border-radius:8px;font:inherit;cursor:pointer;margin-bottom:20px}</style></head>
+<body><button class="noprint" onclick="window.print()">Imprimer / Enregistrer en PDF</button>${corpsHTML}
+<p class="d" style="margin-top:30px">Document g\u00e9n\u00e9r\u00e9 automatiquement.</p></body></html>`;
+  const w=window.open("","_blank"); if(w){ w.document.open(); w.document.write(doc); w.document.close(); } else if(window.alert){ window.alert("Autorisez les fen\u00eatres pop-up pour g\u00e9n\u00e9rer le PDF."); }
+}
+function genererBudgetsPDF(){
+  const B=S.budgets||[];
+  const euro=n=>{ const x=parseFloat(n); return isNaN(x)?"\u2014":x.toFixed(2).replace(".",",")+" \u20ac"; };
+  const stLabel={vote:"En vote",approuve:"Approuv\u00e9",refuse:"Refus\u00e9"};
+  const total=B.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(parseFloat(b.cout)||0),0);
+  const rows=B.map(b=>{ const pour=(b.votes||[]).filter(v=>v.choix==="pour").length; const contre=(b.votes||[]).filter(v=>v.choix==="contre").length; const abst=(b.votes||[]).filter(v=>v.choix==="abst").length;
+    return `<tr><td><b>${esc(b.titre||"\u2014")}</b>${b.desc?`<br><span style="color:#6a7182">${esc(b.desc)}</span>`:""}</td><td>${esc(b.type||"\u2014")}</td><td>${euro(b.cout)}</td><td>${esc(stLabel[b.statut]||b.statut||"\u2014")}</td><td>${esc(b.demandeur||"\u2014")}</td><td>${pour} / ${contre} / ${abst}</td></tr>`; }).join("");
+  const corps=`<h1>Budgets &amp; projets</h1><p class="d">R\u00e9capitulatif au ${new Date().toLocaleDateString("fr-BE")}</p>
+    <table><thead><tr><th>Intitul\u00e9</th><th>Type</th><th>Co\u00fbt</th><th>Statut</th><th>Demandeur</th><th>Pour/Contre/Abst.</th></tr></thead><tbody>${rows||`<tr><td colspan="6">Aucun budget.</td></tr>`}</tbody></table>
+    <p><b>Total approuv\u00e9 :</b> ${euro(total)}</p>`;
+  ouvrirDocImprimable("Budgets & projets", corps);
+}
+
+/* ---- Notification e-mail : nouvelle demande d'inscription ---- */
+async function traiterInscriptions(){
+  if(!sb||!S.session) return;
+  if(S.session.statut!=="actif") return;                 // seul un membre actif d\u00e9clenche l'envoi
+  const attentes=(S.admins||[]).filter(a=>a.statut==="attente");
+  if(!attentes.length) return;
+  const owners=(S.admins||[]).filter(a=>a.email && a.statut==="actif" && a.role==="owner").map(a=>a.email);
+  if(!owners.length) return;
+  for(const a of attentes){
+    try{
+      const cle="inscription:"+a.id;
+      const ins=await sb.from("ca_rappels_envoyes").insert({cle:cle}).select();
+      if(ins&&ins.error) continue;
+      if(!ins||!ins.data||!ins.data.length) continue;
+      const nom=((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||"Nouveau membre";
+      await envoyerNotifCAListe(owners, "Nouvelle demande d'inscription en attente",
+        "<p>Une nouvelle demande d'inscription \u00e0 l'espace CA est <b>en attente de validation</b> :</p><p><b>"+caMailEsc(nom)+"</b>"+(a.fonction?(" \u2014 "+caMailEsc(a.fonction)):"")+"</p><p>Connectez-vous \u00e0 l'espace CA pour l'approuver ou la refuser.</p>");
+      logAct("Notification d'inscription envoy\u00e9e pour "+nom);
+    }catch(e){}
+  }
+}
+
 /* ---- pseudo-onglet NOTIFICATIONS (à traiter) ---- */
 function tabNotifs(){
   const owner=S.session.role==="owner";
@@ -1707,6 +1795,7 @@ document.addEventListener("click", async e=>{
     case "cal-nav": { S.calMonth=el.dataset.mo; render(); break; }
     case "cal-today2": { S.calMonth=null; render(); break; }
     case "cal-ics": { telechargerICS(); break; }
+    case "budgets-pdf": { genererBudgetsPDF(); break; }
     case "rgpd-export": { const c=(S.contacts||[]).find(x=>x.id===el.dataset.id); if(!c) break; telechargerJSON("contact-"+(c.nom||"donnees").replace(/[^a-zA-Z0-9]/g,"_")+".json", c); break; }
     case "mail-chip": { S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; captureMailFields(); const tgt=S.mailUI.target||"to"; ajouterEmailsChamp(tgt, listeEmails(el.dataset.email)); persistMailDraft(); render(); break; }
     case "mail-add-manual": { S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; captureMailFields(); const brut=val("mail_manual"); const emails=listeEmails(brut); const err=document.getElementById("mail_manual_err"); const tgt=S.mailUI.target||"to";
@@ -2004,7 +2093,13 @@ ${sections||"<p>Aucun retour.</p>"}
       if(!(S.session && S.session.role==="owner")){ try{ await sb.auth.signOut(); }catch(e){} S.session=null; aerr("Réservé au propriétaire du bureau."); return; }
       render(); break;
     }
-    case "approve-admin": { if(!(S.session&&S.session.role==="owner")) break; try{ await sb.from("ca_membres").update({statut:"actif"}).eq("id",id); }catch(e){} await loadAccounts(); render(); break; }
+    case "approve-admin": { if(!(S.session&&S.session.role==="owner")) break;
+      const ad=(S.admins||[]).find(a=>a.id===id);
+      try{ await sb.from("ca_membres").update({statut:"actif"}).eq("id",id); }catch(e){}
+      if(ad && ad.email){ try{ await envoyerNotifCAListe([ad.email], "Votre accès à l'espace CA est validé",
+        "<p>Bonjour "+caMailEsc(ad.prenom||"")+",</p><p>Votre inscription à l'espace CA du Bureau étudiant vient d'être <b>validée</b>. Vous pouvez désormais vous connecter et accéder à l'espace.</p>"); }catch(e){} }
+      try{ logAct("Inscription validée : "+(((ad&&ad.prenom)||"")+" "+((ad&&ad.nom)||"")).trim()); }catch(e){}
+      await loadAccounts(); render(); break; }
     case "reject-admin": { if(!(S.session&&S.session.role==="owner")) break; try{ await sb.from("ca_membres").delete().eq("id",id); }catch(e){} await loadAccounts(); render(); break; }
     case "revoke-admin": {
       if(!(S.session&&S.session.role==="owner")) break;
@@ -2111,7 +2206,7 @@ async function boot(){
   try{ const params=new URLSearchParams(location.search); if(params.get("desabo")!=null){ await pageDesabo(params.get("desabo")); return; } }catch(e){}
   if(!sb){ render(); return; }
   try{ await refreshSession(); }catch(e){} render();
-  if(S.session){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") render(); }).catch(()=>{}); traiterRappels().catch(()=>{}); }
+  if(S.session){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") render(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterInscriptions().catch(()=>{}); }
   try{ sb.auth.onAuthStateChange(async ()=>{ await refreshSession(); render(); }); }catch(e){} }
 boot();
 
