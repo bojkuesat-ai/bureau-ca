@@ -119,6 +119,40 @@ input[type=date]{color-scheme:dark}
 /* ---- compose ---- */
 .compose{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 16px;margin-bottom:22px}
 .compose h3{font-family:'Fraunces',serif;font-weight:500;font-size:15px;margin:0 0 4px}
+.mail-sign{background:var(--paper);border:1px dashed var(--line);border-radius:10px;padding:11px 13px;margin:10px 0 4px;font-size:13px;line-height:1.5}
+.mail-tgts{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.mail-manual{display:flex;gap:8px;align-items:center;margin:0 0 6px}
+.mail-manual .f{flex:1}
+.mail-manual .btn{white-space:nowrap;flex:none}
+.mail-tgt{border:1px solid var(--line);background:var(--paper);border-radius:7px;padding:5px 12px;font-size:12.5px;color:var(--ink-soft);font-weight:600}
+.mail-tgt[aria-pressed="true"]{background:var(--stamp);color:#241100;border-color:var(--stamp)}
+.mail-tgt:hover{border-color:var(--stamp)}
+.mail-src{margin:0 0 12px}
+.mail-src-h{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:600;color:var(--ink-soft);margin:0 0 6px}
+.mail-chips{display:flex;flex-wrap:wrap;gap:6px}
+.mail-chip{border:1px solid var(--line);background:var(--paper);border-radius:20px;padding:5px 11px;font-size:12px;color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail-chip:hover{border-color:var(--stamp);color:var(--stamp)}
+.mail-tpl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 4px}
+.mail-attach{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 2px}
+.mail-attach-name{font-size:12.5px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:4px 9px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail-hist{display:flex;flex-direction:column;gap:6px}
+.mail-hist-row{display:flex;justify-content:space-between;gap:12px;align-items:baseline;border:1px solid var(--line-2);border-radius:8px;padding:8px 11px;background:var(--paper)}
+.mail-hist-txt{font-size:13px;color:var(--ink)}
+.mail-hist-meta{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--slate);white-space:nowrap;flex:none}
+.mail-grp-row{display:flex;justify-content:space-between;gap:12px;align-items:center;border:1px solid var(--line-2);border-radius:8px;padding:8px 11px;background:var(--paper);margin-bottom:6px}
+.mail-grp-actions{display:flex;gap:12px;flex:none}
+.cal-legend{display:flex;gap:14px;flex-wrap:wrap;margin:12px 0 8px;font-size:11.5px;align-items:center}
+.cal-grid-h{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-size:11px;font-weight:600;color:var(--ink-soft);text-align:center;margin-bottom:4px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-cell{min-height:74px;border:1px solid var(--line-2);border-radius:7px;padding:4px;background:var(--paper);overflow:hidden}
+.cal-empty{background:transparent;border:0}
+.cal-today{border-color:var(--stamp);box-shadow:inset 0 0 0 1px var(--stamp)}
+.cal-d{font-size:11px;font-weight:700;color:var(--ink-soft);margin-bottom:3px}
+.cal-ev-chip{display:block;font-size:10.5px;line-height:1.3;padding:2px 5px;border-radius:4px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff}
+.cal-reu{background:#4a4a8a}
+.cal-ev{background:#c9772a}
+.cal-tache{background:#8a3a5a}
+@media(max-width:640px){ .cal-cell{min-height:56px} .cal-ev-chip{font-size:9px} }
 select.f{width:100%}
 
 /* ---- organigramme ---- */
@@ -252,6 +286,7 @@ select.f{width:100%}
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -320,6 +355,7 @@ const CHOIX = [{id:"pour",label:"Pour",v:"--green"},{id:"contre",label:"Contre",
 const uid = () => Math.random().toString(36).slice(2,9);
 const dateFR = ts => new Date(ts).toLocaleDateString("fr-BE",{day:"2-digit",month:"short",year:"numeric"});
 function fmtDateLong(d){ try{ return new Date(d+"T00:00").toLocaleDateString("fr-BE",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}); }catch(e){ return d; } }
+function fmtQuand(ts){ try{ return new Date(ts).toLocaleString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function dShort(d){ try{ return new Date(d+"T00:00").toLocaleDateString("fr-BE",{day:"2-digit",month:"short"}); }catch(e){ return d; } }
 function logAct(txt,who){ const w=who||((S.session&&S.session.sig)||"\u2014"); try{ if(typeof sb!=="undefined" && sb) sb.from("ca_journal").insert({who:w,txt:txt}); }catch(e){} const j=(S.journal||[]).slice(); j.unshift({ts:Date.now(),who:w,txt:txt}); S.journal=j.slice(0,200); }
@@ -349,6 +385,13 @@ async function loadMailing(){ try{ const {data}=await sb.from("ca_mailing").sele
 
 /* ===== Notifications par e-mail (Amazon SES via Edge Function) ===== */
 const CA_SEND_FN = SB_URL + "/functions/v1/send-email";
+/* En-têtes d'envoi : on transmet le JETON de l'utilisateur connecté (et non la seule clé publique),
+   pour que la fonction serveur puisse exiger une personne authentifiée. */
+async function caSendHeaders(){
+  let tok=SB_KEY;
+  try{ const {data}=await sb.auth.getSession(); if(data&&data.session&&data.session.access_token) tok=data.session.access_token; }catch(e){}
+  return {"Content-Type":"application/json","Authorization":"Bearer "+tok,"apikey":SB_KEY};
+}
 function caAppUrl(){ return window.location.origin + window.location.pathname; }
 function secretairesExtra(){ return (S.meta && Array.isArray(S.meta.secretaires)) ? S.meta.secretaires : []; }
 function estPresidente(){ const u=S.session; if(!u) return false; return String(u.fonction||"").toLowerCase().indexOf("pr\u00e9sident")===0 || String(u.fonction||"").toLowerCase().indexOf("president")===0; }
@@ -386,17 +429,112 @@ function blocCaisseCA(){
 function blocNoReplyCA(){
   return `<p style="color:#999;font-size:12px;margin-top:18px">Ceci est un envoi automatique &mdash; merci de ne pas répondre à ce message.<br>Le bureau étudiant &mdash; Espace CA</p>`;
 }
+/* ---- Signature personnalisée de l'expéditeur (ex : « Kelly Afanou — Responsable événements festifs ») ---- */
+function signatureExpediteurCA(){
+  const u=S.session||{};
+  const nom=String(u.nom||u.prenom||"").trim();
+  const fonction=String(u.fonction||"").trim();
+  const ligne1 = nom + (fonction? " \u2014 "+fonction : "");
+  return `<div style="margin:24px 0 0;border-top:1px solid #e2e0ef;padding-top:14px;font-size:13px;color:#1a1a2e;line-height:1.5">`
+    +(ligne1?`<p style="margin:0 0 4px"><b>${caMailEsc(ligne1)}</b></p>`:``)
+    +`<p style="margin:0;color:#3a3a5a">Le Bureau étudiant de la Faculté de Droit et de Criminologie</p></div>`;
+}
+/* ---- Envoi d'un mail composé (À / CC / CCI / objet + signature + no-reply) ---- */
+async function envoyerMailComposeCA({toList, ccList, bccList, objet, corpsTexte, lienPiece, nomPiece}, onProgress){
+  const nettoie = arr => [...new Set((arr||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))];
+  const to=nettoie(toList), cc=nettoie(ccList), bcc=nettoie(bccList);
+  // destinataires uniques : une adresse déjà en À n'est pas recontactée en CC/CCI
+  const dejaVus=new Set(to);
+  const ccNet=cc.filter(a=>!dejaVus.has(a)); ccNet.forEach(a=>dejaVus.add(a));
+  const bccNet=bcc.filter(a=>!dejaVus.has(a)); bccNet.forEach(a=>dejaVus.add(a));
+  let tous=[...to, ...ccNet, ...bccNet];
+  const nbTotalAvant=tous.length;
+  tous=tous.filter(a=>!estDesabonne(a));               // RGPD : on n'écrit jamais à un désabonné
+  const nbDesab=nbTotalAvant-tous.length;
+  if(!tous.length) return {ok:0, err:0, total:0, desabonnes:nbDesab};
+  const pieceHtml = lienPiece ? `<p style="margin:16px 0 0;padding:10px 12px;background:#f5f4fb;border:1px solid #e2e0ef;border-radius:8px;font-size:13px">📎 Pièce jointe : <a href="${lienPiece}" style="color:#241c46;font-weight:bold">${caMailEsc(nomPiece||"Télécharger le fichier")}</a></p>` : "";
+  const corpsHtml=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#1a1a2e;font-size:14px;line-height:1.6">`
+    +`<div style="white-space:pre-wrap">${caMailEsc(corpsTexte)}</div>`
+    +pieceHtml
+    +signatureExpediteurCA()
+    +blocNoReplyCA();
+  const headers=await caSendHeaders();
+  let ok=0, err=0, i=0;
+  const base=(function(){ try{ return caAppUrl(); }catch(e){ return ""; } })();
+  for(const dest of tous){
+    const desabo = base ? `<p style="color:#bbb;font-size:11px;margin-top:14px">Vous recevez ce message en tant que contact du Bureau étudiant. <a href="${base}?desabo=${encodeURIComponent(dest)}" style="color:#999">Se désabonner</a>.</p>` : "";
+    const html=corpsHtml+desabo+`</div>`;
+    try{
+      const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,
+        body:JSON.stringify({to:dest, subject:objet, html:html})});
+      if(r && r.ok===false){ err++; } else { ok++; }
+    }catch(e){ err++; }
+    i++; try{ if(typeof onProgress==="function") onProgress(i, tous.length); }catch(e){}
+    await new Promise(r=>setTimeout(r,150));
+  }
+  return {ok, err, total:tous.length, desabonnes:nbDesab};
+}
+/* ---- Extraction de toutes les adresses e-mail d'un fichier Excel / CSV ---- */
+const RE_EMAIL=/[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/gi;
+function extraireEmailsDepuisFichier(file){
+  return new Promise((resolve,reject)=>{
+    const rd=new FileReader();
+    rd.onerror=()=>reject(new Error("Lecture impossible."));
+    rd.onload=()=>{
+      try{
+        let texte="";
+        if(typeof XLSX!=="undefined"){
+          const wb=XLSX.read(rd.result,{type:"array"});
+          wb.SheetNames.forEach(n=>{ texte+=" "+XLSX.utils.sheet_to_csv(wb.Sheets[n]); });
+        } else {
+          texte=new TextDecoder("utf-8").decode(new Uint8Array(rd.result));
+        }
+        const found=(texte.match(RE_EMAIL)||[]).map(x=>x.toLowerCase());
+        resolve([...new Set(found)]);
+      }catch(e){ reject(e); }
+    };
+    rd.readAsArrayBuffer(file);
+  });
+}
+function captureMailFields(){ S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"};
+  const g=id=>{const e=document.getElementById(id);return e?e.value:undefined;};
+  const t=g("mail_to"); if(t!==undefined)S.mailUI.to=t;
+  const c=g("mail_cc"); if(c!==undefined)S.mailUI.cc=c;
+  const i=g("mail_cci"); if(i!==undefined)S.mailUI.cci=i;
+  const o=g("mail_objet"); if(o!==undefined)S.mailUI.objet=o;
+  const b=g("mail_corps"); if(b!==undefined)S.mailUI.corps=b;
+}
+function listeEmails(str){ return (String(str||"").match(RE_EMAIL)||[]).map(x=>x.toLowerCase()); }
+function compterEmails(str){ return [...new Set(listeEmails(str))].length; }
+function ajouterEmailsChamp(k, emails){ S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"};
+  const set=new Set(listeEmails(S.mailUI[k])); (emails||[]).forEach(e=>{ const v=String(e||"").toLowerCase().trim(); if(v) set.add(v); });
+  S.mailUI[k]=[...set].join(", ");
+}
+/* Brouillon : on garde le message en cours (texte) sur l'appareil, pour ne pas le perdre. */
+function persistMailDraft(){ try{ const m=S.mailUI||{}; store.set("maildraft",{to:m.to||"",cc:m.cc||"",cci:m.cci||"",objet:m.objet||"",corps:m.corps||""}); }catch(e){} }
+function clearMailDraft(){ try{ store.set("maildraft",null); }catch(e){} }
+/* Modèles de mail : pré-remplissent objet + message (la signature reste ajoutée automatiquement). */
+const MAIL_TEMPLATES = [
+  { nom:"Invitation événement", objet:"Invitation — [nom de l'événement]",
+    corps:"Bonjour,\n\nLe bureau étudiant a le plaisir de vous inviter à [nom de l'événement], qui se tiendra le [date] à [heure], à [lieu].\n\n[Quelques mots sur l'événement / programme.]\n\nInscription / infos : [lien ou contact].\n\nAu plaisir de vous y retrouver," },
+  { nom:"Rappel / information", objet:"Information — [sujet]",
+    corps:"Bonjour,\n\nNous souhaitons vous informer que [information].\n\n[Détails utiles : date, lieu, démarche à suivre.]\n\nMerci de votre attention," },
+  { nom:"Demande / partenariat", objet:"Demande — [objet]",
+    corps:"Bonjour,\n\nDans le cadre de nos activités, nous nous permettons de vous contacter concernant [objet de la demande].\n\n[Présentation de la demande / proposition de partenariat.]\n\nNous restons à votre disposition pour en discuter.\n\nBien à vous," },
+];
 async function envoyerNotifCA(subject, corpsHtml, avecCaisse){
   const dest=destinatairesCA(); if(!dest.length) return;
   const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corpsHtml}${blocInvitationCA()}${avecCaisse?blocCaisseCA():""}${blocNoReplyCA()}</div>`;
+  const headers=await caSendHeaders();
   for(const to of dest){
-    try{ await fetch(CA_SEND_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+SB_KEY,"apikey":SB_KEY},body:JSON.stringify({to,subject,html})}); }catch(e){}
+    try{ await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html})}); }catch(e){}
     await new Promise(r=>setTimeout(r,120));
   }
 }
 async function envoyerNotifCAListe(dest, subject, corpsHtml){
   const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corpsHtml}${blocInvitationCA()}${blocNoReplyCA()}</div>`;
-  for(const to of dest){ try{ await fetch(CA_SEND_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+SB_KEY,"apikey":SB_KEY},body:JSON.stringify({to,subject,html})}); }catch(e){} await new Promise(r=>setTimeout(r,120)); }
+  const headers=await caSendHeaders();
+  for(const to of dest){ try{ await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html})}); }catch(e){} await new Promise(r=>setTimeout(r,120)); }
 }
 function notifDocCA(titre, cat, avecCaisse){
   const corps=`<h2 style="margin:0 0 10px">Nouveau document</h2><p>Un nouveau document vient d'être déposé sur l'espace CA :</p><p style="font-size:16px"><b>${caMailEsc(titre)}</b>${cat?` <span style="color:#888">(${caMailEsc(cat)})</span>`:""}</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
@@ -424,7 +562,7 @@ function notifVoteCA(question){
   return envoyerNotifCA("Nouveau vote — "+question, corps, false);
 }
 
-async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; S.needProfile=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; } S.needProfile=null; S.session=sess2session(user,prof); await loadAccounts(); await loadDocs(); await loadMessages(); await loadConflits(); await loadTaches(); await loadContacts(); await loadAnnonces(); await loadReactions(); await loadPresence(); await loadEvenements(); await loadReunions(); await loadCreneaux(); await loadOrg(); await loadBudgets(); await loadVotes(); await loadMeta(); await loadBilans(); await loadJournal(); await loadMailing(); }catch(e){ S.session=null; } }
+async function refreshSession(){ if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user){ S.session=null; S.needProfile=null; return; } const {data:prof}=await sb.from("ca_membres").select("*").eq("id",user.id).maybeSingle(); if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; } S.needProfile=null; S.session=sess2session(user,prof); await loadAccounts(); await loadDocs(); await loadMessages(); await loadConflits(); await loadTaches(); await loadContacts(); await loadAnnonces(); await loadReactions(); await loadPresence(); await loadEvenements(); await loadReunions(); await loadCreneaux(); await loadOrg(); await loadBudgets(); await loadVotes(); await loadMeta(); await loadBilans(); await loadJournal(); await loadMailing(); await loadGroupes(); await loadProgrammes(); await loadDesabonnes(); }catch(e){ S.session=null; } }
 async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; } }catch(e){} }
 async function loadBilans(){ try{ const {data}=await sb.from("ca_bilans").select("*").order("created_at",{ascending:true}); S.bilans=(data||[]).map(b=>({id:b.id,cible:b.cible,positifs:b.positifs,ameliorer:b.ameliorer,ts:b.created_at})); }catch(e){ S.bilans=[]; } try{ const f=await sb.from("ca_bilan_faits").select("*"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){} }
 async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").select("*").order("created_at",{ascending:false}); S.journal=(data||[]).map(j=>({ts:j.created_at,who:j.who,txt:j.txt})); }catch(e){} }
@@ -436,6 +574,112 @@ async function loadCreneaux(){ try{ const c=await sb.from("ca_creneaux").select(
 async function loadOrg(){ try{ const {data}=await sb.from("ca_org").select("*"); const o={}; (data||[]).forEach(r=>{ o[r.poste_id]={missions:r.missions,contact:r.contact}; }); S.org=o; }catch(e){} }
 async function loadTaches(){ try{ const {data}=await sb.from("ca_taches").select("*").order("created_at",{ascending:false}); S.taches=(data||[]).map(t=>({id:t.id,titre:t.titre,posteId:t.poste_id,statut:t.statut,echeance:t.echeance,priorite:t.priorite,creePar:t.cree_par})); }catch(e){ S.taches=[]; } }
 async function loadContacts(){ try{ const {data}=await sb.from("ca_contacts").select("*").order("nom",{ascending:true}); S.contacts=(data||[]).map(c=>({id:c.id,nom:c.nom,type:c.type,email:c.email,tel:c.tel,notes:c.notes})); }catch(e){ S.contacts=[]; } }
+
+/* ============================ GROUPES D'ENVOI / PROGRAMMÉS / DÉSABONNÉS ============================ */
+async function loadGroupes(){ try{ const {data}=await sb.from("ca_mail_groupes").select("*").order("nom",{ascending:true}); S.groupes=(data||[]).map(g=>({id:g.id,nom:g.nom,emails:Array.isArray(g.emails)?g.emails:[]})); }catch(e){ S.groupes=[]; } }
+async function loadProgrammes(){ try{ const {data}=await sb.from("ca_mail_programmes").select("*").order("envoi_at",{ascending:true}); S.programmes=(data||[]).map(p=>({id:p.id,dest:p.destinataires||{},objet:p.objet,corps:p.corps,lienPiece:p.lien_piece,nomPiece:p.nom_piece,envoiAt:p.envoi_at,statut:p.statut})); }catch(e){ S.programmes=[]; } }
+async function loadDesabonnes(){ try{ const {data}=await sb.from("ca_desabonnes").select("email"); S.desabonnes=new Set((data||[]).map(d=>String(d.email||"").toLowerCase())); }catch(e){ S.desabonnes=new Set(); } }
+function estDesabonne(email){ return (S.desabonnes||new Set()).has(String(email||"").toLowerCase()); }
+
+/* Traitement des envois programmés arrivés à échéance (déclenché à l'ouverture de l'app). */
+async function traiterEnvoisProgrammes(){
+  if(!sb) return; const now=Date.now();
+  const dus=(S.programmes||[]).filter(p=>p.statut==="en_attente" && new Date(p.envoiAt).getTime()<=now);
+  for(const p of dus){
+    try{
+      const {data:claim}=await sb.from("ca_mail_programmes").update({statut:"en_cours"}).eq("id",p.id).eq("statut","en_attente").select();
+      if(!claim||!claim.length) continue;               // déjà pris par un autre appareil
+      const d=p.dest||{};
+      const res=await envoyerMailComposeCA({toList:d.to||[],ccList:d.cc||[],bccList:d.cci||[],objet:p.objet,corpsTexte:p.corps,lienPiece:p.lienPiece,nomPiece:p.nomPiece});
+      await sb.from("ca_mail_programmes").update({statut:"envoye"}).eq("id",p.id);
+      logAct("Mail programmé envoyé : « "+p.objet+" » à "+res.total+" destinataire(s)");
+    }catch(e){ try{ await sb.from("ca_mail_programmes").update({statut:"erreur"}).eq("id",p.id); }catch(_){} }
+  }
+  try{ await loadProgrammes(); }catch(e){}
+}
+
+/* Rappels automatiques : réunions et tâches dont l'échéance est DEMAIN → e-mail unique aux membres. */
+async function traiterRappels(){
+  if(!sb||!S.session) return;
+  const today=new Date(); today.setHours(0,0,0,0);
+  const demain=new Date(today.getTime()+86400000);
+  const isDay=(dstr,d)=>{ if(!dstr) return false; const x=new Date(String(dstr).slice(0,10)+"T00:00"); return x.getFullYear()===d.getFullYear()&&x.getMonth()===d.getMonth()&&x.getDate()===d.getDate(); };
+  const jobs=[];
+  (S.reunions||[]).forEach(m=>{ if(isDay(m.date,demain)) jobs.push({cle:"reunion:"+m.id+":"+m.date, sujet:"Rappel : réunion demain", corps:"Rappel : la réunion « "+(m.titre||"")+" » a lieu demain"+(m.lieu?(" à "+m.lieu):"")+"."}); });
+  (S.taches||[]).forEach(t=>{ if(t.statut!=="fait" && isDay(t.echeance,demain)) jobs.push({cle:"tache:"+t.id+":"+t.echeance, sujet:"Rappel : échéance demain", corps:"Rappel : la tâche « "+(t.titre||"")+" » arrive à échéance demain."}); });
+  for(const j of jobs){
+    try{
+      const ins=await sb.from("ca_rappels_envoyes").insert({cle:j.cle}).select();
+      if(ins&&ins.error) continue;                       // déjà envoyé (clé en doublon)
+      if(!ins||!ins.data||!ins.data.length) continue;
+      await envoyerNotifCA(j.sujet, "<p>"+caMailEsc(j.corps)+"</p>", false);
+      logAct("Rappel automatique envoyé : "+j.sujet);
+    }catch(e){}
+  }
+}
+
+/* Bandeau de rappels dans l'app (fiable, sans e-mail) : ce qui arrive sous 48 h. */
+function bandeauRappels(){
+  const now=new Date(); now.setHours(0,0,0,0);
+  const dansXjours=d=>{ if(!d) return 999; const x=new Date(String(d).slice(0,10)+"T00:00"); return Math.round((x-now)/86400000); };
+  const items=[];
+  (S.reunions||[]).forEach(m=>{ const n=dansXjours(m.date); if(n>=0&&n<=2) items.push({q:n,t:"Réunion « "+(m.titre||"")+" »"+(m.lieu?(" — "+m.lieu):""),n}); });
+  (S.taches||[]).forEach(t=>{ if(t.statut==="fait") return; const n=dansXjours(t.echeance); if(n>=0&&n<=2) items.push({q:n,t:"Tâche « "+(t.titre||"")+" »",n}); });
+  if(!items.length) return "";
+  items.sort((a,b)=>a.n-b.n);
+  const quand=n=>n===0?"aujourd'hui":n===1?"demain":"dans "+n+" jours";
+  return `<div class="card2" style="border-left:4px solid var(--stamp);margin-bottom:16px">
+    <h3 class="serif" style="margin:0 0 6px">🔔 Rappels</h3>
+    <ul style="margin:0;padding-left:18px;line-height:1.7">${items.map(i=>`<li>${esc(i.t)} — <b>${quand(i.q)}</b></li>`).join("")}</ul>
+  </div>`;
+}
+
+/* ============================ CALENDRIER PARTAGÉ + EXPORT .ICS ============================ */
+function evenementsCalendrier(){
+  const items=[];
+  (S.reunions||[]).forEach(m=>{ if(m.date) items.push({date:String(m.date).slice(0,10),type:"Réunion",titre:m.titre||"Réunion",lieu:m.lieu||"",cls:"cal-reu"}); });
+  (S.evenements||[]).forEach(e=>{ if(e.date) items.push({date:String(e.date).slice(0,10),type:"Événement",titre:e.titre||"Événement",lieu:e.lieu||"",cls:"cal-ev"}); });
+  (S.taches||[]).forEach(t=>{ if(t.echeance && t.statut!=="fait") items.push({date:String(t.echeance).slice(0,10),type:"Échéance tâche",titre:t.titre||"Tâche",lieu:"",cls:"cal-tache"}); });
+  return items;
+}
+function icsDate(d){ return String(d).slice(0,10).replace(/-/g,""); }
+function genererICS(){
+  const items=evenementsCalendrier();
+  let out="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Bureau etudiant//CA//FR\r\nCALSCALE:GREGORIAN\r\n";
+  items.forEach((it,i)=>{
+    const dt=icsDate(it.date); const uid2="ca-"+i+"-"+dt+"@bureau";
+    out+="BEGIN:VEVENT\r\nUID:"+uid2+"\r\nDTSTART;VALUE=DATE:"+dt+"\r\nSUMMARY:"+String(it.type+" — "+it.titre).replace(/[\r\n,;]/g," ")+"\r\n";
+    if(it.lieu) out+="LOCATION:"+String(it.lieu).replace(/[\r\n,;]/g," ")+"\r\n";
+    out+="END:VEVENT\r\n";
+  });
+  out+="END:VCALENDAR\r\n";
+  return out;
+}
+function telechargerICS(){
+  try{ const blob=new Blob([genererICS()],{type:"text/calendar;charset=utf-8"}); const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download="calendrier-bureau.ics"; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){ if(window.alert) window.alert("Export impossible sur cet appareil."); }
+}
+function telechargerJSON(nom, obj){
+  try{ const blob=new Blob([JSON.stringify(obj,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=nom||"donnees.json"; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){ if(window.alert) window.alert("Export impossible sur cet appareil."); }
+}
+
+/* ============================ PAGE PUBLIQUE DE DÉSABONNEMENT ============================ */
+async function pageDesabo(email){
+  const e=String(email||"").toLowerCase().trim();
+  let ok=false;
+  if(sb && e){ try{ const r=await sb.from("ca_desabonnes").upsert({email:e},{onConflict:"email"}); ok=!(r&&r.error); }catch(_){ ok=false; } }
+  const html=`<div style="max-width:520px;margin:12vh auto;padding:28px;font-family:'Inter',system-ui,sans-serif;text-align:center;color:#1a1a2e">
+    <h1 style="font-family:'Fraunces',serif;font-size:22px">Désabonnement</h1>
+    ${e? (ok? `<p>L'adresse <b>${esc(e)}</b> a bien été désabonnée. Vous ne recevrez plus d'e-mails du Bureau étudiant.</p>`
+             : `<p>Nous n'avons pas pu enregistrer votre désabonnement automatiquement. Merci de contacter le Bureau étudiant.</p>`)
+         : `<p>Adresse manquante.</p>`}
+    <p style="margin-top:22px"><a href="${esc(location.pathname)}" style="color:#241c46;font-weight:bold">Retour</a></p>
+  </div>`;
+  const r=root(); if(r) r.innerHTML=html; else document.body.innerHTML=html;
+}
 async function loadReactions(){ try{ const {data}=await sb.from("ca_annonce_reactions").select("*"); S.reactions=data||[]; }catch(e){ S.reactions=[]; } }
 async function loadPresence(){ try{ const {data}=await sb.from("ca_event_presence").select("*"); S.presence=data||[]; }catch(e){ S.presence=[]; } }
 async function loadAnnonces(){ try{ const {data}=await sb.from("ca_annonces").select("*").order("created_at",{ascending:false}); S.annonces=(data||[]).map(a=>({id:a.id,auteur:a.auteur,texte:a.texte,ts:a.created_at})); }catch(e){ S.annonces=[]; } }
@@ -461,6 +705,12 @@ const S = {
   reunions: [],
   evenements: [],
   contacts: [],
+  mailUI: Object.assign({to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}, (store.get("maildraft",null)||{})),
+  groupes: [],
+  programmes: [],
+  desabonnes: new Set(),
+  calMonth: null,
+  progUI: {date:"",heure:""},
   journal: [],
   bilans: [],
 };
@@ -661,9 +911,9 @@ function viewAuth(){
 function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textContent=msg; e.style.display="block"; } }
 
 /* ---- DASHBOARD ---- */
-const TABS = [["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["docs","09","Documents"],["annonces","10","Annonces"],["messages","11","Messages"],["conflits","12","M\u00e9diation"]];
+const TABS = [["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,evenements:tabEvenements,contacts:tabContacts,notifs:tabNotifs,search:tabSearch};
+  const map={org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,evenements:tabEvenements,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,notifs:tabNotifs,search:tabSearch};
   const tabs = S.meta.bilanActif ? [...TABS,["bilan","12","Bilans moraux"]] : TABS;
   if(S.tab==="bilan" && !S.meta.bilanActif) S.tab="org";
   const notifOwner = S.session.role==="owner" ? (S.admins||[]).filter(a=>a.statut==="attente").length : 0;
@@ -698,7 +948,7 @@ function viewDash(){
       <button class="logout" data-action="logout">Se déconnecter</button></div>
     <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
   </div></header>
-  <main class="body">${bienvenue}${body}</main>`;
+  <main class="body">${bienvenue}${bandeauRappels()}${body}</main>`;
 }
 
 /* ---- onglet ORGANIGRAMME ---- */
@@ -1142,6 +1392,185 @@ function tabContacts(){
   return compose+list;
 }
 
+/* ---- onglet ENVOYER UN MAIL ---- */
+function tabMail(){
+  const m=S.mailUI||(S.mailUI={to:"",cc:"",cci:"",objet:"",corps:"",target:"to"});
+  const cible=m.target||"to";
+  const cibleNom={to:"À",cc:"CC",cci:"CCI"}[cible]||"À";
+  // sources d'adresses connues
+  const membres=(S.admins||[]).filter(a=>a.email && a.statut==="actif")
+    .map(a=>({label:((a.prenom||"")+" "+(a.nom||"")).trim()||a.email, email:a.email}));
+  const contacts=(S.contacts||[]).filter(c=>c.email).map(c=>({label:c.nom||c.email, email:c.email}));
+  const diffusion=(S.mailing||[]).filter(x=>x.email).map(x=>({label:x.email, email:x.email}));
+  const chip=(o)=>`<button class="mail-chip" data-action="mail-chip" data-email="${esc(o.email)}" title="${esc(o.email)}">+ ${esc(o.label)}</button>`;
+  const grp=(titre,arr,allEmails)=> arr.length? `<div class="mail-src">
+      <div class="mail-src-h"><span>${titre}</span>${allEmails?`<button class="link" data-action="mail-chip" data-email="${esc(allEmails)}">tout ajouter</button>`:""}</div>
+      <div class="mail-chips">${arr.map(chip).join("")}</div></div>` : "";
+  const sig=(S.session&&((S.session.nom||S.session.prenom||"")+(S.session.fonction?" — "+S.session.fonction:"")))||"";
+  const tgtBtn=(k,lbl)=>`<button class="mail-tgt" aria-pressed="${cible===k}" data-action="mail-target" data-tgt="${k}">${lbl}</button>`;
+  return `<div class="compose">
+    <h3 class="serif">Envoyer un mail</h3>
+    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Prévenez des contacts d'un événement. Saisissez les adresses <b>directement dans les champs ci-dessous</b> (séparées par des virgules), ou choisissez-les dans le carnet plus bas. Chaque destinataire reçoit une copie individuelle ; les adresses ne sont pas visibles entre elles (les <b>CCI</b> restent masqués). La signature du bureau et la mention « ne pas répondre » sont ajoutées automatiquement.</p>
+
+    <div class="mail-tpl"><span style="font-size:12px;color:var(--ink-soft);font-weight:600">Modèle :</span>${MAIL_TEMPLATES.map((t,i)=>`<button class="mail-chip" data-action="mail-template" data-tpl="${i}">${esc(t.nom)}</button>`).join("")}</div>
+
+    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:8px 0 0">À (destinataires)</label>
+    <textarea id="mail_to" data-change="mailfield" data-k="to" placeholder="adresse1@exemple.be, adresse2@exemple.be…" style="min-height:44px">${esc(m.to)}</textarea>
+    <div class="two">
+      <div><label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:6px 0 0">CC (copie visible)</label>
+      <textarea id="mail_cc" data-change="mailfield" data-k="cc" placeholder="copie@exemple.be…" style="min-height:40px">${esc(m.cc)}</textarea></div>
+      <div><label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:6px 0 0">CCI (copie cachée)</label>
+      <textarea id="mail_cci" data-change="mailfield" data-k="cci" placeholder="copie.cachee@exemple.be…" style="min-height:40px">${esc(m.cci)}</textarea></div>
+    </div>
+
+    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:8px 0 0">Objet</label>
+    <input class="f" id="mail_objet" data-change="mailfield" data-k="objet" value="${esc(m.objet)}" placeholder="Objet du message">
+
+    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:8px 0 0">Message</label>
+    <textarea id="mail_corps" data-change="mailfield" data-k="corps" placeholder="Bonjour,&#10;&#10;Nous vous informons que…" style="min-height:130px">${esc(m.corps)}</textarea>
+
+    <div class="mail-attach">
+      <label class="btn ghost sm" style="cursor:pointer">📎 Joindre un fichier<input type="file" data-change="mailattach" style="display:none"></label>
+      ${m.pieceName?`<span class="mail-attach-name" title="${esc(m.pieceName)}">${esc(m.pieceName)}</span><button class="link" data-action="mail-attach-clear">retirer</button>`:`<span style="color:var(--slate);font-size:12px">Facultatif — le fichier est ajouté au mail comme lien de téléchargement.</span>`}
+    </div>
+
+    <div class="mail-sign">
+      <span class="eyebrow" style="font-size:11px">Signature ajoutée</span>
+      <p style="margin:4px 0 0"><b>${esc(sig||"—")}</b><br><span style="color:var(--ink-soft)">Le Bureau étudiant de la Faculté de Droit et de Criminologie</span></p>
+      <p style="margin:6px 0 0;color:var(--slate);font-size:11.5px">Envoi automatique — merci de ne pas répondre à ce message.</p>
+    </div>
+
+    <div id="mail_status" style="display:none;font-size:12.5px;font-weight:500;margin-top:10px"></div>
+    ${(()=>{ const f=S.mailFlash; if(!f) return ""; const c={ok:"var(--green)",err:"var(--red)",warn:"var(--amber)",info:"var(--ink-soft)"}[f.type]||"var(--stamp)"; return `<div style="font-size:12.5px;font-weight:500;margin-top:10px;color:${c}">${esc(f.msg)}</div>`; })()}
+    ${(()=>{ const n=[...new Set([...listeEmails(m.to),...listeEmails(m.cc),...listeEmails(m.cci)])].length; return n?`<p style="font-size:12px;color:var(--slate);margin:8px 0 0">${n} destinataire(s) recevront ce mail.</p>`:""; })()}
+    ${S.mailSending?`<div id="mail_progress" style="font-size:12.5px;font-weight:600;margin-top:10px;color:var(--stamp)">Préparation de l'envoi…</div>`:""}
+    <div class="row-btn"><button class="btn" data-action="mail-send" ${S.mailSending?"disabled style=\"opacity:.6;cursor:default\"":""}>${S.mailSending?"Envoi en cours…":"Envoyer le mail"}</button>
+      <button class="btn ghost" data-action="mail-clear" ${S.mailSending?"disabled":""}>Effacer</button></div>
+  </div>
+
+  <div class="compose">
+    <h3 class="serif">Carnet d'adresses</h3>
+    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Choisissez d'abord le champ de destination, puis cliquez sur une adresse pour l'ajouter.</p>
+    <div class="mail-tgts">Ajouter à : ${tgtBtn("to","À")} ${tgtBtn("cc","CC")} ${tgtBtn("cci","CCI")} <span style="color:var(--slate);font-size:12px">→ champ actuel : <b style="color:var(--stamp)">${cibleNom}</b></span></div>
+    <div class="mail-manual">
+      <input class="f" id="mail_manual" placeholder="Saisir une ou plusieurs adresses à la main…" style="margin:0" onkeydown="if(event.key==='Enter'){event.preventDefault();var b=document.querySelector('[data-action=&quot;mail-add-manual&quot;]');if(b)b.click();}">
+      <button class="btn sm" data-action="mail-add-manual">Ajouter à ${cibleNom}</button>
+    </div>
+    <div id="mail_manual_err" style="display:none;color:var(--red);font-size:12px;margin:-6px 0 10px"></div>
+    ${grp("Membres du bureau", membres, membres.map(x=>x.email).join(","))}
+    ${grp("Contacts enregistrés", contacts, contacts.map(x=>x.email).join(","))}
+    ${grp("Liste de diffusion", diffusion, diffusion.map(x=>x.email).join(","))}
+    ${(!membres.length&&!contacts.length&&!diffusion.length)?`<div class="empty">Aucune adresse enregistrée pour l'instant. Saisissez-les à la main ou importez un fichier.</div>`:""}
+  </div>
+
+  <div class="compose">
+    <h3 class="serif">Importer des adresses (Excel / Google Sheets)</h3>
+    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Importez un fichier <b>.xlsx</b>, <b>.xls</b> ou <b>.csv</b> : toutes les adresses e-mail qu'il contient seront ajoutées au champ <b style="color:var(--stamp)">${cibleNom}</b>. Depuis Google Sheets : <i>Fichier → Télécharger → .xlsx ou .csv</i>, puis importez le fichier.</p>
+    <label class="btn ghost" style="cursor:pointer">Choisir un fichier à importer<input type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" data-change="mailimport" style="display:none"></label>
+  </div>
+
+  <div class="compose">
+    <h3 class="serif">Groupes d'envoi</h3>
+    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Enregistrez les destinataires actuels comme groupe réutilisable, ou chargez un groupe dans le champ <b style="color:var(--stamp)">${cibleNom}</b>.</p>
+    <div class="row-btn" style="margin:0 0 10px"><button class="btn ghost sm" data-action="mail-group-save">💾 Enregistrer les destinataires en groupe</button></div>
+    ${(S.groupes||[]).length? `<div class="mail-groupes">${(S.groupes||[]).map(g=>`<div class="mail-grp-row"><div><b>${esc(g.nom)}</b> <span style="color:var(--slate);font-size:12px">(${(g.emails||[]).length} adresse(s))</span></div><div class="mail-grp-actions"><button class="link" data-action="mail-group-load" data-id="${esc(g.id)}">charger</button><button class="link" data-action="mail-group-del" data-id="${esc(g.id)}" style="color:var(--red)">supprimer</button></div></div>`).join("")}</div>` : `<div class="empty">Aucun groupe enregistré.</div>`}
+  </div>
+
+  <div class="compose">
+    <h3 class="serif">Programmer l'envoi</h3>
+    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Renseignez d'abord destinataires, objet et message ci-dessus, puis choisissez quand l'envoyer.</p>
+    <div class="two">
+      <div><label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:0 0 2px">Date</label><input class="f" type="date" id="prog_date" data-change="progfield" data-k="date" value="${esc(S.progUI.date||"")}"></div>
+      <div><label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:0 0 2px">Heure</label><input class="f" type="time" id="prog_heure" data-change="progfield" data-k="heure" value="${esc(S.progUI.heure||"")}"></div>
+    </div>
+    <div class="row-btn"><button class="btn" data-action="mail-prog-create">Programmer cet envoi</button></div>
+    <p style="font-size:11.5px;color:var(--slate);margin:8px 0 0">L'envoi part automatiquement à l'ouverture de l'app par un membre après l'heure prévue (pas garanti à la seconde près).</p>
+    ${(()=>{ const en=(S.programmes||[]).filter(p=>p.statut==="en_attente"); return en.length? `<div class="mail-prog-list" style="margin-top:10px">${en.map(p=>{ const n=(p.dest&&((p.dest.to||[]).length+(p.dest.cc||[]).length+(p.dest.cci||[]).length))||0; return `<div class="mail-grp-row"><div><b>${esc(p.objet||"(sans objet)")}</b><br><span style="color:var(--slate);font-size:12px">${esc(fmtQuand(p.envoiAt))} · ${n} destinataire(s)</span></div><button class="link" data-action="mail-prog-cancel" data-id="${esc(p.id)}" style="color:var(--red)">annuler</button></div>`; }).join("")}</div>` : ""; })()}
+  </div>
+
+  ${(()=>{ const h=(S.journal||[]).filter(j=>String(j.txt||"").indexOf("Mail envoyé")===0).slice(0,20);
+    return `<div class="compose">
+      <h3 class="serif">Historique des envois</h3>
+      ${h.length? `<div class="mail-hist">${h.map(j=>`<div class="mail-hist-row"><span class="mail-hist-txt">${esc(j.txt)}</span><span class="mail-hist-meta">${esc(j.who||"—")} · ${esc(fmtQuand(j.ts))}</span></div>`).join("")}</div>`
+        : `<div class="empty">Aucun mail envoyé pour l'instant.</div>`}
+    </div>`; })()}`;
+}
+
+
+/* ---- onglet CALENDRIER ---- */
+function tabCalendrier(){
+  const evs=evenementsCalendrier();
+  const now=new Date();
+  let cur = S.calMonth ? new Date(S.calMonth+"-01T00:00") : new Date(now.getFullYear(), now.getMonth(), 1);
+  if(isNaN(cur.getTime())) cur=new Date(now.getFullYear(), now.getMonth(), 1);
+  const y=cur.getFullYear(), mo=cur.getMonth();
+  const first=new Date(y,mo,1); const startDow=(first.getDay()+6)%7;
+  const daysInMonth=new Date(y,mo+1,0).getDate();
+  const moLabel=cur.toLocaleDateString("fr-BE",{month:"long",year:"numeric"});
+  const key=y+"-"+String(mo+1).padStart(2,"0");
+  const byDay={}; evs.forEach(e=>{ if(e.date.slice(0,7)===key){ const d=parseInt(e.date.slice(8,10),10); (byDay[d]=byDay[d]||[]).push(e); } });
+  const todayStr=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-"+String(now.getDate()).padStart(2,"0");
+  const cells=[];
+  for(let i=0;i<startDow;i++) cells.push(`<div class="cal-cell cal-empty"></div>`);
+  for(let d=1;d<=daysInMonth;d++){
+    const ds=key+"-"+String(d).padStart(2,"0"); const list=byDay[d]||[];
+    cells.push(`<div class="cal-cell${ds===todayStr?" cal-today":""}"><div class="cal-d">${d}</div>${list.map(e=>`<div class="cal-ev-chip ${e.cls}" title="${esc(e.type+" : "+e.titre+(e.lieu?(" \u2014 "+e.lieu):""))}">${esc(e.titre)}</div>`).join("")}</div>`);
+  }
+  const prevKey=(()=>{ const p=new Date(y,mo-1,1); return p.getFullYear()+"-"+String(p.getMonth()+1).padStart(2,"0"); })();
+  const nextKey=(()=>{ const p=new Date(y,mo+1,1); return p.getFullYear()+"-"+String(p.getMonth()+1).padStart(2,"0"); })();
+  const dows=["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+  const aVenir=evs.filter(e=>e.date>=todayStr).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,10);
+  return `<div class="compose">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <h3 class="serif" style="margin:0;text-transform:capitalize">${esc(moLabel)}</h3>
+      <div class="row-btn" style="margin:0">
+        <button class="btn ghost sm" data-action="cal-nav" data-mo="${prevKey}">\u25c0</button>
+        <button class="btn ghost sm" data-action="cal-today2">Aujourd'hui</button>
+        <button class="btn ghost sm" data-action="cal-nav" data-mo="${nextKey}">\u25b6</button>
+        <button class="btn sm" data-action="cal-ics">\u2b07 Exporter (.ics)</button>
+      </div>
+    </div>
+    <div class="cal-legend"><span class="cal-ev-chip cal-reu">R\u00e9union</span><span class="cal-ev-chip cal-ev">\u00c9v\u00e9nement</span><span class="cal-ev-chip cal-tache">\u00c9ch\u00e9ance t\u00e2che</span></div>
+    <div class="cal-grid-h">${dows.map(d=>`<div>${d}</div>`).join("")}</div>
+    <div class="cal-grid">${cells.join("")}</div>
+    <p style="font-size:11.5px;color:var(--slate);margin:10px 0 0">Le calendrier reprend automatiquement vos r\u00e9unions, \u00e9v\u00e9nements et \u00e9ch\u00e9ances de t\u00e2ches. L'export .ics s'ouvre dans Google Agenda, Apple Calendrier, Outlook\u2026</p>
+  </div>
+  <div class="compose">
+    <h3 class="serif">\u00c0 venir</h3>
+    ${aVenir.length? `<div class="mail-hist">${aVenir.map(e=>`<div class="mail-hist-row"><span class="mail-hist-txt"><b>${esc(e.type)}</b> \u2014 ${esc(e.titre)}${e.lieu?` <span style="color:var(--slate)">(${esc(e.lieu)})</span>`:""}</span><span class="mail-hist-meta">${esc(fmtDateLong(e.date))}</span></div>`).join("")}</div>` : `<div class="empty">Rien de pr\u00e9vu.</div>`}
+  </div>`;
+}
+
+/* ---- onglet RGPD ---- */
+function tabRgpd(){
+  const contacts=(S.contacts||[]);
+  const desab=[...(S.desabonnes||new Set())];
+  return `<div class="compose">
+    <h3 class="serif">Mentions l\u00e9gales</h3>
+    <p style="font-size:13.5px;line-height:1.65;color:var(--ink)">Ce service est \u00e9dit\u00e9 par le <b>Bureau \u00e9tudiant de la Facult\u00e9 de Droit et de Criminologie</b> \u00e0 des fins d'organisation interne. Responsable du traitement des donn\u00e9es : le Bureau \u00e9tudiant. Pour toute question relative \u00e0 vos donn\u00e9es personnelles, vous pouvez contacter le bureau.</p>
+  </div>
+  <div class="compose">
+    <h3 class="serif">Politique de confidentialit\u00e9</h3>
+    <div style="font-size:13.5px;line-height:1.65;color:var(--ink)">
+      <p><b>Donn\u00e9es trait\u00e9es.</b> Noms, adresses e-mail et coordonn\u00e9es des membres et contacts, dans le seul but d'organiser les activit\u00e9s du bureau (r\u00e9unions, \u00e9v\u00e9nements, communications).</p>
+      <p><b>Base l\u00e9gale.</b> Int\u00e9r\u00eat l\u00e9gitime du bureau \u00e0 communiquer avec ses membres, et consentement pour les contacts externes.</p>
+      <p><b>Conservation.</b> Les donn\u00e9es sont conserv\u00e9es le temps du mandat, puis supprim\u00e9es ou anonymis\u00e9es.</p>
+      <p><b>Vos droits.</b> Acc\u00e8s, rectification, suppression et opposition. Chaque e-mail contient un lien de d\u00e9sabonnement ; vous pouvez aussi demander la suppression de vos donn\u00e9es au bureau.</p>
+      <p><b>Partage.</b> Les donn\u00e9es ne sont ni vendues ni c\u00e9d\u00e9es \u00e0 des tiers, hormis les prestataires techniques strictement n\u00e9cessaires (h\u00e9bergement, envoi d'e-mails).</p>
+    </div>
+  </div>
+  <div class="compose">
+    <h3 class="serif">Export / suppression des donn\u00e9es d'un contact</h3>
+    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Exercez les droits d'acc\u00e8s (export du dossier) et de suppression pour un contact enregistr\u00e9.</p>
+    ${contacts.length? `<div class="mail-hist">${contacts.map(c=>`<div class="mail-hist-row"><span class="mail-hist-txt"><b>${esc(c.nom||"\u2014")}</b>${c.email?` <span style="color:var(--slate)">${esc(c.email)}</span>`:""}</span><span class="mail-grp-actions"><button class="link" data-action="rgpd-export" data-id="${esc(c.id)}">exporter</button><button class="link" data-action="contact-del" data-id="${esc(c.id)}" style="color:var(--red)">supprimer</button></span></div>`).join("")}</div>` : `<div class="empty">Aucun contact enregistr\u00e9.</div>`}
+  </div>
+  <div class="compose">
+    <h3 class="serif">D\u00e9sabonn\u00e9s</h3>
+    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Ces adresses se sont d\u00e9sabonn\u00e9es ; elles sont automatiquement exclues de tous les envois.</p>
+    ${desab.length? `<div class="mail-chips">${desab.map(e=>`<span class="mail-chip" style="cursor:default">${esc(e)}</span>`).join("")}</div>` : `<div class="empty">Aucun d\u00e9sabonn\u00e9.</div>`}
+  </div>`;
+}
+
 /* ---- pseudo-onglet NOTIFICATIONS (à traiter) ---- */
 function tabNotifs(){
   const owner=S.session.role==="owner";
@@ -1186,6 +1615,13 @@ document.addEventListener("change", e=>{
   if(el.dataset.change==="evfield"){ const ev=(S.evenements||[]).find(x=>x.id===(S.evUI&&S.evUI.sel)); if(ev){ ev[el.dataset.field]=el.value; if(sb){ const col=({budgetPrevu:"budget_prevu",budgetReel:"budget_reel"})[el.dataset.field]||el.dataset.field; const v=(col==="budget_prevu"||col==="budget_reel")?(parseFloat(String(el.value).replace(",","."))||0):el.value; sb.from("ca_evenements").update({[col]:v}).eq("id",ev.id); } } return; }
   if(el.dataset.change==="reunote"){ if(!estSecretaire()) return; const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(m){ const pt=(m.ordre||[]).find(p=>p.id===el.dataset.pt); if(pt){ pt.notes=el.value; if(sb) sb.from("ca_reunions").update({ordre:m.ordre}).eq("id",m.id); } } return; }
   if(el.dataset.change==="msgfile"){ S.msgUI=S.msgUI||{sel:null,draft:"",file:null}; S.msgUI.draft=val("msg_txt"); const fl=el.files&&el.files[0]; S.msgUI.file=fl||null; render(); return; }
+  if(el.dataset.change==="mailfield"){ S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; S.mailUI[el.dataset.k]=el.value; S.mailFlash=null; persistMailDraft(); return; }
+  if(el.dataset.change==="mailattach"){ const fl=el.files&&el.files[0]; if(!fl) return; captureMailFields(); if(fl.size>15*1024*1024){ if(window.alert) window.alert("Fichier trop volumineux (max 15 Mo)."); el.value=""; return; } S.mailUI.pieceFile=fl; S.mailUI.pieceName=fl.name; S.mailFlash=null; render(); return; }
+  if(el.dataset.change==="progfield"){ S.progUI=S.progUI||{date:"",heure:""}; S.progUI[el.dataset.k]=el.value; return; }
+  if(el.dataset.change==="mailimport"){ const fl=el.files&&el.files[0]; if(!fl) return; captureMailFields(); const tgt=(S.mailUI.target)||"to"; const tgtNom={to:"À",cc:"CC",cci:"CCI"}[tgt];
+    extraireEmailsDepuisFichier(fl).then(list=>{ if(!list.length){ if(window.alert) window.alert("Aucune adresse e-mail trouvée dans ce fichier."); return; } const avant=compterEmails(S.mailUI[tgt]); ajouterEmailsChamp(tgt,list); const apres=compterEmails(S.mailUI[tgt]); persistMailDraft(); render(); if(window.alert) window.alert((apres-avant)+" adresse(s) ajoutée(s) au champ « "+tgtNom+" » ("+list.length+" trouvée(s) dans le fichier)."); })
+      .catch(()=>{ if(window.alert) window.alert("Impossible de lire ce fichier. Formats acceptés : .xlsx, .xls, .csv"); });
+    el.value=""; return; }
   if(el.dataset.change==="docreplace"){ const fl=el.files&&el.files[0]; const did=el.dataset.id; if(!fl||!did||!sb) return; const d=(S.docs||[]).find(x=>x.id===did); if(!d) return; const meId=S.session&&S.session.id; if(!(((S.session&&S.session.role==="owner"))||d.cree_par_id===meId)) return; (async()=>{ const safe=fl.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=uid()+"-"+safe; const up=await sb.storage.from("ca-documents").upload(path,fl); if(up&&up.error){ if(window.alert) window.alert("Échec du remplacement : "+up.error.message); return; } const oldPath=d.chemin; const r=await sb.from("ca_docs").update({chemin:path}).eq("id",did); if(r&&r.error){ if(window.alert) window.alert("Mise à jour impossible : "+r.error.message); return; } try{ if(oldPath) await sb.storage.from("ca-documents").remove([oldPath]); }catch(e){} await loadDocs(); render(); })(); return; }
 });
 document.addEventListener("click", async e=>{
@@ -1245,6 +1681,74 @@ document.addEventListener("click", async e=>{
     case "ev-toggleitem": { const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev||!sb) break; ev.checklist=(ev.checklist||[]).map(c=>c.id===el.dataset.it?{...c,fait:!c.fait}:c); await sb.from("ca_evenements").update({checklist:ev.checklist}).eq("id",ev.id); render(); break; }
     case "ev-delitem": { const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev||!sb) break; ev.checklist=(ev.checklist||[]).filter(c=>c.id!==el.dataset.it); await sb.from("ca_evenements").update({checklist:ev.checklist}).eq("id",ev.id); render(); break; }
     case "contact-add": { const n=val("c_nom").trim(); if(!n) break; if(!sb) break; await sb.from("ca_contacts").insert({nom:n,type:val("c_type"),email:val("c_email").trim(),tel:val("c_tel").trim(),notes:val("c_notes").trim()}); await loadContacts(); render(); break; }
+    case "mail-target": { S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; captureMailFields(); S.mailUI.target=el.dataset.tgt||"to"; render(); break; }
+    case "mail-template": { S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; captureMailFields(); const t=MAIL_TEMPLATES[parseInt(el.dataset.tpl,10)]; if(!t) break;
+      if((String(S.mailUI.objet||"").trim() || String(S.mailUI.corps||"").trim()) && window.confirm && !window.confirm("Remplacer l'objet et le message actuels par le modèle « "+t.nom+" » ?")) break;
+      S.mailUI.objet=t.objet; S.mailUI.corps=t.corps; S.mailFlash=null; persistMailDraft(); render(); break; }
+    case "mail-attach-clear": { if(S.mailUI){ S.mailUI.pieceFile=null; S.mailUI.pieceName=""; } render(); break; }
+    case "mail-group-save": { captureMailFields(); const emails=[...new Set([...listeEmails(S.mailUI.to),...listeEmails(S.mailUI.cc),...listeEmails(S.mailUI.cci)])];
+      if(!emails.length){ if(window.alert) window.alert("Ajoutez d'abord des destinataires (À, CC ou CCI) avant d'enregistrer un groupe."); break; }
+      const nom=window.prompt? window.prompt("Nom du groupe :",""):""; if(!nom||!nom.trim()) break;
+      if(sb){ try{ await sb.from("ca_mail_groupes").insert({nom:nom.trim(),emails:emails}); await loadGroupes(); }catch(e){ if(window.alert) window.alert("Impossible d'enregistrer le groupe (table manquante ?)."); } }
+      render(); break; }
+    case "mail-group-load": { const g=(S.groupes||[]).find(x=>x.id===el.dataset.id); if(!g) break; captureMailFields(); const tgt=(S.mailUI&&S.mailUI.target)||"to"; ajouterEmailsChamp(tgt, g.emails||[]); persistMailDraft(); render(); break; }
+    case "mail-group-del": { if(!sb) break; if(window.confirm && !window.confirm("Supprimer ce groupe ?")) break; try{ await sb.from("ca_mail_groupes").delete().eq("id",el.dataset.id); await loadGroupes(); }catch(e){} render(); break; }
+    case "mail-prog-create": { captureMailFields(); const mu=S.mailUI; const toL=listeEmails(mu.to),ccL=listeEmails(mu.cc),cciL=listeEmails(mu.cci);
+      if(!toL.length&&!ccL.length&&!cciL.length){ S.mailFlash={type:"err",msg:"Ajoutez au moins un destinataire avant de programmer."}; render(); break; }
+      if(!String(mu.objet||"").trim()||!String(mu.corps||"").trim()){ S.mailFlash={type:"err",msg:"Renseignez l'objet et le message avant de programmer."}; render(); break; }
+      const pu=S.progUI||{}; if(!pu.date||!pu.heure){ S.mailFlash={type:"err",msg:"Choisissez une date et une heure d'envoi."}; render(); break; }
+      const when=new Date(pu.date+"T"+pu.heure); if(isNaN(when.getTime())||when.getTime()<=Date.now()){ S.mailFlash={type:"err",msg:"La date/heure doit être dans le futur."}; render(); break; }
+      if(!sb){ break; }
+      try{ await sb.from("ca_mail_programmes").insert({destinataires:{to:toL,cc:ccL,cci:cciL},objet:mu.objet.trim(),corps:mu.corps,envoi_at:when.toISOString(),statut:"en_attente",cree_par:(me&&me.id)||null});
+        await loadProgrammes(); clearMailDraft(); S.mailUI={to:"",cc:"",cci:"",objet:"",corps:"",target:mu.target}; S.progUI={date:"",heure:""}; S.mailFlash={type:"ok",msg:"✓ Envoi programmé pour le "+fmtQuand(when.toISOString())+"."};
+      }catch(e){ S.mailFlash={type:"err",msg:"Impossible de programmer (table manquante ?)."}; }
+      render(); break; }
+    case "mail-prog-cancel": { if(!sb) break; if(window.confirm && !window.confirm("Annuler cet envoi programmé ?")) break; try{ await sb.from("ca_mail_programmes").delete().eq("id",el.dataset.id); await loadProgrammes(); }catch(e){} render(); break; }
+    case "cal-nav": { S.calMonth=el.dataset.mo; render(); break; }
+    case "cal-today2": { S.calMonth=null; render(); break; }
+    case "cal-ics": { telechargerICS(); break; }
+    case "rgpd-export": { const c=(S.contacts||[]).find(x=>x.id===el.dataset.id); if(!c) break; telechargerJSON("contact-"+(c.nom||"donnees").replace(/[^a-zA-Z0-9]/g,"_")+".json", c); break; }
+    case "mail-chip": { S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; captureMailFields(); const tgt=S.mailUI.target||"to"; ajouterEmailsChamp(tgt, listeEmails(el.dataset.email)); persistMailDraft(); render(); break; }
+    case "mail-add-manual": { S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; captureMailFields(); const brut=val("mail_manual"); const emails=listeEmails(brut); const err=document.getElementById("mail_manual_err"); const tgt=S.mailUI.target||"to";
+      if(!emails.length){ if(err){ err.style.display="block"; err.textContent=String(brut||"").trim()?"Adresse e-mail invalide (format attendu : nom@domaine.be).":"Saisissez au moins une adresse."; } break; }
+      ajouterEmailsChamp(tgt, emails); persistMailDraft(); render(); break; }
+    case "mail-clear": { clearMailDraft(); S.mailUI={to:"",cc:"",cci:"",objet:"",corps:"",target:(S.mailUI&&S.mailUI.target)||"to"}; render(); break; }
+    case "mail-send": {
+      if(S.mailSending) break;                       // verrou anti double-clic
+      captureMailFields(); const mu=S.mailUI;
+      const toL=listeEmails(mu.to), ccL=listeEmails(mu.cc), cciL=listeEmails(mu.cci);
+      const flash=(type,msg)=>{ S.mailFlash={type,msg}; };
+      if(!toL.length && !ccL.length && !cciL.length){ flash("err","Ajoutez au moins un destinataire (À, CC ou CCI)."); render(); break; }
+      if(!String(mu.objet||"").trim()){ flash("err","Indiquez un objet."); render(); break; }
+      if(!String(mu.corps||"").trim()){ flash("err","Écrivez le message."); render(); break; }
+      const total=[...new Set([...toL,...ccL,...cciL])].length;
+      if(total>=5 && window.confirm && !window.confirm("Envoyer ce mail à "+total+" destinataire(s) ?")){ break; }
+      S.mailSending=true; S.mailFlash=null; render();
+      // 1) Pièce jointe éventuelle : upload dans le stockage, puis lien signé (7 jours) inséré dans le mail.
+      let lienPiece="", nomPiece="";
+      if(mu.pieceFile && sb){
+        try{
+          const p=document.getElementById("mail_progress"); if(p) p.textContent="Envoi de la pièce jointe…";
+          const safe=mu.pieceFile.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=uid()+"-"+safe;
+          const up=await sb.storage.from("ca-documents").upload(path, mu.pieceFile);
+          if(up && up.error){ throw up.error; }
+          const su=await sb.storage.from("ca-documents").createSignedUrl(path, 604800);
+          if(su && su.data && su.data.signedUrl){ lienPiece=su.data.signedUrl; nomPiece=mu.pieceFile.name; }
+        }catch(e){ S.mailSending=false; S.mailFlash={type:"err",msg:"Échec de l'envoi de la pièce jointe. Réessayez ou retirez le fichier."}; render(); break; }
+      }
+      const onProg=(i,n)=>{ const p=document.getElementById("mail_progress"); if(p) p.textContent="Envoi… "+i+" / "+n+" destinataire(s)"; };
+      let res;
+      try{ res=await envoyerMailComposeCA({toList:toL, ccList:ccL, bccList:cciL, objet:mu.objet.trim(), corpsTexte:mu.corps, lienPiece:lienPiece, nomPiece:nomPiece}, onProg); }
+      catch(e){ res={ok:0,err:total,total:total}; }
+      S.mailSending=false;
+      try{ logAct("Mail envoyé : « "+mu.objet.trim()+" » à "+res.total+" destinataire(s)"+(nomPiece?" (+ pièce jointe)":"")); }catch(e){}
+      const suffixe = (res.desabonnes? " ("+res.desabonnes+" désabonné(s) exclu(s))":"");
+      if(res.total===0){ S.mailFlash={type:"warn",msg:"Aucun envoi : tous les destinataires sont désabonnés."}; }
+      else if(res.err && !res.ok){ S.mailFlash={type:"err",msg:"Échec de l'envoi. Vérifiez la connexion et réessayez."}; }
+      else if(res.err){ S.mailFlash={type:"warn",msg:res.ok+" mail(s) envoyé(s), "+res.err+" échec(s)."+suffixe}; clearMailDraft(); S.mailUI={to:"",cc:"",cci:"",objet:"",corps:"",target:mu.target}; }
+      else { S.mailFlash={type:"ok",msg:"✓ Mail envoyé à "+res.total+" destinataire(s)."+suffixe}; clearMailDraft(); S.mailUI={to:"",cc:"",cci:"",objet:"",corps:"",target:mu.target}; }
+      render();
+      break; }
     case "contact-del": if(!sb) break; await sb.from("ca_contacts").delete().eq("id",el.dataset.id); await loadContacts(); render(); break;
     case "reu-create": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut créer une réunion."); break; } const t=val("reu_titre").trim(), dt=val("reu_date"); if(!t||!sb) break; const lieu=val("reu_lieu")||null;
       const mod=document.getElementById("reu_modele");
@@ -1510,7 +2014,7 @@ ${sections||"<p>Aucun retour.</p>"}
       if(window.confirm && !window.confirm("Révoquer le compte de "+label+" ?")) break;
       try{ await sb.from("ca_membres").delete().eq("id",id); }catch(e){} await loadAccounts(); render(); break;
     }
-    case "set-tab": S.tab=el.dataset.tab; if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
+    case "set-tab": S.tab=el.dataset.tab; S.mailFlash=null; if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
     /* organigramme */
     case "edit-poste": S.editPoste=id; render(); break;
     case "cancel-edit": S.editPoste=null; render(); break;
@@ -1603,7 +2107,12 @@ ${sections||"<p>Aucun retour.</p>"}
   }
 });
 
-async function boot(){ if(!sb){ render(); return; } try{ await refreshSession(); }catch(e){} render(); try{ sb.auth.onAuthStateChange(async ()=>{ await refreshSession(); render(); }); }catch(e){} }
+async function boot(){
+  try{ const params=new URLSearchParams(location.search); if(params.get("desabo")!=null){ await pageDesabo(params.get("desabo")); return; } }catch(e){}
+  if(!sb){ render(); return; }
+  try{ await refreshSession(); }catch(e){} render();
+  if(S.session){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") render(); }).catch(()=>{}); traiterRappels().catch(()=>{}); }
+  try{ sb.auth.onAuthStateChange(async ()=>{ await refreshSession(); render(); }); }catch(e){} }
 boot();
 
 </script>
