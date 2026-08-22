@@ -444,7 +444,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-08-22 \u00b7 18h50";
+const CA_VERSION="2026-08-22 \u00b7 19h15";
 function caAppUrl(){ return window.location.origin + window.location.pathname; }
 function secretairesExtra(){ return (S.meta && Array.isArray(S.meta.secretaires)) ? S.meta.secretaires : []; }
 function estPresidente(){ const u=S.session; if(!u) return false; return String(u.fonction||"").toLowerCase().indexOf("pr\u00e9sident")===0 || String(u.fonction||"").toLowerCase().indexOf("president")===0; }
@@ -968,7 +968,8 @@ const val = id => { const e=document.getElementById(id); return e ? e.value : ""
 
 /* ============================ RENDU ============================ */
 const root = () => document.getElementById("root");
-function render(){ if(S.recovery){ root().innerHTML = viewNewPwd(); return; } root().innerHTML = S.view==="home" ? viewHome() : S.view==="admin" ? viewAdmin() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.needProfile ? viewCompleteProfile() : viewAuth()) : (S.session.statut==="attente" ? viewPending() : viewDash())); }
+function renderVue(){ return S.view==="home" && !S.goto ? viewHome() : S.view==="admin" ? viewAdmin() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.needProfile ? viewCompleteProfile() : viewAuth()) : (S.session.statut==="attente" ? viewPending() : viewDash())); }
+function render(){ if(S.recovery){ root().innerHTML = viewNewPwd(); return; } root().innerHTML = renderVue(); }
 function viewNewPwd(){
   return `<div class="auth-wrap"><div class="auth">
     <div class="top"><span class="eyebrow">${esc(S.meta.nom||"Bureau étudiant")} · CA</span><button class="link" data-action="go-home">← Accueil</button></div>
@@ -2228,7 +2229,7 @@ document.addEventListener("click", async e=>{
   switch(a){
     case "open-caisse": if(S.meta.caisseUrl){ window.open(S.meta.caisseUrl,"_blank","noopener"); } else { S.showCfg=true; render(); } break;
     case "go-ca": S.view="ca"; render(); break;
-    case "go-home": S.view="home"; render(); break;
+    case "go-home": S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } S.view="home"; render(); break;
     case "toggle-cfg": S.showCfg=!S.showCfg; render(); break;
     case "save-caisse": { let u=val("cfgUrl").trim(); if(u&&!/^https?:\/\//i.test(u)) u="https://"+u; S.meta.caisseUrl=u; persist("meta"); S.showCfg=false; render(); break; }
     case "set-mode": S.authMode=el.dataset.mode; render(); break;
@@ -2240,10 +2241,13 @@ document.addEventListener("click", async e=>{
       if(pwd.length<8) return authErr("Le mot de passe doit faire au moins 8 caractères.");
       if(!sb) return authErr("Connexion au serveur indisponible. Réessayez.");
       authErr("Création du compte en cours…");
-      const { data, error } = await sb.auth.signUp({ email:email, password:pwd, options:{ data:{ prenom:prenom, nom:nom, fonction:fonction } } });
+      const { data, error } = await sb.auth.signUp({ email:email, password:pwd, options:{ emailRedirectTo: caAppUrl()+(S.goto==="coopte"?"?go=coopte":""), data:{ prenom:prenom, nom:nom, fonction:fonction, via_code:(S.goto==="coopte"?String(S.viaCode||"(sans code)"):null) } } });
       if(error){ return authErr(/already|registered|exists/i.test(error.message)?"Un compte existe déjà avec cet e-mail.":("Erreur : "+error.message)); }
       const user=data&&data.user;
-      if(user){ const extra = (S.goto==="coopte") ? { via_code: String(S.viaCode||"(sans code)") } : {}; const r2=await sb.from("ca_membres").insert(Object.assign({ id:user.id, prenom:prenom, nom:nom, fonction:fonction }, extra)); if(r2 && r2.error && !/duplicate|already/i.test(r2.error.message)) return authErr("Compte créé, mais profil non enregistré : "+r2.error.message); }
+      if(user){ const extra = (S.goto==="coopte") ? { via_code: String(S.viaCode||"(sans code)") } : {};
+        /* Le profil est normalement cree par le declencheur ca_on_new_user cote base.
+           Cet insert n'est qu'un filet quand la session existe deja ; son echec est sans consequence. */
+        try{ await sb.from("ca_membres").insert(Object.assign({ id:user.id, prenom:prenom, nom:nom, fonction:fonction }, extra)); }catch(_){ } }
       try{ await mailInscriptionRecue(email, prenom, S.goto==="coopte"); }catch(e){}
       await refreshSession(); render(); break;
     }
@@ -2945,11 +2949,21 @@ async function boot(){
   /* Lien de participation : ?go=bilan mène à l'onglet Bilans moraux, après connexion. */
   try{ const params=new URLSearchParams(location.search); const g=params.get("go");
     const c=params.get("c");
+    const retourAuth = /access_token|type=signup|type=magiclink|type=invite/.test(String(location.hash||""));
     if(g){ S.goto=g; S.view="ca"; try{ sessionStorage.setItem("ca:goto",g); }catch(_){ } }
-    else { try{ const m=sessionStorage.getItem("ca:goto"); if(m){ S.goto=m; S.view="ca"; } }catch(_){ } }
+    else if(retourAuth){
+      /* Uniquement au retour du lien de confirmation : sinon l'adresse normale
+         doit afficher la page d'accueil Caisse / CA. */
+      try{ const m=sessionStorage.getItem("ca:goto"); if(m){ S.goto=m; S.view="ca"; } }catch(_){ }
+    }
     if(g==="coopte"){ S.authMode="signup"; }
     if(c){ S.viaCode=c; try{ sessionStorage.setItem("ca:c",c); }catch(_){ } }
-    else { try{ const m=sessionStorage.getItem("ca:c"); if(m) S.viaCode=m; }catch(_){ } }
+    else if(retourAuth){ try{ const m=sessionStorage.getItem("ca:c"); if(m) S.viaCode=m; }catch(_){ } }
+  }catch(e){}
+  /* Retour depuis le lien de confirmation d'e-mail : Supabase renvoie sur la racine,
+     on repart directement dans l'espace CA plutot que sur la page d'accueil. */
+  try{ const h=String(location.hash||"");
+    if(/access_token|type=signup|type=magiclink|type=invite/.test(h)) S.view="ca";
   }catch(e){}
   if(!sb){ render(); return; }
   try{ const h=String(location.hash||""); if(/type=recovery/.test(h)||/[?&]type=recovery/.test(location.search)){ S.recovery=true; } }catch(e){}
