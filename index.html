@@ -284,6 +284,15 @@ select.f{width:100%}
   .cols,.two,.stat-row{grid-template-columns:1fr}
   .body{padding:20px 16px 50px}.hd{padding:18px 16px 0}
 }
+
+/* Modale maison (remplace window.alert pour le partage de lien) */
+.ca-mod{position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px;backdrop-filter:blur(3px)}
+.ca-mod-box{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:460px;width:100%;padding:22px;box-shadow:0 18px 50px rgba(0,0,0,.55)}
+.ca-mod-box h3{font-family:'Fraunces',Georgia,serif;margin:0 0 6px;font-size:19px;color:var(--ink)}
+.ca-mod-box p{margin:0 0 12px;font-size:13px;color:var(--ink-soft);line-height:1.6}
+.ca-mod-lien{display:block;width:100%;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:11px;font-size:12.5px;color:var(--stamp);word-break:break-all;font-family:ui-monospace,monospace;margin:0 0 14px}
+.ca-mod-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.ca-mod-ok{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--green);margin:0 0 12px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -391,6 +400,32 @@ async function caSendHeaders(){
   let tok=SB_KEY;
   try{ const {data}=await sb.auth.getSession(); if(data&&data.session&&data.session.access_token) tok=data.session.access_token; }catch(e){}
   return {"Content-Type":"application/json","Authorization":"Bearer "+tok,"apikey":SB_KEY};
+}
+/* Fenetre maison pour partager un lien, a la place de window.alert. */
+function modaleLien(titre, texte, lien, copie){
+  const anc=document.getElementById("ca_modal"); if(anc) anc.remove();
+  const d=document.createElement("div");
+  d.id="ca_modal"; d.className="ca-mod";
+  d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true">'
+    +'<h3>'+esc(titre)+'</h3>'
+    +'<p>'+esc(texte)+'</p>'
+    +(copie?'<p class="ca-mod-ok">\u2713 Lien copi\u00e9 dans le presse-papier</p>':"")
+    +'<div class="ca-mod-lien" id="ca_modal_lien">'+esc(lien)+'</div>'
+    +'<div class="ca-mod-btns">'
+    +'<button class="btn ghost sm" id="ca_modal_copy">Copier \u00e0 nouveau</button>'
+    +'<button class="btn sm" id="ca_modal_close">Fermer</button>'
+    +'</div></div>';
+  document.body.appendChild(d);
+  const fermer=()=>d.remove();
+  d.addEventListener("click",e=>{ if(e.target===d) fermer(); });
+  d.querySelector("#ca_modal_close").addEventListener("click",fermer);
+  d.querySelector("#ca_modal_copy").addEventListener("click",async()=>{
+    let ok=false;
+    try{ if(navigator.clipboard&&navigator.clipboard.writeText){ await navigator.clipboard.writeText(lien); ok=true; } }catch(_){ }
+    if(!ok){ try{ const t=document.createElement("textarea"); t.value=lien; document.body.appendChild(t); t.select(); ok=document.execCommand("copy"); t.remove(); }catch(_){ } }
+    const b=d.querySelector("#ca_modal_copy"); if(b) b.textContent=ok?"\u2713 Copi\u00e9":"Copie impossible";
+  });
+  document.addEventListener("keydown",function esc2(e){ if(e.key==="Escape"){ fermer(); document.removeEventListener("keydown",esc2); } });
 }
 function caAppUrl(){ return window.location.origin + window.location.pathname; }
 function secretairesExtra(){ return (S.meta && Array.isArray(S.meta.secretaires)) ? S.meta.secretaires : []; }
@@ -1083,7 +1118,19 @@ function viewHome(){
 
 /* ---- AUTH ---- */
 function viewAuth(){
-  const card = S.authMode==="signup" ? `
+  const coopte = S.goto==="coopte";
+  const card = (S.authMode==="signup" && coopte) ? `
+    <h2 class="serif">Rejoindre comme coopt\u00e9\u00b7e</h2>
+    <p class="hint">Vous n'\u00eates pas membre du conseil : vous aurez acc\u00e8s \u00e0 l'agenda des \u00e9v\u00e9nements et \u00e0 l'espace o\u00f9 d\u00e9poser vos avis et vos id\u00e9es. Vous ne prenez pas part aux d\u00e9cisions du CA.</p>
+    <p class="hint" style="background:#fff8e1;border:1px solid #f0d68a;border-radius:8px;padding:10px;margin:8px 0"><b>Pensez \u00e0 v\u00e9rifier vos spams</b> : le message de confirmation et celui de validation y atterrissent souvent.</p>
+    <label>Nom</label><input class="f" id="au_nom" placeholder="Ex. Drissi">
+    <label>Pr\u00e9nom</label><input class="f" id="au_prenom" placeholder="Ex. Rania">
+    <label>Adresse e-mail</label><input class="f" id="au_email" type="email" placeholder="prenom.nom@exemple.com" autocapitalize="none">
+    <label>Mot de passe</label><input class="f" id="au_pwd" type="password" placeholder="8 caract\u00e8res minimum">
+    <p class="err" id="au_err" style="display:none"></p>
+    <button class="btn" data-action="signup">Cr\u00e9er mon compte</button>
+    <p class="swap">D\u00e9j\u00e0 un compte ? <button data-action="set-mode" data-mode="login">Se connecter</button></p>`
+  : S.authMode==="signup" ? `
     <h2 class="serif">Créer un compte</h2>
     <p class="hint">Votre inscription devra être validée par le propriétaire du bureau avant de pouvoir entrer.</p><p class="hint" style="background:#fff8e1;border:1px solid #f0d68a;border-radius:8px;padding:10px;margin:8px 0"><b>Pensez à vérifier vos spams</b> : le message de confirmation et celui de validation y atterrissent souvent.</p>
     <label>Nom</label><input class="f" id="au_nom" placeholder="Ex. Drissi">
@@ -1106,9 +1153,9 @@ function viewAuth(){
   return `<div class="auth-wrap"><div class="auth">
     <div class="top"><span class="eyebrow">${esc(S.meta.nom||"Bureau étudiant")} · CA</span>
       <span style="display:flex;gap:10px;align-items:center"><button class="home-admin" data-action="go-admin" style="position:static">⚙︎ Admin</button><button class="link" data-action="go-home">← Accueil</button></span></div>
-    <h1 class="serif">Espace CA</h1>
-    <p class="lead">Réservé aux responsables. Chaque action est enregistrée au nom de l’admin connecté.</p>
-    <div class="banner" style="margin:0 0 14px"><span class="dot" style="background:var(--stamp)"></span>Vous avez déjà un compte pour la Caisse ? Pas besoin d'en créer un : connectez-vous avec le même e-mail et le même mot de passe.</div>
+    <h1 class="serif">${coopte?"Espace coopté·es":"Espace CA"}</h1>
+    <p class="lead">${coopte?"Bureau étudiant — espace réservé aux personnes cooptées par le conseil.":"Réservé aux responsables. Chaque action est enregistrée au nom de l’admin connecté."}</p>
+    ${coopte?"":`<div class="banner" style="margin:0 0 14px"><span class="dot" style="background:var(--stamp)"></span>Vous avez déjà un compte pour la Caisse ? Pas besoin d'en créer un : connectez-vous avec le même e-mail et le même mot de passe.</div>`}
     ${S.goto==="coopte"?`<div class="banner" style="margin:0 0 14px;border-color:var(--or,#c9a227)"><span class="dot" style="background:var(--or,#c9a227)"></span>Vous suivez le <b>lien des coopté·es</b>. Créez votre compte : vous pourrez déposer vos avis et vos idées à l'attention du CA. Vous ne participez pas aux décisions (ni votes, ni présences, ni bilans moraux). Votre accès doit être validé par le bureau.</div>`:""}
     ${S.goto==="bilan"?`<div class="banner" style="margin:0 0 14px;border-color:var(--or,#c9a227)"><span class="dot" style="background:var(--or,#c9a227)"></span>Vous suivez le lien des <b>bilans moraux</b>. Seuls les membres du CA inscrits et validés peuvent y participer : connectez-vous, ou créez un compte ci-dessous — vous serez redirigé vers les bilans une fois validé.</div>`:""}
     <div class="auth-card">${card}</div>
@@ -2161,7 +2208,7 @@ document.addEventListener("click", async e=>{
     case "save-caisse": { let u=val("cfgUrl").trim(); if(u&&!/^https?:\/\//i.test(u)) u="https://"+u; S.meta.caisseUrl=u; persist("meta"); S.showCfg=false; render(); break; }
     case "set-mode": S.authMode=el.dataset.mode; render(); break;
     case "signup": {
-      const nom=val("au_nom").trim(), prenom=val("au_prenom").trim(), fonction=val("au_fonction"), email=normId(val("au_email")), pwd=val("au_pwd");
+      const nom=val("au_nom").trim(), prenom=val("au_prenom").trim(), fonction=(S.goto==="coopte"?"Coopt\u00e9\u00b7e":val("au_fonction")), email=normId(val("au_email")), pwd=val("au_pwd");
       if(!nom||!prenom) return authErr("Indiquez votre nom et votre prénom.");
       if(!fonction) return authErr("Choisissez votre fonction.");
       if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return authErr("Adresse e-mail invalide.");
@@ -2428,7 +2475,9 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       let copie=false;
       try{ if(navigator.clipboard&&navigator.clipboard.writeText){ await navigator.clipboard.writeText(lien); copie=true; } }catch(_){ }
       if(!copie){ try{ const t=document.createElement("textarea"); t.value=lien; document.body.appendChild(t); t.select(); copie=document.execCommand("copy"); t.remove(); }catch(_){ } }
-      if(window.alert) window.alert((copie?"Lien copi\u00e9 :\n":"Copiez ce lien :\n")+lien);
+      modaleLien("Lien d'invitation \u2014 coopt\u00e9\u00b7es",
+        "\u00c0 transmettre \u00e0 la personne coopt\u00e9e. Elle cr\u00e9e son compte, puis le propri\u00e9taire valide son acc\u00e8s.",
+        lien, copie);
       render(); break; }
     case "coopte-newcode": {
       if(!peutGererCooptes()||!sb) break;
@@ -2450,7 +2499,9 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       let copie=false;
       try{ if(navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(lien); copie=true; } }catch(_){ }
       if(!copie){ try{ const t=document.createElement("textarea"); t.value=lien; document.body.appendChild(t); t.select(); copie=document.execCommand("copy"); t.remove(); }catch(_){ } }
-      if(window.alert) window.alert(copie ? ("Lien copié :\n"+lien) : ("Copiez ce lien :\n"+lien));
+      modaleLien("Lien de participation \u2014 bilans moraux",
+        "\u00c0 diffuser dans le groupe. Il ouvre directement les bilans moraux ; seuls les membres inscrits et valid\u00e9s peuvent y participer.",
+        lien, copie);
       break; }
     case "bilan-relance": {
       if(!(estSecretaire()||(S.session&&S.session.role==="owner"))||!sb) break;
