@@ -444,7 +444,32 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-08-22 \u00b7 19h15";
+const CA_VERSION="2026-08-22 \u00b7 21h20";
+/* Confirmation maison. Asynchrone : les actions du menu sont deja async,
+   on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
+function modaleConfirm(texte, titre){
+  return new Promise(resolve=>{
+    const anc=document.getElementById("ca_modal_ask"); if(anc) anc.remove();
+    const d=document.createElement("div");
+    d.id="ca_modal_ask"; d.className="ca-mod";
+    d.innerHTML='<div class="ca-mod-box" role="alertdialog" aria-modal="true">'
+      +'<h3>'+esc(titre||"Confirmer")+'</h3>'
+      +'<p style="color:var(--ink);font-size:14px;white-space:pre-wrap">'+esc(texte)+'</p>'
+      +'<div class="ca-mod-btns">'
+      +'<button class="btn ghost sm" id="ca_ask_no">Annuler</button>'
+      +'<button class="btn sm" id="ca_ask_yes">Confirmer</button>'
+      +'</div></div>';
+    document.body.appendChild(d);
+    let fini=false;
+    const rep=v=>{ if(fini) return; fini=true; d.remove(); document.removeEventListener("keydown",k); resolve(v); };
+    function k(e){ if(e.key==="Escape") rep(false); if(e.key==="Enter") rep(true); }
+    document.addEventListener("keydown",k);
+    d.addEventListener("click",e=>{ if(e.target===d) rep(false); });
+    const oui=d.querySelector("#ca_ask_yes"), non=d.querySelector("#ca_ask_no");
+    if(oui){ oui.addEventListener("click",()=>rep(true)); try{ oui.focus(); }catch(_){ } }
+    if(non) non.addEventListener("click",()=>rep(false));
+  });
+}
 function caAppUrl(){ return window.location.origin + window.location.pathname; }
 function secretairesExtra(){ return (S.meta && Array.isArray(S.meta.secretaires)) ? S.meta.secretaires : []; }
 function estPresidente(){ const u=S.session; if(!u) return false; return String(u.fonction||"").toLowerCase().indexOf("pr\u00e9sident")===0 || String(u.fonction||"").toLowerCase().indexOf("president")===0; }
@@ -987,7 +1012,7 @@ function viewCompleteProfile(){
   return `<div class="auth-wrap"><div class="auth">
     <div class="top"><span class="eyebrow">${esc(S.meta.nom||"Bureau étudiant")} · CA</span><button class="link" data-action="go-home">← Accueil</button></div>
     <h1 class="serif">Compléter votre profil</h1>
-    <p class="lead">Votre compte existe déjà (Caisse). Renseignez vos informations pour rejoindre l'espace CA — votre accès sera validé par le propriétaire.</p>
+    <p class="lead">Votre compte de connexion existe déjà — parce que vous l'utilisez pour la Caisse, ou parce qu'une précédente demande n'a pas abouti. Renseignez vos informations pour faire une demande d'accès : elle sera validée par le propriétaire.</p>
     <div class="auth-card">
       <p class="hint" style="margin:0 0 6px">Connecté·e avec <b style="color:var(--ink)">${esc((S.needProfile&&S.needProfile.email)||"")}</b></p>
       <label>Nom</label><input class="f" id="cp_nom" placeholder="Ex. Bojku">
@@ -2140,13 +2165,16 @@ async function traiterInscriptions(){
   if(!owners.length) return;
   for(const a of attentes){
     try{
-      const cle="inscription:"+a.id;
-      const ins=await sb.from("ca_rappels_envoyes").insert({cle:cle}).select();
-      if(ins&&ins.error) continue;
-      if(!ins||!ins.data||!ins.data.length) continue;
+      /* Cle datee : une demande refusee puis renouvelee redeclenche l'alerte.
+         On marque APRES l'envoi, sinon un envoi rate bloquerait l'alerte pour toujours. */
+      const cle="inscription:"+a.id+":"+todayISO();
+      const deja=await sb.from("ca_rappels_envoyes").select("cle").eq("cle",cle).maybeSingle();
+      if(deja&&deja.data) continue;
       const nom=((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||"Nouveau membre";
-      await envoyerNotifCAListe(owners, "Nouvelle demande d'inscription en attente",
-        "<p>Une nouvelle demande d'inscription \u00e0 l'espace CA est <b>en attente de validation</b> :</p><p><b>"+caMailEsc(nom)+"</b>"+(a.fonction?(" \u2014 "+caMailEsc(a.fonction)):"")+"</p><p>Connectez-vous \u00e0 l'espace CA pour l'approuver ou la refuser.</p>");
+      const estC = !!a.viaCode;
+      await envoyerNotifCAListe(owners, estC?"Nouvelle demande \u2014 coopt\u00e9\u00b7e":"Nouvelle demande d'inscription en attente",
+        ("<p>Une nouvelle demande est <b>en attente de validation</b>"+(estC?" \u2014 <b>coopt\u00e9\u00b7e</b> (code "+caMailEsc(a.viaCode)+")":"")+" :</p><p><b>"+caMailEsc(nom)+"</b>"+(a.fonction?(" \u2014 "+caMailEsc(a.fonction)):"")+"</p><p>"+caMailEsc(a.email||"")+"</p><p>Connectez-vous \u00e0 l'espace CA pour la valider.</p>"), true);
+      try{ await sb.from("ca_rappels_envoyes").insert({cle:cle}); }catch(_){ }
       logAct("Notification d'inscription envoy\u00e9e pour "+nom);
     }catch(e){}
   }
@@ -2188,7 +2216,7 @@ function tabSearch(){
 }
 
 /* ============================ ACTIONS ============================ */
-document.addEventListener("change", e=>{
+document.addEventListener("change", async e=>{
   const el=e.target.closest("[data-change]"); if(!el) return;
   if(el.dataset.change==="nom"){
     if(!(S.session&&S.session.role==="owner")){ el.value=S.meta.nom||""; if(window.alert) window.alert("Seul le propriétaire peut renommer le bureau."); return; }
@@ -2200,7 +2228,7 @@ document.addEventListener("change", e=>{
   if(el.dataset.change==="importfile"){
     const fl=el.files&&el.files[0]; el.value=""; if(!fl) return;
     if(!(S.session&&S.session.role==="owner")){ if(window.alert) window.alert("Réservé au propriétaire."); return; }
-    if(window.confirm && !window.confirm("Un import ne réécrit PAS la base de données : il affiche seulement le contenu du fichier sur cet appareil, jusqu'au prochain rechargement. Continuer ?")) return;
+    if(!(await modaleConfirm("Un import ne réécrit PAS la base de données : il affiche seulement le contenu du fichier sur cet appareil, jusqu'au prochain rechargement. Continuer ?"))) return;
     const rd=new FileReader();
     rd.onload=()=>{ try{
       const d=JSON.parse(rd.result);
@@ -2242,7 +2270,7 @@ document.addEventListener("click", async e=>{
       if(!sb) return authErr("Connexion au serveur indisponible. Réessayez.");
       authErr("Création du compte en cours…");
       const { data, error } = await sb.auth.signUp({ email:email, password:pwd, options:{ emailRedirectTo: caAppUrl()+(S.goto==="coopte"?"?go=coopte":""), data:{ prenom:prenom, nom:nom, fonction:fonction, via_code:(S.goto==="coopte"?String(S.viaCode||"(sans code)"):null) } } });
-      if(error){ return authErr(/already|registered|exists/i.test(error.message)?"Un compte existe déjà avec cet e-mail.":("Erreur : "+error.message)); }
+      if(error){ return authErr(/already|registered|exists/i.test(error.message)?"Un compte existe déjà avec cet e-mail. Connectez-vous avec cette adresse : si votre demande avait été refusée, vous pourrez en refaire une.":("Erreur : "+error.message)); }
       const user=data&&data.user;
       if(user){ const extra = (S.goto==="coopte") ? { via_code: String(S.viaCode||"(sans code)") } : {};
         /* Le profil est normalement cree par le declencheur ca_on_new_user cote base.
@@ -2287,14 +2315,14 @@ document.addEventListener("click", async e=>{
     case "ev-create": { const t=val("ev_titre").trim(), dt=val("ev_date"); if(!t||!sb) break; const {data,error}=await sb.from("ca_evenements").insert({titre:t,date:dt||null,lieu:"",responsable:"",budget_prevu:0,budget_reel:0,checklist:[],notes:""}).select().single(); if(error||!data) break; await loadEvenements(); { const n=document.getElementById("ev_notify"); if(n&&n.checked) notifEvenementCA(t, dt||""); } S.evUI={sel:data.id}; render(); break; }
     case "ev-open": S.evUI={sel:el.dataset.id}; render(); break;
     case "ev-back": S.evUI={sel:null}; render(); break;
-    case "ev-del": { if(!sb) break; if(window.confirm && !window.confirm("Supprimer cet événement ?")) break; await sb.from("ca_evenements").delete().eq("id",el.dataset.id); await loadEvenements(); S.evUI={sel:null}; render(); break; }
+    case "ev-del": { if(!sb) break; if(!(await modaleConfirm("Supprimer cet événement ?"))) break; await sb.from("ca_evenements").delete().eq("id",el.dataset.id); await loadEvenements(); S.evUI={sel:null}; render(); break; }
     case "ev-additem": { const t=val("ev_item").trim(); if(!t||!sb) break; const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev) break; await majEvenement(ev.id, l=>[...l,{id:uid(),texte:t,fait:false}]); render(); break; }
     case "ev-toggleitem": { const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev||!sb) break; const it=el.dataset.it; await majEvenement(ev.id, l=>l.map(c=>c.id===it?{...c,fait:!c.fait}:c)); render(); break; }
     case "ev-delitem": { const ev=(S.evenements||[]).find(e=>e.id===S.evUI.sel); if(!ev||!sb) break; const it=el.dataset.it; await majEvenement(ev.id, l=>l.filter(c=>c.id!==it)); render(); break; }
     case "contact-add": { const n=val("c_nom").trim(); if(!n) break; if(!sb) break; await sb.from("ca_contacts").insert({nom:n,type:val("c_type"),email:val("c_email").trim(),tel:val("c_tel").trim(),notes:val("c_notes").trim()}); await loadContacts(); render(); break; }
     case "mail-target": { S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; captureMailFields(); S.mailUI.target=el.dataset.tgt||"to"; render(); break; }
     case "mail-template": { S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; captureMailFields(); const t=MAIL_TEMPLATES[parseInt(el.dataset.tpl,10)]; if(!t) break;
-      if((String(S.mailUI.objet||"").trim() || String(S.mailUI.corps||"").trim()) && window.confirm && !window.confirm("Remplacer l'objet et le message actuels par le modèle « "+t.nom+" » ?")) break;
+      if((String(S.mailUI.objet||"").trim() || String(S.mailUI.corps||"").trim()) && !(await modaleConfirm("Remplacer l'objet et le message actuels par le modèle « "+t.nom+" » ?"))) break;
       S.mailUI.objet=t.objet; S.mailUI.corps=t.corps; S.mailFlash=null; persistMailDraft(); render(); break; }
     case "mail-attach-clear": { if(S.mailUI){ S.mailUI.pieceFile=null; S.mailUI.pieceName=""; } render(); break; }
     case "mail-group-save": { captureMailFields(); const emails=[...new Set([...listeEmails(S.mailUI.to),...listeEmails(S.mailUI.cc),...listeEmails(S.mailUI.cci)])];
@@ -2303,7 +2331,7 @@ document.addEventListener("click", async e=>{
       if(sb){ try{ await sb.from("ca_mail_groupes").insert({nom:nom.trim(),emails:emails}); await loadGroupes(); }catch(e){ if(window.alert) window.alert("Impossible d'enregistrer le groupe (table manquante ?)."); } }
       render(); break; }
     case "mail-group-load": { const g=(S.groupes||[]).find(x=>x.id===el.dataset.id); if(!g) break; captureMailFields(); const tgt=(S.mailUI&&S.mailUI.target)||"to"; ajouterEmailsChamp(tgt, g.emails||[]); persistMailDraft(); render(); break; }
-    case "mail-group-del": { if(!sb) break; if(window.confirm && !window.confirm("Supprimer ce groupe ?")) break; try{ await sb.from("ca_mail_groupes").delete().eq("id",el.dataset.id); await loadGroupes(); }catch(e){} render(); break; }
+    case "mail-group-del": { if(!sb) break; if(!(await modaleConfirm("Supprimer ce groupe ?"))) break; try{ await sb.from("ca_mail_groupes").delete().eq("id",el.dataset.id); await loadGroupes(); }catch(e){} render(); break; }
     case "mail-prog-create": { captureMailFields(); const mu=S.mailUI; const toL=listeEmails(mu.to),ccL=listeEmails(mu.cc),cciL=listeEmails(mu.cci);
       if(!toL.length&&!ccL.length&&!cciL.length){ S.mailFlash={type:"err",msg:"Ajoutez au moins un destinataire avant de programmer."}; render(); break; }
       if(!String(mu.objet||"").trim()||!String(mu.corps||"").trim()){ S.mailFlash={type:"err",msg:"Renseignez l'objet et le message avant de programmer."}; render(); break; }
@@ -2323,7 +2351,7 @@ document.addEventListener("click", async e=>{
         await loadProgrammes(); clearMailDraft(); S.mailUI={to:"",cc:"",cci:"",objet:"",corps:"",target:mu.target}; S.progUI={date:"",heure:""}; S.mailFlash={type:"ok",msg:"✓ Envoi programmé pour le "+fmtQuand(when.toISOString())+"."};
       }catch(e){ S.mailFlash={type:"err",msg:"Impossible de programmer (table manquante ?)."}; }
       render(); break; }
-    case "mail-prog-cancel": { if(!sb) break; if(window.confirm && !window.confirm("Annuler cet envoi programmé ?")) break; try{ await sb.from("ca_mail_programmes").delete().eq("id",el.dataset.id); await loadProgrammes(); }catch(e){} render(); break; }
+    case "mail-prog-cancel": { if(!sb) break; if(!(await modaleConfirm("Annuler cet envoi programmé ?"))) break; try{ await sb.from("ca_mail_programmes").delete().eq("id",el.dataset.id); await loadProgrammes(); }catch(e){} render(); break; }
     case "cal-nav": { S.calMonth=el.dataset.mo; render(); break; }
     case "cal-today2": { S.calMonth=null; render(); break; }
     case "cal-ics": { telechargerICS(); break; }
@@ -2343,7 +2371,7 @@ document.addEventListener("click", async e=>{
       if(!String(mu.objet||"").trim()){ flash("err","Indiquez un objet."); render(); break; }
       if(!String(mu.corps||"").trim()){ flash("err","Écrivez le message."); render(); break; }
       const total=[...new Set([...toL,...ccL,...cciL])].length;
-      if(total>=5 && window.confirm && !window.confirm("Envoyer ce mail à "+total+" destinataire(s) ?")){ break; }
+      if(total>=5 && !(await modaleConfirm("Envoyer ce mail à "+total+" destinataire(s) ?"))){ break; }
       S.mailSending=true; S.mailFlash=null; render();
       // 1) Pièce jointe éventuelle : upload dans le stockage, puis lien signé (7 jours) inséré dans le mail.
       let lienPiece="", nomPiece="";
@@ -2370,14 +2398,14 @@ document.addEventListener("click", async e=>{
       else { S.mailFlash={type:"ok",msg:"✓ Mail envoyé à "+res.total+" destinataire(s)."+suffixe}; clearMailDraft(); S.mailUI={to:"",cc:"",cci:"",objet:"",corps:"",target:mu.target}; }
       render();
       break; }
-    case "contact-del": { if(!sb) break; if(window.confirm && !window.confirm("Supprimer définitivement ce contact et ses données ?")) break; await sb.from("ca_contacts").delete().eq("id",el.dataset.id); logAct("Contact supprimé (RGPD)"); await loadContacts(); render(); break; }
+    case "contact-del": { if(!sb) break; if(!(await modaleConfirm("Supprimer définitivement ce contact et ses données ?"))) break; await sb.from("ca_contacts").delete().eq("id",el.dataset.id); logAct("Contact supprimé (RGPD)"); await loadContacts(); render(); break; }
     case "reu-create": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut créer une réunion."); break; } const t=val("reu_titre").trim(), dt=val("reu_date"); if(!t||!sb) break; const lieu=val("reu_lieu")||null;
       const mod=document.getElementById("reu_modele");
       const base=(mod&&mod.checked&&Array.isArray(S.meta.modeleOdj))?S.meta.modeleOdj.map(x=>({id:uid(),texte:x,fait:false,notes:"",parId:null,par:"Mod\u00e8le"})):[];
       const {data,error}=await sb.from("ca_reunions").insert({titre:t,date:dt||null,lieu:lieu,ordre:base,presences:{}}).select().single(); if(error||!data) break; await loadReunions(); { const n=document.getElementById("reu_notify"); if(n&&n.checked) convocationCA(data); } S.reuUI={sel:data.id}; render(); break; }
     case "reu-open": S.reuUI={sel:el.dataset.id}; render(); break;
     case "reu-back": S.reuUI={sel:null}; render(); break;
-    case "reu-del": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut supprimer une réunion."); break; } if(!sb) break; if(window.confirm && !window.confirm("Supprimer cette réunion ?")) break; await sb.from("ca_reunions").delete().eq("id",el.dataset.id); await loadReunions(); S.reuUI={sel:null}; render(); break; }
+    case "reu-del": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut supprimer une réunion."); break; } if(!sb) break; if(!(await modaleConfirm("Supprimer cette réunion ?"))) break; await sb.from("ca_reunions").delete().eq("id",el.dataset.id); await loadReunions(); S.reuUI={sel:null}; render(); break; }
     case "reu-addpoint": { const t=val("reu_point").trim(); if(!t||!sb) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break; if(ordreFerme(m)&&!estSecretaire()){ if(window.alert) window.alert("L'ordre du jour est cl\u00f4tur\u00e9 pour cette r\u00e9union."); break; } await majReunion(m.id, f=>({ordre:[...f.ordre,{id:uid(),texte:t,fait:false,notes:"",parId:(me&&me.id)||null,par:(me&&me.sig)||""}]})); render(); break; }
     case "pt-tache": { if(!estSecretaire()||!sb) break;
       const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
@@ -2467,7 +2495,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       S.meta.bilanEtat=nv; S.meta.bilanActif=(nv==="ouvert");
       logAct(nv==="ouvert"?"Campagne de bilans moraux ouverte":"Campagne de bilans moraux fermée"); render(); break; }
     case "bilan-cloturer": { if(!(estSecretaire()||(S.session&&S.session.role==="owner"))||!sb) break;
-      if(window.confirm && !window.confirm("Clôturer la campagne ? Plus personne ne pourra déposer de bilan, et le secrétariat pourra les lire.")) break;
+      if(!(await modaleConfirm("Clôturer la campagne ? Plus personne ne pourra déposer de bilan, et le secrétariat pourra les lire."))) break;
       const r=await sb.rpc("ca_bilans_cloturer");
       if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
       S.meta.bilanEtat="cloture"; S.meta.bilanActif=false;
@@ -2510,7 +2538,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       render(); break; }
     case "coopte-newcode": {
       if(!peutGererCooptes()||!sb) break;
-      if(window.confirm && !window.confirm("G\u00e9n\u00e9rer un nouveau code ? Les anciens liens ne seront plus reconnus.")) break;
+      if(!(await modaleConfirm("G\u00e9n\u00e9rer un nouveau code ? Les anciens liens ne seront plus reconnus."))) break;
       const {data,error}=await sb.rpc("ca_code_coopte",{p_regenerer:true});
       if(error){ if(window.alert) window.alert("\u00c9chec : "+error.message); break; }
       S.meta.codeCoopte=data||""; logAct("Nouveau code de cooptation g\u00e9n\u00e9r\u00e9"); render(); break; }
@@ -2541,7 +2569,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       const attendus=membresActifs().length, manquants=Math.max(0,attendus-bilanNbDeposes());
       if(manquants<=0){ if(window.alert) window.alert("Tout le monde a déposé son bilan."); break; }
       if(manquants<CA_SEUIL_RELANCE){ if(window.alert) window.alert("Il reste moins de "+CA_SEUIL_RELANCE+" personnes à relancer : envoyer le rappel reviendrait à les désigner. Passez par une annonce générale."); break; }
-      if(window.confirm && !window.confirm("Envoyer un rappel aux "+manquants+" membres qui n'ont pas encore déposé ?\n\nVous ne saurez pas de qui il s'agit : la liste est calculée sur le serveur.")) break;
+      if(!(await modaleConfirm("Envoyer un rappel aux "+manquants+" membres qui n'ont pas encore déposé ?\n\nVous ne saurez pas de qui il s'agit : la liste est calculée sur le serveur."))) break;
       try{
         const headers=await caSendHeaders();
         const r=await fetch(CA_RELANCE_FN,{method:"POST",headers:headers,body:JSON.stringify({app_url:caAppUrl()})});
@@ -2560,7 +2588,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
     case "bilan-publier": { if(!peutLireBilans()||!sb) break;
       const txt=String(val("bil_pub")||"").trim();
       if(!txt){ if(window.alert) window.alert("Le texte à publier est vide. Cliquez d'abord sur « Préparer le texte »."); break; }
-      if(window.confirm && !window.confirm("Publier ce texte ? Il deviendra visible par tous les membres et leur sera envoyé par e-mail.")) break;
+      if(!(await modaleConfirm("Publier ce texte ? Il deviendra visible par tous les membres et leur sera envoyé par e-mail."))) break;
       const r=await sb.rpc("ca_bilans_publier",{p_texte:txt});
       if(r&&r.error){ if(window.alert) window.alert("Publication impossible : "+r.error.message); break; }
       const quand=(r&&r.data)||new Date().toISOString();
@@ -2613,7 +2641,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       break; }
     case "rgpd-suppr-moi": {
       const moi=S.session; if(!moi) break;
-      if(window.confirm && !window.confirm("Envoyer une demande de suppression de vos données à la personne responsable du compte ?")) break;
+      if(!(await modaleConfirm("Envoyer une demande de suppression de vos données à la personne responsable du compte ?"))) break;
       const owners=(S.admins||[]).filter(a=>a.email && a.statut==="actif" && a.role==="owner").map(a=>a.email);
       if(!owners.length){ if(window.alert) window.alert("Aucun responsable joignable. Adressez votre demande directement au bureau."); break; }
       const corps=`<h2 style="margin:0 0 10px">Demande de suppression de données (RGPD)</h2>`
@@ -2752,7 +2780,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       S.meta.secretaires=cur;
       await sb.from("ca_meta").update({secretaires:cur}).eq("id",1);
       logAct("Droits secrétariat modifiés"); render(); break; }
-    case "reset-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break; if(window.confirm && !window.confirm("Effacer TOUS les bilans moraux déjà déposés et remettre le compteur à zéro ? Action irréversible.")) break; const r=await sb.rpc("ca_reset_bilans"); if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
+    case "reset-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break; if(!(await modaleConfirm("Effacer TOUS les bilans moraux déjà déposés et remettre le compteur à zéro ? Action irréversible."))) break; const r=await sb.rpc("ca_reset_bilans"); if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
       await sb.from("ca_meta").update({bilan_publie:null, bilan_publie_le:null, bilan_etat:"ferme", bilan_actif:false}).eq("id",1);
       S.meta.bilanPublie=""; S.meta.bilanPublieLe=null; S.meta.bilanEtat="ferme"; S.meta.bilanActif=false; S.bilanPubDraft=undefined;
       await loadBilans(); logAct("Bilans moraux réinitialisés"); render(); break; }
@@ -2762,7 +2790,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       if(!(S.session&&S.session.role==="owner")||!sb) break;
       const rerr=m=>{ const e=document.getElementById("reset_err"); if(e){e.textContent=m;e.style.display="block";} };
       if(val("reset_confirm").trim()!=="RESET") return rerr("Tapez RESET (en majuscules) pour confirmer.");
-      if(window.confirm && !window.confirm("Effacer TOUTES les données (sauf comptes et caisse) ? Action irréversible.")) break;
+      if(!(await modaleConfirm("Effacer TOUTES les données (sauf comptes et caisse) ? Action irréversible."))) break;
       const r=await sb.rpc("ca_reset_all");
       if(r&&r.error) return rerr("Échec : "+r.error.message);
       await refreshSession(); S.tab="org"; render(); break;
@@ -2843,7 +2871,7 @@ ${sections||"<p>Aucun retour.</p>"}
       if(id===S.session.id) break;
       const ad=S.admins.find(a=>a.id===id);
       const label=ad?((ad.prenom?ad.prenom+" "+ad.nom:ad.nom)+(ad.fonction?" ("+ad.fonction+")":"")):"ce compte";
-      if(window.confirm && !window.confirm("Révoquer le compte de "+label+" ?")) break;
+      if(!(await modaleConfirm("Révoquer le compte de "+label+" ?"))) break;
       try{ await sb.from("ca_membres").delete().eq("id",id); }catch(e){} await loadAccounts(); render(); break;
     }
     case "set-tab": S.tab=el.dataset.tab; S.mailFlash=null; if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
@@ -2859,7 +2887,7 @@ ${sections||"<p>Aucun retour.</p>"}
       const monSig=String((me&&me.sig)||"").toLowerCase();
       const aMoi=t && (mesPostesIds().indexOf(t.posteId)>=0 || String(t.creePar||"").toLowerCase()===monSig);
       if(!(aMoi || (me&&me.role==="owner"))){ if(window.alert) window.alert("Seuls la personne qui a créé la tâche, le titulaire du poste ou le responsable peuvent la supprimer."); break; }
-      if(window.confirm && !window.confirm("Supprimer cette tâche ?")) break;
+      if(!(await modaleConfirm("Supprimer cette tâche ?"))) break;
       await sb.from("ca_taches").delete().eq("id",id); logAct("Tâche supprimée"); await loadTaches(); render(); break; }
     /* planning */
     case "add-creneau": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secr\u00e9tariat peut ajouter \u00e0 l'agenda."); break; } const t=val("cr_titre").trim(), d=val("cr_date"); if(!t||!d||!sb) return; await sb.from("ca_creneaux").insert({titre:t,date:d,lieu:val("cr_lieu").trim(),cree_par:me.sig}); { const n=document.getElementById("cr_notify"); if(n&&n.checked) notifCreationCA("Nouvel \u00e9l\u00e9ment \u00e0 l'agenda", t, (d?fmtDateLong(d):"")+(val("cr_lieu").trim()?" \u00b7 "+val("cr_lieu").trim():"")); } await loadCreneaux(); render(); break; }
@@ -2869,7 +2897,7 @@ ${sections||"<p>Aucun retour.</p>"}
     case "add-budget": { const t=val("b_titre").trim(); if(!t||!sb) return; const cout=parseFloat(String(val("b_cout")).replace(",","."))||0; await sb.from("ca_budgets").insert({titre:t,type:val("b_type"),cout:cout,description:val("b_desc").trim(),demandeur:me.sig,statut:"vote",cree_par:S.session.id}); { const n=document.getElementById("b_notify"); if(n&&n.checked) notifCreationCA("Nouveau budget/projet soumis au vote", t, ""); } await loadBudgets(); render(); break; }
     case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; const r=await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix},{onConflict:"budget_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadBudgets(); render(); break; }
     case "bdecide": { if(!estPresidente()||!sb) break; const st=el.dataset.st; await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id); await loadBudgets(); render(); break; }
-    case "del-budget": { if(!estPresidente()||!sb) break; if(window.confirm && !window.confirm("Supprimer cette demande de budget ?")) break; await sb.from("ca_budgets").delete().eq("id",id); logAct("Budget supprimé"); await loadBudgets(); render(); break; }
+    case "del-budget": { if(!estPresidente()||!sb) break; if(!(await modaleConfirm("Supprimer cette demande de budget ?"))) break; await sb.from("ca_budgets").delete().eq("id",id); logAct("Budget supprimé"); await loadBudgets(); render(); break; }
     /* votes */
     case "add-vote": { const q=val("v_q").trim(); const opts=[0,1,2,3,4].map(i=>val("v_o"+i).trim()).filter(Boolean); if(!q||opts.length<2||!sb) return;
       let vdocs=[];
@@ -2918,7 +2946,7 @@ ${sections||"<p>Aucun retour.</p>"}
     case "del-doc": {
       const d=(S.docs||[]).find(x=>x.id===id); if(!d) break;
       if(!((S.session&&S.session.role==="owner")||d.cree_par_id===(S.session&&S.session.id))) break;
-      if(window.confirm && !window.confirm("Supprimer ce document ?")) break;
+      if(!(await modaleConfirm("Supprimer ce document ?"))) break;
       try{ await sb.storage.from("ca-documents").remove([d.chemin]); }catch(e){}
       try{ await sb.from("ca_docs").delete().eq("id",id); }catch(e){}
       await loadDocs(); render(); break;
@@ -2940,7 +2968,7 @@ ${sections||"<p>Aucun retour.</p>"}
       envoyerNotifCAListe(dest, "Rappel de vote — "+v.question, corps);
       if(window.alert) window.alert("Relance envoyée à "+dest.length+" personne(s).");
       break; }
-    case "del-annonce": { if(!sb) break; const a=(S.annonces||[]).find(x=>x.id===id); if(!peutModifier(a&&a.creeParId)) break; if(window.confirm && !window.confirm("Supprimer cette annonce ?")) break; await sb.from("ca_annonces").delete().eq("id",id); await loadAnnonces(); render(); break; }
+    case "del-annonce": { if(!sb) break; const a=(S.annonces||[]).find(x=>x.id===id); if(!peutModifier(a&&a.creeParId)) break; if(!(await modaleConfirm("Supprimer cette annonce ?"))) break; await sb.from("ca_annonces").delete().eq("id",id); await loadAnnonces(); render(); break; }
   }
 });
 
