@@ -417,6 +417,8 @@ function caMailEsc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace
 /* Membres du CA de plein droit. Les cooptés en sont exclus partout :
    effectif de vote, présences, bilans moraux, convocations. */
 function membresActifs(){ return (S.admins||[]).filter(a=>a.email && a.statut==="actif" && a.role!=="coopte"); }
+/* Le lien d'invitation des cooptes : secretariat et proprietaire. */
+function peutGererCooptes(){ return estSecretaire() || (S.session && S.session.role==="owner"); }
 function estCoopte(){ return !!(S.session && S.session.role==="coopte"); }
 function cooptesActifs(){ return (S.admins||[]).filter(a=>a.statut==="actif" && a.role==="coopte"); }
 /* Membres inscrits uniquement (convocations, rappels internes, bilans). */
@@ -734,6 +736,42 @@ async function traiterRappels(){
       logAct("Rappel automatique envoyé : "+j.sujet);
     }catch(e){}
   }
+}
+/* Recap hebdomadaire des idees, chaque dimanche, aux membres du CA et aux cooptes.
+   Declenche par la premiere ouverture de l'app le dimanche ; la cle en base
+   garantit qu'il ne part qu'une fois par semaine. */
+async function traiterRecapIdees(){
+  if(!sb||!S.session) return;
+  const now=new Date();
+  if(now.getDay()!==0) return;                            // 0 = dimanche
+  const lundi=new Date(now); lundi.setDate(now.getDate()-6); lundi.setHours(0,0,0,0);
+  const cle="recap-idees:"+todayISO();
+  const A=(S.avis||[]).filter(x=>x.ts && new Date(x.ts)>=lundi);
+  const total=(S.avis||[]).length;
+  if(!total) return;
+  try{
+    const ins=await sb.from("ca_rappels_envoyes").insert({cle:cle}).select();
+    if(ins&&ins.error) return;                            // deja envoye cette semaine
+    if(!ins||!ins.data||!ins.data.length) return;
+  }catch(e){ return; }
+  const n=(id,v)=>(S.avisVotes||[]).filter(x=>x.avisId===id&&x.valeur===v).length;
+  const carte=x=>'<div style="border:1px solid #e2e0ef;border-radius:8px;padding:12px;margin:10px 0">'
+    +'<b>'+caMailEsc(x.sujet||"Sans sujet")+'</b>'
+    +'<span style="color:#777;font-size:12px"> \u2014 '+caMailEsc(x.auteur||"")+'</span>'
+    +'<p style="margin:6px 0 8px;font-size:13.5px;white-space:pre-wrap">'+caMailEsc(x.texte||"")+'</p>'
+    +'<p style="margin:0;font-size:13px;color:#444">Pour : <b>'+n(x.id,"pour")+'</b> \u00b7 Mitig\u00e9 : <b>'+n(x.id,"mitige")+'</b> \u00b7 Contre : <b>'+n(x.id,"contre")+'</b></p></div>';
+  const tri=(S.avis||[]).slice().sort((a,b)=>(n(b.id,"pour")-n(a.id,"pour")));
+  const corps='<h2 style="margin:0 0 10px">Id\u00e9es de la semaine</h2>'
+    +'<p>'+(A.length?('<b>'+A.length+'</b> nouvelle(s) id\u00e9e(s) cette semaine.'):"Aucune nouvelle id\u00e9e cette semaine.")
+    +' '+total+' id\u00e9e(s) au total, class\u00e9es ci-dessous par soutien.</p>'
+    +tri.slice(0,10).map(carte).join("")
+    +'<p style="color:#777;font-size:12.5px">Ces sondages sont indicatifs : ils n\'engagent pas le CA.</p>'
+    +'<p><a href="'+caAppUrl()+'" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;display:inline-block">Ouvrir l\'espace CA</a></p>';
+  const dest=[...new Set([...destinatairesMembres(), ...cooptesActifs().map(a=>String(a.email||"").toLowerCase().trim())])]
+    .filter(Boolean).filter(e=>!estDesabonne(e));
+  if(!dest.length) return;
+  await envoyerNotifCAListe(dest, "Id\u00e9es de la semaine \u2014 r\u00e9capitulatif", corps);
+  logAct("R\u00e9cap hebdomadaire des id\u00e9es envoy\u00e9");
 }
 /* Une tâche ne concerne que le titulaire du poste et la personne qui l'a créée. */
 function destinatairesTache(t){
@@ -1590,7 +1628,13 @@ function barreAvisVote(avisId){
 function tabAvis(){
   const A=(S.avis||[]).slice();
   const moi=(S.session||{}).id;
-  const compose = `<div class="compose"><h3 class="serif">D\u00e9poser un avis ou une id\u00e9e</h3>
+  const invit = peutGererCooptes() ? `<div class="card2" style="margin-bottom:16px">
+    <h3 class="serif" style="margin-top:0">Inviter un\u00b7e coopt\u00e9\u00b7e</h3>
+    <p class="du" style="margin:0 0 8px">Ce lien permet \u00e0 une personne coopt\u00e9e de cr\u00e9er un compte. Elle acc\u00e9dera \u00e0 l'agenda des \u00e9v\u00e9nements et \u00e0 cet espace, et \u00e0 rien d'autre. Sa demande doit \u00eatre valid\u00e9e par le propri\u00e9taire.</p>
+    ${S.meta.codeCoopte?`<p style="color:var(--slate);font-size:12px;margin:0 0 8px">Code en cours : <b>${esc(S.meta.codeCoopte)}</b> \u00b7 ${cooptesActifs().length} coopt\u00e9\u00b7e(s) valid\u00e9\u00b7e(s)</p>`:""}
+    <div class="row-btn"><button class="btn" data-action="coopte-lien">Copier le lien d'invitation</button>
+      ${S.meta.codeCoopte?`<button class="btn ghost" data-action="coopte-newcode">G\u00e9n\u00e9rer un nouveau code</button>`:""}</div></div>` : "";
+  const compose = invit + `<div class="compose"><h3 class="serif">D\u00e9poser un avis ou une id\u00e9e</h3>
     <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">${estCoopte()?"Vos contributions sont lues par les membres du CA. Elles n'ont pas valeur de vote : les d\u00e9cisions restent prises par le conseil.":"Vous pouvez aussi d\u00e9poser une id\u00e9e ici."}</p>
     <input class="f" id="av_sujet" placeholder="Sujet (ex. Organisation de la soir\u00e9e de rentr\u00e9e)">
     <textarea class="f" id="av_texte" rows="4" placeholder="Votre avis, votre proposition\u2026"></textarea>
@@ -2376,24 +2420,22 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       if(r&&r.error){ if(window.alert) window.alert("Suppression impossible : "+r.error.message); break; }
       await loadAvis(); render(); break; }
     case "coopte-lien": {
-      if(!(S.session&&S.session.role==="owner")) break;
-      let code=S.meta.codeCoopte||"";
-      if(!code){ code=Math.random().toString(36).slice(2,8).toUpperCase();
-        const r=await sb.from("ca_meta").update({code_coopte:code}).eq("id",1);
-        if(r&&r.error){ if(window.alert) window.alert("Impossible d'enregistrer le code : "+r.error.message); break; }
-        S.meta.codeCoopte=code; }
-      const lien=caAppUrl()+"?go=coopte&c="+encodeURIComponent(code);
+      if(!peutGererCooptes()||!sb) break;
+      const {data,error}=await sb.rpc("ca_code_coopte",{p_regenerer:false});
+      if(error){ if(window.alert) window.alert("Impossible d'obtenir le code : "+error.message); break; }
+      S.meta.codeCoopte=data||"";
+      const lien=caAppUrl()+"?go=coopte&c="+encodeURIComponent(S.meta.codeCoopte);
       let copie=false;
       try{ if(navigator.clipboard&&navigator.clipboard.writeText){ await navigator.clipboard.writeText(lien); copie=true; } }catch(_){ }
+      if(!copie){ try{ const t=document.createElement("textarea"); t.value=lien; document.body.appendChild(t); t.select(); copie=document.execCommand("copy"); t.remove(); }catch(_){ } }
       if(window.alert) window.alert((copie?"Lien copi\u00e9 :\n":"Copiez ce lien :\n")+lien);
       render(); break; }
     case "coopte-newcode": {
-      if(!(S.session&&S.session.role==="owner")) break;
+      if(!peutGererCooptes()||!sb) break;
       if(window.confirm && !window.confirm("G\u00e9n\u00e9rer un nouveau code ? Les anciens liens ne seront plus reconnus.")) break;
-      const code=Math.random().toString(36).slice(2,8).toUpperCase();
-      const r=await sb.from("ca_meta").update({code_coopte:code}).eq("id",1);
-      if(r&&r.error){ if(window.alert) window.alert("\u00c9chec : "+r.error.message); break; }
-      S.meta.codeCoopte=code; logAct("Nouveau code de cooptation g\u00e9n\u00e9r\u00e9"); render(); break; }
+      const {data,error}=await sb.rpc("ca_code_coopte",{p_regenerer:true});
+      if(error){ if(window.alert) window.alert("\u00c9chec : "+error.message); break; }
+      S.meta.codeCoopte=data||""; logAct("Nouveau code de cooptation g\u00e9n\u00e9r\u00e9"); render(); break; }
     case "approve-coopte": {
       if(!(S.session&&S.session.role==="owner")) break;
       const ad=(S.admins||[]).find(a=>a.id===id);
@@ -2833,7 +2875,7 @@ async function boot(){
   if(!sb){ render(); return; }
   try{ const h=String(location.hash||""); if(/type=recovery/.test(h)||/[?&]type=recovery/.test(location.search)){ S.recovery=true; } }catch(e){}
   try{ await refreshSession(); }catch(e){} render();
-  if(S.session){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") render(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterInscriptions().catch(()=>{}); }
+  if(S.session){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") render(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterRecapIdees().catch(()=>{}); traiterInscriptions().catch(()=>{}); }
   try{ sb.auth.onAuthStateChange(async (evt)=>{ if(evt==="PASSWORD_RECOVERY"){ S.recovery=true; render(); return; } if(S.recovery) return; await refreshSession(); render(); }); }catch(e){} }
 boot();
 
