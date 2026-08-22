@@ -602,7 +602,7 @@ async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").sele
 async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,decidePar:b.decide_par,decideLe:b.decide_le,votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id}))})); }catch(e){ S.budgets=[]; } }
 async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
 async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
-async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,lieu:m.lieu||"",ordre:m.ordre||[],presences:m.presences||{}})); }catch(e){ S.reunions=[]; } }
+async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,lieu:m.lieu||"",ordre:m.ordre||[],presences:m.presences||{},pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } }
 async function loadCreneaux(){ try{ const c=await sb.from("ca_creneaux").select("*").order("date",{ascending:true}); const d=await sb.from("ca_dispos").select("*"); const dl=(d&&d.data)||[]; S.creneaux=(((c&&c.data))||[]).map(x=>({id:x.id,titre:x.titre,date:x.date,lieu:x.lieu,creePar:x.cree_par,dispos:dl.filter(y=>y.creneau_id===x.id).map(y=>({nom:y.nom,statut:y.statut,membreId:y.membre_id}))})); }catch(e){ S.creneaux=[]; } }
 async function loadOrg(){ try{ const {data}=await sb.from("ca_org").select("*"); const o={}; (data||[]).forEach(r=>{ o[r.poste_id]={missions:r.missions,contact:r.contact}; }); S.org=o; }catch(e){} }
 async function loadTaches(){ try{ const {data}=await sb.from("ca_taches").select("*").order("created_at",{ascending:false}); S.taches=(data||[]).map(t=>({id:t.id,titre:t.titre,posteId:t.poste_id,statut:t.statut,echeance:t.echeance,priorite:t.priorite,creePar:t.cree_par})); }catch(e){ S.taches=[]; } }
@@ -903,6 +903,10 @@ function viewAdmin(){
       <div class="row-btn"><button class="btn${bilanEtat()==="ouvert"?" ghost":""}" data-action="toggle-bilan">${bilanEtat()==="ouvert"?"Fermer la collecte":"Ouvrir la collecte"}</button>
         ${bilanEtat()==="ouvert"?`<button class="btn ghost" data-action="bilan-cloturer">Clôturer (lecture secrétariat)</button>`:""}
         <button class="btn ghost" data-action="reset-bilan">Tout réinitialiser</button></div></div>
+    <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Fin de mandat</h2><span class="l"></span></div>
+    <div class="compose"><h3 class="serif">Dossier de passation</h3>
+      <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Avant de tout réinitialiser pour l'équipe suivante : un document imprimable (composition, PV, votes, synthèse des bilans) et une sauvegarde complète en fichier. <b style="color:var(--ink)">À faire avant tout effacement.</b></p>
+      <div class="row-btn"><button class="btn" data-action="archiver-mandat">Générer l'archive de mandat</button></div></div>
     ${estSecretaire()?`<div class="card2"><h3 class="serif">R\u00e9glages du secr\u00e9tariat</h3>
       <label class="fld">Cl\u00f4ture de l'ordre du jour (heures avant la r\u00e9union — 0 = jamais)</label>
       <input class="f" id="cfg_cloture" type="number" min="0" value="${(S.meta.clotureOdj||0)}">
@@ -1013,6 +1017,7 @@ function viewAuth(){
     <h1 class="serif">Espace CA</h1>
     <p class="lead">Réservé aux responsables. Chaque action est enregistrée au nom de l’admin connecté.</p>
     <div class="banner" style="margin:0 0 14px"><span class="dot" style="background:var(--stamp)"></span>Vous avez déjà un compte pour la Caisse ? Pas besoin d'en créer un : connectez-vous avec le même e-mail et le même mot de passe.</div>
+    ${S.goto==="bilan"?`<div class="banner" style="margin:0 0 14px;border-color:var(--or,#c9a227)"><span class="dot" style="background:var(--or,#c9a227)"></span>Vous suivez le lien des <b>bilans moraux</b>. Seuls les membres du CA inscrits et validés peuvent y participer : connectez-vous, ou créez un compte ci-dessous — vous serez redirigé vers les bilans une fois validé.</div>`:""}
     <div class="auth-card">${card}</div>
   </div></div>`;
 }
@@ -1022,6 +1027,7 @@ function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textC
 const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
   const map={org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,notifs:tabNotifs,search:tabSearch};
+  if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   const tabs = bilanOnglet() ? [...TABS,["bilan","13","Bilans moraux"]] : TABS;
   if(S.tab==="bilan" && !bilanOnglet()) S.tab="org";
   const notifOwner = S.session.role==="owner" ? (S.admins||[]).filter(a=>a.statut==="attente").length : 0;
@@ -1171,6 +1177,25 @@ function tabBudgets(){
 }
 
 /* ---- onglet VOTES ---- */
+/* ---- Majorité simple : plus de la moitié de l'EFFECTIF, pas des votants.
+       19 membres → 10 voix requises. Pas de quorum de présence. ---- */
+function effectifCA(){ return membresActifs().length; }
+function seuilMajorite(){ const n=effectifCA(); return n?Math.floor(n/2)+1:0; }
+function verdictVote(v){
+  const n=effectifCA(), seuil=seuilMajorite(); if(!n) return "";
+  const compte=oid=>(v.voters||[]).filter(x=>x.optionId===oid).length;
+  let best=null, bestN=-1, exaequo=false;
+  (v.options||[]).forEach(o=>{ const c=compte(o.id); if(c>bestN){ best=o; bestN=c; exaequo=false; } else if(c===bestN && c>0){ exaequo=true; } });
+  const ouvert=v.statut==="open";
+  const atteint = bestN>=seuil && !exaequo;
+  const manque = Math.max(0,seuil-bestN);
+  let txt, couleur;
+  if(atteint){ txt=`Adopté — « ${esc(best.label)} » réunit ${bestN} voix sur ${n} membres (majorité simple : ${seuil}).`; couleur="var(--green)"; }
+  else if(ouvert){ txt=`Majorité simple requise : ${seuil} voix sur ${n} membres. ${manque===0?"Égalité en tête, aucune option ne se dégage.":"Il manque "+manque+" voix à l'option en tête."}`; couleur="var(--ink-soft)"; }
+  else if(exaequo && bestN>0){ txt=`Rejeté — égalité en tête à ${bestN} voix, aucune option n'atteint la majorité simple (${seuil} sur ${n}).`; couleur="var(--stamp)"; }
+  else { txt=`Rejeté — meilleur score ${bestN} voix sur ${n} membres, il en fallait ${seuil}.`; couleur="var(--stamp)"; }
+  return `<p style="margin:10px 0 0;font-size:13px;font-weight:600;color:${couleur}">${txt}</p>`;
+}
 function tabVotes(){
   const compose=`<div class="compose"><h3 class="serif">Nouvelle question</h3>
     <input class="f" id="v_q" placeholder="Ex. Thème de la soirée de rentrée ?">
@@ -1189,7 +1214,7 @@ function tabVotes(){
         ${(!open||total>0)?`<div class="opt-top"><span class="ol">${esc(o.label)}</span><span class="oc">${c} · ${pct}%</span></div><div class="bar"><span style="width:${pct}%"></span></div>`:""}</div>`;}).join("");
     return `<div class="vote"><div class="vote-h"><h4 class="serif">${esc(v.question)}</h4><span class="badge ${open?"open":"closed"}">${open?"Ouvert":"Clos"}</span></div>
       ${(v.docs&&v.docs.length)?`<div style="margin:10px 0;display:flex;flex-wrap:wrap;gap:7px">${v.docs.map(d=>`<button class="chip" data-action="vdoc" data-path="${esc(d.path)}">📎 ${esc(d.name)}</button>`).join("")}</div>`:""}
-      ${opts}${total?`<p class="voters">${total} votant${total>1?"s":""} : ${esc(v.voters.map(x=>x.nom).join(", "))}</p>`:""}
+      ${opts}${verdictVote(v)}${total?`<p class="voters">${total} votant${total>1?"s":""} : ${esc(v.voters.map(x=>x.nom).join(", "))}</p>`:""}
       <div class="foot-line">${peutModifier(v.creeParId)?`<button class="link" data-action="vtoggle" data-id="${v.id}">${open?"Clore le vote":"Rouvrir"}</button>`:""}
         ${open && peutModifier(v.creeParId) ? `<button class="link" data-action="vote-relance" data-id="${v.id}">Relancer les non-votants</button>` : ""}
         ${peutModifier(v.creeParId)?`<button class="link" data-action="del-vote" data-id="${v.id}" style="margin-left:auto">Supprimer</button>`:""}</div>
@@ -1353,7 +1378,9 @@ function tabBilan(){
           ${estSecretaire()?`<button class="btn" data-action="bilan-cloturer">Clôturer la campagne</button>`:""}
         </div>
         ${(manquants>0&&!relanceOk)?`<p class="hint" style="margin:8px 0 0;color:var(--stamp)">Rappel désactivé : avec moins de ${CA_SEUIL_RELANCE} manquants, savoir qu'un mail est parti reviendrait à désigner les personnes. Passez par une annonce générale.</p>`:""}
-        ${relanceOk?`<p class="hint" style="margin:8px 0 0">Le rappel part uniquement à ceux qui n'ont pas encore déposé, un mail par personne. La liste est établie sur le serveur : ni vous ni l'application ne la recevez.</p>`:""}</div>`;
+        ${relanceOk?`<p class="hint" style="margin:8px 0 0">Le rappel part uniquement à ceux qui n'ont pas encore déposé, un mail par personne. La liste est établie sur le serveur : ni vous ni l'application ne la recevez.</p>`:""}
+        <div class="row-btn" style="margin-top:10px"><button class="btn ghost sm" data-action="bilan-lien">Copier le lien de participation</button></div>
+        <p class="hint" style="margin:6px 0 0">À diffuser dans le groupe. Il ouvre directement les bilans moraux ; ceux qui n'ont pas de compte pourront en créer un, mais devront être validés avant de participer.</p></div>`;
     }
   }
 
@@ -1465,6 +1492,25 @@ function tabMessages(){
     </div>`;
 }
 
+/* ---- Approbation formelle du PV : un PV n'a de valeur qu'une fois approuvé
+       par le CA, en général à la réunion suivante. ---- */
+function pvApprouve(m){ return m && m.pvStatut==="approuve"; }
+function blocApprobationPV(m){
+  const ok=pvApprouve(m);
+  const badge = ok
+    ? `<p style="margin:0;font-size:13px;font-weight:600;color:var(--green)">✓ PV approuvé${m.pvApprouveLe?" le "+esc(fmtQuand(m.pvApprouveLe)):""}${m.pvApprouveNote?` — ${esc(m.pvApprouveNote)}`:""}</p>`
+    : `<p style="margin:0;font-size:13px;color:var(--stamp);font-weight:600">Projet de PV — non encore approuvé par le CA.</p>`;
+  const boutons = estSecretaire()
+    ? `<div class="row-btn" style="margin-top:8px">${ok
+        ? `<button class="btn ghost sm" data-action="reu-pv-brouillon" data-id="${m.id}">Repasser en projet</button>`
+        : `<button class="btn sm" data-action="reu-pv-approuver" data-id="${m.id}">Marquer le PV comme approuvé</button>`}</div>`
+    : "";
+  return `<div class="grp-h" style="margin-top:26px"><h2 class="serif">Procès-verbal</h2><span class="l"></span></div>
+    <div class="card2">${badge}
+      <p class="du" style="margin:8px 0 0">Tant qu'il n'est pas approuvé, le texte reste un projet : il peut être corrigé, et il n'engage pas le CA.</p>
+      ${boutons}</div>`;
+}
+
 /* ---- onglet RÉUNIONS (ordre du jour, présences, PV) ---- */
 function tabReunions(){
   if(!S.reuUI) S.reuUI={sel:null};
@@ -1507,6 +1553,7 @@ function tabReunions(){
     ${points}
     <div class="grp-h" style="margin-top:26px"><h2 class="serif">Présences</h2><span class="c">${cnt('present')} prés. · ${cnt('excuse')} exc. · ${cnt('absent')} abs.</span><span class="l"></span></div>
     ${presRows}
+    ${blocApprobationPV(m)}
     ${estSecretaire()?`<div class="row-btn" style="margin-top:16px"><button class="btn" data-action="reu-gen">Générer le PV</button></div>`:`<p class="du" style="margin-top:16px">Le PV est rédigé et diffusé par le secrétariat.</p>`}`;
 }
 
@@ -1736,6 +1783,15 @@ function tabRgpd(){
   const contacts=(S.contacts||[]);
   const desab=[...(S.desabonnes||new Set())];
   return `<div class="compose">
+    <h3 class="serif">Vos donn\u00e9es</h3>
+    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Vous pouvez r\u00e9cup\u00e9rer \u00e0 tout moment une copie de tout ce que l'application conserve \u00e0 votre sujet, ou demander sa suppression.</p>
+    <div class="row-btn">
+      <button class="btn ghost" data-action="rgpd-export-moi">T\u00e9l\u00e9charger mes donn\u00e9es</button>
+      <button class="btn ghost" data-action="rgpd-suppr-moi">Demander la suppression de mes donn\u00e9es</button>
+    </div>
+    <p class="du" style="margin:8px 0 0">La suppression est trait\u00e9e par la personne responsable du compte : votre demande lui est transmise par mail et doit \u00eatre honor\u00e9e dans le mois. Les d\u00e9cisions du CA (PV, votes) sont conserv\u00e9es, car elles engagent l'association.</p>
+  </div>
+  <div class="compose">
     <h3 class="serif">Mentions l\u00e9gales</h3>
     <p style="font-size:13.5px;line-height:1.65;color:var(--ink)">Ce service est \u00e9dit\u00e9 par le <b>Bureau \u00e9tudiant de la Facult\u00e9 de Droit et de Criminologie</b> \u00e0 des fins d'organisation interne. Responsable du traitement des donn\u00e9es : le Bureau \u00e9tudiant. Pour toute question relative \u00e0 vos donn\u00e9es personnelles, vous pouvez contacter le bureau.</p>
   </div>
@@ -2165,6 +2221,13 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
       S.meta.bilanEtat="cloture"; S.meta.bilanActif=false;
       await loadBilans(); logAct("Campagne de bilans moraux clôturée"); render(); break; }
+    case "bilan-lien": {
+      const lien = caAppUrl()+"?go=bilan";
+      let copie=false;
+      try{ if(navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(lien); copie=true; } }catch(_){ }
+      if(!copie){ try{ const t=document.createElement("textarea"); t.value=lien; document.body.appendChild(t); t.select(); copie=document.execCommand("copy"); t.remove(); }catch(_){ } }
+      if(window.alert) window.alert(copie ? ("Lien copié :\n"+lien) : ("Copiez ce lien :\n"+lien));
+      break; }
     case "bilan-relance": {
       if(!(estSecretaire()||(S.session&&S.session.role==="owner"))||!sb) break;
       if(bilanEtat()!=="ouvert"){ if(window.alert) window.alert("La collecte n'est pas ouverte."); break; }
@@ -2224,6 +2287,90 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       await sb.from("ca_conflits").insert({fil_id:fil,membre_id:me.id,auteur:(prem&&prem.anonyme)?null:me.sig,anonyme:!!(prem&&prem.anonyme),de_direction:false,texte:t});
       await loadConflits(); render(); break; }
     case "guide-ok": { try{ localStorage.setItem("ca:guide:"+el.dataset.guide,"1"); }catch(e){} render(); break; }
+    case "rgpd-export-moi": {
+      const moi=S.session; if(!moi) break;
+      const fiche=(S.admins||[]).find(a=>a.id===moi.id)||{};
+      const dump={
+        genere_le:new Date().toISOString(),
+        profil:{prenom:fiche.prenom,nom:fiche.nom,email:fiche.email,fonction:fiche.fonction,statut:fiche.statut,role:fiche.role,inscrit_le:fiche.ts},
+        taches_creees:(S.taches||[]).filter(t=>t.creePar===moi.id),
+        messages_envoyes:(S.messages||[]).filter(m=>m.fromId===moi.id),
+        messages_recus:(S.messages||[]).filter(m=>m.to===moi.id),
+        mes_votes:(S.votes||[]).map(v=>{ const b=(v.voters||[]).find(x=>x.membreId===moi.id); return b?{question:v.question,mon_choix:(v.options.find(o=>o.id===b.optionId)||{}).label}:null; }).filter(Boolean),
+        mes_disponibilites:(S.creneaux||[]).map(c=>{ const d=(c.dispos||[]).find(x=>x.membreId===moi.id); return d?{creneau:c.titre,date:c.date,statut:d.statut}:null; }).filter(Boolean),
+        mes_presences:(S.reunions||[]).map(r=>({reunion:r.titre,date:r.date,presence:(r.presences||{})[moi.id]||null})).filter(x=>x.presence),
+        documents_deposes:(S.docs||[]).filter(d=>d.cree_par_id===moi.id).map(d=>({titre:d.titre,categorie:d.cat,chemin:d.chemin})),
+        annonces_publiees:(S.annonces||[]).filter(a=>a.creeParId===moi.id).map(a=>({texte:a.texte,ts:a.ts}))
+      };
+      telechargerJSON("mes-donnees-espace-ca-"+todayISO()+".json", dump);
+      break; }
+    case "rgpd-suppr-moi": {
+      const moi=S.session; if(!moi) break;
+      if(window.confirm && !window.confirm("Envoyer une demande de suppression de vos données à la personne responsable du compte ?")) break;
+      const owners=(S.admins||[]).filter(a=>a.email && a.statut==="actif" && a.role==="owner").map(a=>a.email);
+      if(!owners.length){ if(window.alert) window.alert("Aucun responsable joignable. Adressez votre demande directement au bureau."); break; }
+      const corps=`<h2 style="margin:0 0 10px">Demande de suppression de données (RGPD)</h2>`
+        +`<p><b>${caMailEsc(moi.nom||moi.prenom||"")}</b>${moi.fonction?" — "+caMailEsc(moi.fonction):""} (${caMailEsc(moi.email||"")}) demande la suppression de ses données personnelles de l'espace CA.</p>`
+        +`<p>Cette demande doit être traitée dans le mois. Les décisions du CA (PV, votes) peuvent être conservées, mais le compte, les coordonnées et les contenus personnels doivent être supprimés ou anonymisés.</p>`;
+      const res=await envoyerNotifCAListe(owners, "Demande de suppression de données — "+(moi.nom||moi.email||""), corps);
+      logAct("Demande de suppression de données envoyée");
+      if(window.alert) window.alert(res&&res.ok?"Votre demande a été transmise.":"L'envoi a échoué, contactez le bureau directement.");
+      break; }
+    case "archiver-mandat": {
+      if(!(S.session&&S.session.role==="owner")) break;
+      const an=new Date().getFullYear();
+      const dump={
+        archive_du:new Date().toISOString(), bureau:S.meta.nom||"Bureau étudiant",
+        membres:(S.admins||[]).map(a=>({prenom:a.prenom,nom:a.nom,fonction:a.fonction,statut:a.statut,role:a.role})),
+        organigramme:S.org||{}, reunions:S.reunions||[], evenements:S.evenements||[],
+        budgets:S.budgets||[], votes:S.votes||[], taches:S.taches||[], annonces:S.annonces||[],
+        contacts:S.contacts||[], creneaux:S.creneaux||[], documents:(S.docs||[]).map(d=>({titre:d.titre,categorie:d.cat,chemin:d.chemin})),
+        bilan_publie:S.meta.bilanPublie||"", journal:S.journal||[]
+      };
+      telechargerJSON("archive-mandat-"+an+".json", dump);
+      const R=(S.reunions||[]).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+      const blocsR=R.map(m=>{
+        const pres=Object.entries(m.presences||{}).filter(([k,v])=>v==="present").length;
+        const pts=(m.ordre||[]).map(p=>`<li><b>${esc(p.texte)}</b>${p.notes?`<br><span style="font-size:13px">${esc(p.notes)}</span>`:""}</li>`).join("");
+        return `<div class="b"><h3>${esc(m.titre)}</h3><p class="s">${m.date?esc(fmtDateLong(m.date)):""} — ${pres} présent(s) — ${pvApprouve(m)?"PV approuvé":"PROJET non approuvé"}</p><ol>${pts}</ol></div>`;
+      }).join("");
+      const blocsV=(S.votes||[]).map(v=>{
+        const n=effectifCA(), seuil=seuilMajorite();
+        const res=(v.options||[]).map(o=>`${esc(o.label)} : ${(v.voters||[]).filter(x=>x.optionId===o.id).length}`).join(" · ");
+        return `<div class="b"><h3>${esc(v.question)}</h3><p class="s">${res} — majorité simple ${seuil}/${n}</p></div>`;
+      }).join("");
+      const html=`<html><head><meta charset="utf-8"><title>Archive de mandat ${an}</title>
+        <style>body{font-family:Georgia,serif;max-width:820px;margin:30px auto;padding:0 20px;color:#1a1a2e}
+        h1{border-bottom:2px solid #241c46;padding-bottom:8px}h2{margin-top:34px;border-bottom:1px solid #ccc}
+        .b{border:1px solid #ddd;border-radius:9px;padding:14px;margin:14px 0}.s{color:#666;font-size:13px;margin:0 0 8px}
+        @media print{.np{display:none}}</style></head><body>
+        <h1>Archive de mandat — ${an}</h1>
+        <p>${esc(S.meta.nom||"Bureau étudiant")} — document de passation, arrêté le ${esc(fmtQuand(new Date().toISOString()))}.</p>
+        <h2>Composition</h2><ul>${(S.admins||[]).filter(a=>a.statut==="actif").map(a=>`<li>${esc(((a.prenom||"")+" "+(a.nom||"")).trim())}${a.fonction?" — "+esc(a.fonction):""}</li>`).join("")}</ul>
+        <h2>Réunions et procès-verbaux</h2>${blocsR||"<p>Aucune réunion.</p>"}
+        <h2>Votes</h2>${blocsV||"<p>Aucun vote.</p>"}
+        ${S.meta.bilanPublie?`<h2>Synthèse des bilans moraux</h2><p style="white-space:pre-wrap">${esc(S.meta.bilanPublie)}</p>`:""}
+        <p class="np"><button onclick="window.print()">Enregistrer en PDF</button></p></body></html>`;
+      const w=window.open("","_blank"); if(w){ w.document.write(html); w.document.close(); }
+      logAct("Archive de mandat générée");
+      break; }
+    case "reu-pv-approuver": {
+      if(!estSecretaire()||!sb) break;
+      const note = window.prompt ? window.prompt("Approuvé lors de quelle réunion ? (ex. « réunion du 12/09/2026 »)","") : "";
+      if(note===null) break;
+      const quand=new Date().toISOString();
+      const r=await sb.from("ca_reunions").update({pv_statut:"approuve",pv_approuve_le:quand,pv_approuve_note:String(note||"").trim()}).eq("id",id);
+      if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
+      const loc=(S.reunions||[]).find(x=>x.id===id);
+      if(loc){ loc.pvStatut="approuve"; loc.pvApprouveLe=quand; loc.pvApprouveNote=String(note||"").trim(); }
+      logAct("PV approuvé — "+((loc&&loc.titre)||"")); render(); break; }
+    case "reu-pv-brouillon": {
+      if(!estSecretaire()||!sb) break;
+      const r=await sb.from("ca_reunions").update({pv_statut:"brouillon",pv_approuve_le:null,pv_approuve_note:null}).eq("id",id);
+      if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
+      const loc=(S.reunions||[]).find(x=>x.id===id);
+      if(loc){ loc.pvStatut="brouillon"; loc.pvApprouveLe=null; loc.pvApprouveNote=""; }
+      render(); break; }
     case "registre-pv": {
       const R=(S.reunions||[]).filter(m=>(m.ordre||[]).some(p=>p.fait||p.notes)).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
       const blocs=R.map(m=>{
@@ -2232,6 +2379,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
         return `<div style="border:1px solid #ddd;border-radius:9px;padding:14px;margin:14px 0">
           <h2 style="margin:0 0 4px">${esc(m.titre)}</h2>
           <p style="margin:0 0 10px;color:#666;font-size:13px">${m.date?esc(fmtDateLong(m.date)):"date ?"}${m.lieu?" \u2014 "+esc(m.lieu):""} \u2014 ${pres} pr\u00e9sent(s)</p>
+          <p style="margin:0 0 10px;font-size:13px;font-weight:bold;color:${pvApprouve(m)?"#2d6a4f":"#a33"}">${pvApprouve(m)?("PV approuv\u00e9"+(m.pvApprouveNote?" \u2014 "+esc(m.pvApprouveNote):"")+(m.pvApprouveLe?" ("+esc(fmtQuand(m.pvApprouveLe))+")":"")):"PROJET \u2014 non approuv\u00e9"}</p>
           <ol>${pts}</ol></div>`;
       }).join("");
       const html=`<html><head><meta charset="utf-8"><title>Registre des PV</title>
@@ -2491,6 +2639,11 @@ ${sections||"<p>Aucun retour.</p>"}
 
 async function boot(){
   try{ const params=new URLSearchParams(location.search); if(params.get("desabo")!=null){ await pageDesabo(params.get("desabo"), params.get("t")||""); return; } }catch(e){}
+  /* Lien de participation : ?go=bilan mène à l'onglet Bilans moraux, après connexion. */
+  try{ const params=new URLSearchParams(location.search); const g=params.get("go");
+    if(g){ S.goto=g; S.view="ca"; try{ sessionStorage.setItem("ca:goto",g); }catch(_){ } }
+    else { try{ const m=sessionStorage.getItem("ca:goto"); if(m){ S.goto=m; S.view="ca"; } }catch(_){ } }
+  }catch(e){}
   if(!sb){ render(); return; }
   try{ const h=String(location.hash||""); if(/type=recovery/.test(h)||/[?&]type=recovery/.test(location.search)){ S.recovery=true; } }catch(e){}
   try{ await refreshSession(); }catch(e){} render();
