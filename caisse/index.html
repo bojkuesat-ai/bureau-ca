@@ -697,7 +697,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
           <option value="reexamen">Réexamens ⚠</option>
           <option value="direct">Paiements directs</option>
         </select>
-        <input type="text" id="search" placeholder="Rechercher un objet ou un nom">
+        <input type="text" id="search" placeholder="Objet, nom, montant, référence, motif…">
         <div class="spacer"></div>
         <button class="btn ghost sm" id="payrunBtn">Virements à faire</button>
         <button class="btn ghost sm" id="relanceAllBtn">Relancer les incomplètes</button>
@@ -738,7 +738,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       <div class="kpi wait"><div class="eyebrow">Validé, à virer</div><div class="n" id="o_valide">0 €</div></div>
       <div class="kpi wait"><div class="eyebrow">En attente de décision</div><div class="n" id="o_attente">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Refusé</div><div class="n" id="o_refuse">0 €</div></div>
-      <div class="kpi" id="o_soldeCard"><div class="eyebrow">Solde de la caisse</div><div class="n" id="o_solde">0 €</div></div>
+      <div class="kpi" id="o_soldeCard"><div class="eyebrow" id="o_soldeLbl">Solde de la caisse</div><div class="n" id="o_solde">0 €</div></div>
     </div>
 
     <div>
@@ -1456,8 +1456,12 @@ async function envoyerAnnonceMembres(){
   if(!confirm(`Envoyer cette annonce par e-mail à ${dest.length} membre(s) ?`)) return;
   const btn = $("#ann_send"); if(btn){ btn.disabled = true; btn.textContent = "Envoi…"; }
   const sujet = subj || "Annonce du bureau étudiant";
-  let ok = 0;
+  let ok = 0; const echecs = []; let n = 0;
+  const garde = e => { e.preventDefault(); e.returnValue = ""; };
+  window.addEventListener("beforeunload", garde);
   for(const m of dest){
+    n++;
+    if(btn) btn.textContent = `Envoi ${n}/${dest.length}…`;
     const prenom = m.first_name || String(m.name||"").split(" ")[0] || "";
     const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
       <h2 style="margin:0 0 10px">${mailEsc(sujet)}</h2>
@@ -1466,12 +1470,24 @@ async function envoyerAnnonceMembres(){
       <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
       <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
       <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
-    if(await envoyerMail(m.email, sujet, html)) ok++;
+    let envoye = false;
+    try{ envoye = await envoyerMail(m.email, sujet, html); }catch(_){ envoye = false; }
+    if(envoye) ok++; else echecs.push((m.name || "") + " <" + m.email + ">");
     await new Promise(r => setTimeout(r, 120));
   }
+  window.removeEventListener("beforeunload", garde);
   if(btn){ btn.disabled = false; btn.textContent = "Envoyer l'annonce par e-mail aux membres"; }
-  toast(ok + " membre(s) prévenu(s) par e-mail.");
-  if(ok){ if($("#ann_subject")) $("#ann_subject").value = ""; if($("#ann_body")) $("#ann_body").value = ""; }
+  if(echecs.length){
+    toast(ok + " envoi(s) réussi(s), " + echecs.length + " échec(s).");
+    alert("Annonce partiellement envoyée.\n\n" + ok + " membre(s) l'ont reçue.\n"
+      + echecs.length + " envoi(s) ont échoué :\n\n" + echecs.slice(0,20).join("\n")
+      + (echecs.length > 20 ? "\n… et " + (echecs.length - 20) + " autre(s)" : "")
+      + "\n\nLe texte de l'annonce est conservé : vous pouvez relancer l'envoi.\n"
+      + "Attention : les membres déjà servis la recevront une seconde fois.");
+  }else{
+    toast(ok + " membre(s) prévenu(s) par e-mail.");
+    if($("#ann_subject")) $("#ann_subject").value = ""; if($("#ann_body")) $("#ann_body").value = "";
+  }
 }
 function statsTreso(){
   const attente = state.items.filter(i=>i.status==="En attente");
@@ -1623,6 +1639,14 @@ const fstamp = t => new Date(t).toLocaleString("fr-BE",{day:"2-digit",month:"2-d
 const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const slug = s => String(s??"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 const tagClass = s => ({"En attente":"t-attente","Validée":"t-valide","Remboursée":"t-paye","Refusée":"t-refuse"}[s]||"t-attente");
+// la recherche du trésorier ne portait que sur l'objet et le nom
+function champsCherchables(i){
+  const m = Number(i.amount || 0);
+  const mnt = m.toFixed(2);
+  return slug([ i.object, i.requester_name, i.beneficiary, i.category, i.decision_note,
+    i.communication, i.requester_position, refOf(i), mnt, mnt.replace(".", ",")
+  ].filter(Boolean).join(" "));
+}
 const refOf = it => "DEM-" + String(it.expense_date || "").slice(0,4) + "-" +
   (it.seq ? String(it.seq).padStart(3,"0") : String(it.id).slice(0,4).toUpperCase());
 const bandeauRef = it => [refOf(it), (it.requester_name||"").trim(), (it.requester_position||"").trim()].filter(Boolean).join(" · ");
@@ -1887,6 +1911,7 @@ $("#expForm").addEventListener("submit", async e => {
   const btn = $("#expBtn"); btn.disabled = true; btn.textContent = "Enregistrement…";
   erreurForm("#expErr", null);
   try{
+    refusSiClos($("#e_date").value);
     rattraperFichier("exp", "#e_kind", "#e_proof");
     const attachments = await envoyerPieces("exp", "dep");
     const { error } = await sb.from("expenses").insert({
@@ -2493,22 +2518,26 @@ function renderOverview(){
   const du = som(list,"Validée") + som(list,"En attente");
   $("#o_info").textContent = du ? "Reste à verser : " + euro(du) : "Rien en attente de versement.";
   renderHoraires();
-  const _solde = totalRecettes() - totalSorties();
+  const _solde = totalRecettes(an) - totalSorties(an);
+  if($("#o_soldeLbl")) $("#o_soldeLbl").textContent = an === "all" ? "Solde de la caisse" : "Solde " + an + " (recettes − sorties)";
   if($("#o_solde")){ $("#o_solde").textContent = euro(_solde);
     const cd=$("#o_soldeCard"); if(cd){ cd.className = "kpi " + (_solde<0?"wait":"done"); cd.style.borderTopColor = _solde<0?"var(--red)":"var(--green)"; } }
 
-  const exp = (state.expenses||[]).filter(e => an==="all" || String(e.expense_date).startsWith(an));
+  const exp = (state.expenses||[]).filter(e => dansAnnee(e.expense_date, an));
+  const rec = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an));
   const all = [
     ...list.map(i => ({ t: i.kind==="direct"?"direct":"remb", date:i.expense_date, obj:i.object,
       who:(i.kind==="direct"?(i.beneficiary||i.requester_name):i.requester_name), amount:Number(i.amount||0), status:i.status, id:i.id })),
-    ...exp.map(e => ({ t:"dep", date:e.expense_date, obj:e.object, who:(e.payee||e.author_name||""), amount:Number(e.amount||0), status:"Payée", id:null }))
+    ...exp.map(e => ({ t:"dep", date:e.expense_date, obj:e.object, who:(e.payee||e.author_name||""), amount:Number(e.amount||0), status:"Payée", id:null })),
+    ...rec.map(r => ({ t:"rec", date:r.income_date, obj:r.object, who:(r.source||r.author_name||""), amount:Number(r.amount||0), status:"Encaissée", id:null }))
   ].sort((a,b)=> String(b.date).localeCompare(String(a.date)));
   const badge = t => t==="direct" ? '<span class="tag" style="background:#3a2d6e;color:#cdbcff">DIRECT</span>'
     : t==="dep" ? '<span class="tag" style="background:#274b34;color:#bfe6c9">DÉPENSE</span>'
+    : t==="rec" ? '<span class="tag" style="background:#1f4d3a;color:#9ff0c4">RECETTE</span>'
     : '<span class="tag" style="background:#39323f;color:#e0d6ec">REMBOURS.</span>';
   const oal = $("#o_all");
   if(oal) oal.innerHTML = all.length ? all.map(r => {
-    const stCls = r.t==="dep" ? "t-paye" : tagClass(r.status);
+    const stCls = (r.t==="dep"||r.t==="rec") ? "t-paye" : tagClass(r.status);
     return `<div class="row"${r.id?` data-id="${r.id}"`:""} tabindex="0" role="button">
       <div class="date mono" style="font-size:13px">${fdate(r.date)}</div>
       <div><div class="obj">${badge(r.t)} ${esc(r.obj||"")}</div><div class="meta">${esc(r.who||"")}</div></div>
@@ -2597,6 +2626,10 @@ $("#resetBtn").onclick = async () => {
 const anneesCloses = () => state.closures.map(c => c.year);
 const estClos = d => d ? anneesCloses().includes(Number(String(d).slice(0,4))) : false;
 const ouvert = arr => arr.filter(o => !estClos(o.expense_date || o.income_date));
+// une écriture datée d'un exercice clôturé serait acceptée puis masquée des listes,
+// tout en continuant à peser dans les totaux : on la refuse à la source.
+const refusSiClos = d => { if(estClos(d)) throw new Error("L'exercice " + String(d).slice(0,4) + " est clôturé : aucune écriture ne peut y être ajoutée ni modifiée. Rouvrez-le d'abord si c'est nécessaire."); };
+const dansAnnee = (d, an) => !an || an === "all" || String(d || "").startsWith(an);
 
 function renderClosures(){
   const sel = $("#closeYear"), an = new Date().getFullYear();
@@ -2635,10 +2668,12 @@ $("#closureList").addEventListener("click", async e => {
 });
 
 /* ---------- recettes ---------- */
-function totalRecettes(){ return state.incomes.reduce((s,i)=>s+Number(i.amount||0),0); }
-function totalSorties(){
-  return state.expenses.reduce((s,e)=>s+Number(e.amount||0),0)
-       + state.items.filter(i=>i.status==="Remboursée").reduce((s,i)=>s+Number(i.amount||0),0);
+function totalRecettes(an){
+  return state.incomes.filter(i=>dansAnnee(i.income_date,an)).reduce((s,i)=>s+Number(i.amount||0),0);
+}
+function totalSorties(an){
+  return state.expenses.filter(e=>dansAnnee(e.expense_date,an)).reduce((s,e)=>s+Number(e.amount||0),0)
+       + state.items.filter(i=>i.status==="Remboursée" && dansAnnee(i.expense_date,an)).reduce((s,i)=>s+Number(i.amount||0),0);
 }
 
 function renderIncomes(){
@@ -2667,6 +2702,7 @@ $("#incForm").addEventListener("submit", async e => {
   const btn = $("#incBtn"); btn.disabled = true; btn.textContent = "Enregistrement…";
   erreurForm("#incErr", null);
   try{
+    refusSiClos($("#i_date").value);
     rattraperFichier("inc", "#i_kind", "#i_proof");
     const attachments = await envoyerPieces("inc", "rec");
     const { error } = await sb.from("incomes").insert({
@@ -2905,7 +2941,8 @@ function confirmerDoublon(d){
 
 /* ---------- brouillon automatique ---------- */
 const BROUILLONS = { req: ["#f_date","#f_amount","#f_object","#f_cat","#f_pay","#f_note"],
-                     dir: ["#fd_amount","#fd_benef","#fd_object","#fd_mode","#fd_iban","#fd_comm","#fd_note"] };
+                     dir: ["#fd_amount","#fd_benef","#fd_object","#fd_mode","#fd_comm","#fd_note"] };  // pas l'IBAN : il ne doit pas rester dans le navigateur
+const BROUILLON_JOURS = 7;
 function cleBrouillon(cle){ return "caisse.brouillon." + cle + "." + (state.profile ? state.profile.id : "x"); }
 function sauverBrouillon(cle){
   try{
@@ -2913,20 +2950,27 @@ function sauverBrouillon(cle){
     BROUILLONS[cle].forEach(sel => { const el = $(sel); if(el) d[sel] = el.value; });
     const vide = Object.values(d).every(v => !String(v||"").trim());
     if(vide) localStorage.removeItem(cleBrouillon(cle));
-    else localStorage.setItem(cleBrouillon(cle), JSON.stringify(d));
+    else localStorage.setItem(cleBrouillon(cle), JSON.stringify({ t: Date.now(), d }));
   }catch(_){}
 }
 function restaurerBrouillon(cle){
   try{
     const raw = localStorage.getItem(cleBrouillon(cle)); if(!raw) return false;
-    const d = JSON.parse(raw); let rempli = false;
+    const p = JSON.parse(raw);
+    const d = (p && p.d) ? p.d : p;                     // ancien format : objet à plat
+    const t = (p && p.t) ? Number(p.t) : 0;
+    if(t && Date.now() - t > BROUILLON_JOURS * 86400000){   // brouillon périmé
+      localStorage.removeItem(cleBrouillon(cle)); return false;
+    }
+    let rempli = false;
     BROUILLONS[cle].forEach(sel => {
       const el = $(sel);
-      if(el && d[sel] != null && String(d[sel]).trim() && sel !== "#f_date"){ el.value = d[sel]; rempli = true; }
+      if(el && d[sel] != null && String(d[sel]).trim()){ el.value = d[sel]; rempli = true; }
     });
     if(rempli){
       const box = $(cle === "req" ? "#brouillonReq" : "#brouillonDir");
       if(box) box.hidden = false;
+      sauverBrouillon(cle);   // réécrit au format horodaté, sans l'IBAN des anciens brouillons
     }
     return rempli;
   }catch(_){ return false; }
@@ -2990,6 +3034,7 @@ $("#reqForm").addEventListener("submit", async e => {
       majHoraire();
       throw new Error("Le dépôt de demandes est fermé pour le moment. " + texteHoraires());
     }
+    refusSiClos($("#f_date").value);
     const _ibanR = String(state.profile.iban || "").trim();
     if(_ibanR && !ibanValide(_ibanR)) throw new Error("Votre IBAN enregistré est incorrect. " + messageIban(_ibanR) + "\nCorrigez-le avec le bouton « Modifier ».");
     const _dbl = chercherDoublon($("#f_object").value.trim(), parseFloat($("#f_amount").value), $("#f_date").value);
@@ -3385,7 +3430,7 @@ function render(){
     const f = $("#filterStatus").value, q = slug($("#search").value.trim());
     const list = ouvert(state.items).filter(i => {
       const okS = f==="all" ? true : f==="a_traiter" ? (i.status==="En attente"||i.status==="Validée"||i.status==="À corriger") : f==="incomplet" ? estIncomplet(i) : f==="reexamen" ? (i.reexamen_at && i.status==="Refusée") : f==="direct" ? (i.kind==="direct") : i.status===f;
-      const okQ = !q || slug(i.object).includes(q) || slug(i.requester_name).includes(q);
+      const okQ = !q || champsCherchables(i).includes(q);
       return okS && okQ;
     });
     renderBulk();
@@ -3808,6 +3853,7 @@ $("#d_body").addEventListener("click", async e => {
     if(!obj) return erreurForm("#editErr", "Indiquez l'objet de la demande.");
     if(!(mnt > 0)) return erreurForm("#editErr", "Le montant doit être supérieur à 0.");
     if(!dte) return erreurForm("#editErr", "Indiquez la date.");
+    if(estClos(dte)) return erreurForm("#editErr", "L'exercice " + String(dte).slice(0,4) + " est clôturé : cette date n'est plus acceptée.");
     // un IBAN erroné saisi ici partait tel quel dans le fichier de virements
     if(iban && !ibanValide(iban)) return erreurForm("#editErr", messageIban(iban));
     const mntArrondi = Math.round(mnt * 100) / 100;   // jamais plus de 2 décimales (fichier SEPA)
