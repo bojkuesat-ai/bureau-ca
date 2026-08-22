@@ -379,6 +379,10 @@ async function loadMailing(){ try{ const {data}=await sb.from("ca_mailing").sele
 
 /* ===== Notifications par e-mail (Amazon SES via Edge Function) ===== */
 const CA_SEND_FN = SB_URL + "/functions/v1/send-email";
+/* Relance des bilans : la liste des retardataires est calculée côté serveur et n'arrive jamais ici. */
+const CA_RELANCE_FN = SB_URL + "/functions/v1/relance-bilans";
+/* En dessous de ce nombre de manquants, relancer reviendrait à désigner les personnes. */
+const CA_SEUIL_RELANCE = 3;
 /* En-têtes d'envoi : on transmet le JETON de l'utilisateur connecté (et non la seule clé publique),
    pour que la fonction serveur puisse exiger une personne authentifiée. */
 async function caSendHeaders(){
@@ -585,7 +589,7 @@ async function refreshSession(){
     loadMailing,loadGroupes,loadProgrammes,loadDesabonnes];
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
 }
-async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; } }catch(e){} }
+async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; } }catch(e){} }
 async function loadBilans(){
   /* Aucun tri : l'ordre de lecture ne doit rien laisser deviner de l'ordre de dépôt.
      La base ne renvoie ces lignes qu'au secrétariat, et seulement après clôture. */
@@ -895,7 +899,7 @@ function viewAdmin(){
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Bilans moraux</h2><span class="l"></span></div>
     <div class="compose"><h3 class="serif">${bilanEtat()==="ouvert"?"Collecte en cours":(bilanEtat()==="cloture"?"Campagne clôturée":"Fermé")}</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Chaque membre dépose un bilan <b>anonyme</b> sur les autres (ce qui a fonctionné / à améliorer). <b>Pendant la collecte, personne ne lit rien.</b> Après la clôture, seul le secrétariat lit les retours, prépare le texte et le publie aux membres.</p>
-      <p style="color:var(--slate);font-size:12px;margin:0 0 8px">${(S.meta.bilanNbDeposes!==undefined)?S.meta.bilanNbDeposes:(S.meta.bilanSubmitters||[]).length} bilan(s) déposé(s)${bilanPublie()?" · synthèse publiée":""}</p>
+      <p style="color:var(--slate);font-size:12px;margin:0 0 8px">${bilanNbDeposes()}/${membresActifs().length} bilan(s) déposé(s)${bilanPublie()?" · synthèse publiée":""}</p>
       <div class="row-btn"><button class="btn${bilanEtat()==="ouvert"?" ghost":""}" data-action="toggle-bilan">${bilanEtat()==="ouvert"?"Fermer la collecte":"Ouvrir la collecte"}</button>
         ${bilanEtat()==="ouvert"?`<button class="btn ghost" data-action="bilan-cloturer">Clôturer (lecture secrétariat)</button>`:""}
         <button class="btn ghost" data-action="reset-bilan">Tout réinitialiser</button></div></div>
@@ -1238,6 +1242,8 @@ function tabAnnonces(){
 /* ---- onglet BILANS MORAUX (assistant anonyme) ---- */
 function bilanEtat(){ return S.meta.bilanEtat || (S.meta.bilanActif?"ouvert":"ferme"); }
 function bilanPublie(){ return String(S.meta.bilanPublie||""); }
+/* Compteur seul : jamais la liste des déposants. */
+function bilanNbDeposes(){ return (S.meta.bilanNbDeposes!==undefined)?S.meta.bilanNbDeposes:(S.meta.bilanSubmitters||[]).length; }
 /* Les bilans bruts ne sont lisibles que par le secrétariat, et seulement après clôture. */
 function peutLireBilans(){ return bilanEtat()==="cloture" && estSecretaire(); }
 function bilanOnglet(){ return bilanEtat()!=="ferme" || !!bilanPublie(); }
@@ -1336,10 +1342,18 @@ function tabBilan(){
         <button class="btn" data-action="bilan-send" style="margin-left:auto">Envoyer mes bilans (anonyme)</button></div>`;
     }
     if(estSecretaire()||(S.session&&S.session.role==="owner")){
-      const rendus=(S.meta.bilanNbDeposes!==undefined)?S.meta.bilanNbDeposes:(S.meta.bilanSubmitters||[]).length;
+      const rendus=bilanNbDeposes(); const attendus=membresActifs().length; const manquants=Math.max(0,attendus-rendus);
+      const relanceOk = manquants>=CA_SEUIL_RELANCE;
       html += `<div class="card2" style="margin-top:22px"><h3 class="serif" style="margin-top:0">Suivi de la campagne</h3>
-        <p class="du">${rendus} membre(s) ont déposé leur bilan. Le contenu reste illisible tant que la campagne n'est pas clôturée.</p>
-        ${estSecretaire()?`<div class="row-btn"><button class="btn" data-action="bilan-cloturer">Clôturer la campagne</button></div>`:""}</div>`;
+        <p class="du" style="font-size:22px;color:var(--ink);margin:0 0 4px"><b>${rendus}/${attendus}</b></p>
+        <p class="du" style="margin:0">bilan(s) déposé(s) — il en manque ${manquants}. Le contenu reste illisible tant que la campagne n'est pas clôturée, et vous ne pouvez pas savoir qui a déposé.</p>
+        ${S.meta.bilanRelanceLe?`<p class="by" style="margin:8px 0 0">Dernier rappel envoyé le ${esc(fmtQuand(S.meta.bilanRelanceLe))}.</p>`:""}
+        <div class="row-btn">
+          ${manquants>0?`<button class="btn ghost" data-action="bilan-relance"${relanceOk?"":" disabled"}>Relancer les ${manquants} manquant(s)</button>`:""}
+          ${estSecretaire()?`<button class="btn" data-action="bilan-cloturer">Clôturer la campagne</button>`:""}
+        </div>
+        ${(manquants>0&&!relanceOk)?`<p class="hint" style="margin:8px 0 0;color:var(--stamp)">Rappel désactivé : avec moins de ${CA_SEUIL_RELANCE} manquants, savoir qu'un mail est parti reviendrait à désigner les personnes. Passez par une annonce générale.</p>`:""}
+        ${relanceOk?`<p class="hint" style="margin:8px 0 0">Le rappel part uniquement à ceux qui n'ont pas encore déposé, un mail par personne. La liste est établie sur le serveur : ni vous ni l'application ne la recevez.</p>`:""}</div>`;
     }
   }
 
@@ -2151,6 +2165,24 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
       S.meta.bilanEtat="cloture"; S.meta.bilanActif=false;
       await loadBilans(); logAct("Campagne de bilans moraux clôturée"); render(); break; }
+    case "bilan-relance": {
+      if(!(estSecretaire()||(S.session&&S.session.role==="owner"))||!sb) break;
+      if(bilanEtat()!=="ouvert"){ if(window.alert) window.alert("La collecte n'est pas ouverte."); break; }
+      const attendus=membresActifs().length, manquants=Math.max(0,attendus-bilanNbDeposes());
+      if(manquants<=0){ if(window.alert) window.alert("Tout le monde a déposé son bilan."); break; }
+      if(manquants<CA_SEUIL_RELANCE){ if(window.alert) window.alert("Il reste moins de "+CA_SEUIL_RELANCE+" personnes à relancer : envoyer le rappel reviendrait à les désigner. Passez par une annonce générale."); break; }
+      if(window.confirm && !window.confirm("Envoyer un rappel aux "+manquants+" membres qui n'ont pas encore déposé ?\n\nVous ne saurez pas de qui il s'agit : la liste est calculée sur le serveur.")) break;
+      try{
+        const headers=await caSendHeaders();
+        const r=await fetch(CA_RELANCE_FN,{method:"POST",headers:headers,body:JSON.stringify({app_url:caAppUrl()})});
+        let j={}; try{ j=await r.json(); }catch(_){}
+        if(!r.ok){ if(window.alert) window.alert("Échec : "+(j.error||("erreur "+r.status))); break; }
+        S.meta.bilanRelanceLe=j.date||new Date().toISOString();
+        logAct("Rappel de bilans envoyé aux membres n'ayant pas déposé ("+(j.envoyes||0)+")");
+        if(window.alert) window.alert((j.envoyes||0)+" rappel(s) envoyé(s).");
+        render();
+      }catch(e){ if(window.alert) window.alert("Échec de l'envoi."); }
+      break; }
     case "bilan-preparer": { if(!peutLireBilans()) break;
       S.bilanPubDraft=bilanTexteCompile();
       if(!S.bilanPubDraft && window.alert) window.alert("Aucun retour à compiler.");
