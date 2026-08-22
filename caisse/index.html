@@ -533,7 +533,6 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
     <button id="tabIncomes" aria-pressed="false" hidden>Recettes</button>
     <button id="tabMembers" aria-pressed="false" hidden>Membres<span class="pill" id="pillMem" hidden>0</span></button>
     <button id="tabMessages" aria-pressed="false" hidden>Messages<span class="pill" id="pillMsg" hidden>0</span></button>
-    <button id="tabFacture" aria-pressed="false" hidden>Facturation</button>
   </div>
   <div class="who"><b id="whoName">—</b><span id="whoRole">—</span><button id="btnMsg" class="btn ghost sm" style="display:none;margin-left:auto">✉️ Messagerie<span class="pill" id="btnMsgPill" hidden>0</span></button></div>
   <button class="btn ghost sm" id="changePass">Mot de passe</button>
@@ -950,65 +949,6 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
     </div>
   </section>
 
-  <section id="viewFacture" class="stack" hidden>
-    <div>
-      <div class="section-title"><div class="eyebrow">Émetteur (votre ASBL)</div></div>
-      <div class="card" style="padding:16px">
-        <p class="hint" style="margin:0 0 12px">Ces informations apparaissent sur toutes vos factures. Enregistrées sur cet appareil.</p>
-        <div class="field"><label for="em_nom">Nom de l'ASBL</label><input type="text" id="em_nom" maxlength="120" placeholder="Bureau étudiant ASBL"></div>
-        <div class="field" style="margin-top:8px"><label for="em_adr">Adresse complète</label><textarea id="em_adr" maxlength="240" placeholder="Rue, numéro&#10;Code postal Ville&#10;Belgique"></textarea></div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
-          <div class="field" style="flex:1;min-width:180px"><label for="em_bce">N° d'entreprise (BCE)</label><input type="text" id="em_bce" maxlength="20" placeholder="BE 0123.456.789"></div>
-          <div class="field" style="flex:1;min-width:180px"><label for="em_peppol">Votre Peppol ID (facultatif)</label><input type="text" id="em_peppol" maxlength="40" placeholder="0208:0123456789"></div>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
-          <div class="field" style="flex:1;min-width:180px"><label for="em_iban">IBAN</label><input type="text" id="em_iban" maxlength="40" placeholder="BE.. .... .... ...."></div>
-          <div class="field" style="flex:1;min-width:180px"><label for="em_email">E-mail de contact</label><input type="email" id="em_email" maxlength="120" placeholder="tresorerie@..."></div>
-        </div>
-        <div class="actions" style="margin-top:12px"><button class="btn ok" id="em_save">Enregistrer l'émetteur</button></div>
-      </div>
-    </div>
-
-    <div>
-      <div class="section-title"><div class="eyebrow">Nouvelle facture</div></div>
-      <div class="card" style="padding:16px">
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <div class="field" style="flex:1;min-width:150px"><label for="f_num">Numéro</label><input type="text" id="f_num" readonly></div>
-          <div class="field" style="flex:1;min-width:150px"><label for="fa_date">Date</label><input type="date" id="fa_date"></div>
-          <div class="field" style="flex:1;min-width:150px"><label for="f_echeance">Échéance</label><input type="date" id="f_echeance"></div>
-        </div>
-
-        <div class="section-title" style="margin-top:14px"><div class="eyebrow">Client</div></div>
-        <div class="field"><label for="c_nom">Nom / raison sociale</label><input type="text" id="c_nom" maxlength="120" placeholder="Nom du client"></div>
-        <div class="field" style="margin-top:8px"><label for="c_adr">Adresse</label><textarea id="c_adr" maxlength="240" placeholder="Rue, numéro&#10;Code postal Ville&#10;Pays"></textarea></div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
-          <div class="field" style="flex:1;min-width:160px"><label for="c_tva">N° d'entreprise / TVA (si pro)</label><input type="text" id="c_tva" maxlength="20" placeholder="BE 0..."></div>
-          <div class="field" style="flex:1;min-width:160px"><label for="c_peppol">Peppol ID du client (pour envoi Peppol)</label><input type="text" id="c_peppol" maxlength="40" placeholder="0208:0..."></div>
-        </div>
-        <div class="field" style="margin-top:8px"><label for="c_email">E-mail du client (pour envoi par mail)</label><input type="email" id="c_email" maxlength="120" placeholder="client@..."></div>
-
-        <div class="section-title" style="margin-top:14px"><div class="eyebrow">Lignes</div></div>
-        <div id="f_lignes"></div>
-        <div class="actions" style="margin-top:8px"><button class="btn ghost sm" id="f_addLigne">+ Ajouter une ligne</button></div>
-
-        <div class="field" style="margin-top:12px"><label for="fa_note">Note / communication (facultatif)</label><textarea id="fa_note" maxlength="300" placeholder="Merci de votre confiance, référence…"></textarea></div>
-
-        <div style="margin-top:14px;padding:12px 14px;background:var(--green-bg,#eef6f0);border:1px solid #cfe6d8;border-radius:10px;display:flex;justify-content:space-between;align-items:center">
-          <b>Total à payer</b><b id="f_total" style="font-size:20px">0,00 €</b>
-        </div>
-        <p class="hint" style="margin-top:8px">Sans TVA — mention légale ajoutée automatiquement : « Petite entreprise soumise au régime de la franchise de taxe. TVA non applicable — Article 56bis du Code TVA ».</p>
-
-        <div class="err" id="f_err" hidden></div>
-        <div class="actions" style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn" id="f_apercu">Aperçu / PDF</button>
-          <button class="btn ghost" id="f_xml">Télécharger le XML Peppol</button>
-          <button class="btn ok" id="f_mail">Envoyer par e-mail</button>
-          <button class="btn" id="f_peppol" style="background:#8b5cf6;border-color:#8b5cf6">Envoyer via Peppol</button>
-        </div>
-        <p class="hint" id="f_peppolHint" style="margin-top:8px">L'envoi Peppol nécessite un Access Point configuré (fonction Supabase <code>peppol-send</code>). Sans cela, ce bouton vous préviendra simplement que ce n'est pas encore branché.</p>
-      </div>
-    </div>
-  </section>
 </main>
 
 <footer style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
