@@ -2290,6 +2290,47 @@ function majSelectAnnees(sel, source, champ){
   return el.value;
 }
 
+/* ---------- confirmation par saisie (actions irréversibles) ---------- */
+// Un simple confirm() se clique par réflexe. Ici il faut recopier une phrase exacte.
+function demanderPhrase({ titre, corps, phrase, bouton }){
+  return new Promise(resolve => {
+    let ov = document.getElementById("confirmOverlay");
+    if(!ov){ ov = document.createElement("div"); ov.id = "confirmOverlay";
+      ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px";
+      document.body.appendChild(ov);
+    }
+    ov.innerHTML = `<div style="background:#fff;color:#1a1a1a;max-width:520px;width:100%;border-radius:14px;padding:26px;font-family:Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+      <h2 style="margin:0 0 12px">${mailEsc(titre)}</h2>
+      ${corps}
+      <p style="margin:16px 0 6px">Pour confirmer, recopiez exactement : <b style="font-family:monospace;font-size:15px">${mailEsc(phrase)}</b></p>
+      <input id="cfSaisie" type="text" autocomplete="off" spellcheck="false"
+        style="width:100%;border:1px solid #ccc;border-radius:9px;padding:12px;font-family:monospace;font-size:15px;box-sizing:border-box">
+      <div style="display:flex;gap:10px;margin-top:18px">
+        <button id="cfOk" disabled style="flex:1;background:#b02a2a;color:#fff;border:none;padding:13px;border-radius:9px;font-weight:bold;cursor:not-allowed;opacity:.45">${mailEsc(bouton)}</button>
+        <button id="cfNon" style="background:#eee;border:none;padding:13px 18px;border-radius:9px;cursor:pointer">Annuler</button>
+      </div></div>`;
+    ov.style.display = "flex";
+    const champ = document.getElementById("cfSaisie");
+    const ok = document.getElementById("cfOk");
+    // comparaison tolérante : casse, accents et espaces autour n'ont pas à piéger l'utilisateur
+    const norm = v => slug(String(v||"")).trim().replace(/\s+/g," ");
+    const verifier = () => {
+      const bon = norm(champ.value) === norm(phrase);
+      ok.disabled = !bon;
+      ok.style.cursor = bon ? "pointer" : "not-allowed";
+      ok.style.opacity = bon ? "1" : ".45";
+    };
+    const fermer = v => { ov.style.display = "none"; ov.innerHTML = ""; resolve(v); };
+    champ.oninput = verifier;
+    champ.onkeydown = e => { if(e.key === "Enter" && !ok.disabled) fermer(true);
+                             if(e.key === "Escape") fermer(false); };
+    ok.onclick = () => { if(!ok.disabled) fermer(true); };
+    document.getElementById("cfNon").onclick = () => fermer(false);
+    ov.onclick = e => { if(e.target === ov) fermer(false); };
+    champ.focus();
+  });
+}
+
 /* ---------- tri des listes ---------- */
 // une entrée par liste : la colonne active et le sens (1 croissant, -1 décroissant)
 const tri = { treso:{col:"date",sens:-1}, exp:{col:"date",sens:-1},
@@ -2949,13 +2990,41 @@ function renderClosures(){
 
 $("#closeBtn").onclick = async () => {
   const y = Number($("#closeYear").value); if(!y) return;
-  const n = state.items.filter(i => String(i.expense_date).startsWith(y)).length
-          + state.expenses.filter(e => String(e.expense_date).startsWith(y)).length
-          + state.incomes.filter(i => String(i.income_date).startsWith(y)).length;
-  const enCours = state.items.filter(i => String(i.expense_date).startsWith(y)
-                    && (i.status === "En attente" || i.status === "Validée")).length;
+  const items = state.items.filter(i => String(i.expense_date).startsWith(y));
+  const deps  = state.expenses.filter(e => String(e.expense_date).startsWith(y));
+  const recs  = state.incomes.filter(i => String(i.income_date).startsWith(y));
+  const n = items.length + deps.length + recs.length;
+  const enCours = items.filter(i => i.status === "En attente" || i.status === "Validée").length;
   if(enCours) return toast(enCours + " demande(s) de " + y + " ne sont pas encore soldées. Traitez-les avant de clôturer.");
-  if(!confirm("Clôturer l'exercice " + y + " ?\n\n" + n + " écriture(s) deviendront définitivement verrouillées.\nVous pourrez rouvrir l'exercice si nécessaire.")) return;
+
+  // une écriture datée d'une année postérieure signale un exercice à cheval sur deux années civiles
+  const apres = state.items.filter(i => String(i.expense_date).slice(0,4) > String(y)).length
+              + state.expenses.filter(e => String(e.expense_date).slice(0,4) > String(y)).length
+              + state.incomes.filter(i => String(i.income_date).slice(0,4) > String(y)).length;
+  const sorties = deps.reduce((s,e)=>s+Number(e.amount||0),0)
+                + items.filter(i=>i.status==="Remboursée").reduce((s,i)=>s+Number(i.amount||0),0);
+  const entrees = recs.reduce((s,i)=>s+Number(i.amount||0),0);
+
+  const corps = `
+    <p style="margin:0 0 10px">La clôture verrouille <b>${n} écriture(s)</b> datée(s) de ${y} : plus aucune création, modification ou suppression, y compris par vous.</p>
+    <div style="background:#f6f6f6;border-radius:9px;padding:12px;margin:12px 0;font-size:14px">
+      <div>Entrées ${y} : <b>${mailEsc(euro(entrees))}</b></div>
+      <div>Sorties ${y} : <b>${mailEsc(euro(sorties))}</b></div>
+      <div style="margin-top:6px">Résultat : <b>${mailEsc(euro(entrees - sorties))}</b></div>
+    </div>
+    <div style="background:#fff7ec;border:1px solid #e6c68a;border-radius:9px;padding:12px;margin:12px 0;font-size:14px;color:#8a5a12">
+      <b>La clôture se fait par année civile.</b> Si l'exercice du bureau court à cheval sur deux années
+      (par exemple de juillet à juin), clôturer ${y} coupera le mandat en deux : les écritures de ${y+1}
+      resteront ouvertes et le bilan du mandat devra être reconstitué à la main.
+      ${apres ? `<div style="margin-top:8px"><b>${apres} écriture(s) postérieure(s) à ${y} existent déjà dans la base.</b></div>` : ""}
+    </div>
+    <p style="margin:10px 0 0;color:#666;font-size:13.5px">Avant de continuer : imprimez le bilan de la période. La clôture reste réversible, mais autant garder une trace.</p>`;
+
+  const feu = await demanderPhrase({
+    titre: "Clôturer l'exercice " + y + " ?",
+    corps, phrase: "CLOTURER " + y, bouton: "Clôturer l'exercice " + y
+  });
+  if(!feu) return;
   const { error } = await sb.from("closures").insert({ year:y, closed_by: state.profile.name });
   if(error) return toast("Clôture impossible : " + error.message);
   await refresh(); toast("Exercice " + y + " clôturé.");
