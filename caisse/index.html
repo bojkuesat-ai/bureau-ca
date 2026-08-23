@@ -142,7 +142,7 @@ input[type=file]::file-selector-button:hover{color:var(--gold-soft);border-color
 .btn.sm{padding:9px 12px;font-size:13px}
 
 /* ---------- indicateurs ---------- */
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px}
 .kpi{border-radius:var(--r);padding:16px 16px;border:1px solid var(--line);background:var(--surface)}
 .kpi .n{font-family:'IBM Plex Mono',monospace;font-size:24px;font-weight:600;
   font-variant-numeric:tabular-nums;margin-top:6px;letter-spacing:-.02em;color:var(--text)}
@@ -261,6 +261,17 @@ input[type=file]::file-selector-button:hover{color:var(--gold-soft);border-color
 .horaire b{display:block;margin-bottom:2px}
 .horaire span{color:var(--muted)}
 .ohead,.orow{display:grid;grid-template-columns:1fr 90px 118px 118px 118px 108px;gap:12px;align-items:center}
+.pliable{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);padding:12px 16px}
+.pliable>summary{display:flex;align-items:center;gap:12px;cursor:pointer;list-style:none;user-select:none}
+.pliable>summary::-webkit-details-marker{display:none}
+.pliable>summary::after{content:"⌄";margin-left:auto;color:var(--ink-2);font-size:18px;line-height:1;transition:.15s}
+.pliable[open]>summary::after{transform:rotate(180deg)}
+.pliable>summary:hover{opacity:.85}
+.pliable .resume{color:var(--ink-2);font-size:13px}
+.ototal{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:13px 16px;
+  background:var(--bg2);border-top:1px solid var(--line);font-size:13px}
+.ototal .lbl{color:var(--ink-2)}
+.ototal .val{font-variant-numeric:tabular-nums;font-weight:700}
 .ohead{padding:11px 16px;background:var(--bg2);border-bottom:1px solid var(--line);border-radius:var(--r) var(--r) 0 0}
 .ohead span{font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--muted2)}
 .ohead .r,.orow .r{text-align:right}
@@ -734,15 +745,23 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
   <!-- aperçu par membre -->
   <section id="viewOverview" class="stack" hidden>
     <div class="kpis">
-      <div class="kpi done"><div class="eyebrow">Remboursé aux membres</div><div class="n" id="o_paye">0 €</div></div>
+      <div class="kpi"><div class="eyebrow">Remboursé aux membres</div><div class="n" id="o_paye">0 €</div></div>
+      <div class="kpi"><div class="eyebrow">Paiements directs</div><div class="n" id="o_direct">0 €</div></div>
+      <div class="kpi"><div class="eyebrow">Dépenses directes</div><div class="n" id="o_depenses">0 €</div></div>
+      <div class="kpi" id="o_sortiesCard"><div class="eyebrow">Total des sorties</div><div class="n" id="o_sorties">0 €</div></div>
+      <div class="kpi"><div class="eyebrow">Solde initial</div><div class="n" id="o_initial">0 €</div></div>
+      <div class="kpi done"><div class="eyebrow">Recettes encaissées</div><div class="n" id="o_recettes">0 €</div></div>
+      <div class="kpi" id="o_soldeCard"><div class="eyebrow" id="o_soldeLbl">Solde de la caisse</div><div class="n" id="o_solde">0 €</div></div>
+    </div>
+    <div class="kpis" style="margin-top:-4px">
       <div class="kpi wait"><div class="eyebrow">Validé, à virer</div><div class="n" id="o_valide">0 €</div></div>
       <div class="kpi wait"><div class="eyebrow">En attente de décision</div><div class="n" id="o_attente">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Refusé</div><div class="n" id="o_refuse">0 €</div></div>
-      <div class="kpi" id="o_soldeCard"><div class="eyebrow" id="o_soldeLbl">Solde de la caisse</div><div class="n" id="o_solde">0 €</div></div>
     </div>
 
     <div>
       <div class="toolbar">
+        <label for="o_annee" class="eyebrow" style="margin-right:8px">Exercice</label>
         <select id="o_annee"></select>
         <div class="spacer"></div>
         <span class="hint" id="o_info"></span>
@@ -756,12 +775,28 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
     </div>
 
     <div>
-      <div class="section-title" style="margin-top:8px"><div class="eyebrow">Toutes les demandes et dépenses</div></div>
+      <details class="pliable">
+        <summary>
+          <span class="eyebrow">Recettes de l'exercice</span>
+          <span class="resume" id="o_recResume"></span>
+        </summary>
+        <div class="card" style="overflow:hidden;margin-top:10px">
+          <div class="head"><span>Date</span><span>Objet</span><span>Source</span><span class="r">Montant</span><span></span></div>
+          <div id="o_recList"></div>
+          <div id="o_recTotal" class="ototal"></div>
+        </div>
+        <p class="hint" style="margin-top:8px">Tout ce qui est entré sur le compte : subsides, sponsors, cotisations, remboursements reçus. Le report de l'exercice précédent est affiché à part.</p>
+      </details>
+    </div>
+
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">Toutes les écritures</div></div>
       <div class="card" style="overflow:hidden">
         <div class="head"><span>Date</span><span>Objet</span><span>Statut</span><span class="r">Montant</span><span></span></div>
         <div id="o_all"></div>
+        <div id="o_totaux" class="ototal"></div>
       </div>
-      <p class="hint" style="margin-top:8px">Remboursements, paiements directs et dépenses directes réunis. Cliquez une demande pour l'ouvrir (les dépenses ne sont pas cliquables).</p>
+      <p class="hint" style="margin-top:8px">Remboursements, paiements directs, dépenses et recettes réunis. Cliquez une demande pour l'ouvrir (les dépenses et recettes ne sont pas cliquables).</p>
     </div>
 
     <div>
@@ -838,7 +873,8 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
 
     <div>
       <div class="toolbar">
-        <input type="text" id="expSearch" placeholder="Rechercher un objet ou un fournisseur">
+        <input type="text" id="expSearch" placeholder="Objet, fournisseur, montant, catégorie…">
+        <select id="expAnnee" style="margin-left:8px"></select>
       </div>
       <div class="card" style="overflow:hidden">
         <div class="head"><span>Date</span><span>Objet / bénéficiaire</span><span>Paiement</span><span class="r">Montant</span><span></span></div>
@@ -897,7 +933,8 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
 
     <div>
       <div class="toolbar">
-        <input type="text" id="incSearch" placeholder="Rechercher un objet ou une provenance">
+        <input type="text" id="incSearch" placeholder="Objet, provenance, montant, catégorie…">
+        <select id="incAnnee" style="margin-left:8px"></select>
       </div>
       <div class="card" style="overflow:hidden">
         <div class="head"><span>Date</span><span>Objet / provenance</span><span>Encaissement</span><span class="r">Montant</span><span></span></div>
@@ -1880,7 +1917,10 @@ function renderExpenses(){
   $("#e_grand").textContent = euro(total + rembTotal);
 
   const q = slug($("#expSearch").value.trim());
-  const list = ouvert(state.expenses).filter(e => !q || slug(e.object).includes(q) || slug(e.payee).includes(q));
+  const anE = majSelectAnnees("#expAnnee", state.expenses, "expense_date");
+  const list = ouvert(state.expenses)
+    .filter(e => dansAnnee(e.expense_date, anE))
+    .filter(e => !q || champsEcriture(e, e.payee).includes(q));
   $("#expList").innerHTML = list.length ? list.map(e => `<div class="row" data-exp="${e.id}" tabindex="0" role="button">
       <div class="date mono" style="font-size:13px">${fdate(e.expense_date)}</div>
       <div><div class="obj">${esc(e.object)}</div><div class="meta">${esc(e.payee)} · ${esc(e.category)}${piecesDe(e).length?` · ${piecesDe(e).length} pièce(s)`:" · sans pièce"}</div></div>
@@ -1889,6 +1929,7 @@ function renderExpenses(){
     : emptyHTML("Aucune dépense directe","Enregistrez ci-dessus les achats que vous réglez depuis le compte de l'association.");
 }
 $("#expSearch").oninput = render;
+if($("#expAnnee")) $("#expAnnee").onchange = render;
 
 $("#expForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -1938,7 +1979,8 @@ $("#viewExpenses").addEventListener("click", async e => {
     </dl>
     <div><div class="eyebrow" style="margin-bottom:7px">Pièces justificatives</div>${proofHTML}</div>
     <div class="actions"><button class="btn ghost" data-dupexp="${dep.id}">Dupliquer</button>
-      <button class="btn no" data-delexp="${dep.id}">Supprimer</button></div>`;
+      <button class="btn no" data-delexp="${dep.id}">Supprimer</button></div>
+    ${blocEditerEcriture(dep, "exp")}`;
   $("#drawer").classList.add("open"); $("#scrim").classList.add("open"); $("#closeDrawer").focus();
 });
 
@@ -2224,6 +2266,98 @@ $("#d_body").addEventListener("click", e => {
 });
 
 /* ---------- virements à effectuer ---------- */
+// champs sur lesquels porte la recherche dans les registres dépenses / recettes
+function champsEcriture(o, tiers){
+  const m = Number(o.amount || 0).toFixed(2);
+  return slug([o.object, tiers, o.category, o.method, o.note, m, m.replace(".", ",")]
+    .filter(Boolean).join(" "));
+}
+// remplit le sélecteur d'exercice à partir des dates présentes et renvoie la valeur choisie
+function majSelectAnnees(sel, source, champ){
+  const el = $(sel);
+  if(!el) return "all";
+  const annees = [...new Set((source||[]).map(o => String(o[champ]||"").slice(0,4)).filter(Boolean))].sort().reverse();
+  const choix = el.value || "all";
+  const voulu = `<option value="all">Tous les exercices</option>` + annees.map(a => `<option>${a}</option>`).join("");
+  if(el.innerHTML !== voulu) el.innerHTML = voulu;
+  el.value = [...el.options].some(o => o.value === choix) ? choix : "all";
+  return el.value;
+}
+
+/* ---------- modifier une dépense ou une recette ---------- */
+const CATS_DEPENSE = ["Assurances","Loyer & charges","Matériel","Fournitures","Prestataires","Communication","Frais bancaires","Taxes & cotisations","Événements","Autre"];
+const MODES_DEPENSE = ["Virement","Carte de l'association","Domiciliation","Espèces","Chèque"];
+const CATS_RECETTE = ["Cotisations","Subsides","Dons","Sponsoring","Événements","Ventes","Intérêts bancaires","Remboursement reçu","Autre"];
+const MODES_RECETTE = ["Virement","Espèces","Paiement en ligne","Chèque"];
+const opts = (liste, choisi) => liste.map(o =>
+  `<option${o === choisi ? " selected" : ""}>${esc(o)}</option>`).join("");
+
+// formulaire commun aux deux registres : seuls les libellés changent
+function blocEditerEcriture(o, type){
+  const dep = type === "exp";
+  const cats = dep ? CATS_DEPENSE : CATS_RECETTE;
+  const modes = dep ? MODES_DEPENSE : MODES_RECETTE;
+  return `<div class="fixbox">
+    <b>Corriger cette écriture</b>
+    <p>Une erreur de montant, de date ou d'objet se corrige ici : inutile de supprimer et de tout retaper, les pièces jointes sont conservées.</p>
+    <div id="ecZone" hidden class="stack" style="gap:12px;margin-top:10px">
+      <div class="field"><label for="ec_object">Objet</label>
+        <input type="text" id="ec_object" maxlength="90" value="${esc(o.object||"")}"></div>
+      <div class="field"><label for="ec_amount">Montant (€)</label>
+        <input type="number" id="ec_amount" step="0.01" min="0.01" inputmode="decimal" value="${(Math.round(Number(o.amount||0)*100)/100).toFixed(2)}"></div>
+      <div class="field"><label for="ec_date">Date</label>
+        <input type="date" id="ec_date" value="${esc((dep ? o.expense_date : o.income_date)||"")}"></div>
+      <div class="field"><label for="ec_tiers">${dep ? "Bénéficiaire ou fournisseur" : "Provenance"}</label>
+        <input type="text" id="ec_tiers" maxlength="80" value="${esc((dep ? o.payee : o.source)||"")}"></div>
+      <div class="field"><label for="ec_cat">Catégorie</label>
+        <select id="ec_cat">${opts(cats, o.category)}</select></div>
+      <div class="field"><label for="ec_method">${dep ? "Moyen de paiement" : "Mode d'encaissement"}</label>
+        <select id="ec_method">${opts(modes, o.method)}</select></div>
+      <div class="field"><label for="ec_note">Commentaire</label>
+        <textarea id="ec_note" maxlength="400">${esc(o.note||"")}</textarea></div>
+      <div id="ecErr" class="err" hidden></div>
+      <div class="actions"><button class="btn ok" data-act="ec-save" data-ec="${o.id}" data-ectype="${type}">Enregistrer les corrections</button>
+        <button class="btn ghost" data-act="ec-cancel">Annuler</button></div>
+    </div>
+    <div class="actions" id="ecOuvrir"><button class="btn ghost" data-act="ec-open">Modifier</button></div>
+  </div>`;
+}
+
+$("#d_body").addEventListener("click", async e => {
+  const b = e.target.closest("[data-act]"); if(!b) return;
+  const act = b.dataset.act;
+  if(act === "ec-open"){ $("#ecZone").hidden = false; $("#ecOuvrir").hidden = true; $("#ec_object")?.focus(); return; }
+  if(act === "ec-cancel"){ $("#ecZone").hidden = true; $("#ecOuvrir").hidden = false; return; }
+  if(act !== "ec-save") return;
+
+  const type = b.dataset.ectype, dep = type === "exp";
+  const montant = Math.round(Number($("#ec_amount").value) * 100) / 100;
+  const objet = $("#ec_object").value.trim();
+  const dte = $("#ec_date").value;
+  const tiers = $("#ec_tiers").value.trim();
+  if(!objet) return erreurForm("#ecErr", "Indiquez l'objet.");
+  if(!(montant > 0)) return erreurForm("#ecErr", "Le montant doit être supérieur à zéro.");
+  if(!dte) return erreurForm("#ecErr", "Indiquez la date.");
+  if(!tiers) return erreurForm("#ecErr", dep ? "Indiquez le bénéficiaire." : "Indiquez la provenance.");
+  if(estClos(dte)) return erreurForm("#ecErr", "L'exercice " + String(dte).slice(0,4) + " est clôturé : cette date n'est plus acceptée.");
+
+  const patch = { object:objet, amount:montant, category:$("#ec_cat").value,
+                  method:$("#ec_method").value, note:$("#ec_note").value.trim() };
+  if(dep){ patch.expense_date = dte; patch.payee = tiers; }
+  else   { patch.income_date  = dte; patch.source = tiers; }
+
+  b.disabled = true; b.textContent = "Enregistrement…";
+  const { error } = await sb.from(dep ? "expenses" : "incomes").update(patch).eq("id", b.dataset.ec);
+  b.disabled = false; b.textContent = "Enregistrer les corrections";
+  if(error) return erreurForm("#ecErr", "Modification impossible : " + error.message);
+  closeDrawer(); await refresh();
+  toast(dep ? "Dépense corrigée." : "Recette corrigée.");
+});
+
+// Une recette intitulée « solde d'ouverture » ou « report » est le solde repris de l'exercice
+// précédent, pas une recette de l'année : elle est comptée à part dans l'Aperçu.
+const estOuverture = i => /ouverture|report/i.test(String(i.object||"") + " " + String(i.source||""));
+
 const aVirer = () => state.items.filter(i => i.status === "Validée" && !(i.kind==="direct" && i.pay_mode!=="virement"));
 
 /* ---------- verrou : deux trésoriers ne doivent pas s'écraser ---------- */
@@ -2511,7 +2645,27 @@ function renderOverview(){
   const list = state.items.filter(i => an === "all" || String(i.expense_date).startsWith(an));
   const som = (a,st) => a.filter(i => i.status === st).reduce((s,i)=>s+Number(i.amount||0),0);
 
-  $("#o_paye").textContent    = euro(som(list,"Remboursée"));
+  // sorties : on sépare ce qui est parti vers un membre, vers un tiers, et les dépenses du registre
+  const payes      = list.filter(i => i.status === "Remboursée");
+  const versMembre = payes.filter(i => i.kind !== "direct").reduce((s,i)=>s+Number(i.amount||0),0);
+  const versTiers  = payes.filter(i => i.kind === "direct").reduce((s,i)=>s+Number(i.amount||0),0);
+  const depDirectes = (state.expenses||[]).filter(e => dansAnnee(e.expense_date, an))
+                        .reduce((s,e)=>s+Number(e.amount||0),0);
+  const totalSort  = versMembre + versTiers + depDirectes;
+  const totalRec   = totalRecettes(an);
+  // le report de l'exercice précédent n'est pas une recette de l'année : on l'isole
+  const soldeInitial = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && estOuverture(i))
+                        .reduce((s,i)=>s+Number(i.amount||0),0);
+  const recettesAn  = totalRec - soldeInitial;
+
+  $("#o_paye").textContent     = euro(versMembre);
+  $("#o_direct").textContent   = euro(versTiers);
+  $("#o_depenses").textContent = euro(depDirectes);
+  $("#o_sorties").textContent  = euro(totalSort);
+  $("#o_initial").textContent  = euro(soldeInitial);
+  $("#o_recettes").textContent = euro(recettesAn);
+  if($("#o_sortiesCard")) $("#o_sortiesCard").style.borderTopColor = "var(--red)";
+  if($("#o_sorties")) $("#o_sorties").style.color = "var(--red)";
   $("#o_valide").textContent  = euro(som(list,"Validée"));
   $("#o_attente").textContent = euro(som(list,"En attente"));
   $("#o_refuse").textContent  = euro(som(list,"Refusée"));
@@ -2547,9 +2701,11 @@ function renderOverview(){
     : emptyHTML("Aucune demande", "Les demandes envoyées par les membres apparaîtront ici, regroupées par personne.");
 
   const du = som(list,"Validée") + som(list,"En attente");
-  $("#o_info").textContent = du ? "Reste à verser : " + euro(du) : "Rien en attente de versement.";
+  $("#o_info").textContent = (du ? "Reste à verser : " + euro(du) + " · " : "")
+    + "Solde = " + euro(soldeInitial) + " (initial) + " + euro(recettesAn) + " (recettes) − "
+    + euro(totalSort) + " (sorties)";
   renderHoraires();
-  const _solde = totalRecettes(an) - totalSorties(an);
+  const _solde = totalRec - totalSort;
   if($("#o_soldeLbl")) $("#o_soldeLbl").textContent = an === "all" ? "Solde de la caisse" : "Solde " + an + " (recettes − sorties)";
   if($("#o_solde")){ $("#o_solde").textContent = euro(_solde);
     const cd=$("#o_soldeCard"); if(cd){ cd.className = "kpi " + (_solde<0?"wait":"done"); cd.style.borderTopColor = _solde<0?"var(--red)":"var(--green)"; } }
@@ -2560,21 +2716,70 @@ function renderOverview(){
     ...list.map(i => ({ t: i.kind==="direct"?"direct":"remb", date:i.expense_date, obj:i.object,
       who:(i.kind==="direct"?(i.beneficiary||i.requester_name):i.requester_name), amount:Number(i.amount||0), status:i.status, id:i.id })),
     ...exp.map(e => ({ t:"dep", date:e.expense_date, obj:e.object, who:(e.payee||e.author_name||""), amount:Number(e.amount||0), status:"Payée", id:null })),
-    ...rec.map(r => ({ t:"rec", date:r.income_date, obj:r.object, who:(r.source||r.author_name||""), amount:Number(r.amount||0), status:"Encaissée", id:null }))
+    ...rec.map(r => ({ t: estOuverture(r) ? "init" : "rec", date:r.income_date, obj:r.object,
+      who:(r.source||r.author_name||""), amount:Number(r.amount||0),
+      status: estOuverture(r) ? "Report" : "Encaissée", id:null }))
   ].sort((a,b)=> String(b.date).localeCompare(String(a.date)));
   const badge = t => t==="direct" ? '<span class="tag" style="background:#3a2d6e;color:#cdbcff">DIRECT</span>'
-    : t==="dep" ? '<span class="tag" style="background:#274b34;color:#bfe6c9">DÉPENSE</span>'
-    : t==="rec" ? '<span class="tag" style="background:#1f4d3a;color:#9ff0c4">RECETTE</span>'
+    : t==="dep" ? '<span class="tag" style="background:#4a2a2a;color:#f2c3c3">DÉPENSE</span>'
+    : t==="rec" ? '<span class="tag" style="background:#12503a;color:#8ff0c0">RECETTE</span>'
+    : t==="init" ? '<span class="tag" style="background:#1d3a5c;color:#a9d1f5">SOLDE INITIAL</span>'
     : '<span class="tag" style="background:#39323f;color:#e0d6ec">REMBOURS.</span>';
+  // tableau des recettes de l'exercice
+  const rl = $("#o_recList"), rt = $("#o_recTotal");
+  if(rl){
+    const recTri = rec.slice().sort((a,b)=> String(b.income_date).localeCompare(String(a.income_date)));
+    rl.innerHTML = recTri.length ? recTri.map(r => {
+      const init = estOuverture(r);
+      return `<div class="row" style="cursor:default">
+        <div class="date mono" style="font-size:13px">${fdate(r.income_date)}</div>
+        <div><div class="obj">${init?'<span class="tag" style="background:#1d3a5c;color:#a9d1f5">SOLDE INITIAL</span> ':""}${esc(r.object||"")}</div>
+          <div class="meta">${esc(r.author_name||"")}</div></div>
+        <div>${esc(r.source||"—")}</div>
+        <div class="amt" style="color:var(--green)">+${euro(r.amount)}</div><div class="chev"></div></div>`;
+    }).join("") : emptyHTML("Aucune recette","Les entrées d'argent encodées dans l'onglet Recettes apparaîtront ici.");
+    if(rt){
+      rt.innerHTML = recTri.length
+        ? `<div class="lbl">${recTri.length} recette(s)${soldeInitial?` &nbsp;·&nbsp; dont report de l'exercice précédent <b>${esc(euro(soldeInitial))}</b>`:""}</div>
+           <div class="val" style="color:var(--green)">+${esc(euro(totalRec))}</div>`
+        : "";
+    }
+    const rr = $("#o_recResume");
+    if(rr){
+      rr.innerHTML = recTri.length
+        ? `${recTri.length} recette(s) &nbsp;·&nbsp; <b style="color:var(--green)">+${esc(euro(totalRec))}</b>`
+        : "aucune recette";
+    }
+  }
+
   const oal = $("#o_all");
+  const entree = r => r.t === "rec" || r.t === "init";
   if(oal) oal.innerHTML = all.length ? all.map(r => {
-    const stCls = (r.t==="dep"||r.t==="rec") ? "t-paye" : tagClass(r.status);
+    const stCls = (r.t==="rec"||r.t==="init") ? "t-valide" : r.t==="dep" ? "t-paye" : tagClass(r.status);
+    const signe = entree(r) ? "+" : (r.status==="Refusée" ? "" : "−");
+    const coul  = entree(r) ? "var(--green)" : (r.status==="Refusée" ? "var(--muted2)" : "var(--ink)");
     return `<div class="row"${r.id?` data-id="${r.id}"`:""} tabindex="0" role="button">
       <div class="date mono" style="font-size:13px">${fdate(r.date)}</div>
       <div><div class="obj">${badge(r.t)} ${esc(r.obj||"")}</div><div class="meta">${esc(r.who||"")}</div></div>
       <div><span class="tag ${stCls}">${esc(r.status)}</span></div>
-      <div class="amt">${euro(r.amount)}</div><div class="chev">${r.id?"›":""}</div></div>`;
-  }).join("") : emptyHTML("Rien à afficher","Les demandes et dépenses apparaîtront ici.");
+      <div class="amt" style="color:${coul}">${signe}${euro(r.amount)}</div><div class="chev">${r.id?"›":""}</div></div>`;
+  }).join("") : emptyHTML("Rien à afficher","Les écritures de l'exercice apparaîtront ici.");
+
+  // totaux de la période affichée
+  const tot = $("#o_totaux");
+  if(tot){
+    if(!all.length){ tot.innerHTML = ""; }
+    else{
+      const entrees = all.filter(entree).reduce((s,r)=>s+r.amount,0);
+      const sorties = all.filter(r => !entree(r) && r.status !== "Refusée" && r.status !== "En attente" && r.status !== "À corriger")
+                         .reduce((s,r)=>s+r.amount,0);
+      const net = entrees - sorties;
+      tot.innerHTML = `<div class="lbl">${all.length} écriture(s)${an==="all"?"":" · exercice "+an} &nbsp;·&nbsp;
+        entrées <b style="color:var(--green)">+${esc(euro(entrees))}</b> &nbsp;·&nbsp;
+        sorties <b>−${esc(euro(sorties))}</b></div>
+        <div class="val" style="color:${net<0?"var(--red)":"var(--green)"}">${net<0?"":"+"}${esc(euro(net))}</div>`;
+    }
+  }
 }
 
 $("#o_annee").onchange = renderOverview;
@@ -2718,7 +2923,10 @@ function renderIncomes(){
   $("#i_solde").style.color = solde < 0 ? "var(--red)" : "var(--green)";
 
   const q = slug($("#incSearch").value.trim());
-  const list = ouvert(state.incomes).filter(i => !q || slug(i.object).includes(q) || slug(i.source).includes(q));
+  const anI = majSelectAnnees("#incAnnee", state.incomes, "income_date");
+  const list = ouvert(state.incomes)
+    .filter(i => dansAnnee(i.income_date, anI))
+    .filter(i => !q || champsEcriture(i, i.source).includes(q));
   $("#incList").innerHTML = list.length ? list.map(i => `<div class="row" data-inc="${i.id}" tabindex="0" role="button">
       <div class="date mono" style="font-size:13px">${fdate(i.income_date)}</div>
       <div><div class="obj">${esc(i.object)}</div><div class="meta">${esc(i.source)} · ${esc(i.category)}${piecesDe(i).length?` · ${piecesDe(i).length} pièce(s)`:""}</div></div>
@@ -2727,6 +2935,7 @@ function renderIncomes(){
     : emptyHTML("Aucune recette enregistrée","Ajoutez ci-dessus les cotisations, subsides et autres entrées d'argent.");
 }
 $("#incSearch").oninput = render;
+if($("#incAnnee")) $("#incAnnee").onchange = render;
 
 $("#incForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -2776,7 +2985,8 @@ $("#viewIncomes").addEventListener("click", async e => {
     </dl>
     <div><div class="eyebrow" style="margin-bottom:7px">Pièces justificatives</div>${proofHTML}</div>
     <div class="actions"><button class="btn ghost" data-dupinc="${rec.id}">Dupliquer</button>
-      <button class="btn no" data-delinc="${rec.id}">Supprimer</button></div>`;
+      <button class="btn no" data-delinc="${rec.id}">Supprimer</button></div>
+    ${blocEditerEcriture(rec, "inc")}`;
   $("#drawer").classList.add("open"); $("#scrim").classList.add("open"); $("#closeDrawer").focus();
 });
 
@@ -4107,25 +4317,33 @@ $("#d_body").addEventListener("click", async e => {
 /* ---------- export ---------- */
 $("#exportBtn").onclick = () => {
   if(!state.items.length && !state.expenses.length && !state.incomes.length) return toast("Rien à exporter.");
+  // l'export suivait toujours toutes les années et sortait les IBAN en clair
+  const an = ($("#o_annee") && $("#o_annee").value) || "all";
   const cols = ["Nature","Référence","Date","Tiers","Poste","Objet","Catégorie","Recette","Dépense",
-                "Remboursement / IBAN","Statut","Décidé le","Payé le","Commentaire"];
+                "Mode / compte","Statut","Décidé le","Payé le","Commentaire"];
   const jour = t => t ? new Date(t).toISOString().slice(0,10) : "";
   const nb = v => String(v).replace(".",",");
+  // un fichier destiné à circuler ne doit pas contenir les numéros de compte complets
+  const ibanMasque = v => {
+    const x = String(v||"").replace(/\s+/g,"");
+    return x.length < 8 ? "" : x.slice(0,4) + "…" + x.slice(-4);
+  };
   const lignes = [
-    ...state.incomes.map(r => ["Recette","", r.income_date, r.source, "", r.object, r.category,
+    ...state.incomes.filter(r => dansAnnee(r.income_date, an)).map(r => ["Recette","", r.income_date, r.source, "", r.object, r.category,
       nb(r.amount), "", r.method, "Encaissée", "", r.income_date, r.note||""]),
-    ...state.expenses.map(e => ["Dépense directe","", e.expense_date, e.payee, "", e.object, e.category,
+    ...state.expenses.filter(e => dansAnnee(e.expense_date, an)).map(e => ["Dépense directe","", e.expense_date, e.payee, "", e.object, e.category,
       "", nb(e.amount), e.method, "Payée", "", e.expense_date, e.note||""]),
-    ...state.items.map(i => ["Remboursement", refOf(i), i.expense_date, i.requester_name, i.requester_position||"",
+    ...state.items.filter(i => dansAnnee(i.expense_date, an)).map(i => ["Remboursement", refOf(i), i.expense_date, i.requester_name, i.requester_position||"",
       i.object, i.category, "", nb(i.amount),
-      i.iban||"", i.status,
+      ibanMasque(i.iban), i.status,
       jour(i.decided_at), jour(i.paid_at), i.decision_note||""])
   ].sort((a,b) => String(a[2]).localeCompare(String(b[2])));
+  if(!lignes.length) return toast("Aucune écriture pour l'exercice " + an + ".");
   const rows = lignes.map(l => l.map(v => `"${String(v).replace(/"/g,'""')}"`).join(";"));
   const blob = new Blob(["\uFEFF"+cols.join(";")+"\n"+rows.join("\n")], {type:"text/csv;charset=utf-8"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "caisse-"+new Date().toISOString().slice(0,10)+".csv";
+  a.download = "caisse-" + (an === "all" ? "tous-exercices" : an) + "-" + new Date().toISOString().slice(0,10) + ".csv";
   a.click(); URL.revokeObjectURL(a.href);
 };
 
@@ -4137,22 +4355,28 @@ $("#exportXlsx").onclick = async () => {
   catch(e){ btn.disabled=false; btn.textContent="Exporter en Excel"; return toast("Module Excel indisponible (connexion ?)."); }
   const jour = t => t ? new Date(t).toISOString().slice(0,10) : "";
   const num = v => (v===""||v==null) ? "" : Number(v);
-  const cols = ["Nature","Référence","Date","Tiers","Poste","Objet","Catégorie","Recette (€)","Dépense (€)","Remboursement / IBAN","Statut","Décidé le","Payé le","Commentaire"];
+  const an = ($("#o_annee") && $("#o_annee").value) || "all";
+  const ibanMasque = v => { const x = String(v||"").replace(/\s+/g,""); return x.length < 8 ? "" : x.slice(0,4)+"…"+x.slice(-4); };
+  const recsX = state.incomes.filter(r => dansAnnee(r.income_date, an));
+  const depsX = state.expenses.filter(e => dansAnnee(e.expense_date, an));
+  const itemsX = state.items.filter(i => dansAnnee(i.expense_date, an));
+  const cols = ["Nature","Référence","Date","Tiers","Poste","Objet","Catégorie","Recette (€)","Dépense (€)","Mode / compte","Statut","Décidé le","Payé le","Commentaire"];
   const lignes = [
-    ...state.incomes.map(r => ["Recette","", r.income_date, r.source, "", r.object, r.category, num(r.amount), "", r.method, "Encaissée", "", r.income_date, r.note||""]),
-    ...state.expenses.map(e => ["Dépense directe","", e.expense_date, e.payee, "", e.object, e.category, "", num(e.amount), e.method, "Payée", "", e.expense_date, e.note||""]),
-    ...state.items.map(i => ["Remboursement", refOf(i), i.expense_date, i.requester_name, i.requester_position||"", i.object, i.category, "", num(i.amount), i.iban||"", i.status, jour(i.decided_at), jour(i.paid_at), i.decision_note||""])
+    ...recsX.map(r => ["Recette","", r.income_date, r.source, "", r.object, r.category, num(r.amount), "", r.method, "Encaissée", "", r.income_date, r.note||""]),
+    ...depsX.map(e => ["Dépense directe","", e.expense_date, e.payee, "", e.object, e.category, "", num(e.amount), e.method, "Payée", "", e.expense_date, e.note||""]),
+    ...itemsX.map(i => ["Remboursement", refOf(i), i.expense_date, i.requester_name, i.requester_position||"", i.object, i.category, "", num(i.amount), ibanMasque(i.iban), i.status, jour(i.decided_at), jour(i.paid_at), i.decision_note||""])
   ].sort((a,b) => String(a[2]).localeCompare(String(b[2])));
-  const totRec = state.incomes.reduce((s,r)=>s+Number(r.amount||0),0);
-  const totDep = state.expenses.reduce((s,e)=>s+Number(e.amount||0),0)
-    + state.items.filter(i=>i.status==="Remboursée").reduce((s,i)=>s+Number(i.amount||0),0);
+  if(!lignes.length){ btn.disabled=false; btn.textContent="Exporter en Excel"; return toast("Aucune écriture pour l'exercice "+an+"."); }
+  const totRec = recsX.reduce((s,r)=>s+Number(r.amount||0),0);
+  const totDep = depsX.reduce((s,e)=>s+Number(e.amount||0),0)
+    + itemsX.filter(i=>i.status==="Remboursée").reduce((s,i)=>s+Number(i.amount||0),0);
   const aoa = [cols, ...lignes, [],
     ["TOTAUX","","","","","","", Number(totRec.toFixed(2)), Number(totDep.toFixed(2)), "","","","", "Solde : "+(totRec-totDep).toFixed(2)+" €"]];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = cols.map((c,idx) => ({ wch: idx===5?34 : idx===13?26 : idx===9?24 : 13 }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Grand livre");
-  XLSX.writeFile(wb, "caisse-"+new Date().toISOString().slice(0,10)+".xlsx");
+  XLSX.writeFile(wb, "caisse-" + (an === "all" ? "tous-exercices" : an) + "-" + new Date().toISOString().slice(0,10) + ".xlsx");
   btn.disabled = false; btn.textContent = "Exporter en Excel";
   toast("Fichier Excel téléchargé.");
 };
