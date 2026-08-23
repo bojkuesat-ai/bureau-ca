@@ -546,6 +546,8 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
     <button id="tabReexam" aria-pressed="false" hidden>Réexamens<span class="pill" id="pillReexam" hidden>0</span></button>
     <button id="tabExpenses" aria-pressed="false" hidden>Dépenses</button>
     <button id="tabIncomes" aria-pressed="false" hidden>Recettes</button>
+    <button id="tabReprise" aria-pressed="false" hidden>Reprise</button>
+    <button id="tabExtraits" aria-pressed="false" hidden>Extraits</button>
     <button id="tabMembers" aria-pressed="false" hidden>Membres<span class="pill" id="pillMem" hidden>0</span></button>
     <button id="tabMessages" aria-pressed="false" hidden>Messages<span class="pill" id="pillMsg" hidden>0</span></button>
   </div>
@@ -749,6 +751,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       <div class="kpi"><div class="eyebrow">Remboursé aux membres</div><div class="n" id="o_paye">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Paiements directs</div><div class="n" id="o_direct">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Dépenses directes</div><div class="n" id="o_depenses">0 €</div></div>
+      <div class="kpi"><div class="eyebrow">Reprise CA précédent</div><div class="n" id="o_reprise">0 €</div></div>
       <div class="kpi" id="o_sortiesCard"><div class="eyebrow">Total des sorties</div><div class="n" id="o_sorties">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Solde initial</div><div class="n" id="o_initial">0 €</div></div>
       <div class="kpi done"><div class="eyebrow">Recettes encaissées</div><div class="n" id="o_recettes">0 €</div></div>
@@ -883,6 +886,92 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       <div class="card" style="overflow:hidden">
         <div class="head" data-tri-cle="exp"><span data-tri="date">Date</span><span data-tri="objet">Objet / bénéficiaire</span><span data-tri="mode">Paiement</span><span class="r" data-tri="montant">Montant</span><span></span></div>
         <div id="expList"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- reprise : opérations passées avant/hors du contrôle du trésorier actuel -->
+  <section id="viewReprise" class="stack" hidden>
+    <div class="kpis">
+      <div class="kpi"><div class="eyebrow">Opérations reprises</div><div class="n" id="rp_count">0</div></div>
+      <div class="kpi" id="rp_totalCard"><div class="eyebrow">Total repris</div><div class="n" id="rp_total">0 €</div></div>
+    </div>
+
+    <div class="card pad">
+      <p class="hint" style="margin:0">Dépenses sorties du compte pendant l'exercice en cours mais engagées par le conseil précédent.
+      Elles comptent dans le solde — sinon il ne correspondrait plus à la banque — mais restent séparées de vos propres dépenses,
+      dans les listes comme dans le bilan. Les frais bancaires, eux, s'encodent normalement dans l'onglet Dépenses.</p>
+    </div>
+
+    <div class="card pad">
+      <div class="eyebrow">Nouvelle opération reprise</div>
+      <h2 style="font-size:20px;margin:6px 0 14px">Encoder une sortie antérieure</h2>
+      <form id="repForm" class="stack" style="gap:14px">
+        <div class="two">
+          <div class="field"><label for="rp_date">Date de l'opération</label><input type="date" id="rp_date" required></div>
+          <div class="field"><label for="rp_amount">Montant (€)</label>
+            <input type="number" id="rp_amount" step="0.01" min="0.01" inputmode="decimal" placeholder="76.00" required></div>
+        </div>
+        <div class="field"><label for="rp_object">Objet</label>
+          <input type="text" id="rp_object" maxlength="90" placeholder="Uber, snack, recharge Revolut…" required></div>
+        <div class="two">
+          <div class="field"><label for="rp_payee">Bénéficiaire</label>
+            <input type="text" id="rp_payee" maxlength="80" placeholder="Uber, Snack Lems…" required></div>
+          <div class="field"><label for="rp_note2">Référence extrait (facultatif)</label>
+            <input type="text" id="rp_note2" maxlength="40" placeholder="Extrait n° 7"></div>
+        </div>
+        <div class="field"><label for="rp_note">Commentaire (facultatif)</label>
+          <textarea id="rp_note" maxlength="400" placeholder="Transfert interne, à réclamer à l'ancien trésorier…"></textarea></div>
+        <div class="err" id="repErr" hidden></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn" type="submit" id="repBtn">Enregistrer l'opération</button>
+          <button class="btn ghost" type="button" id="btnCancelRep">Annuler</button>
+        </div>
+      </form>
+    </div>
+
+    <div>
+      <div class="toolbar">
+        <input type="text" id="repSearch" placeholder="Objet, bénéficiaire, montant, origine…">
+        <button class="btn ghost sm" id="repXlsx" style="margin-left:8px">Exporter en Excel</button>
+      </div>
+      <div class="card" style="overflow:hidden">
+        <div class="head" data-tri-cle="rep"><span data-tri="date">Date</span><span data-tri="objet">Objet / bénéficiaire</span><span data-tri="mode">Extrait</span><span class="r" data-tri="montant">Montant</span><span></span></div>
+        <div id="repList"></div>
+        <div id="repTotal" class="ototal"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- extraits de compte -->
+  <section id="viewExtraits" class="stack" hidden>
+    <div class="kpis">
+      <div class="kpi"><div class="eyebrow">Extraits déposés</div><div class="n" id="ex_count">0</div></div>
+      <div class="kpi"><div class="eyebrow">Poids total</div><div class="n" id="ex_poids">0</div></div>
+      <div class="kpi"><div class="eyebrow">Dernier dépôt</div><div class="n" id="ex_dernier" style="font-size:20px">—</div></div>
+    </div>
+
+    <div class="card pad">
+      <div class="eyebrow">Dépôt</div>
+      <h2 style="font-size:20px;margin:6px 0 10px">Déposer des extraits de compte</h2>
+      <p class="hint" style="margin:0 0 14px">Sélectionnez autant de fichiers que vous voulez, ils partent en une fois.
+      PDF, images ou CSV. Ces documents ne sont pas des écritures : ils ne touchent ni au solde ni aux totaux,
+      ils servent de preuve pour le vérificateur aux comptes et pour la passation.</p>
+      <div class="attach">
+        <input type="file" id="ex_files" multiple accept=".pdf,.csv,.jpg,.jpeg,.png,.webp,.heic">
+        <button type="button" class="btn sm" id="ex_send">Déposer les fichiers</button>
+      </div>
+      <div id="ex_progress" class="hint" style="margin-top:10px" hidden></div>
+      <div class="err" id="exErr" hidden></div>
+    </div>
+
+    <div>
+      <div class="toolbar">
+        <input type="text" id="exSearch" placeholder="Rechercher un extrait par nom…">
+      </div>
+      <div class="card" style="overflow:hidden">
+        <div class="head"><span>Déposé le</span><span>Fichier</span><span>Taille</span><span class="r">Ouvrir</span><span></span></div>
+        <div id="exList"></div>
       </div>
     </div>
   </section>
@@ -1847,6 +1936,8 @@ async function loadProfile(user){
   $("#tabReexam").hidden = !isTreso();
   $("#tabOverview").hidden = !isTreso();
   $("#tabExpenses").hidden = !isTreso();
+  if($("#tabReprise")) $("#tabReprise").hidden = !isTreso();
+  if($("#tabExtraits")) $("#tabExtraits").hidden = !isTreso();
   $("#tabIncomes").hidden = !isTreso();
   $("#tabMembers").hidden = !isTreso();
   $("#tabMessages").hidden = !isTreso();
@@ -1924,7 +2015,7 @@ function renderExpenses(){
 
   const q = slug($("#expSearch").value.trim());
   const anE = majSelectAnnees("#expAnnee", state.expenses, "expense_date");
-  const list = trier(ouvert(state.expenses)
+  const list = trier(ouvert(mesDepenses())
     .filter(e => dansAnnee(e.expense_date, anE))
     .filter(e => !q || champsEcriture(e, e.payee).includes(q)), "exp");
   $("#expList").innerHTML = list.length ? list.map(e => `<div class="row" data-exp="${e.id}" tabindex="0" role="button">
@@ -2290,6 +2381,201 @@ function majSelectAnnees(sel, source, champ){
   return el.value;
 }
 
+/* ---------- reprise : dépenses engagées par le conseil précédent ---------- */
+// Stockées dans la table des dépenses, marquées par leur catégorie : aucun changement de base.
+// Une seule catégorie, fixe : c'est elle qui distingue ces lignes de vos propres dépenses.
+const CAT_CA_SORTANT = "Dépense CA sortant";
+const estReprise = e => String(e.category||"").trim() === CAT_CA_SORTANT;
+const refExtrait = e => {
+  const m = String(e.note||"").match(/^\[([^\]]{1,40})\]/);   // référence d'extrait notée en tête du commentaire
+  return m ? m[1] : "—";
+};
+const mesDepenses = () => (state.expenses||[]).filter(e => !estReprise(e));
+const depensesReprises = () => (state.expenses||[]).filter(estReprise);
+
+function renderReprise(){
+  if(!$("#repList")) return;
+  const q = slug(($("#repSearch")?.value || "").trim());
+  const liste = trier(ouvert(depensesReprises())
+    .filter(e => !q || champsEcriture(e, e.payee).includes(q)), "rep");
+  const total = liste.reduce((s,e)=>s+Number(e.amount||0),0);
+  const tous = depensesReprises().reduce((s,e)=>s+Number(e.amount||0),0);
+
+  if($("#rp_count")) $("#rp_count").textContent = depensesReprises().length;
+  if($("#rp_total")) $("#rp_total").textContent = euro(tous);
+
+  $("#repList").innerHTML = liste.length ? liste.map(e => `
+    <div class="row" style="cursor:default">
+      <div class="date mono" style="font-size:13px">${fdate(e.expense_date)}</div>
+      <div><div class="obj">${esc(e.object||"")}</div><div class="meta">${esc(e.payee||"")}</div></div>
+      <div class="meta" style="margin:0">${esc(refExtrait(e))}</div>
+      <div class="amt">−${euro(e.amount)}</div>
+      <div class="chev"><button class="btn no sm" data-delrep="${e.id}" title="Supprimer">×</button></div>
+    </div>`).join("")
+    : emptyHTML("Aucune opération reprise","Encodez ici les dépenses engagées par le conseil précédent.");
+
+  $("#repTotal").innerHTML = liste.length
+    ? `<div class="lbl">${liste.length} opération(s)${q ? " trouvée(s)" : ""}</div>
+       <div class="val">−${esc(euro(total))}</div>` : "";
+}
+
+if($("#repSearch")) $("#repSearch").oninput = renderReprise;
+
+if($("#repForm")) $("#repForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const btn = $("#repBtn"); erreurForm("#repErr", "");
+  const montant = Math.round(Number($("#rp_amount").value) * 100) / 100;
+  const dte = $("#rp_date").value;
+  const objet = $("#rp_object").value.trim();
+  const benef = $("#rp_payee").value.trim();
+  if(!objet) return erreurForm("#repErr", "Indiquez l'objet.");
+  if(!(montant > 0)) return erreurForm("#repErr", "Le montant doit être supérieur à zéro.");
+  if(!dte) return erreurForm("#repErr", "Indiquez la date de l'opération.");
+  if(!benef) return erreurForm("#repErr", "Indiquez le bénéficiaire.");
+  if(estClos(dte)) return erreurForm("#repErr", "L'exercice " + String(dte).slice(0,4) + " est clôturé.");
+
+  const ref = ($("#rp_note2")?.value || "").trim();
+  btn.disabled = true; btn.textContent = "Enregistrement…";
+  const { error } = await sb.from("expenses").insert({
+    expense_date: dte, amount: montant, object: objet, payee: benef,
+    category: CAT_CA_SORTANT, method: "Virement",
+    note: (ref ? "[" + ref + "] " : "") + $("#rp_note").value.trim(),
+    author_name: state.profile.name, attachments: []
+  });
+  btn.disabled = false; btn.textContent = "Enregistrer l'opération";
+  if(error) return erreurForm("#repErr", "Enregistrement impossible : " + error.message);
+  const gardeDate = dte, gardeRef = ref;
+  $("#repForm").reset();                       // on enchaîne les lignes d'un même extrait
+  $("#rp_date").value = gardeDate;
+  if($("#rp_note2")) $("#rp_note2").value = gardeRef;
+  await refresh(); toast("Opération reprise enregistrée.");
+  $("#rp_amount").focus();
+});
+
+if($("#btnCancelRep")) $("#btnCancelRep").onclick = () => { $("#repForm").reset(); erreurForm("#repErr",""); };
+
+if($("#repList")) $("#repList").addEventListener("click", async e => {
+  const b = e.target.closest("[data-delrep]"); if(!b) return;
+  const d = state.expenses.find(x => x.id === b.dataset.delrep); if(!d) return;
+  if(!confirm("Supprimer « " + (d.object||"") + " » (" + euro(d.amount) + ") ?")) return;
+  const { error } = await sb.from("expenses").delete().eq("id", b.dataset.delrep);
+  if(error) return toast("Suppression impossible : " + error.message);
+  await refresh(); toast("Opération supprimée.");
+});
+
+if($("#repXlsx")) $("#repXlsx").onclick = async () => {
+  const liste = depensesReprises();
+  if(!liste.length) return toast("Aucune opération à exporter.");
+  const btn = $("#repXlsx"); btn.disabled = true; btn.textContent = "Préparation…";
+  try{
+    let XLSX;
+    try{ XLSX = await import("https://esm.sh/xlsx@0.18.5"); }
+    catch(_){ throw new Error("module Excel indisponible (connexion ?)"); }
+    const lignes = liste.slice().sort((a,b)=>String(a.expense_date).localeCompare(String(b.expense_date)))
+      .map(e => [e.expense_date, e.object||"", e.payee||"", refExtrait(e),
+                 Math.round(Number(e.amount||0)*100)/100, e.note||""]);
+    const total = lignes.reduce((s,l)=>s+l[4], 0);
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Dépenses engagées par le conseil précédent"],
+      ["Exercice en cours · éditée le " + new Date().toLocaleDateString("fr-BE")],
+      [],
+      ["Date","Objet","Bénéficiaire","Extrait","Montant (€)","Commentaire"],
+      ...lignes,
+      [],
+      ["","","","TOTAL", Math.round(total*100)/100, ""]
+    ]);
+    ws["!cols"] = [{wch:12},{wch:34},{wch:22},{wch:14},{wch:13},{wch:34}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "CA précédent");
+    XLSX.writeFile(wb, "reprise-ca-precedent-" + new Date().toISOString().slice(0,10) + ".xlsx");
+    toast(lignes.length + " opération(s) exportée(s).");
+  }catch(err){ toast("Export impossible : " + (err.message || err)); }
+  btn.disabled = false; btn.textContent = "Exporter en Excel";
+};
+
+/* ---------- extraits de compte ---------- */
+// Rangés dans le même bucket, sous un dossier dédié. Aucune table : on lit le stockage.
+const DOSSIER_EXTRAITS = "extraits";
+const poidsLisible = o => o < 1024 ? o + " o"
+  : o < 1048576 ? (o/1024).toFixed(0) + " Ko" : (o/1048576).toFixed(1) + " Mo";
+
+async function chargerExtraits(){
+  const { data, error } = await sb.storage.from("justificatifs")
+    .list(DOSSIER_EXTRAITS, { limit: 500, sortBy: { column:"created_at", order:"desc" } });
+  if(error) return [];
+  return (data || []).filter(f => f.id || f.metadata);   // écarte les marqueurs de dossier
+}
+
+async function renderExtraits(){
+  if(!$("#exList")) return;
+  const fichiers = await chargerExtraits();
+  const q = slug(($("#exSearch")?.value || "").trim());
+  const vus = fichiers.filter(f => !q || slug(f.name).includes(q));
+  const poids = fichiers.reduce((s,f) => s + Number(f.metadata?.size || 0), 0);
+
+  if($("#ex_count")) $("#ex_count").textContent = fichiers.length;
+  if($("#ex_poids")) $("#ex_poids").textContent = poidsLisible(poids);
+  if($("#ex_dernier")) $("#ex_dernier").textContent = fichiers.length
+    ? fdate(String(fichiers[0].created_at || "").slice(0,10)) : "—";
+
+  $("#exList").innerHTML = vus.length ? vus.map(f => `
+    <div class="row" style="cursor:default">
+      <div class="date mono" style="font-size:13px">${esc(fdate(String(f.created_at||"").slice(0,10)))}</div>
+      <div><div class="obj">${esc(f.name)}</div></div>
+      <div>${esc(poidsLisible(Number(f.metadata?.size || 0)))}</div>
+      <div class="amt"><button class="btn ghost sm" data-exopen="${esc(f.name)}">Ouvrir</button></div>
+      <div class="chev"><button class="btn no sm" data-exdel="${esc(f.name)}" title="Supprimer">×</button></div>
+    </div>`).join("")
+    : emptyHTML("Aucun extrait", q ? "Aucun fichier ne correspond à cette recherche."
+        : "Déposez ici les extraits de compte de l'exercice.");
+}
+
+if($("#exSearch")) $("#exSearch").oninput = renderExtraits;
+
+if($("#ex_send")) $("#ex_send").onclick = async () => {
+  const champ = $("#ex_files");
+  const fichiers = [...(champ.files || [])];
+  erreurForm("#exErr", "");
+  if(!fichiers.length) return erreurForm("#exErr", "Choisissez d'abord un ou plusieurs fichiers.");
+  const trop = fichiers.find(f => f.size > 15 * 1024 * 1024);
+  if(trop) return erreurForm("#exErr", "« " + trop.name + " » dépasse 15 Mo.");
+
+  const btn = $("#ex_send"), suivi = $("#ex_progress");
+  btn.disabled = true; suivi.hidden = false;
+  let ok = 0; const echecs = [];
+  for(const [n, f] of fichiers.entries()){
+    suivi.textContent = `Envoi ${n+1}/${fichiers.length} — ${f.name}`;
+    // nom horodaté : deux extraits du même mois ne s'écrasent jamais
+    const propre = f.name.replace(/[^\w.\-]+/g, "_").slice(-90);
+    const chemin = `${DOSSIER_EXTRAITS}/${Date.now()}-${n}-${propre}`;
+    const { error } = await sb.storage.from("justificatifs")
+      .upload(chemin, f, { contentType: f.type || "application/octet-stream" });
+    if(error) echecs.push(f.name + " (" + error.message + ")"); else ok++;
+  }
+  btn.disabled = false; suivi.hidden = true; champ.value = "";
+  await renderExtraits();
+  if(echecs.length) erreurForm("#exErr", echecs.length + " envoi(s) en échec : " + echecs.slice(0,3).join(" · "));
+  toast(ok + " extrait(s) déposé(s)" + (echecs.length ? ", " + echecs.length + " en échec." : "."));
+};
+
+if($("#exList")) $("#exList").addEventListener("click", async e => {
+  const ouvrir = e.target.closest("[data-exopen]");
+  if(ouvrir){
+    const { data, error } = await sb.storage.from("justificatifs")
+      .createSignedUrl(DOSSIER_EXTRAITS + "/" + ouvrir.dataset.exopen, 3600);
+    if(error || !data) return toast("Ouverture impossible.");
+    window.open(data.signedUrl, "_blank", "noopener");
+    return;
+  }
+  const suppr = e.target.closest("[data-exdel]");
+  if(!suppr) return;
+  if(!confirm("Supprimer définitivement « " + suppr.dataset.exdel + " » ?")) return;
+  const { error } = await sb.storage.from("justificatifs")
+    .remove([DOSSIER_EXTRAITS + "/" + suppr.dataset.exdel]);
+  if(error) return toast("Suppression impossible : " + error.message);
+  await renderExtraits(); toast("Extrait supprimé.");
+});
+
 /* ---------- confirmation par saisie (actions irréversibles) ---------- */
 // Un simple confirm() se clique par réflexe. Ici il faut recopier une phrase exacte.
 function demanderPhrase({ titre, corps, phrase, bouton }){
@@ -2333,8 +2619,8 @@ function demanderPhrase({ titre, corps, phrase, bouton }){
 
 /* ---------- tri des listes ---------- */
 // une entrée par liste : la colonne active et le sens (1 croissant, -1 décroissant)
-const tri = { treso:{col:"date",sens:-1}, exp:{col:"date",sens:-1},
-              inc:{col:"date",sens:-1}, all:{col:"date",sens:-1} };
+const tri = { treso:{col:"date",sens:-1}, exp:{col:"date",sens:-1}, inc:{col:"date",sens:-1},
+              all:{col:"date",sens:-1}, rep:{col:"date",sens:-1} };
 
 // comment lire chaque colonne selon la liste concernée
 const CHAMPS_TRI = {
@@ -2344,6 +2630,8 @@ const CHAMPS_TRI = {
           mode:o=>o.method||"", montant:o=>Number(o.amount||0) },
   inc:  { date:o=>o.income_date||"", objet:o=>(o.object||"")+" "+(o.source||""),
           mode:o=>o.method||"", montant:o=>Number(o.amount||0) },
+  rep:  { date:o=>o.expense_date||"", objet:o=>(o.object||"")+" "+(o.payee||""),
+          mode:o=>refExtrait(o), montant:o=>Number(o.amount||0) },
   all:  { date:o=>o.date||"", objet:o=>(o.obj||"")+" "+(o.who||""),
           statut:o=>o.status||"", montant:o=>Number(o.amount||0) },
 };
@@ -2755,9 +3043,10 @@ function renderOverview(){
   const payes      = list.filter(i => i.status === "Remboursée");
   const versMembre = payes.filter(i => i.kind !== "direct").reduce((s,i)=>s+Number(i.amount||0),0);
   const versTiers  = payes.filter(i => i.kind === "direct").reduce((s,i)=>s+Number(i.amount||0),0);
-  const depDirectes = (state.expenses||[]).filter(e => dansAnnee(e.expense_date, an))
-                        .reduce((s,e)=>s+Number(e.amount||0),0);
-  const totalSort  = versMembre + versTiers + depDirectes;
+  const depAn = (state.expenses||[]).filter(e => dansAnnee(e.expense_date, an));
+  const depDirectes = depAn.filter(e => !estReprise(e)).reduce((s,e)=>s+Number(e.amount||0),0);
+  const depReprise  = depAn.filter(estReprise).reduce((s,e)=>s+Number(e.amount||0),0);
+  const totalSort  = versMembre + versTiers + depDirectes + depReprise;
   const totalRec   = totalRecettes(an);
   // le report de l'exercice précédent n'est pas une recette de l'année : on l'isole
   const soldeInitial = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && estOuverture(i))
@@ -2767,6 +3056,7 @@ function renderOverview(){
   $("#o_paye").textContent     = euro(versMembre);
   $("#o_direct").textContent   = euro(versTiers);
   $("#o_depenses").textContent = euro(depDirectes);
+  if($("#o_reprise")) $("#o_reprise").textContent = euro(depReprise);
   $("#o_sorties").textContent  = euro(totalSort);
   $("#o_initial").textContent  = euro(soldeInitial);
   $("#o_recettes").textContent = euro(recettesAn);
@@ -2809,7 +3099,7 @@ function renderOverview(){
   const du = som(list,"Validée") + som(list,"En attente");
   $("#o_info").textContent = (du ? "Reste à verser : " + euro(du) + " · " : "")
     + "Solde = " + euro(soldeInitial) + " (initial) + " + euro(recettesAn) + " (recettes) − "
-    + euro(totalSort) + " (sorties)";
+    + euro(totalSort) + " (sorties" + (depReprise ? ", dont " + euro(depReprise) + " repris du CA précédent" : "") + ")";
   renderHoraires();
   const _solde = totalRec - totalSort;
   if($("#o_soldeLbl")) $("#o_soldeLbl").textContent = an === "all" ? "Solde de la caisse" : "Solde " + an + " (recettes − sorties)";
@@ -2821,13 +3111,16 @@ function renderOverview(){
   const all = [
     ...list.map(i => ({ t: i.kind==="direct"?"direct":"remb", date:i.expense_date, obj:i.object,
       who:(i.kind==="direct"?(i.beneficiary||i.requester_name):i.requester_name), amount:Number(i.amount||0), status:i.status, id:i.id })),
-    ...exp.map(e => ({ t:"dep", date:e.expense_date, obj:e.object, who:(e.payee||e.author_name||""), amount:Number(e.amount||0), status:"Payée", id:null })),
+    ...exp.map(e => ({ t: estReprise(e) ? "repr" : "dep", date:e.expense_date, obj:e.object,
+      who:(e.payee||e.author_name||""), amount:Number(e.amount||0),
+      status: estReprise(e) ? "CA précédent" : "Payée", id:null })),
     ...rec.map(r => ({ t: estOuverture(r) ? "init" : "rec", date:r.income_date, obj:r.object,
       who:(r.source||r.author_name||""), amount:Number(r.amount||0),
       status: estOuverture(r) ? "Report" : "Encaissée", id:null }))
   ];
   const badge = t => t==="direct" ? '<span class="tag" style="background:#3a2d6e;color:#cdbcff">DIRECT</span>'
     : t==="dep" ? '<span class="tag" style="background:#4a2a2a;color:#f2c3c3">DÉPENSE</span>'
+    : t==="repr" ? '<span class="tag" style="background:#4a3c1f;color:#f0d9a0">REPRISE</span>'
     : t==="rec" ? '<span class="tag" style="background:#12503a;color:#8ff0c0">RECETTE</span>'
     : t==="init" ? '<span class="tag" style="background:#1d3a5c;color:#a9d1f5">SOLDE INITIAL</span>'
     : '<span class="tag" style="background:#39323f;color:#e0d6ec">REMBOURS.</span>';
@@ -2862,7 +3155,7 @@ function renderOverview(){
   const entree = r => r.t === "rec" || r.t === "init";
   const rangs = trier(all, "all");
   if(oal) oal.innerHTML = rangs.length ? rangs.map(r => {
-    const stCls = (r.t==="rec"||r.t==="init") ? "t-valide" : r.t==="dep" ? "t-paye" : tagClass(r.status);
+    const stCls = (r.t==="rec"||r.t==="init") ? "t-valide" : (r.t==="dep"||r.t==="repr") ? "t-paye" : tagClass(r.status);
     const signe = entree(r) ? "+" : (r.status==="Refusée" ? "" : "−");
     const coul  = entree(r) ? "var(--green)" : (r.status==="Refusée" ? "var(--muted2)" : "var(--ink)");
     return `<div class="row"${r.id?` data-id="${r.id}"`:""} tabindex="0" role="button">
@@ -3586,11 +3879,15 @@ function setView(v){
   $("#viewOverview").hidden = v!=="overview";
   $("#viewExpenses").hidden = v!=="expenses";
   $("#viewIncomes").hidden = v!=="incomes";
+  if($("#viewReprise")) $("#viewReprise").hidden = v!=="reprise";
+  if($("#viewExtraits")) $("#viewExtraits").hidden = v!=="extraits";
+  if(v==="extraits") renderExtraits();
   $("#viewMembers").hidden = v!=="members";
   $("#viewMessages").hidden = v!=="messages";
   $("#viewDirect").hidden = v!=="direct";
   if(v==="expenses" && !$("#e_date").value) $("#e_date").value = new Date().toISOString().slice(0,10);
   if(v==="incomes" && !$("#i_date").value) $("#i_date").value = new Date().toISOString().slice(0,10);
+  if(v==="reprise" && $("#rp_date") && !$("#rp_date").value) $("#rp_date").value = new Date().toISOString().slice(0,10);
   if(v==="mine"){ majHoraire(); avertirFermeture(); }
   render();
   renderMessagesUI();
@@ -3609,6 +3906,8 @@ if($("#ann_send")) $("#ann_send").onclick = envoyerAnnonceMembres;
 $("#tabOverview").onclick = () => choisirVue("overview");
 $("#tabExpenses").onclick = () => choisirVue("expenses");
 $("#tabIncomes").onclick = () => choisirVue("incomes");
+if($("#tabReprise")) $("#tabReprise").onclick = () => choisirVue("reprise");
+if($("#tabExtraits")) $("#tabExtraits").onclick = () => choisirVue("extraits");
 $("#tabMembers").onclick = () => choisirVue("members");
 $("#tabMessages").onclick = () => choisirVue("messages");
 
@@ -3854,6 +4153,7 @@ function render(){
     }
     else renderDrawer(still);
   }
+  renderReprise();
   majEntetesTri();
 }
 
