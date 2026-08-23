@@ -167,6 +167,10 @@ input[type=file]::file-selector-button:hover{color:var(--gold-soft);border-color
 .head{padding:11px 16px;background:var(--bg2);border-bottom:1px solid var(--line);border-radius:var(--r) var(--r) 0 0}
 .head span{font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--muted2)}
 .head .r{text-align:right}
+.head [data-tri]{cursor:pointer;user-select:none}
+.head [data-tri]:hover{color:var(--ink)}
+.head [data-tri].actif{color:var(--ink)}
+.head [data-tri] .fl{font-size:9px;margin-left:4px;opacity:.9}
 .empty{padding:46px 20px;text-align:center;color:var(--muted)}
 .empty strong{display:block;font-family:'Fraunces',serif;font-weight:600;font-size:17px;color:var(--text);margin-bottom:6px}
 
@@ -721,7 +725,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         <button class="btn ghost sm" id="bulkClear">Désélectionner</button>
       </div>
       <div class="card" style="overflow:hidden">
-        <div class="head"><span>Date</span><span>Objet / demandeur</span><span>Statut</span><span class="r">Montant</span><span></span></div>
+        <div class="head" data-tri-cle="treso"><span data-tri="date">Date</span><span data-tri="objet">Objet / demandeur</span><span data-tri="statut">Statut</span><span class="r" data-tri="montant">Montant</span><span></span></div>
         <div id="tresoList"></div>
       </div>
     </div>
@@ -792,7 +796,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
     <div>
       <div class="section-title" style="margin-top:8px"><div class="eyebrow">Toutes les écritures</div></div>
       <div class="card" style="overflow:hidden">
-        <div class="head"><span>Date</span><span>Objet</span><span>Statut</span><span class="r">Montant</span><span></span></div>
+        <div class="head" data-tri-cle="all"><span data-tri="date">Date</span><span data-tri="objet">Objet</span><span data-tri="statut">Statut</span><span class="r" data-tri="montant">Montant</span><span></span></div>
         <div id="o_all"></div>
         <div id="o_totaux" class="ototal"></div>
       </div>
@@ -877,7 +881,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         <select id="expAnnee" style="margin-left:8px"></select>
       </div>
       <div class="card" style="overflow:hidden">
-        <div class="head"><span>Date</span><span>Objet / bénéficiaire</span><span>Paiement</span><span class="r">Montant</span><span></span></div>
+        <div class="head" data-tri-cle="exp"><span data-tri="date">Date</span><span data-tri="objet">Objet / bénéficiaire</span><span data-tri="mode">Paiement</span><span class="r" data-tri="montant">Montant</span><span></span></div>
         <div id="expList"></div>
       </div>
     </div>
@@ -937,7 +941,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         <select id="incAnnee" style="margin-left:8px"></select>
       </div>
       <div class="card" style="overflow:hidden">
-        <div class="head"><span>Date</span><span>Objet / provenance</span><span>Encaissement</span><span class="r">Montant</span><span></span></div>
+        <div class="head" data-tri-cle="inc"><span data-tri="date">Date</span><span data-tri="objet">Objet / provenance</span><span data-tri="mode">Encaissement</span><span class="r" data-tri="montant">Montant</span><span></span></div>
         <div id="incList"></div>
       </div>
     </div>
@@ -1920,9 +1924,9 @@ function renderExpenses(){
 
   const q = slug($("#expSearch").value.trim());
   const anE = majSelectAnnees("#expAnnee", state.expenses, "expense_date");
-  const list = ouvert(state.expenses)
+  const list = trier(ouvert(state.expenses)
     .filter(e => dansAnnee(e.expense_date, anE))
-    .filter(e => !q || champsEcriture(e, e.payee).includes(q));
+    .filter(e => !q || champsEcriture(e, e.payee).includes(q)), "exp");
   $("#expList").innerHTML = list.length ? list.map(e => `<div class="row" data-exp="${e.id}" tabindex="0" role="button">
       <div class="date mono" style="font-size:13px">${fdate(e.expense_date)}</div>
       <div><div class="obj">${esc(e.object)}</div><div class="meta">${esc(e.payee)} · ${esc(e.category)}${piecesDe(e).length?` · ${piecesDe(e).length} pièce(s)`:" · sans pièce"}</div></div>
@@ -2285,6 +2289,62 @@ function majSelectAnnees(sel, source, champ){
   el.value = [...el.options].some(o => o.value === choix) ? choix : "all";
   return el.value;
 }
+
+/* ---------- tri des listes ---------- */
+// une entrée par liste : la colonne active et le sens (1 croissant, -1 décroissant)
+const tri = { treso:{col:"date",sens:-1}, exp:{col:"date",sens:-1},
+              inc:{col:"date",sens:-1}, all:{col:"date",sens:-1} };
+
+// comment lire chaque colonne selon la liste concernée
+const CHAMPS_TRI = {
+  treso:{ date:o=>o.expense_date||"", objet:o=>(o.object||"")+" "+(o.requester_name||""),
+          statut:o=>o.status||"", montant:o=>Number(o.amount||0) },
+  exp:  { date:o=>o.expense_date||"", objet:o=>(o.object||"")+" "+(o.payee||""),
+          mode:o=>o.method||"", montant:o=>Number(o.amount||0) },
+  inc:  { date:o=>o.income_date||"", objet:o=>(o.object||"")+" "+(o.source||""),
+          mode:o=>o.method||"", montant:o=>Number(o.amount||0) },
+  all:  { date:o=>o.date||"", objet:o=>(o.obj||"")+" "+(o.who||""),
+          statut:o=>o.status||"", montant:o=>Number(o.amount||0) },
+};
+
+function trier(liste, cle){
+  const { col, sens } = tri[cle] || {};
+  const lire = (CHAMPS_TRI[cle]||{})[col];
+  if(!lire) return liste;
+  return liste.slice().sort((a,b) => {
+    const x = lire(a), y = lire(b);
+    const c = (typeof x === "number" && typeof y === "number")
+      ? x - y : String(x).localeCompare(String(y), "fr", { numeric:true });
+    return c * sens;
+  });
+}
+
+// flèche sur la colonne active
+function majEntetesTri(){
+  document.querySelectorAll(".head[data-tri-cle]").forEach(h => {
+    const cle = h.dataset.triCle, etat = tri[cle]; if(!etat) return;
+    h.querySelectorAll("[data-tri]").forEach(sp => {
+      const actif = sp.dataset.tri === etat.col;
+      sp.classList.toggle("actif", actif);
+      sp.setAttribute("aria-sort", actif ? (etat.sens === 1 ? "ascending" : "descending") : "none");
+      const fl = sp.querySelector(".fl");
+      if(actif){
+        if(fl) fl.textContent = etat.sens === 1 ? "▲" : "▼";
+        else sp.insertAdjacentHTML("beforeend", `<i class="fl">${etat.sens === 1 ? "▲" : "▼"}</i>`);
+      }else if(fl) fl.remove();
+    });
+  });
+}
+
+document.addEventListener("click", e => {
+  const sp = e.target.closest(".head[data-tri-cle] [data-tri]"); if(!sp) return;
+  const cle = sp.closest(".head").dataset.triCle, col = sp.dataset.tri;
+  if(!tri[cle]) return;
+  // même colonne : on inverse le sens ; nouvelle colonne : décroissant pour une date ou un montant
+  if(tri[cle].col === col) tri[cle].sens = -tri[cle].sens;
+  else tri[cle] = { col, sens: (col === "date" || col === "montant") ? -1 : 1 };
+  render();
+});
 
 /* ---------- modifier une dépense ou une recette ---------- */
 const CATS_DEPENSE = ["Assurances","Loyer & charges","Matériel","Fournitures","Prestataires","Communication","Frais bancaires","Taxes & cotisations","Événements","Autre"];
@@ -2724,7 +2784,7 @@ function renderOverview(){
     ...rec.map(r => ({ t: estOuverture(r) ? "init" : "rec", date:r.income_date, obj:r.object,
       who:(r.source||r.author_name||""), amount:Number(r.amount||0),
       status: estOuverture(r) ? "Report" : "Encaissée", id:null }))
-  ].sort((a,b)=> String(b.date).localeCompare(String(a.date)));
+  ];
   const badge = t => t==="direct" ? '<span class="tag" style="background:#3a2d6e;color:#cdbcff">DIRECT</span>'
     : t==="dep" ? '<span class="tag" style="background:#4a2a2a;color:#f2c3c3">DÉPENSE</span>'
     : t==="rec" ? '<span class="tag" style="background:#12503a;color:#8ff0c0">RECETTE</span>'
@@ -2759,7 +2819,8 @@ function renderOverview(){
 
   const oal = $("#o_all");
   const entree = r => r.t === "rec" || r.t === "init";
-  if(oal) oal.innerHTML = all.length ? all.map(r => {
+  const rangs = trier(all, "all");
+  if(oal) oal.innerHTML = rangs.length ? rangs.map(r => {
     const stCls = (r.t==="rec"||r.t==="init") ? "t-valide" : r.t==="dep" ? "t-paye" : tagClass(r.status);
     const signe = entree(r) ? "+" : (r.status==="Refusée" ? "" : "−");
     const coul  = entree(r) ? "var(--green)" : (r.status==="Refusée" ? "var(--muted2)" : "var(--ink)");
@@ -2929,9 +2990,9 @@ function renderIncomes(){
 
   const q = slug($("#incSearch").value.trim());
   const anI = majSelectAnnees("#incAnnee", state.incomes, "income_date");
-  const list = ouvert(state.incomes)
+  const list = trier(ouvert(state.incomes)
     .filter(i => dansAnnee(i.income_date, anI))
-    .filter(i => !q || champsEcriture(i, i.source).includes(q));
+    .filter(i => !q || champsEcriture(i, i.source).includes(q)), "inc");
   $("#incList").innerHTML = list.length ? list.map(i => `<div class="row" data-inc="${i.id}" tabindex="0" role="button">
       <div class="date mono" style="font-size:13px">${fdate(i.income_date)}</div>
       <div><div class="obj">${esc(i.object)}</div><div class="meta">${esc(i.source)} · ${esc(i.category)}${piecesDe(i).length?` · ${piecesDe(i).length} pièce(s)`:""}</div></div>
@@ -3694,8 +3755,9 @@ function render(){
       const okQ = !q || champsCherchables(i).includes(q);
       return okS && okQ;
     });
+    const listeTriee = trier(list, "treso");
     renderBulk();
-    $("#tresoList").innerHTML = list.length ? list.map(i=>rowHTML(i,true)).join("")
+    $("#tresoList").innerHTML = listeTriee.length ? listeTriee.map(i=>rowHTML(i,true)).join("")
       : emptyHTML("Rien à afficher","Changez le filtre ou attendez de nouvelles demandes.");
 
     renderMembers();
@@ -3723,6 +3785,7 @@ function render(){
     }
     else renderDrawer(still);
   }
+  majEntetesTri();
 }
 
 /* Le panneau est réécrit à chaque synchronisation (toutes les 30 s, et à chaque
