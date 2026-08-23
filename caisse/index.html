@@ -535,11 +535,11 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
   <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
+    <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
     <button id="tabMine" aria-pressed="true">Mes demandes</button>
     <button id="tabDirect" aria-pressed="false">Paiement direct</button>
     <button id="tabTreso" aria-pressed="false" hidden>À traiter<span class="pill" id="pillReq" hidden>0</span></button>
     <button id="tabReexam" aria-pressed="false" hidden>Réexamens<span class="pill" id="pillReexam" hidden>0</span></button>
-    <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
     <button id="tabExpenses" aria-pressed="false" hidden>Dépenses</button>
     <button id="tabIncomes" aria-pressed="false" hidden>Recettes</button>
     <button id="tabMembers" aria-pressed="false" hidden>Membres<span class="pill" id="pillMem" hidden>0</span></button>
@@ -712,9 +712,6 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         <button class="btn ghost sm" id="payrunBtn">Virements à faire</button>
         <button class="btn ghost sm" id="relanceAllBtn">Relancer les incomplètes</button>
         <button class="btn ghost sm" id="alerteDormBtn" hidden>Alerter : validées non payées</button>
-        <button class="btn ghost sm" id="reportBtn">Bilan à imprimer</button>
-        <button class="btn ghost sm" id="exportBtn">Exporter en CSV</button>
-        <button class="btn ghost sm" id="exportXlsx">Exporter en Excel</button>
       </div>
       <div id="bulkBar" style="display:none;align-items:center;gap:10px;margin:0 0 10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--line);border-radius:12px">
         <b id="bulkCount">0 sélectionnée(s)</b>
@@ -763,6 +760,9 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       <div class="toolbar">
         <label for="o_annee" class="eyebrow" style="margin-right:8px">Exercice</label>
         <select id="o_annee"></select>
+        <button class="btn ghost sm" id="reportBtn" style="margin-left:10px">Bilan à imprimer</button>
+        <button class="btn ghost sm" id="exportBtn">Exporter en CSV</button>
+        <button class="btn ghost sm" id="exportXlsx">Exporter en Excel</button>
         <div class="spacer"></div>
         <span class="hint" id="o_info"></span>
       </div>
@@ -1851,6 +1851,8 @@ async function loadProfile(user){
   if(!$("#f_date").value) $("#f_date").value = new Date().toISOString().slice(0,10);
   majFormulaire();
   majHoraire();
+  // le trésorier arrive directement sur son onglet de travail
+  if(isTreso() && !state.vueChoisie) setView("treso");
   if(!isTreso()) setTimeout(avertirFermeture, 600);
 }
 
@@ -2247,7 +2249,7 @@ $("#d_body").addEventListener("click", e => {
     $("#e_payee").value = d.payee; $("#e_cat").value = d.category;
     $("#e_method").value = d.method; $("#e_note").value = d.note || "";
     staged.exp = []; renderStaged("exp");
-    closeDrawer(); setView("expenses");
+    closeDrawer(); choisirVue("expenses");
     window.scrollTo({top:0,behavior:"smooth"}); $("#e_date").focus();
     return toast("Dépense recopiée. Vérifiez la date et le montant, puis enregistrez.");
   }
@@ -2259,7 +2261,7 @@ $("#d_body").addEventListener("click", e => {
     $("#i_source").value = d.source; $("#i_cat").value = d.category;
     $("#i_method").value = d.method; $("#i_note").value = d.note || "";
     staged.inc = []; renderStaged("inc");
-    closeDrawer(); setView("incomes");
+    closeDrawer(); choisirVue("incomes");
     window.scrollTo({top:0,behavior:"smooth"}); $("#i_date").focus();
     return toast("Recette recopiée. Vérifiez la date et le montant, puis enregistrez.");
   }
@@ -2815,7 +2817,7 @@ $("#o_list").addEventListener("click", e => {
   const r = e.target.closest(".orow[data-nom]"); if(!r) return;
   $("#search").value = r.dataset.nom;
   $("#filterStatus").value = "all";
-  setView("treso");
+  choisirVue("treso");
   window.scrollTo({ top:0, behavior:"smooth" });
 });
 
@@ -3463,20 +3465,22 @@ function setView(v){
   render();
   renderMessagesUI();
 }
-$("#tabMine").onclick = () => setView("mine");
-$("#tabDirect").onclick = () => setView("direct");
+// une vue choisie à la main ne doit pas être écrasée si la session se rafraîchit
+const choisirVue = v => { state.vueChoisie = true; setView(v); };
+$("#tabMine").onclick = () => choisirVue("mine");
+$("#tabDirect").onclick = () => choisirVue("direct");
 $("#fd_mode")?.addEventListener("change", () => { const b=$("#fd_virementBox"); if(b) b.style.display = $("#fd_mode").value==="virement" ? "" : "none"; });
-$("#tabTreso").onclick = () => setView("treso");
-$("#tabReexam").onclick = () => setView("reexam");
+$("#tabTreso").onclick = () => choisirVue("treso");
+$("#tabReexam").onclick = () => choisirVue("reexam");
 if($("#recapMailBtn")) $("#recapMailBtn").onclick = mailRecapTreso;
 if($("#relanceAllBtn")) $("#relanceAllBtn").onclick = () => relancerIncompletes(false);
 if($("#alerteDormBtn")) $("#alerteDormBtn").onclick = () => alerterDormantes(false);
 if($("#ann_send")) $("#ann_send").onclick = envoyerAnnonceMembres;
-$("#tabOverview").onclick = () => setView("overview");
-$("#tabExpenses").onclick = () => setView("expenses");
-$("#tabIncomes").onclick = () => setView("incomes");
-$("#tabMembers").onclick = () => setView("members");
-$("#tabMessages").onclick = () => setView("messages");
+$("#tabOverview").onclick = () => choisirVue("overview");
+$("#tabExpenses").onclick = () => choisirVue("expenses");
+$("#tabIncomes").onclick = () => choisirVue("incomes");
+$("#tabMembers").onclick = () => choisirVue("members");
+$("#tabMessages").onclick = () => choisirVue("messages");
 
 /* ---------- Messagerie membre ↔ trésorier ---------- */
 function cssq(x){ return String(x).replace(/["\\]/g, "\\$&"); }
