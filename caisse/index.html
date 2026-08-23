@@ -907,7 +907,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
           <div class="field"><label for="i_source">Provenance</label>
             <input type="text" id="i_source" maxlength="80" placeholder="Ex. Commune de Schaerbeek" required></div>
           <div class="field"><label for="i_cat">Catégorie</label>
-            <select id="i_cat"><option>Cotisations</option><option>Subsides</option><option>Dons</option><option>Sponsoring</option><option>Événements</option><option>Ventes</option><option>Intérêts bancaires</option><option>Remboursement reçu</option><option>Autre</option></select></div>
+            <select id="i_cat"><option>Solde d'ouverture</option><option>Cotisations</option><option>Subsides</option><option>Dons</option><option>Sponsoring</option><option>Événements</option><option>Ventes</option><option>Intérêts bancaires</option><option>Remboursement reçu</option><option>Autre</option></select></div>
         </div>
         <div class="field"><label for="i_method">Moyen d'encaissement</label>
           <select id="i_method"><option>Virement</option><option>Espèces</option><option>Paiement en ligne</option><option>Chèque</option></select></div>
@@ -2287,7 +2287,7 @@ function majSelectAnnees(sel, source, champ){
 /* ---------- modifier une dépense ou une recette ---------- */
 const CATS_DEPENSE = ["Assurances","Loyer & charges","Matériel","Fournitures","Prestataires","Communication","Frais bancaires","Taxes & cotisations","Événements","Autre"];
 const MODES_DEPENSE = ["Virement","Carte de l'association","Domiciliation","Espèces","Chèque"];
-const CATS_RECETTE = ["Cotisations","Subsides","Dons","Sponsoring","Événements","Ventes","Intérêts bancaires","Remboursement reçu","Autre"];
+const CATS_RECETTE = ["Solde d'ouverture","Cotisations","Subsides","Dons","Sponsoring","Événements","Ventes","Intérêts bancaires","Remboursement reçu","Autre"];
 const MODES_RECETTE = ["Virement","Espèces","Paiement en ligne","Chèque"];
 const opts = (liste, choisi) => liste.map(o =>
   `<option${o === choisi ? " selected" : ""}>${esc(o)}</option>`).join("");
@@ -2354,9 +2354,12 @@ $("#d_body").addEventListener("click", async e => {
   toast(dep ? "Dépense corrigée." : "Recette corrigée.");
 });
 
-// Une recette intitulée « solde d'ouverture » ou « report » est le solde repris de l'exercice
-// précédent, pas une recette de l'année : elle est comptée à part dans l'Aperçu.
-const estOuverture = i => /ouverture|report/i.test(String(i.object||"") + " " + String(i.source||""));
+// Le solde repris de l'exercice précédent n'est pas une recette de l'année : il est compté à
+// part dans l'Aperçu. C'est la catégorie qui fait foi ; les mots-clés ne servent que de secours
+// pour les lignes encodées avant l'existence de cette catégorie.
+const CAT_OUVERTURE = "Solde d'ouverture";
+const estOuverture = i => String(i.category||"").trim() === CAT_OUVERTURE
+  || /solde d.ouverture|report d.exercice|report exercice/i.test(String(i.object||"") + " " + String(i.source||""));
 
 const aVirer = () => state.items.filter(i => i.status === "Validée" && !(i.kind==="direct" && i.pay_mode!=="virement"));
 
