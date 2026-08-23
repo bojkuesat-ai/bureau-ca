@@ -2469,7 +2469,7 @@ if($("#repForm")) $("#repForm").addEventListener("submit", async e => {
     expense_date: dte, amount: montant, object: objet, payee: benef,
     category: CAT_CA_SORTANT, method: carteLibelle($("#rp_card")?.value),
     note: (ref ? "[" + ref + "] " : "") + $("#rp_note").value.trim(),
-    author_name: state.profile.name, attachments: []
+    created_by: state.profile.id, author_name: state.profile.name || "", attachments: []
   });
   btn.disabled = false; btn.textContent = "Enregistrer l'opération";
   if(error) return erreurForm("#repErr", "Enregistrement impossible : " + error.message);
@@ -2614,7 +2614,7 @@ function prepareImport(texte){
       expense_date: dte, amount: mnt, object: objet, payee: benef,
       category: CAT_CA_SORTANT, method: carteLibelle(g("carte")),
       note: (ref ? "[" + ref + "] " : "") + note,
-      author_name: state.profile.name, attachments: []
+      created_by: state.profile.id, author_name: state.profile.name || "", attachments: []
     });
   });
   return { ok, soucis, doublons };
