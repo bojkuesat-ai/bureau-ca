@@ -546,7 +546,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
     <button id="tabReexam" aria-pressed="false" hidden>Réexamens<span class="pill" id="pillReexam" hidden>0</span></button>
     <button id="tabExpenses" aria-pressed="false" hidden>Dépenses</button>
     <button id="tabIncomes" aria-pressed="false" hidden>Recettes</button>
-    <button id="tabReprise" aria-pressed="false" hidden>Reprise</button>
+    <button id="tabReprise" aria-pressed="false" hidden>Dépense CA sortant</button>
     <button id="tabExtraits" aria-pressed="false" hidden>Extraits</button>
     <button id="tabMembers" aria-pressed="false" hidden>Membres<span class="pill" id="pillMem" hidden>0</span></button>
     <button id="tabMessages" aria-pressed="false" hidden>Messages<span class="pill" id="pillMsg" hidden>0</span></button>
@@ -751,7 +751,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       <div class="kpi"><div class="eyebrow">Remboursé aux membres</div><div class="n" id="o_paye">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Paiements directs</div><div class="n" id="o_direct">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Dépenses directes</div><div class="n" id="o_depenses">0 €</div></div>
-      <div class="kpi"><div class="eyebrow">Reprise CA précédent</div><div class="n" id="o_reprise">0 €</div></div>
+      <div class="kpi"><div class="eyebrow">Dépense CA sortant</div><div class="n" id="o_reprise">0 €</div></div>
       <div class="kpi" id="o_sortiesCard"><div class="eyebrow">Total des sorties</div><div class="n" id="o_sorties">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Solde initial</div><div class="n" id="o_initial">0 €</div></div>
       <div class="kpi done"><div class="eyebrow">Recettes encaissées</div><div class="n" id="o_recettes">0 €</div></div>
@@ -893,8 +893,8 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
   <!-- reprise : opérations passées avant/hors du contrôle du trésorier actuel -->
   <section id="viewReprise" class="stack" hidden>
     <div class="kpis">
-      <div class="kpi"><div class="eyebrow">Opérations reprises</div><div class="n" id="rp_count">0</div></div>
-      <div class="kpi" id="rp_totalCard"><div class="eyebrow">Total repris</div><div class="n" id="rp_total">0 €</div></div>
+      <div class="kpi"><div class="eyebrow">Opérations encodées</div><div class="n" id="rp_count">0</div></div>
+      <div class="kpi" id="rp_totalCard"><div class="eyebrow">Total CA sortant</div><div class="n" id="rp_total">0 €</div></div>
     </div>
 
     <div class="card pad">
@@ -904,7 +904,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
     </div>
 
     <div class="card pad">
-      <div class="eyebrow">Nouvelle opération reprise</div>
+      <div class="eyebrow">Nouvelle dépense du CA sortant</div>
       <h2 style="font-size:20px;margin:6px 0 14px">Encoder une sortie antérieure</h2>
       <form id="repForm" class="stack" style="gap:14px">
         <div class="two">
@@ -917,9 +917,15 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         <div class="two">
           <div class="field"><label for="rp_payee">Bénéficiaire</label>
             <input type="text" id="rp_payee" maxlength="80" placeholder="Uber, Snack Lems…" required></div>
-          <div class="field"><label for="rp_note2">Référence extrait (facultatif)</label>
-            <input type="text" id="rp_note2" maxlength="40" placeholder="Extrait n° 7"></div>
+          <div class="field"><label for="rp_card">Carte utilisée</label>
+            <select id="rp_card">
+              <option>Sans carte</option>
+              <option>Carte …0065</option>
+              <option>Carte …1142</option>
+            </select></div>
         </div>
+        <div class="field"><label for="rp_note2">Référence extrait (facultatif)</label>
+          <input type="text" id="rp_note2" maxlength="40" placeholder="Extrait n° 7, opération 912…"></div>
         <div class="field"><label for="rp_note">Commentaire (facultatif)</label>
           <textarea id="rp_note" maxlength="400" placeholder="Transfert interne, à réclamer à l'ancien trésorier…"></textarea></div>
         <div class="err" id="repErr" hidden></div>
@@ -930,13 +936,26 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       </form>
     </div>
 
+    <div class="card pad" id="repImportBox" hidden>
+      <div class="eyebrow">Import d'un fichier CSV</div>
+      <h2 style="font-size:20px;margin:6px 0 14px">Vérifiez avant d'enregistrer</h2>
+      <div id="repImportApercu"></div>
+      <div class="err" id="repImportErr" hidden></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+        <button class="btn" type="button" id="repImportGo">Enregistrer ces opérations</button>
+        <button class="btn ghost" type="button" id="repImportCancel">Annuler</button>
+      </div>
+    </div>
+
     <div>
       <div class="toolbar">
         <input type="text" id="repSearch" placeholder="Objet, bénéficiaire, montant, origine…">
         <button class="btn ghost sm" id="repXlsx" style="margin-left:8px">Exporter en Excel</button>
+        <button class="btn ghost sm" id="repCsvBtn" style="margin-left:8px">Importer un CSV</button>
+        <input type="file" id="repCsvFile" accept=".csv,text/csv" hidden>
       </div>
       <div class="card" style="overflow:hidden">
-        <div class="head" data-tri-cle="rep"><span data-tri="date">Date</span><span data-tri="objet">Objet / bénéficiaire</span><span data-tri="mode">Extrait</span><span class="r" data-tri="montant">Montant</span><span></span></div>
+        <div class="head" data-tri-cle="rep"><span data-tri="date">Date</span><span data-tri="objet">Objet / bénéficiaire</span><span data-tri="mode">Carte / extrait</span><span class="r" data-tri="montant">Montant</span><span></span></div>
         <div id="repList"></div>
         <div id="repTotal" class="ototal"></div>
       </div>
@@ -2386,6 +2405,16 @@ function majSelectAnnees(sel, source, champ){
 // Une seule catégorie, fixe : c'est elle qui distingue ces lignes de vos propres dépenses.
 const CAT_CA_SORTANT = "Dépense CA sortant";
 const estReprise = e => String(e.category||"").trim() === CAT_CA_SORTANT;
+// La carte est rangée dans le champ « moyen de paiement » : aucune colonne à ajouter en base.
+const CARTES_REPRISE = ["Sans carte", "Carte …0065", "Carte …1142"];
+const carteDe = e => {
+  const m = String(e.method||"").match(/(\d{4})\s*$/);
+  return m ? "…" + m[1] : "";
+};
+const carteLibelle = v => {
+  const m = String(v||"").match(/(\d{4})\s*$/);
+  return m ? "Carte …" + m[1] : "Sans carte";
+};
 const refExtrait = e => {
   const m = String(e.note||"").match(/^\[([^\]]{1,40})\]/);   // référence d'extrait notée en tête du commentaire
   return m ? m[1] : "—";
@@ -2408,11 +2437,11 @@ function renderReprise(){
     <div class="row" style="cursor:default">
       <div class="date mono" style="font-size:13px">${fdate(e.expense_date)}</div>
       <div><div class="obj">${esc(e.object||"")}</div><div class="meta">${esc(e.payee||"")}</div></div>
-      <div class="meta" style="margin:0">${esc(refExtrait(e))}</div>
+      <div class="meta" style="margin:0">${carteDe(e) ? `<span class="mono">${esc(carteDe(e))}</span><br>` : ""}${esc(refExtrait(e))}</div>
       <div class="amt">−${euro(e.amount)}</div>
       <div class="chev"><button class="btn no sm" data-delrep="${e.id}" title="Supprimer">×</button></div>
     </div>`).join("")
-    : emptyHTML("Aucune opération reprise","Encodez ici les dépenses engagées par le conseil précédent.");
+    : emptyHTML("Aucune dépense du CA sortant","Encodez ici les dépenses engagées par le conseil précédent.");
 
   $("#repTotal").innerHTML = liste.length
     ? `<div class="lbl">${liste.length} opération(s)${q ? " trouvée(s)" : ""}</div>
@@ -2438,7 +2467,7 @@ if($("#repForm")) $("#repForm").addEventListener("submit", async e => {
   btn.disabled = true; btn.textContent = "Enregistrement…";
   const { error } = await sb.from("expenses").insert({
     expense_date: dte, amount: montant, object: objet, payee: benef,
-    category: CAT_CA_SORTANT, method: "Virement",
+    category: CAT_CA_SORTANT, method: carteLibelle($("#rp_card")?.value),
     note: (ref ? "[" + ref + "] " : "") + $("#rp_note").value.trim(),
     author_name: state.profile.name, attachments: []
   });
@@ -2448,7 +2477,7 @@ if($("#repForm")) $("#repForm").addEventListener("submit", async e => {
   $("#repForm").reset();                       // on enchaîne les lignes d'un même extrait
   $("#rp_date").value = gardeDate;
   if($("#rp_note2")) $("#rp_note2").value = gardeRef;
-  await refresh(); toast("Opération reprise enregistrée.");
+  await refresh(); toast("Dépense du CA sortant enregistrée.");
   $("#rp_amount").focus();
 });
 
@@ -2472,25 +2501,188 @@ if($("#repXlsx")) $("#repXlsx").onclick = async () => {
     try{ XLSX = await import("https://esm.sh/xlsx@0.18.5"); }
     catch(_){ throw new Error("module Excel indisponible (connexion ?)"); }
     const lignes = liste.slice().sort((a,b)=>String(a.expense_date).localeCompare(String(b.expense_date)))
-      .map(e => [e.expense_date, e.object||"", e.payee||"", refExtrait(e),
+      .map(e => [e.expense_date, e.object||"", e.payee||"", carteDe(e) || "—", refExtrait(e),
                  Math.round(Number(e.amount||0)*100)/100, e.note||""]);
-    const total = lignes.reduce((s,l)=>s+l[4], 0);
+    const total = lignes.reduce((s,l)=>s+l[5], 0);
     const ws = XLSX.utils.aoa_to_sheet([
-      ["Dépenses engagées par le conseil précédent"],
+      ["Dépenses du CA sortant"],
       ["Exercice en cours · éditée le " + new Date().toLocaleDateString("fr-BE")],
       [],
-      ["Date","Objet","Bénéficiaire","Extrait","Montant (€)","Commentaire"],
+      ["Date","Objet","Bénéficiaire","Carte","Extrait","Montant (€)","Commentaire"],
       ...lignes,
       [],
-      ["","","","TOTAL", Math.round(total*100)/100, ""]
+      ["","","","","TOTAL", Math.round(total*100)/100, ""]
     ]);
-    ws["!cols"] = [{wch:12},{wch:34},{wch:22},{wch:14},{wch:13},{wch:34}];
+    ws["!cols"] = [{wch:12},{wch:34},{wch:22},{wch:10},{wch:14},{wch:13},{wch:34}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CA précédent");
-    XLSX.writeFile(wb, "reprise-ca-precedent-" + new Date().toISOString().slice(0,10) + ".xlsx");
+    XLSX.writeFile(wb, "depenses-ca-sortant-" + new Date().toISOString().slice(0,10) + ".xlsx");
     toast(lignes.length + " opération(s) exportée(s).");
   }catch(err){ toast("Export impossible : " + (err.message || err)); }
   btn.disabled = false; btn.textContent = "Exporter en Excel";
+};
+
+/* ---------- import d'un CSV dans l'onglet Reprise ---------- */
+// Le fichier n'est jamais envoyé nulle part : il est lu dans le navigateur, montré, puis inséré.
+let lotImport = null;   // lignes prêtes à insérer, en attente de confirmation
+
+function lireCSV(txt){
+  txt = String(txt).replace(/^\uFEFF/, "");
+  const tete = txt.split(/\r?\n/)[0] || "";
+  const sep = (tete.split(";").length >= tete.split(",").length) ? ";" : ",";
+  const lignes = []; let champ = "", ligne = [], guill = false;
+  for(let i = 0; i < txt.length; i++){
+    const c = txt[i];
+    if(guill){
+      if(c === '"'){ if(txt[i+1] === '"'){ champ += '"'; i++; } else guill = false; }
+      else champ += c;
+    }
+    else if(c === '"') guill = true;
+    else if(c === sep){ ligne.push(champ); champ = ""; }
+    else if(c === "\n"){ ligne.push(champ); lignes.push(ligne); ligne = []; champ = ""; }
+    else if(c !== "\r") champ += c;
+  }
+  if(champ !== "" || ligne.length){ ligne.push(champ); lignes.push(ligne); }
+  return lignes.filter(l => l.some(x => String(x).trim() !== ""));
+}
+
+const dateCSV = v => {
+  const t = String(v||"").trim();
+  let a = "", mo = "", j = "";
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(m){ a = m[1]; mo = m[2]; j = m[3]; }
+  else {
+    m = t.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
+    if(!m) return "";
+    a = m[3]; mo = m[2]; j = m[1];
+  }
+  const iso = a + "-" + mo.padStart(2,"0") + "-" + j.padStart(2,"0");
+  const d = new Date(iso + "T00:00:00Z");            // écarte les 31/02 et autres dates inventées
+  return (!isNaN(d) && d.toISOString().slice(0,10) === iso) ? iso : "";
+};
+const montantCSV = v => {
+  const t = String(v||"").replace(/[\s€]/g,"").replace(/\u00a0/g,"").replace(",",".");
+  const n = Number(t);
+  return Number.isFinite(n) && n !== 0 ? Math.round(Math.abs(n)*100)/100 : NaN;
+};
+
+// repère les colonnes quel que soit leur ordre ou leur habillage
+function colonnesCSV(tete){
+  const cle = t => {
+    const x = slug(t).replace(/[^a-z0-9]/g," ").trim();
+    if(/^date/.test(x)) return "date";
+    if(/^(objet|libelle|description)/.test(x)) return "objet";
+    if(/^(beneficiaire|benef|fournisseur|tiers)/.test(x)) return "benef";
+    if(/^montant/.test(x)) return "montant";
+    if(/^carte/.test(x)) return "carte";
+    if(/^(reference|ref|extrait|operation)/.test(x)) return "ref";
+    if(/^(commentaire|note|remarque)/.test(x)) return "note";
+    return "";
+  };
+  const map = {};
+  tete.forEach((t, i) => { const k = cle(t); if(k && map[k] === undefined) map[k] = i; });
+  return map;
+}
+
+function prepareImport(texte){
+  const lignes = lireCSV(texte);
+  if(lignes.length < 2) return { erreur: "Le fichier ne contient aucune ligne exploitable." };
+  const col = colonnesCSV(lignes[0]);
+  const manque = ["date","objet","benef","montant"].filter(k => col[k] === undefined);
+  if(manque.length) return { erreur: "Colonnes introuvables : " + manque.join(", ")
+    + ". En-tête attendu : date;objet;beneficiaire;montant;carte;reference_extrait;commentaire" };
+
+  const dejaLa = new Set(depensesReprises().map(e =>
+    e.expense_date + "|" + Number(e.amount||0).toFixed(2) + "|" + slug(String(e.object||"").trim())));
+
+  const ok = [], soucis = [], doublons = [];
+  lignes.slice(1).forEach((l, i) => {
+    const g = k => col[k] === undefined ? "" : String(l[col[k]] ?? "").trim();
+    const num = i + 2;
+    const dte = dateCSV(g("date")), mnt = montantCSV(g("montant"));
+    const objet = g("objet").slice(0,90), benef = g("benef").slice(0,80);
+    if(!dte)    return soucis.push("Ligne " + num + " : date illisible (" + (g("date")||"vide") + ").");
+    if(!(mnt > 0)) return soucis.push("Ligne " + num + " : montant illisible (" + (g("montant")||"vide") + ").");
+    if(!objet)  return soucis.push("Ligne " + num + " : objet manquant.");
+    if(!benef)  return soucis.push("Ligne " + num + " : bénéficiaire manquant.");
+    if(estClos(dte)) return soucis.push("Ligne " + num + " : l'exercice " + dte.slice(0,4) + " est clôturé.");
+    const empreinte = dte + "|" + mnt.toFixed(2) + "|" + slug(objet);
+    if(dejaLa.has(empreinte)) return doublons.push("Ligne " + num + " : " + objet + " (" + euro(mnt) + ") est déjà encodée.");
+    dejaLa.add(empreinte);
+    const ref = g("ref").slice(0,40), note = g("note").slice(0,400);
+    ok.push({
+      expense_date: dte, amount: mnt, object: objet, payee: benef,
+      category: CAT_CA_SORTANT, method: carteLibelle(g("carte")),
+      note: (ref ? "[" + ref + "] " : "") + note,
+      author_name: state.profile.name, attachments: []
+    });
+  });
+  return { ok, soucis, doublons };
+}
+
+function montreApercu(r){
+  const total = r.ok.reduce((s,x)=>s+x.amount, 0);
+  const bloc = [];
+  bloc.push(`<p style="margin:0 0 10px"><b>${r.ok.length} opération(s)</b> prête(s) à enregistrer, pour un total de <b>${esc(euro(total))}</b>.</p>`);
+  if(r.ok.length) bloc.push(`<div class="card" style="overflow:auto;max-height:280px">` + r.ok.map(x => `
+      <div class="row" style="cursor:default">
+        <div class="date mono" style="font-size:13px">${fdate(x.expense_date)}</div>
+        <div><div class="obj">${esc(x.object)}</div><div class="meta">${esc(x.payee)}</div></div>
+        <div class="meta" style="margin:0">${esc(carteDe(x) || "—")}</div>
+        <div class="amt">−${euro(x.amount)}</div><div class="chev"></div>
+      </div>`).join("") + `</div>`);
+  if(r.doublons.length) bloc.push(`<p class="hint" style="margin:12px 0 0"><b>${r.doublons.length} ligne(s) ignorée(s)</b> — déjà présentes :<br>${r.doublons.map(esc).join("<br>")}</p>`);
+  if(r.soucis.length)   bloc.push(`<p class="hint" style="margin:12px 0 0;color:#f0b0b0"><b>${r.soucis.length} ligne(s) écartée(s)</b> :<br>${r.soucis.map(esc).join("<br>")}</p>`);
+  $("#repImportApercu").innerHTML = bloc.join("");
+  $("#repImportGo").disabled = !r.ok.length;
+  $("#repImportBox").hidden = false;
+  $("#repImportBox").scrollIntoView({ behavior:"smooth", block:"center" });
+}
+
+function fermeImport(){
+  lotImport = null;
+  $("#repImportBox").hidden = true;
+  erreurForm("#repImportErr", "");
+  if($("#repCsvFile")) $("#repCsvFile").value = "";
+}
+
+if($("#repCsvBtn")) $("#repCsvBtn").onclick = () => $("#repCsvFile").click();
+
+if($("#repCsvFile")) $("#repCsvFile").onchange = async e => {
+  const f = e.target.files && e.target.files[0]; if(!f) return;
+  try{
+    const r = prepareImport(await f.text());
+    if(r.erreur){ fermeImport(); return toast(r.erreur); }
+    lotImport = r.ok;
+    erreurForm("#repImportErr", "");
+    montreApercu(r);
+  }catch(err){ fermeImport(); toast("Lecture impossible : " + (err.message || err)); }
+};
+
+if($("#repImportCancel")) $("#repImportCancel").onclick = () => { fermeImport(); toast("Import annulé."); };
+
+if($("#repImportGo")) $("#repImportGo").onclick = async () => {
+  if(!lotImport || !lotImport.length) return;
+  const b = $("#repImportGo"); b.disabled = true; b.textContent = "Enregistrement…";
+  erreurForm("#repImportErr", "");
+  let faits = 0;
+  try{
+    for(let i = 0; i < lotImport.length; i += 40){
+      const paquet = lotImport.slice(i, i + 40);
+      const { error } = await sb.from("expenses").insert(paquet);
+      if(error) throw new Error(error.message);
+      faits += paquet.length;
+    }
+  }catch(err){
+    b.disabled = false; b.textContent = "Enregistrer ces opérations";
+    await refresh();
+    return erreurForm("#repImportErr",
+      (faits ? faits + " opération(s) enregistrée(s), puis arrêt. " : "") + "Erreur : " + (err.message || err));
+  }
+  b.disabled = false; b.textContent = "Enregistrer ces opérations";
+  fermeImport();
+  await refresh();
+  toast(faits + " opération(s) importée(s).");
 };
 
 /* ---------- extraits de compte ---------- */
@@ -2631,7 +2823,7 @@ const CHAMPS_TRI = {
   inc:  { date:o=>o.income_date||"", objet:o=>(o.object||"")+" "+(o.source||""),
           mode:o=>o.method||"", montant:o=>Number(o.amount||0) },
   rep:  { date:o=>o.expense_date||"", objet:o=>(o.object||"")+" "+(o.payee||""),
-          mode:o=>refExtrait(o), montant:o=>Number(o.amount||0) },
+          mode:o=>carteDe(o)+" "+refExtrait(o), montant:o=>Number(o.amount||0) },
   all:  { date:o=>o.date||"", objet:o=>(o.obj||"")+" "+(o.who||""),
           statut:o=>o.status||"", montant:o=>Number(o.amount||0) },
 };
@@ -3099,7 +3291,7 @@ function renderOverview(){
   const du = som(list,"Validée") + som(list,"En attente");
   $("#o_info").textContent = (du ? "Reste à verser : " + euro(du) + " · " : "")
     + "Solde = " + euro(soldeInitial) + " (initial) + " + euro(recettesAn) + " (recettes) − "
-    + euro(totalSort) + " (sorties" + (depReprise ? ", dont " + euro(depReprise) + " repris du CA précédent" : "") + ")";
+    + euro(totalSort) + " (sorties" + (depReprise ? ", dont " + euro(depReprise) + " engagés par le CA sortant" : "") + ")";
   renderHoraires();
   const _solde = totalRec - totalSort;
   if($("#o_soldeLbl")) $("#o_soldeLbl").textContent = an === "all" ? "Solde de la caisse" : "Solde " + an + " (recettes − sorties)";
@@ -3120,7 +3312,7 @@ function renderOverview(){
   ];
   const badge = t => t==="direct" ? '<span class="tag" style="background:#3a2d6e;color:#cdbcff">DIRECT</span>'
     : t==="dep" ? '<span class="tag" style="background:#4a2a2a;color:#f2c3c3">DÉPENSE</span>'
-    : t==="repr" ? '<span class="tag" style="background:#4a3c1f;color:#f0d9a0">REPRISE</span>'
+    : t==="repr" ? '<span class="tag" style="background:#4a3c1f;color:#f0d9a0">CA SORTANT</span>'
     : t==="rec" ? '<span class="tag" style="background:#12503a;color:#8ff0c0">RECETTE</span>'
     : t==="init" ? '<span class="tag" style="background:#1d3a5c;color:#a9d1f5">SOLDE INITIAL</span>'
     : '<span class="tag" style="background:#39323f;color:#e0d6ec">REMBOURS.</span>';
