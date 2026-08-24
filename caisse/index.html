@@ -2134,9 +2134,11 @@ $("#editIban").onclick = async () => {
   if(v === null) return;
   const iban = ibanFormate(v);
   if(!ibanValide(iban)) return alert("IBAN refusé.\n\n" + messageIban(v));
-  const { error } = await sb.from("profiles").update({ iban }).eq("id", state.profile.id);
+  // passe par une fonction serveur : la table profiles n'est modifiable que par
+  // un trésorier, et cette fonction ne touche que l'IBAN de l'appelant
+  const { data, error } = await sb.rpc("maj_mon_iban", { nouvel_iban: iban });
   if(error) return toast("Modification impossible : " + error.message);
-  state.profile.iban = iban; majFormulaire(); toast("IBAN mis à jour.");
+  state.profile.iban = data || iban; majFormulaire(); toast("IBAN mis à jour.");
 };
 
 function majControle(){
