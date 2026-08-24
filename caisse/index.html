@@ -1584,7 +1584,7 @@ async function envoyerAnnonceMembres(){
     vus.add(k); return true;
   });
   if(!dest.length){ toast("Aucun membre actif avec e-mail."); return; }
-  if(!confirm(`Envoyer cette annonce par e-mail à ${dest.length} membre(s) ?`)) return;
+  if(!await demander("Envoyer l'annonce", `Elle partira par e-mail à ${dest.length} membre(s).`, { bouton:"Envoyer" })) return;
   const btn = $("#ann_send"); if(btn){ btn.disabled = true; btn.textContent = "Envoi…"; }
   const sujet = subj || "Annonce du bureau étudiant";
   let ok = 0; const echecs = []; let n = 0;
@@ -1610,7 +1610,7 @@ async function envoyerAnnonceMembres(){
   if(btn){ btn.disabled = false; btn.textContent = "Envoyer l'annonce par e-mail aux membres"; }
   if(echecs.length){
     toast(ok + " envoi(s) réussi(s), " + echecs.length + " échec(s).");
-    alert("Annonce partiellement envoyée.\n\n" + ok + " membre(s) l'ont reçue.\n"
+    await dire("Annonce partiellement envoyée", ok + " membre(s) l'ont reçue.\n"
       + echecs.length + " envoi(s) ont échoué :\n\n" + echecs.slice(0,20).join("\n")
       + (echecs.length > 20 ? "\n… et " + (echecs.length - 20) + " autre(s)" : "")
       + "\n\nLe texte de l'annonce est conservé : vous pouvez relancer l'envoi.\n"
@@ -1844,6 +1844,110 @@ function traduire(m){
   if(/expired|invalid.*token/i.test(m)) return "Ce lien a expiré. Demandez-en un nouveau.";
   return m;
 }
+/* ---------- fenêtres maison (remplacent alert / confirm / prompt) ----------
+   Les fenêtres du navigateur bloquent la page, s'affichent hors du thème et,
+   sur téléphone, proposent « empêcher cette page d'ouvrir des boîtes de dialogue ».
+   Ces trois-là rendent une promesse : tout appel doit donc être précédé de await. */
+let _dlgFermer = null;   // ferme la fenêtre en cours, s'il y en a une
+
+function _dlgConstruire(){
+  let ov = document.getElementById("dlgOverlay");
+  if(ov) return ov;
+  ov = document.createElement("div");
+  ov.id = "dlgOverlay";
+  ov.className = "overlay";
+  ov.innerHTML = `
+    <div class="sheetd" style="max-width:440px">
+      <div class="sb" style="padding:26px 24px">
+        <h2 id="dlgTitre" style="font-size:20px;margin:0 0 10px"></h2>
+        <p id="dlgTexte" style="color:var(--muted);font-size:13.5px;margin:0;white-space:pre-line"></p>
+        <input type="text" id="dlgSaisie" autocomplete="off" spellcheck="false" hidden
+               style="width:100%;margin-top:16px;padding:12px;border-radius:9px;
+                      border:1px solid var(--line);background:var(--surface2);
+                      color:var(--text);font-size:15px">
+        <div id="dlgErr" class="err" hidden style="margin-top:10px"></div>
+        <div style="display:flex;gap:10px;margin-top:20px">
+          <button class="btn" id="dlgOui" style="flex:1"></button>
+          <button class="btn ghost" id="dlgNon" hidden>Annuler</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  return ov;
+}
+
+// Cœur commun. mode : "info" | "question" | "saisie"
+function _dlg(mode, titre, texte, opts){
+  opts = opts || {};
+  if(_dlgFermer) _dlgFermer(mode === "info" ? undefined : null);   // jamais deux à la fois
+  const ov = _dlgConstruire();
+  const champ = ov.querySelector("#dlgSaisie");
+  const oui   = ov.querySelector("#dlgOui");
+  const non   = ov.querySelector("#dlgNon");
+  const err   = ov.querySelector("#dlgErr");
+
+  ov.querySelector("#dlgTitre").textContent = titre || "";
+  ov.querySelector("#dlgTexte").textContent = texte || "";
+  ov.querySelector("#dlgTexte").hidden = !texte;
+  err.hidden = true; err.textContent = "";
+
+  champ.hidden = mode !== "saisie";
+  if(mode === "saisie"){
+    champ.value = opts.valeur == null ? "" : String(opts.valeur);
+    champ.placeholder = opts.exemple || "";
+    champ.type = opts.motDePasse ? "password" : "text";
+  }
+  non.hidden = mode === "info";
+  oui.textContent = opts.bouton || (mode === "info" ? "J'ai compris" : "Confirmer");
+  non.textContent = opts.boutonNon || "Annuler";
+  oui.style.background = opts.danger ? "#b02a2a" : "";
+  oui.style.color = opts.danger ? "#fff" : "";
+
+  return new Promise(resolve => {
+    let fini = false;
+    const fermer = (valeur) => {
+      if(fini) return; fini = true;
+      _dlgFermer = null;
+      ov.classList.remove("open");
+      document.removeEventListener("keydown", auClavier, true);
+      resolve(valeur);
+    };
+    const annuler = () => fermer(mode === "info" ? undefined : mode === "saisie" ? null : false);
+    const valider = () => {
+      if(mode === "saisie"){
+        const v = champ.value;
+        if(opts.verifier){
+          const souci = opts.verifier(v);
+          if(souci){ err.textContent = souci; err.hidden = false; champ.focus(); return; }
+        }
+        return fermer(v);
+      }
+      fermer(mode === "info" ? undefined : true);
+    };
+    function auClavier(e){
+      if(e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); annuler(); }
+      else if(e.key === "Enter" && (mode !== "saisie" || document.activeElement === champ)){
+        e.preventDefault(); e.stopPropagation(); valider();
+      }
+    }
+    _dlgFermer = fermer;
+    oui.onclick = valider;
+    non.onclick = annuler;
+    ov.onclick = e => { if(e.target === ov) annuler(); };
+    document.addEventListener("keydown", auClavier, true);
+    ov.classList.add("open");
+    setTimeout(() => (mode === "saisie" ? champ : oui).focus(), 60);
+    if(mode === "saisie") setTimeout(() => champ.select(), 70);
+  });
+}
+
+// Remplace alert() — await dire("Titre", "texte")
+const dire = (titre, texte, opts) => _dlg("info", titre, texte, opts);
+// Remplace confirm() — const ok = await demander("Titre", "texte")
+const demander = (titre, texte, opts) => _dlg("question", titre, texte, opts);
+// Remplace prompt() — const v = await saisir("Titre", "texte", { valeur: "…" })
+const saisir = (titre, texte, opts) => _dlg("saisie", titre, texte, opts);
+
 function fenetre(titre, texte){
   $("#modalTitle").textContent = titre;
   $("#modalText").textContent = texte;
@@ -1894,7 +1998,9 @@ $("#recForm").addEventListener("submit", async e => {
 });
 
 $("#changePass").onclick = async () => {
-  const a = prompt("Nouveau mot de passe (huit caractères minimum) :");
+  const a = await saisir("Nouveau mot de passe", "Huit caractères minimum.",
+    { motDePasse:true, bouton:"Continuer",
+      verifier: v => (String(v||"").length < 8 ? "Huit caractères minimum." : "") });
   if(a === null) return;
   if(a.length < 8) return toast("Le mot de passe doit faire au moins huit caractères.");
   const { error } = await sb.auth.updateUser({ password: a });
@@ -2102,7 +2208,7 @@ $("#viewExpenses").addEventListener("click", async e => {
 
 $("#d_body").addEventListener("click", async e => {
   const b = e.target.closest("[data-delexp]"); if(!b) return;
-  if(!confirm("Supprimer définitivement cette dépense du registre ?")) return;
+  if(!await demander("Supprimer cette dépense", "Elle sera retirée définitivement du registre.", { bouton:"Supprimer", danger:true })) return;
   const { error } = await sb.from("expenses").delete().eq("id", b.dataset.delexp);
   if(error) return toast("Suppression impossible : "+error.message);
   closeDrawer(); await refresh(); toast("Dépense supprimée.");
@@ -2130,10 +2236,12 @@ function majFormulaire(){
 $("#f_pay").addEventListener("change", majFormulaire);
 
 $("#editIban").onclick = async () => {
-  const v = prompt("IBAN sur lequel vous souhaitez être remboursé :", state.profile.iban || "");
+  const v = await saisir("Votre IBAN", "Compte sur lequel vous souhaitez être remboursé.",
+    { valeur: state.profile.iban || "", exemple:"BE68 5390 0754 7034", bouton:"Enregistrer",
+      verifier: x => (ibanValide(ibanFormate(x)) ? "" : messageIban(x)) });
   if(v === null) return;
   const iban = ibanFormate(v);
-  if(!ibanValide(iban)) return alert("IBAN refusé.\n\n" + messageIban(v));
+  if(!ibanValide(iban)) return await dire("IBAN refusé", messageIban(v));
   // passe par une fonction serveur : la table profiles n'est modifiable que par
   // un trésorier, et cette fonction ne touche que l'IBAN de l'appelant
   const { data, error } = await sb.rpc("maj_mon_iban", { nouvel_iban: iban });
@@ -2488,7 +2596,7 @@ if($("#btnCancelRep")) $("#btnCancelRep").onclick = () => { $("#repForm").reset(
 if($("#repList")) $("#repList").addEventListener("click", async e => {
   const b = e.target.closest("[data-delrep]"); if(!b) return;
   const d = state.expenses.find(x => x.id === b.dataset.delrep); if(!d) return;
-  if(!confirm("Supprimer « " + (d.object||"") + " » (" + euro(d.amount) + ") ?")) return;
+  if(!await demander("Supprimer cette dépense", (d.object||"") + " — " + euro(d.amount), { bouton:"Supprimer", danger:true })) return;
   const { error } = await sb.from("expenses").delete().eq("id", b.dataset.delrep);
   if(error) return toast("Suppression impossible : " + error.message);
   await refresh(); toast("Opération supprimée.");
@@ -2763,7 +2871,7 @@ if($("#exList")) $("#exList").addEventListener("click", async e => {
   }
   const suppr = e.target.closest("[data-exdel]");
   if(!suppr) return;
-  if(!confirm("Supprimer définitivement « " + suppr.dataset.exdel + " » ?")) return;
+  if(!await demander("Supprimer cet extrait", suppr.dataset.exdel, { bouton:"Supprimer", danger:true })) return;
   const { error } = await sb.storage.from("justificatifs")
     .remove([DOSSIER_EXTRAITS + "/" + suppr.dataset.exdel]);
   if(error) return toast("Suppression impossible : " + error.message);
@@ -3056,7 +3164,7 @@ function telechargerFichier(nom, contenu, type){
   a.download = nom; a.click(); URL.revokeObjectURL(a.href);
 }
 /* sépare les lignes payables (IBAN valide) des autres, avec avertissements */
-function preparerVirements(){
+async function preparerVirements(){
   const l = payCoches();
   if(!l.length){ toast("Aucune ligne cochée."); return null; }
   const bons = l.filter(i => ibanValide(payeeIban(i)));
@@ -3069,7 +3177,7 @@ function preparerVirements(){
     + mauvais.slice(0,8).map(i => "  · " + payeeName(i) + " — " + (payeeIban(i) || "aucun IBAN")).join("\n")
     + (sansIban > 8 ? "\n  · … et " + (sansIban-8) + " autre(s)" : "") + "\n\n";
   if(dejaExp)  msg += dejaExp + " demande(s) ont déjà été exportées : vous risquez un double paiement si les virements ont déjà été faits.\n";
-  if(msg && !confirm(msg + "\nContinuer et générer le fichier ?")) return null;
+  if(msg && !await demander("Demandes incomplètes", msg, { bouton:"Générer quand même" })) return null;
   return bons;
 }
 async function marquerExporte(list){
@@ -3080,14 +3188,14 @@ async function marquerExporte(list){
     if(error){ rates++; continue; }          // sans ce contrôle, une ligne pouvait être exportée deux fois
     i.exported_at = now;
   }
-  if(rates) alert("Attention : " + rates + " demande(s) n'ont pas pu être marquées comme exportées.\n\n"
+  if(rates) await dire("Attention", rates + " demande(s) n'ont pas pu être marquées comme exportées.\n\n"
     + "Le fichier est correct, mais ces lignes ne porteront pas l'avertissement « déjà exporté ». "
     + "Notez-les avant de refaire un export, pour éviter un double virement.");
   return rates;
 }
 /* CSV pensé pour ING / tableur : une ligne par bénéficiaire */
 $("#payCsv").onclick = async () => {
-  const l = preparerVirements(); if(!l) return;
+  const l = await preparerVirements(); if(!l) return;
   const cols = ["Bénéficiaire","IBAN","Montant","Devise","Communication"];
   const rows = l.map(i => [
       payeeName(i), ibanClean(payeeIban(i)), montantSepa(i.amount), "EUR", payeeComm(i)
@@ -3146,7 +3254,7 @@ function buildSepaXml(list){
     + "</Document>";
 }
 $("#paySepa").onclick = async () => {
-  const l = preparerVirements(); if(!l) return;
+  const l = await preparerVirements(); if(!l) return;
   telechargerFichier("virements-SEPA-"+new Date().toISOString().slice(0,10)+".xml",
     buildSepaXml(l), "application/xml");
   await marquerExporte(l); buildPayrun();
@@ -3166,10 +3274,13 @@ $("#payDone").onclick = async () => {
   if(jamaisExp.length) alerte += "⚠ " + jamaisExp.length + " demande(s) n'ont jamais été exportées vers la banque :\n"
     + jamaisExp.slice(0,8).map(i => "  · " + payeeName(i) + " — " + euro(i.amount)).join("\n")
     + (jamaisExp.length > 8 ? "\n  · …" : "") + "\n\n";
-  if(alerte && !confirm(alerte + "Les marquer quand même comme remboursées ?\n\n"
-    + "Ne confirmez que si vous avez effectué ces virements à la main.")) return;
-  if(!confirm(l.length + " demande(s) seront marquées comme remboursées, pour un total de "
-    + euro(l.reduce((s,i)=>s+Number(i.amount||0),0)) + ".\n\nConfirmez seulement après avoir effectué les virements.")) return;
+  if(alerte && !await demander("Demandes incomplètes",
+    alerte + "Ne confirmez que si vous avez effectué ces virements à la main.",
+    { bouton:"Marquer quand même" })) return;
+  if(!await demander("Marquer comme remboursées",
+    l.length + " demande(s), pour un total de " + euro(l.reduce((s,i)=>s+Number(i.amount||0),0))
+    + ".\n\nConfirmez seulement après avoir effectué les virements.",
+    { bouton:"Marquer comme remboursées" })) return;
   const btn = $("#payDone"); btn.disabled = true; btn.textContent = "En cours…";
   let ok = 0;
   for(const i of l){
@@ -3424,8 +3535,12 @@ function majReset(){
 $("#resetBtn").onclick = async () => {
   const nb = state.items.length + state.expenses.length + state.incomes.length;
   if(!nb) return toast("Il n'y a rien à effacer.");
-  if(state.closures.length && !confirm("Des exercices sont clôturés : leurs écritures sont verrouillées et resteront en place.\n\nContinuer avec le reste ?")) return;
-  const mot = prompt("REMISE À ZÉRO\n\n" + nb + " écriture(s) et leurs pièces vont être supprimées définitivement.\nLes comptes des membres sont conservés.\n\nPour confirmer, tapez : EFFACER");
+  if(state.closures.length && !await demander("Exercices clôturés", "Leurs écritures sont verrouillées et resteront en place.\n\nContinuer avec le reste ?", { bouton:"Continuer" })) return;
+  const mot = await saisir("Remise à zéro",
+    nb + " écriture(s) et leurs pièces vont être supprimées définitivement.\n"
+    + "Les comptes des membres sont conservés.\n\nPour confirmer, recopiez : EFFACER",
+    { exemple:"EFFACER", bouton:"Tout effacer", danger:true,
+      verifier: v => (String(v||"").trim().toUpperCase() === "EFFACER" ? "" : "Recopiez EFFACER pour confirmer.") });
   if(mot === null) return;
   if(mot.trim().toUpperCase() !== "EFFACER") return toast("Confirmation incorrecte. Rien n'a été effacé.");
 
@@ -3519,7 +3634,7 @@ $("#closeBtn").onclick = async () => {
 
 $("#closureList").addEventListener("click", async e => {
   const b = e.target.closest("[data-reopen]"); if(!b) return;
-  if(!confirm("Rouvrir l'exercice " + b.dataset.reopen + " ? Les écritures redeviendront modifiables.")) return;
+  if(!await demander("Rouvrir l'exercice " + b.dataset.reopen, "Les écritures redeviendront modifiables.", { bouton:"Rouvrir" })) return;
   const { error } = await sb.from("closures").delete().eq("year", Number(b.dataset.reopen));
   if(error) return toast("Impossible : " + error.message);
   await refresh(); toast("Exercice rouvert.");
@@ -3614,7 +3729,7 @@ $("#viewIncomes").addEventListener("click", async e => {
 
 $("#d_body").addEventListener("click", async e => {
   const b = e.target.closest("[data-delinc]"); if(!b) return;
-  if(!confirm("Supprimer définitivement cette recette du registre ?")) return;
+  if(!await demander("Supprimer cette recette", "Elle sera retirée définitivement du registre.", { bouton:"Supprimer", danger:true })) return;
   const { error } = await sb.from("incomes").delete().eq("id", b.dataset.delinc);
   if(error) return toast("Suppression impossible : "+error.message);
   closeDrawer(); await refresh(); toast("Recette supprimée.");
@@ -3796,10 +3911,11 @@ function chercherDoublon(objet, montant, dateStr, exclureId){
     (slug(i.object||"") === obj || Math.abs(Number(i.amount||0) - Number(montant||0)) < 0.01)
   );
 }
-function confirmerDoublon(d){
-  return confirm("Attention — demande similaire ce mois-ci\n\n"
-    + "« " + (d.object||"") + " » — " + euro(d.amount) + " (" + fdate(d.expense_date) + ") · " + d.status
-    + "\n\nSouhaitez-vous quand même envoyer cette nouvelle demande ?");
+async function confirmerDoublon(d){
+  return await demander("Demande similaire ce mois-ci",
+    "« " + (d.object||"") + " » — " + euro(d.amount) + " (" + fdate(d.expense_date) + ") · " + d.status
+    + "\n\nSouhaitez-vous quand même envoyer cette nouvelle demande ?",
+    { bouton:"Envoyer quand même" });
 }
 
 /* ---------- brouillon automatique ---------- */
@@ -3901,13 +4017,14 @@ $("#reqForm").addEventListener("submit", async e => {
     // même fichier déjà joint à une de ses demandes ?
     const _hs = await Promise.all(staged.req.map(p => empreinte(p.file)));
     const _deja = state.items.filter(x => piecesDe(x).some(p => p.hash && _hs.includes(p.hash)));
-    if(_deja.length && !confirm("Vous avez déjà joint ce même fichier à :\n\n"
-      + _deja.slice(0,4).map(x => "· " + refOf(x) + " — " + (x.object||"") + " — " + euro(x.amount)).join("\n")
-      + "\n\nEnvoyer quand même cette demande ?")) throw new Error("__annule__");
+    if(_deja.length && !await demander("Justificatif déjà utilisé",
+      "Vous avez déjà joint ce même fichier à :\n\n"
+      + _deja.slice(0,4).map(x => "· " + refOf(x) + " — " + (x.object||"") + " — " + euro(x.amount)).join("\n"),
+      { bouton:"Envoyer quand même" })) throw new Error("__annule__");
     const _ibanR = String(state.profile.iban || "").trim();
     if(_ibanR && !ibanValide(_ibanR)) throw new Error("Votre IBAN enregistré est incorrect. " + messageIban(_ibanR) + "\nCorrigez-le avec le bouton « Modifier ».");
     const _dbl = chercherDoublon($("#f_object").value.trim(), parseFloat($("#f_amount").value), $("#f_date").value);
-    if(_dbl && !confirmerDoublon(_dbl)) throw new Error("__annule__");
+    if(_dbl && !await confirmerDoublon(_dbl)) throw new Error("__annule__");
     rattraperFichier("req", "#r_kind", "#f_proof");
     if(!staged.req.length) throw new Error("Joignez au moins une pièce justificative avec le bouton « Joindre ».");
     const kinds = staged.req.map(p => p.kind);
@@ -3950,7 +4067,7 @@ $("#reqForm").addEventListener("submit", async e => {
     $("#f_date").value = new Date().toISOString().slice(0,10); majFormulaire();
     await refresh();
     if(!piecesOk){
-      alert("Votre demande a bien été enregistrée, MAIS le justificatif n'a pas pu être envoyé"
+      await dire("Justificatif non envoyé", "Votre demande a bien été enregistrée, mais le justificatif n'a pas pu être envoyé"
         + (piecesErr ? " (" + piecesErr + ")" : "") + ".\n\n"
         + "Ouvrez votre demande dans « Mes demandes » et joignez-le avec « Compléter ou corriger votre demande », "
         + "sinon elle ne pourra pas être remboursée.");
@@ -3988,7 +4105,7 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       if(!ibanValide(iban)) throw new Error("IBAN du bénéficiaire : " + messageIban(iban));
     }
     const _dblD = chercherDoublon(object, amount, new Date().toISOString().slice(0,10));
-    if(_dblD && !confirmerDoublon(_dblD)) throw new Error("__annule__");
+    if(_dblD && !await confirmerDoublon(_dblD)) throw new Error("__annule__");
     rattraperFichier("dir", "#fd_kind", "#fd_proof");
     const { data, error } = await sb.from("requests").insert({
       user_id: state.profile.id, requester_name: state.profile.name || "",
@@ -4019,7 +4136,7 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display=""; staged.dir = []; renderStaged("dir");
     await refresh();
     if(!dirPiecesOk){
-      alert("La demande a bien été enregistrée, MAIS la pièce jointe n'a pas pu être envoyée"
+      await dire("Pièce jointe non envoyée", "La demande a bien été enregistrée, mais la pièce jointe n'a pas pu être envoyée"
         + (dirErr ? " (" + dirErr + ")" : "") + ".\n\nOuvrez la demande pour la joindre à nouveau.");
       toast("Demande enregistrée sans pièce jointe.");
     } else toast("Demande de paiement direct envoyée au trésorier.");
@@ -4400,13 +4517,13 @@ $("#viewMembers").addEventListener("click", async e => {
 
   if(act==="approve") patch = { approved:true };
   if(act==="reject"){
-    if(!confirm(`Rejeter l'inscription de ${m.name || m.email} ?`)) return;
+    if(!await demander("Rejeter cette inscription", `${m.name || m.email} n'aura pas accès à la caisse.`, { bouton:"Rejeter", danger:true })) return;
     const { error } = await sb.from("profiles").delete().eq("id", id);
     if(error) return toast("Impossible : "+error.message);
     await refresh(); return toast("Inscription rejetée.");
   }
   if(act==="revoke"){
-    if(!confirm(`Retirer l'accès de ${m.name || m.email} ? Ses demandes existantes sont conservées.`)) return;
+    if(!await demander("Retirer l'accès", `${m.name || m.email} ne pourra plus se connecter. Ses demandes existantes sont conservées.`, { bouton:"Retirer l'accès", danger:true })) return;
     patch = { approved:false };
   }
   if(act==="role"){
@@ -4415,17 +4532,23 @@ $("#viewMembers").addEventListener("click", async e => {
     patch = { role: m.role==="tresorier" ? "demandeur" : "tresorier" };
   }
   if(act==="rename"){
-    const prenom = prompt("Prénom :", m.first_name || "");
+    const prenom = await saisir("Prénom", null, { valeur: m.first_name || "", bouton:"Continuer" });
     if(prenom===null) return;
-    const nom = prompt("Nom :", m.last_name || "");
+    const nom = await saisir("Nom", null, { valeur: m.last_name || "", bouton:"Enregistrer" });
     if(nom===null) return;
     patch = { first_name: prenom.trim(), last_name: nom.trim() };
   }
   if(act==="poste"){
     const liste = [...$("#a_pos").options].map(o=>o.value).filter(Boolean);
-    const p = prompt("Poste de " + (m.name||m.email) + " :\n\n" +
-      liste.map((v,n)=>(n+1)+". "+v).join("\n") + "\n\nTapez le numéro ou le nom exact du poste.",
-      m.position || "");
+    const p = await saisir("Poste de " + (m.name||m.email),
+      liste.map((v,n)=>(n+1)+". "+v).join("\n") + "\n\nTapez le numéro ou le nom du poste.",
+      { valeur: m.position || "", bouton:"Enregistrer",
+        verifier: x => {
+          const t = String(x||"").trim();
+          if(!t) return "Indiquez un poste.";
+          const ok = /^\d+$/.test(t) ? liste[Number(t)-1] : liste.find(v => v.toLowerCase() === t.toLowerCase());
+          return ok ? "" : "Poste non reconnu. Tapez le numéro ou le nom exact.";
+        } });
     if(p===null) return;
     const t = p.trim();
     const choix = /^\d+$/.test(t) ? liste[Number(t)-1] : liste.find(v => v.toLowerCase() === t.toLowerCase());
@@ -4433,9 +4556,11 @@ $("#viewMembers").addEventListener("click", async e => {
     patch = { position: choix };
   }
   if(act==="iban"){
-    const v = prompt("IBAN de " + (m.name||m.email) + " :", m.iban || "");
+    const v = await saisir("IBAN de " + (m.name||m.email), null,
+      { valeur: m.iban || "", exemple:"BE68 5390 0754 7034", bouton:"Enregistrer",
+        verifier: x => (ibanValide(ibanFormate(x)) ? "" : messageIban(x)) });
     if(v===null) return;
-    if(!ibanValide(v)) return alert("IBAN refusé.\n\n" + messageIban(v));
+    if(!ibanValide(v)) return await dire("IBAN refusé", messageIban(v));
     patch = { iban: ibanFormate(v) };
   }
 
@@ -4474,8 +4599,8 @@ async function bulkValider(){
   if(!cibles.length) return toast("Aucune demande « En attente » sélectionnée.");
   // La validation en lot ignorait totalement estIncomplet : on validait sans pièce ni IBAN.
   const alerte = detailIncompletes(cibles);
-  if(alerte && !confirm(alerte + "Les valider quand même ?\n\nElles ne pourront pas être virées tant qu'elles ne sont pas complétées.")) return;
-  if(window.confirm && !window.confirm("Valider "+cibles.length+" demande(s) ?")) return;
+  if(alerte && !await demander("Demandes incomplètes", alerte + "Elles ne pourront pas être virées tant qu'elles ne sont pas complétées.", { bouton:"Valider quand même" })) return;
+  if(!await demander("Valider les demandes", cibles.length + " demande(s) seront validées.", { bouton:"Valider" })) return;
   let ok = 0, ko = 0, conflits = 0;
   for(const it of cibles){
     const r = await majSiInchangee(it, {status:"Validée", decided_at:new Date().toISOString()});
@@ -4489,14 +4614,14 @@ async function bulkValider(){
   }
   state.sel.clear(); await refresh(); renderBulk();
   toast(ok+" demande(s) validée(s)." + (ko ? " " + ko + " échec(s)." : "") + (conflits ? " " + conflits + " déjà traitée(s) ailleurs." : ""));
-  if(conflits) alert(conflits + " demande(s) n'ont pas été validées : elles avaient déjà changé de statut (un autre trésorier est passé avant vous). La liste est à jour.");
+  if(conflits) await dire("Demandes non validées", conflits + " demande(s) avaient déjà changé de statut (un autre trésorier est passé avant vous). La liste est à jour.");
 }
 async function bulkPayer(){
   const cibles=selItems().filter(i=>i.status==="Validée");
   if(!cibles.length) return toast("Aucune demande « Validée » sélectionnée.");
   const alerte = detailIncompletes(cibles);
-  if(alerte && !confirm(alerte + "Les marquer quand même comme remboursées ?")) return;
-  if(window.confirm && !window.confirm("Marquer "+cibles.length+" demande(s) comme remboursée(s) ?")) return;
+  if(alerte && !await demander("Demandes incomplètes", alerte, { bouton:"Marquer quand même" })) return;
+  if(!await demander("Marquer comme remboursées", cibles.length + " demande(s) seront marquées comme remboursées.", { bouton:"Marquer" })) return;
   let ok = 0, ko = 0, conflits = 0;
   for(const it of cibles){
     const quand = new Date().toISOString();
@@ -4512,7 +4637,7 @@ async function bulkPayer(){
   }
   state.sel.clear(); await refresh(); renderBulk();
   toast(ok+" demande(s) remboursée(s)." + (ko ? " " + ko + " échec(s)." : "") + (conflits ? " " + conflits + " déjà traitée(s) ailleurs." : ""));
-  if(conflits) alert(conflits + " demande(s) n'ont pas été marquées comme remboursées : elles avaient déjà changé de statut. La liste est à jour.");
+  if(conflits) await dire("Demandes non marquées", conflits + " demande(s) avaient déjà changé de statut. La liste est à jour.");
 }
 if($("#bulkValider")) $("#bulkValider").onclick = bulkValider;
 if($("#bulkPayer"))   $("#bulkPayer").onclick   = bulkPayer;
@@ -4788,7 +4913,7 @@ $("#d_body").addEventListener("click", async e => {
     await refresh();
     const maj2 = state.items.find(i => i.id === it.id);
     if(maj2) renderDrawer(maj2);
-    alert("Votre demande a bien été modifiée.\n\n" + maj.object + " — " + euro(maj.amount)
+    await dire("Demande modifiée", maj.object + " — " + euro(maj.amount)
       + (versReexamen
           ? "\n\nElle a été envoyée au trésorier pour réexamen. Vous serez informé de sa décision par e-mail."
           : "\n\nUn e-mail de confirmation vient de vous être envoyé. Le trésorier en a été informé."));
@@ -4798,7 +4923,7 @@ $("#d_body").addEventListener("click", async e => {
 
   if(act === "edit-delete"){
     if(it.user_id !== state.profile.id || !["En attente","Refusée","À corriger"].includes(it.status)){ return toast("Cette demande n'est plus supprimable."); }
-    if(!confirm("Supprimer définitivement cette demande ?\n\n" + (it.object||"") + " — " + euro(it.amount) + "\n\nCette action est irréversible.")) return;
+    if(!await demander("Supprimer cette demande", (it.object||"") + " — " + euro(it.amount) + "\n\nCette action est irréversible.", { bouton:"Supprimer", danger:true })) return;
     b.disabled = true; b.textContent = "Suppression…";
     try{
       const chemins = (piecesDe(it) || []).map(p => p.path).filter(Boolean);
@@ -4809,7 +4934,7 @@ $("#d_body").addEventListener("click", async e => {
       try{ mailSupprimee(it); }catch(_){}
       closeDrawer();
       await refresh();
-      alert("Votre demande a bien été supprimée.\n\n" + (it.object||"") + " — " + euro(it.amount)
+      await dire("Demande supprimée", (it.object||"") + " — " + euro(it.amount)
         + "\n\nUn e-mail de confirmation vient de vous être envoyé. Elle ne sera pas traitée.");
       toast("Demande supprimée.");
     }catch(err){
@@ -4907,10 +5032,15 @@ $("#d_body").addEventListener("click", async e => {
   if(act==="rouvrir"){ patch={status:"En attente", paid_at:null, reexamen_msg:null, reexamen_at:null, exported_at:null}; label="Remise en attente"; }
   if(act==="rejet"){
     if(it.status !== "Remboursée") return toast("Cette demande n'est pas marquée comme remboursée.");
-    motifRejet = (prompt("Motif communiqué par la banque (compte clôturé, IBAN erroné, provision insuffisante…) :","") || "").trim();
+    motifRejet = String(await saisir("Motif du rejet",
+      "Motif communiqué par la banque : compte clôturé, IBAN erroné, provision insuffisante…",
+      { bouton:"Continuer",
+        verifier: v => (String(v||"").trim() ? "" : "Indiquez le motif communiqué par la banque.") }) || "").trim();
     if(!motifRejet) return;
-    if(!confirm("Le virement sera considéré comme NON effectué.\n\n" + (it.object||"") + " — " + euro(it.amount)
-      + "\n\nLa demande repasse en « Validée » et réapparaîtra dans le prochain fichier de virements.")) return;
+    if(!await demander("Virement rejeté par la banque",
+      (it.object||"") + " — " + euro(it.amount)
+      + "\n\nLa demande repasse en « Validée » et réapparaîtra dans le prochain fichier de virements.",
+      { bouton:"Confirmer le rejet", danger:true })) return;
     patch = { status:"Validée", paid_at:null, exported_at:null,
       decision_note:"Virement rejeté par la banque : " + motifRejet };
     label = "Virement rejeté par la banque : " + motifRejet;
@@ -4931,7 +5061,7 @@ $("#d_body").addEventListener("click", async e => {
   const res = await majSiInchangee(it, patch);
   b.disabled = false;
   if(res.erreur) return toast("Action impossible : " + res.erreur);
-  if(res.conflit){ await refresh(); closeDrawer(); return alert(messageConflit()); }
+  if(res.conflit){ await refresh(); closeDrawer(); return await dire("Demande déjà traitée", messageConflit()); }
   state.drawerDirty = false;   // l'action est enregistrée : le panneau peut être réécrit
   await sb.from("events").insert({ request_id:it.id, who:state.profile.name, what:label });
   if(act==="valider"){ mailValide(it); }
