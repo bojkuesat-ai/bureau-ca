@@ -444,7 +444,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-08-25 \u00b7 02h40";
+const CA_VERSION="2026-08-25 \u00b7 03h20";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -655,32 +655,6 @@ async function envoyerNotifCA(subject, corpsHtml, avecCaisse){
   for(const to of dest){
     try{ await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html})}); }catch(e){}
     await new Promise(r=>setTimeout(r,120));
-  }
-}
-/* Accuse de reception a l'inscription + alerte au proprietaire. */
-async function mailInscriptionRecue(email, prenom, coopte){
-  const spam='<div style="background:#fff8e1;border:1px solid #f0d68a;border-radius:8px;padding:12px;margin:16px 0;font-size:13px">'
-    +"<b>Pensez \u00e0 v\u00e9rifier vos spams.</b> Nos messages arrivent parfois dans le courrier ind\u00e9sirable. "
-    +"Marquez-les comme l\u00e9gitimes pour ne rien manquer.</div>";
-  const corps = coopte
-    ? '<h2 style="margin:0 0 10px">Votre demande est enregistr\u00e9e</h2>'
-      +"<p>Bonjour "+caMailEsc(prenom||"")+",</p>"
-      +"<p>Votre demande pour rejoindre le Bureau \u00e9tudiant <b>en tant que coopt\u00e9\u00b7e</b> a bien \u00e9t\u00e9 re\u00e7ue.</p>"
-      +"<p>Elle doit maintenant \u00eatre valid\u00e9e par le bureau. Vous recevrez un e-mail d\u00e8s que ce sera fait : inutile de refaire une demande entre-temps.</p>"
-      +"<p>Une fois valid\u00e9\u00b7e, vous pourrez consulter l'agenda des \u00e9v\u00e9nements et d\u00e9poser vos avis et vos id\u00e9es \u00e0 l'attention du conseil. Vous ne prenez pas part aux d\u00e9cisions du CA.</p>"
-      +spam
-    : '<h2 style="margin:0 0 10px">Votre inscription est enregistr\u00e9e</h2>'
-      +"<p>Bonjour "+caMailEsc(prenom||"")+",</p>"
-      +"<p>Votre demande d'acc\u00e8s \u00e0 l'espace CA du Bureau \u00e9tudiant a bien \u00e9t\u00e9 re\u00e7ue.</p>"
-      +"<p>Elle doit maintenant \u00eatre valid\u00e9e par le bureau. Vous recevrez un e-mail d\u00e8s que ce sera fait : inutile de refaire une demande entre-temps.</p>"
-      +spam;
-  const sujet = coopte ? "Votre demande pour rejoindre le Bureau \u00e9tudiant" : "Votre demande d'acc\u00e8s \u00e0 l'espace CA";
-  try{ await envoyerNotifCAListe([email], sujet, corps, true); }catch(e){}
-  const owners=(S.admins||[]).filter(a=>a.email && a.statut==="actif" && a.role==="owner").map(a=>a.email);
-  if(owners.length){
-    try{ await envoyerNotifCAListe(owners, "Nouvelle demande d'acc\u00e8s"+(coopte?" (coopt\u00e9\u00b7e)":""),
-      "<p><b>"+caMailEsc(prenom||"")+"</b> ("+caMailEsc(email)+") vient de demander un acc\u00e8s"
-      +(coopte?" <b>via le lien des coopt\u00e9\u00b7es</b>":"")+". Validez-la depuis l'espace admin.</p>", true); }catch(e){}
   }
 }
 async function envoyerNotifCAListe(dest, subject, corpsHtml, sansInvitation){
@@ -2295,7 +2269,6 @@ document.addEventListener("click", async e=>{
         /* Le profil est normalement cree par le declencheur ca_on_new_user cote base.
            Cet insert n'est qu'un filet quand la session existe deja ; son echec est sans consequence. */
         try{ await sb.from("ca_membres").insert(Object.assign({ id:user.id, prenom:prenom, nom:nom, fonction:fonction }, extra)); }catch(_){ } }
-      try{ await mailInscriptionRecue(email, prenom, S.goto==="coopte"); }catch(e){}
       await refreshSession(); render();
       modaleInfo(
         (S.goto==="coopte"
