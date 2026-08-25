@@ -444,9 +444,36 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-08-25 \u00b7 02h00";
+const CA_VERSION="2026-08-25 \u00b7 02h40";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
+/* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
+function modaleSaisie(texte, titre, placeholder){
+  return new Promise(resolve=>{
+    const anc=document.getElementById("ca_modal_txt"); if(anc) anc.remove();
+    const d=document.createElement("div");
+    d.id="ca_modal_txt"; d.className="ca-mod";
+    d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true">'
+      +'<h3>'+esc(titre||"")+'</h3>'
+      +'<p style="color:var(--ink);font-size:14px">'+esc(texte)+'</p>'
+      +'<textarea class="f" id="ca_txt_val" rows="4" placeholder="'+esc(placeholder||"")+'" style="width:100%;margin:0 0 12px"></textarea>'
+      +'<div class="ca-mod-btns">'
+      +'<button class="btn ghost sm" id="ca_txt_no">Annuler</button>'
+      +'<button class="btn sm" id="ca_txt_ok">Confirmer</button>'
+      +'</div></div>';
+    document.body.appendChild(d);
+    let fini=false;
+    const rep=v=>{ if(fini) return; fini=true; d.remove(); document.removeEventListener("keydown",k); resolve(v); };
+    function k(e){ if(e.key==="Escape") rep(null); }
+    document.addEventListener("keydown",k);
+    d.addEventListener("click",e=>{ if(e.target===d) rep(null); });
+    const champ=d.querySelector("#ca_txt_val");
+    const ok=d.querySelector("#ca_txt_ok"), non=d.querySelector("#ca_txt_no");
+    if(ok) ok.addEventListener("click",()=>rep(champ?String(champ.value||""):""));
+    if(non) non.addEventListener("click",()=>rep(null));
+    try{ if(champ) champ.focus(); }catch(_){ }
+  });
+}
 function modaleConfirm(texte, titre){
   return new Promise(resolve=>{
     const anc=document.getElementById("ca_modal_ask"); if(anc) anc.remove();
@@ -2269,7 +2296,16 @@ document.addEventListener("click", async e=>{
            Cet insert n'est qu'un filet quand la session existe deja ; son echec est sans consequence. */
         try{ await sb.from("ca_membres").insert(Object.assign({ id:user.id, prenom:prenom, nom:nom, fonction:fonction }, extra)); }catch(_){ } }
       try{ await mailInscriptionRecue(email, prenom, S.goto==="coopte"); }catch(e){}
-      await refreshSession(); render(); break;
+      await refreshSession(); render();
+      modaleInfo(
+        (S.goto==="coopte"
+          ? "Votre demande pour rejoindre le Bureau \u00e9tudiant en tant que coopt\u00e9\u00b7e a bien \u00e9t\u00e9 enregistr\u00e9e.\n\n"
+          : "Votre demande d\'acc\u00e8s a bien \u00e9t\u00e9 enregistr\u00e9e.\n\n")
+        + "Un e-mail de confirmation vient de vous \u00eatre envoy\u00e9 \u00e0 "+email+" : ouvrez-le et cliquez sur le lien pour confirmer votre adresse.\n\n"
+        + "Votre acc\u00e8s doit ensuite \u00eatre valid\u00e9 par le bureau. Vous recevrez un e-mail d\u00e8s que ce sera fait \u2014 inutile de refaire une demande entre-temps.\n\n"
+        + "Pensez \u00e0 v\u00e9rifier vos spams : nos messages y atterrissent souvent.",
+        "Demande enregistr\u00e9e");
+      break;
     }
     case "login": {
       const email=normId(val("au_email")), pwd=val("au_pwd");
@@ -2847,7 +2883,27 @@ ${sections||"<p>Aucun retour.</p>"}
         "<p>Bonjour "+caMailEsc(ad.prenom||"")+",</p><p>Votre inscription à l'espace CA du Bureau étudiant vient d'être <b>validée</b>. Vous pouvez désormais vous connecter et accéder à l'espace.</p>"); }catch(e){} }
       try{ logAct("Inscription validée : "+(((ad&&ad.prenom)||"")+" "+((ad&&ad.nom)||"")).trim()); }catch(e){}
       await loadAccounts(); render(); break; }
-    case "reject-admin": { if(!(S.session&&S.session.role==="owner")) break; try{ await sb.from("ca_membres").delete().eq("id",id); }catch(e){} await loadAccounts(); render(); break; }
+    case "reject-admin": {
+      if(!(S.session&&S.session.role==="owner")) break;
+      const ad=(S.admins||[]).find(a=>a.id===id);
+      const motif=await modaleSaisie(
+        "Cette personne recevra votre message par e-mail et pourra vous r\u00e9pondre. Laissez vide pour refuser sans explication.",
+        "Refuser la demande" + (ad&&ad.prenom?" de "+ad.prenom:""),
+        "Ex. Cette invitation est r\u00e9serv\u00e9e aux membres du conseil.");
+      if(motif===null) break;
+      if(ad && ad.email){
+        const corps='<h2 style="margin:0 0 10px">Votre demande n\'a pas \u00e9t\u00e9 retenue</h2>'
+          +"<p>Bonjour "+caMailEsc(ad.prenom||"")+",</p>"
+          +"<p>Votre demande d\'acc\u00e8s \u00e0 l\'espace du Bureau \u00e9tudiant n\'a pas \u00e9t\u00e9 retenue.</p>"
+          +(String(motif).trim()
+            ? '<p style="background:#fdf6ec;border:1px solid #e8d3ab;border-radius:8px;padding:12px;color:#1a1a2e"><b>Motif :</b><br>'+caMailEsc(motif).replace(/\n/g,"<br>")+'</p>'
+            : "")
+          +"<p>Si vous pensez qu\'il s\'agit d\'une erreur, r\u00e9pondez simplement \u00e0 ce message : il arrivera \u00e0 la personne responsable.</p>";
+        try{ await envoyerNotifCAListe([ad.email], "Votre demande d\'acc\u00e8s n\'a pas \u00e9t\u00e9 retenue", corps, true); }catch(e){}
+      }
+      try{ await sb.from("ca_membres").delete().eq("id",id); }catch(e){}
+      logAct("Demande refus\u00e9e"+(String(motif).trim()?" (motif transmis)":""));
+      await loadAccounts(); render(); break; }
     case "revoke-admin": {
       if(!(S.session&&S.session.role==="owner")) break;
       if(id===S.session.id) break;
