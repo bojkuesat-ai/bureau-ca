@@ -444,7 +444,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-08-22 \u00b7 21h20";
+const CA_VERSION="2026-08-25 \u00b7 02h00";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 function modaleConfirm(texte, titre){
@@ -993,7 +993,7 @@ const val = id => { const e=document.getElementById(id); return e ? e.value : ""
 
 /* ============================ RENDU ============================ */
 const root = () => document.getElementById("root");
-function renderVue(){ return S.view==="home" && !S.goto ? viewHome() : S.view==="admin" ? viewAdmin() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.needProfile ? viewCompleteProfile() : viewAuth()) : (S.session.statut==="attente" ? viewPending() : viewDash())); }
+function renderVue(){ return S.view==="home" && !S.goto ? viewHome() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.needProfile ? viewCompleteProfile() : viewAuth()) : (S.session.statut==="attente" ? viewPending() : viewDash())); }
 function render(){ if(S.recovery){ root().innerHTML = viewNewPwd(); return; } root().innerHTML = renderVue(); }
 function viewNewPwd(){
   return `<div class="auth-wrap"><div class="auth">
@@ -1025,21 +1025,9 @@ function viewCompleteProfile(){
   </div></div>`;
 }
 function viewAdmin(){
-  const back = `<button class="link" data-action="go-home">← Accueil</button>`;
-  const owner = S.session && S.session.role==="owner";
-  if(!owner){
-    return `<div class="auth-wrap"><div class="auth">
-      <div class="top"><span class="eyebrow">Admin · Réservé au propriétaire</span>${back}</div>
-      <h1 class="serif">Accès administrateur</h1>
-      <p class="lead">Réservé au propriétaire du bureau. Connectez-vous pour valider les comptes.</p>
-      <div class="auth-card">
-        <label>Adresse e-mail</label><input class="f" id="ad_email" type="email" placeholder="votre e-mail" autocapitalize="none">
-        <label>Mot de passe</label><input class="f" id="ad_pwd" type="password" placeholder="votre mot de passe">
-        <p class="err" id="ad_err" style="display:none"></p>
-        <button class="btn" data-action="admin-login">Ouvrir l\'espace admin</button>
-      </div>
-    </div></div>`;
-  }
+  /* Onglet reserve au proprietaire : plus de connexion separee, on utilise
+     deja la session de l'utilisateur connecte. */
+  if(!(S.session && S.session.role==="owner")) return `<div class="empty">Espace r\u00e9serv\u00e9 au propri\u00e9taire.</div>`;
   const pend = S.admins.filter(a=>a.statut==="attente");
   const actifs = S.admins.filter(a=>a.statut!=="attente");
   const pendHtml = pend.length ? pend.map(a=>`<div class="doc" style="cursor:default">
@@ -1058,9 +1046,8 @@ function viewAdmin(){
       ${(!self && a.role!=="owner")?`<button class="link" data-action="revoke-admin" data-id="${esc(a.id)}">Révoquer</button>`:""}
     </div>`;
   }).join("");
-  return `<div class="body" style="max-width:720px;margin:0 auto">
-    <div class="hd-top" style="margin:22px 0 6px"><button class="back" data-action="go-home">← Accueil</button><span class="eyebrow">Espace admin · Propriétaire</span></div>
-    <h1 class="serif" style="font-size:30px;margin:4px 0 6px">Validation des comptes</h1>
+  return `<div>
+    <h1 class="serif" style="font-size:26px;margin:0 0 6px">Validation des comptes</h1>
     <p style="color:var(--slate);font-size:11px;margin:0 0 16px">Version de l'application : <b>${esc(CA_VERSION)}</b></p>
     <p style="color:var(--slate);font-size:12px;margin:2px 0 0">Mot de passe oublié d'un membre ? Le bouton « Réinitialiser le mot de passe » lui envoie un lien par e-mail ; chacun peut aussi le demander depuis l'écran de connexion.</p>
     <div class="compose"><h3 class="serif">Comptes en attente</h3>
@@ -1203,7 +1190,7 @@ function viewAuth(){
     <p class="swap">Pas encore de compte ? <button data-action="set-mode" data-mode="signup">Créer un compte</button></p>`;
   return `<div class="auth-wrap"><div class="auth">
     <div class="top"><span class="eyebrow">${esc(S.meta.nom||"Bureau étudiant")} · CA</span>
-      <span style="display:flex;gap:10px;align-items:center"><button class="home-admin" data-action="go-admin" style="position:static">⚙︎ Admin</button><button class="link" data-action="go-home">← Accueil</button></span></div>
+      <span style="display:flex;gap:10px;align-items:center"><button class="link" data-action="go-home">← Accueil</button></span></div>
     <h1 class="serif">${coopte?"Espace coopté·es":"Espace CA"}</h1>
     <p class="lead">${coopte?"Bureau étudiant — espace réservé aux personnes cooptées par le conseil.":"Réservé aux responsables. Chaque action est enregistrée au nom de l’admin connecté."}</p>
     ${coopte?"":`<div class="banner" style="margin:0 0 14px"><span class="dot" style="background:var(--stamp)"></span>Vous avez déjà un compte pour la Caisse ? Pas besoin d'en créer un : connectez-vous avec le même e-mail et le même mot de passe.</div>`}
@@ -1217,7 +1204,7 @@ function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textC
 /* ---- DASHBOARD ---- */
 const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,notifs:tabNotifs,search:tabSearch};
+  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,notifs:tabNotifs,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   /* Les cooptes n'ont acces qu'a leur espace de contribution et aux annonces. */
@@ -1225,6 +1212,11 @@ function viewDash(){
   const tabs = estCoopte()
     ? [["agenda","\ud83d\udcc5","Agenda"],["avis","\ud83d\udca1","Id\u00e9es & avis"],["rgpd","12","Mes donn\u00e9es"]]
     : [...TABS,["avis","\ud83d\udca1","Id\u00e9es & avis"]];
+  /* L'espace admin n'est plus une porte visible depuis l'accueil : c'est un onglet
+     qui n'existe que pour le proprietaire, une fois connecte. */
+  const estProprio = S.session && S.session.role==="owner";
+  if(estProprio && !estCoopte()) tabs.push(["admin","\u2699","Admin"]);
+  if(S.tab==="admin" && !estProprio) S.tab="accueil";
   if(bilanOnglet() && !estCoopte()) tabs.push(["bilan","13","Bilans moraux"]);
   if(S.tab==="bilan" && !bilanOnglet()) S.tab="org";
   const notifOwner = S.session.role==="owner" ? (S.admins||[]).filter(a=>a.statut==="attente").length : 0;
@@ -2187,7 +2179,7 @@ function tabNotifs(){
   const budVote=(S.budgets||[]).filter(b=>b.statut==="vote" && !(b.votes||[]).some(v=>(v.nom||"").toLowerCase()===(S.session.sig||"").toLowerCase()));
   const overdue=(S.taches||[]).filter(t=>t.echeance&&t.statut!=="done"&&t.echeance<todayISO());
   const rows=[];
-  if(owner&&pend.length) rows.push(`<button class="msg-row" data-action="go-admin"><span class="msg-av">${pend.length}</span><span><span class="nm">Inscription(s) à valider</span><br><span class="fn">Ouvrir l'espace admin →</span></span></button>`);
+  if(owner&&pend.length) rows.push(`<button class="msg-row" data-action="set-tab" data-tab="admin"><span class="msg-av">${pend.length}</span><span><span class="nm">Inscription(s) à valider</span><br><span class="fn">Ouvrir l'espace admin →</span></span></button>`);
   if(budVote.length) rows.push(`<button class="msg-row" data-action="set-tab" data-tab="budgets"><span class="msg-av">${budVote.length}</span><span><span class="nm">Demande(s) de budget à voter</span><br><span class="fn">Aller aux budgets →</span></span></button>`);
   if(overdue.length) rows.push(`<button class="msg-row" data-action="set-tab" data-tab="taches"><span class="msg-av">${overdue.length}</span><span><span class="nm">Tâche(s) en retard</span><br><span class="fn">Aller aux tâches →</span></span></button>`);
   return `<div class="compose"><h3 class="serif">À traiter</h3><p style="color:var(--ink-soft);font-size:13px;margin:0">Ce qui demande votre attention.</p></div>`+(rows.length?`<div class="msg-list">${rows.join("")}</div>`:`<div class="empty">Rien à traiter — tout est à jour ✓</div>`);
@@ -2847,17 +2839,7 @@ ${sections||"<p>Aucun retour.</p>"}
       const w=window.open("","_blank"); if(w){ w.document.open(); w.document.write(doc); w.document.close(); }
       break;
     }
-    case "go-admin": S.view="admin"; render(); break;
-    case "admin-login": {
-      const email=normId(val("ad_email")), pwd=val("ad_pwd");
-      const aerr=m=>{ const el2=document.getElementById("ad_err"); if(el2){el2.textContent=m;el2.style.display="block";} };
-      if(!sb) return aerr("Connexion au serveur indisponible.");
-      const { error } = await sb.auth.signInWithPassword({ email:email, password:pwd });
-      if(error) return aerr("E-mail ou mot de passe incorrect.");
-      await refreshSession();
-      if(!(S.session && S.session.role==="owner")){ try{ await sb.auth.signOut(); }catch(e){} S.session=null; aerr("Réservé au propriétaire du bureau."); return; }
-      render(); break;
-    }
+    case "go-admin": { if(S.session&&S.session.role==="owner"){ S.view="ca"; S.tab="admin"; } render(); break; }
     case "approve-admin": { if(!(S.session&&S.session.role==="owner")) break;
       const ad=(S.admins||[]).find(a=>a.id===id);
       try{ await sb.from("ca_membres").update({statut:"actif"}).eq("id",id); }catch(e){}
