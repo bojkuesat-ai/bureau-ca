@@ -603,7 +603,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
               <option>Bon de commande</option>
               <option>Autre pièce</option>
             </select>
-            <input type="file" id="f_proof" accept="image/*,application/pdf,.pdf" capture="environment">
+            <input type="file" id="f_proof" accept="image/*,application/pdf,.pdf">
             <button type="button" class="btn ghost sm" id="r_add">Joindre</button>
           </div>
           <p class="photo-tip">Sur téléphone, « Choisir le fichier » vous propose <b>Prendre une photo</b>. Posez le ticket à plat, bien éclairé, et cadrez-le en entier — un justificatif illisible sera refusé.</p>
@@ -663,7 +663,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
           <div class="hint" style="margin:0 0 8px">Facture, devis, extrait de compte… Tu peux en joindre un, mais ce n'est pas obligatoire.</div>
           <div class="attach">
             <select id="fd_kind"><option>Facture</option><option>Devis</option><option>Bon de commande</option><option>Extrait de compte</option><option>Autre pièce</option></select>
-            <input type="file" id="fd_proof" accept="image/*,application/pdf,.pdf" capture="environment">
+            <input type="file" id="fd_proof" accept="image/*,application/pdf,.pdf">
             <button type="button" class="btn ghost sm" id="fd_add">Joindre</button>
           </div>
           <div id="fd_staged" class="staged"></div>
@@ -2304,12 +2304,182 @@ function renderStaged(cle){
     <span class="f">${esc(p.file.name)} · ${Math.round(p.file.size/1024)} Ko</span>
     <button type="button" data-drop="${cle}" data-n="${n}">Retirer</button></div>`).join("");
 }
+/* ---------- Recadrage facultatif des photos (demande de remboursement) ----------
+   Ouvre un aperçu avec un cadre déplaçable au doigt ou à la souris.
+   « Recadrer » renvoie une nouvelle image découpée, « Garder l'entière » renvoie
+   le fichier d'origine, fermer annule l'ajout. Les PDF ne passent jamais ici. */
+async function chargerImageRecadrage(file){
+  if(window.createImageBitmap){
+    try{ return await createImageBitmap(file, { imageOrientation:"from-image" }); }catch(_){}
+    try{ return await createImageBitmap(file); }catch(_){}
+  }
+  return await new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => { try{ URL.revokeObjectURL(url); }catch(_){} rej(new Error("Image illisible.")); };
+    im.src = url;
+  });
+}
+
+async function recadrerImage(file){
+  let src;
+  try{ src = await chargerImageRecadrage(file); }
+  catch(_){ return file; }                 // illisible ici : prepareProof tranchera
+  const nw = src.width, nh = src.height;
+  if(!nw || !nh) return file;
+
+  return await new Promise(resolve => {
+    const ov = document.createElement("div");
+    ov.id = "cropOverlay";
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:99999;"
+      + "display:flex;flex-direction:column";
+    ov.innerHTML =
+      '<div style="padding:12px 16px;color:#fff;font-size:14px;text-align:center;flex:0 0 auto">'
+      + "Ajustez le cadre sur le justificatif, ou gardez la photo entière."
+      + '</div>'
+      + '<div id="cropStage" style="flex:1 1 auto;display:flex;align-items:center;'
+      + 'justify-content:center;overflow:hidden;padding:6px"></div>'
+      + '<div style="flex:0 0 auto;padding:12px 16px;display:flex;gap:9px;justify-content:center;'
+      + 'flex-wrap:wrap">'
+      + '<button type="button" id="cropOk" style="background:linear-gradient(150deg,var(--gold),var(--gold-dim));'
+      + 'color:#241100;border:none;border-radius:11px;padding:12px 20px;font-weight:bold;cursor:pointer">Recadrer</button>'
+      + '<button type="button" id="cropFull" style="background:var(--surface2);color:var(--text);'
+      + 'border:1px solid var(--line);border-radius:11px;padding:12px 20px;cursor:pointer">Garder l\'entière</button>'
+      + '<button type="button" id="cropNo" style="background:transparent;color:#bbb;'
+      + 'border:1px solid #555;border-radius:11px;padding:12px 18px;cursor:pointer">Annuler</button>'
+      + '</div>';
+    document.body.appendChild(ov);
+
+    const stage = ov.querySelector("#cropStage");
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "position:relative;touch-action:none";
+    const cv = document.createElement("canvas");
+    cv.style.cssText = "display:block;border-radius:6px";
+    const box = document.createElement("div");
+    box.style.cssText = "position:absolute;border:2px solid #e0b64d;"
+      + "box-shadow:0 0 0 9999px rgba(0,0,0,.55);cursor:move";
+    wrap.appendChild(cv); wrap.appendChild(box); stage.appendChild(wrap);
+
+    const coins = [];
+    for(let i=0;i<4;i++){
+      const p = document.createElement("div");
+      p.dataset.coin = String(i);
+      p.style.cssText = "position:absolute;width:24px;height:24px;background:#e0b64d;"
+        + "border-radius:50%;touch-action:none;" + (i<2 ? "top:-12px;" : "bottom:-12px;")
+        + ((i===0||i===2) ? "left:-12px;" : "right:-12px;");
+      box.appendChild(p); coins.push(p);
+    }
+
+    let dw=0, dh=0, ech=1;
+    const R = { x:0, y:0, w:0, h:0 };
+    const MIN = 44;
+
+    function poser(){
+      const sw = Math.max(80, stage.clientWidth - 12);
+      const sh = Math.max(80, stage.clientHeight - 12);
+      ech = Math.min(sw/nw, sh/nh, 1);
+      dw = Math.max(1, Math.round(nw*ech));
+      dh = Math.max(1, Math.round(nh*ech));
+      ech = dw/nw;
+      wrap.style.width = dw+"px"; wrap.style.height = dh+"px";
+      cv.width = dw; cv.height = dh;
+      cv.getContext("2d").drawImage(src, 0, 0, dw, dh);
+      R.x = 0; R.y = 0; R.w = dw; R.h = dh;
+      dessiner();
+    }
+    function dessiner(){
+      box.style.left = R.x+"px"; box.style.top = R.y+"px";
+      box.style.width = R.w+"px"; box.style.height = R.h+"px";
+    }
+    function borner(){
+      R.w = Math.max(MIN, Math.min(R.w, dw));
+      R.h = Math.max(MIN, Math.min(R.h, dh));
+      R.x = Math.max(0, Math.min(R.x, dw - R.w));
+      R.y = Math.max(0, Math.min(R.y, dh - R.h));
+    }
+
+    let mode = null, coin = -1, ox = 0, oy = 0, dep = null;
+    function pos(e){
+      const r = wrap.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+    wrap.addEventListener("pointerdown", e => {
+      const c = e.target && e.target.dataset ? e.target.dataset.coin : undefined;
+      const p = pos(e);
+      if(c !== undefined){ mode = "coin"; coin = Number(c); }
+      else if(p.x>=R.x && p.x<=R.x+R.w && p.y>=R.y && p.y<=R.y+R.h){
+        mode = "bouge"; ox = p.x - R.x; oy = p.y - R.y;
+      } else { return; }
+      dep = { ...R };
+      wrap.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    wrap.addEventListener("pointermove", e => {
+      if(!mode) return;
+      const p = pos(e);
+      if(mode === "bouge"){ R.x = p.x - ox; R.y = p.y - oy; }
+      else {
+        const d = dep;
+        const g = (coin===0||coin===2), h = (coin<2);
+        const x1 = g ? Math.min(p.x, d.x+d.w-MIN) : d.x;
+        const y1 = h ? Math.min(p.y, d.y+d.h-MIN) : d.y;
+        const x2 = g ? d.x+d.w : Math.max(p.x, d.x+MIN);
+        const y2 = h ? d.y+d.h : Math.max(p.y, d.y+MIN);
+        R.x = x1; R.y = y1; R.w = x2-x1; R.h = y2-y1;
+      }
+      borner(); dessiner();
+      e.preventDefault();
+    });
+    function fin(e){ if(mode){ mode=null; coin=-1; try{ wrap.releasePointerCapture(e.pointerId); }catch(_){} } }
+    wrap.addEventListener("pointerup", fin);
+    wrap.addEventListener("pointercancel", fin);
+
+    function fermer(){
+      window.removeEventListener("resize", poser);
+      try{ if(src.close) src.close(); }catch(_){}
+      ov.remove();
+    }
+    ov.querySelector("#cropNo").onclick = () => { fermer(); resolve(null); };
+    ov.querySelector("#cropFull").onclick = () => { fermer(); resolve(file); };
+    ov.querySelector("#cropOk").onclick = () => {
+      const sx = Math.round(R.x/ech), sy = Math.round(R.y/ech);
+      const sW = Math.max(1, Math.round(R.w/ech)), sH = Math.max(1, Math.round(R.h/ech));
+      if(sx<=0 && sy<=0 && sW>=nw && sH>=nh){ fermer(); return resolve(file); }  // rien recadré
+      const c = document.createElement("canvas");
+      c.width = sW; c.height = sH;
+      c.getContext("2d").drawImage(src, sx, sy, sW, sH, 0, 0, sW, sH);
+      c.toBlob(b => {
+        if(!b){ fermer(); return resolve(file); }
+        const nom = String(file.name || "photo").replace(/\.[^.]+$/, "") + ".jpg";
+        let sortie;
+        try{ sortie = new File([b], nom, { type:"image/jpeg", lastModified: Date.now() }); }
+        catch(_){ sortie = b; sortie.name = nom; }
+        fermer(); resolve(sortie);
+      }, "image/jpeg", 0.92);
+    };
+    window.addEventListener("resize", poser);
+    poser();
+  });
+}
+
 function brancherAttache(cle, selKind, selFile, selBtn){
-  $(selBtn).onclick = () => {
+  $(selBtn).onclick = async () => {
+    const btn = $(selBtn);
+    if(btn.disabled) return;
     const f = $(selFile).files[0];
     if(!f) return toast("Choisissez d'abord un fichier.");
     if(staged[cle].length >= 8) return toast("Huit pièces maximum par écriture.");
-    staged[cle].push({ kind: $(selKind).value, file: f });
+    let fichier = f;
+    // Seule la demande de remboursement propose le recadrage, et seulement pour une photo.
+    if(cle === "req" && f.type && f.type.startsWith("image/")){
+      btn.disabled = true;
+      try{ fichier = await recadrerImage(f); }
+      catch(_){ fichier = f; }
+      finally{ btn.disabled = false; }
+      if(!fichier) return;                 // recadrage annulé : on ne joint rien
+    }
+    staged[cle].push({ kind: $(selKind).value, file: fichier });
     $(selFile).value = "";
     renderStaged(cle);
     majControle();
