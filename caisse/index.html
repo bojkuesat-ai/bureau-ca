@@ -1241,8 +1241,10 @@ function emailTreso(){
 }
 const mailEsc = x => String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const prenomDe = it => String(it && it.requester_name || "").split(" ")[0] || "";
+// Dernière raison d'échec d'un envoi, pour pouvoir la montrer au trésorier.
+let dernierEchecMail = "";
 async function envoyerMail(to, subject, html, reply_to){
-  if(!to) return false;
+  if(!to){ dernierEchecMail = "adresse du destinataire introuvable"; return false; }
   try{
     const payload = { to, subject, html };
     if(reply_to) payload.reply_to = reply_to;
@@ -1253,8 +1255,27 @@ async function envoyerMail(to, subject, html, reply_to){
     const r = await fetch(SEND_FN, { method:"POST",
       headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+jeton, "apikey":SUPABASE_ANON_KEY },
       body: JSON.stringify(payload) });
-    return r.ok;
-  }catch(e){ return false; }
+    if(!r.ok){
+      let d = ""; try{ d = (await r.text()).slice(0,200); }catch(_){}
+      dernierEchecMail = "le serveur d'envoi a répondu " + r.status + (d ? " — " + d : "");
+      console.error("send-email", r.status, d);
+      return false;
+    }
+    dernierEchecMail = "";
+    return true;
+  }catch(e){
+    dernierEchecMail = "réseau injoignable (" + (e.message || e) + ")";
+    console.error("send-email", e);
+    return false;
+  }
+}
+// Prévient le trésorier quand un mail n'est pas parti, au lieu de faire comme si.
+function avertirMail(promesse, quoi){
+  return Promise.resolve(promesse).then(ok => {
+    if(!ok) toast("Action enregistrée, mais le mail « " + quoi + " » n'est pas parti : "
+      + (dernierEchecMail || "raison inconnue"));
+    return ok;
+  });
 }
 async function emailDuDemandeur(it){
   if(!it || !it.user_id) return null;
@@ -1265,13 +1286,21 @@ async function emailDuDemandeur(it){
 function lienRecu(it){ return window.location.origin + window.location.pathname + "#recu=" + it.id; }
 function lienReexamen(it){ return window.location.origin + window.location.pathname + "#reexamen=" + it.id; }
 
-async function mailRembourse(it){
+
+// Encadré reprenant le mot du trésorier, ajouté aux mails de décision.
+const blocNote = note => {
+  const t = String(note || "").trim();
+  return t ? '<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">'
+    + '<b>Message du trésorier :</b><br>' + mailEsc(t).replace(/\n/g, "<br>") + '</p>' : "";
+};
+async function mailRembourse(it, note){
   const to = await emailDuDemandeur(it); if(!to) return false;
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
     <h2 style="margin:0 0 10px">Remboursement effectué</h2>
     <p>Bonjour ${mailEsc(prenomDe(it))},</p>
     <p>Votre demande de remboursement <b>${mailEsc(it.object)}</b> (${euro(it.amount)}) a été <b>remboursée</b>.</p>
     <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
+    ${blocNote(note)}
     <p style="text-align:center;margin:26px 0"><a href="${lienRecu(it)}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir / télécharger mon reçu</a></p>
     <p style="color:#666;font-size:13px">Vous pourrez le consulter, le télécharger en PDF et l'imprimer.</p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
@@ -1389,20 +1418,21 @@ async function mailAccuse(it, isDirect){
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
   return envoyerMail(to, "Demande bien reçue — "+refOf(it), html);
 }
-async function mailRouvert(it){
+async function mailRouvert(it, note){
   const to = await emailDuDemandeur(it); if(!to) return false;
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
     <h2 style="margin:0 0 10px">Dossier remis en traitement</h2>
     <p>Bonjour ${mailEsc(prenomDe(it))},</p>
     <p>Votre demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}) a été <b>remise en traitement</b> par le trésorier et repasse en attente de décision.</p>
     <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
+    ${blocNote(note)}
     <p>Vous serez informé dès qu'une nouvelle décision sera prise.</p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
   return envoyerMail(to, "Dossier remis en traitement — "+refOf(it), html);
 }
 
-async function mailValide(it){
+async function mailValide(it, note){
   const to = await emailDuDemandeur(it); if(!to) return false;
   const direct = it.kind==="direct";
   const suite = direct ? "Le virement au bénéficiaire va être effectué prochainement."
@@ -1412,6 +1442,7 @@ async function mailValide(it){
     <p>Bonjour ${mailEsc(prenomDe(it))},</p>
     <p>Votre ${direct?"demande de paiement direct":"demande de remboursement"} <b>${mailEsc(it.object)}</b> (${euro(it.amount)}) a été <b>validée</b> par le trésorier.</p>
     <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
+    ${blocNote(note)}
     <p>${suite} Vous recevrez une confirmation une fois le virement effectué.</p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
@@ -2105,7 +2136,11 @@ async function refresh(){
        if(_tc.data && _tc.data.treso_email) state.tresoEmail = String(_tc.data.treso_email).trim() || null; }catch(_){}
   state.lastSync = new Date();
   detecterChangements();
-  try{ const _m = await chargerTout("messages", "created_at", true); if(!_m.error) state.messages = _m.data || []; }catch(_){}
+  try{
+    const _m = await chargerTout("messages", "created_at", true);
+    if(_m.error) toast("Messagerie indisponible : " + _m.error.message);
+    else state.messages = _m.data || [];
+  }catch(eM){ toast("Messagerie indisponible : " + (eM.message || eM)); }
   if(isTreso()){
     const m = await chargerTout("profiles", "created_at", true);
     state.members = m.data || [];
@@ -4334,20 +4369,26 @@ function ouvrirMessagerie(memberId, memberName, memberEmail){
       try{ if(staged.msg.length) attachments = await envoyerPieces("msg", "msg"); }
       catch(eU){ btn.disabled=false; btn.textContent="Envoyer"; toast("Pièce non envoyée : "+(eU.message||eU)); return; }
       const row = { member_id:memberId, member_name:(memberName||""), member_email:(memberEmail||""), sender: treso?"tresorier":"membre", body:body, attachments };
-      const { error } = await sb.from("messages").insert(row);
+      const { data: insere, error } = await sb.from("messages").insert(row).select("id");
       if(error){ btn.disabled=false; btn.textContent="Envoyer"; toast("Envoi impossible : "+error.message); return; }
+      if(!insere || !insere.length){
+        btn.disabled=false; btn.textContent="Envoyer";
+        return toast("Message refusé par la base : rien n'a été enregistré.");
+      }
       const lien = window.location.origin + window.location.pathname;
       if(treso){
+        if(!memberEmail) toast("Message enregistré, mais ce membre n'a pas d'adresse e-mail : aucune notification envoyée.");
         if(memberEmail){
-          envoyerMail(memberEmail, "Message du trésorier — Bureau étudiant",
+          await avertirMail(envoyerMail(memberEmail, "Message du trésorier — Bureau étudiant",
             `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a2e"><h2 style="margin:0 0 10px">Message du trésorier</h2><p>Bonjour ${mailEsc(memberName||"")},</p><p>Le trésorier vous a écrit dans la messagerie de la Caisse :</p><p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(body).replace(/\n/g,"<br>")}</p><p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:12px 22px;border-radius:9px;text-decoration:none;font-weight:bold">Répondre dans l'app</a></p><hr style="border:none;border-top:1px solid #eee;margin:18px 0"><p style="color:#999;font-size:12px">Bureau étudiant — Trésorerie</p></div>`,
-            emailTreso());
+            emailTreso()), "message au membre");
         }
       } else {
-        envoyerMail(emailTreso(), "Nouveau message d'un membre — " + (memberName||""),
+        await avertirMail(envoyerMail(emailTreso(), "Nouveau message d'un membre — " + (memberName||""),
           `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a2e"><h2 style="margin:0 0 10px">Nouveau message d'un membre</h2><p><b>${mailEsc(memberName||"Un membre")}</b> vous a écrit :</p><p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(body).replace(/\n/g,"<br>")}</p><p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:12px 22px;border-radius:9px;text-decoration:none;font-weight:bold">Ouvrir la messagerie</a></p></div>`,
-          memberEmail || undefined);
+          memberEmail || undefined), "message au trésorier");
       }
+      btn.disabled = false; btn.textContent = "Envoyer";
       inp.value = ""; staged.msg = [];
       try{ await refresh(); }catch(_){}
       draw();
@@ -5064,15 +5105,16 @@ $("#d_body").addEventListener("click", async e => {
   if(res.conflit){ await refresh(); closeDrawer(); return await dire("Demande déjà traitée", messageConflit()); }
   state.drawerDirty = false;   // l'action est enregistrée : le panneau peut être réécrit
   await sb.from("events").insert({ request_id:it.id, who:state.profile.name, what:label });
-  if(act==="valider"){ mailValide(it); }
-  if(act==="refuser"){ mailRefuse(it, note); }
-  if(act==="corriger"){ mailCorriger(it, note); }
-  if(act==="payer"){ mailRembourse(it); }
-  if(act==="rouvrir"){ mailRouvert(it); }
-  if(act==="rejet"){ mailMessage(it, "Le virement n'a pas pu être exécuté par la banque : " + motifRejet
+  // Les envois sont attendus : sans cela, un échec passait totalement inaperçu.
+  if(act==="valider"){ await avertirMail(mailValide(it, note), "demande validée"); }
+  if(act==="refuser"){ await avertirMail(mailRefuse(it, note), "demande refusée"); }
+  if(act==="corriger"){ await avertirMail(mailCorriger(it, note), "demande à corriger"); }
+  if(act==="payer"){ await avertirMail(mailRembourse(it, note), "remboursement effectué"); }
+  if(act==="rouvrir"){ await avertirMail(mailRouvert(it, note), "dossier remis en traitement"); }
+  if(act==="rejet"){ await avertirMail(mailMessage(it, "Le virement n'a pas pu être exécuté par la banque : " + motifRejet
     + ". Votre demande a été remise en attente de paiement et sera incluse dans le prochain lot de virements. "
-    + "Vérifiez votre IBAN dans votre profil et corrigez-le si nécessaire."); }
-  if(act==="message"){ mailMessage(it, note); }
+    + "Vérifiez votre IBAN dans votre profil et corrigez-le si nécessaire."), "virement rejeté"); }
+  if(act==="message"){ await avertirMail(mailMessage(it, note), "message au demandeur"); }
   await refresh(); await loadEvents(it.id);
   toast(label + ".");
 });
