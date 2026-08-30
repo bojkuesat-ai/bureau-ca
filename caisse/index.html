@@ -2220,7 +2220,8 @@ $("#expForm").addEventListener("submit", async e => {
 $("#viewExpenses").addEventListener("click", async e => {
   const r = e.target.closest("[data-exp]"); if(!r) return;
   const dep = state.expenses.find(x => x.id === r.dataset.exp); if(!dep) return;
-  const proofHTML = await afficherPieces(dep);
+  staged.pj = [];                                   // repartir d'une file vide
+  const proofHTML = await afficherPieces(dep, { id: dep.id, type: "exp" });
 
   state.selected = null;
   $("#d_ref").textContent = "Dépense directe";
@@ -2238,6 +2239,7 @@ $("#viewExpenses").addEventListener("click", async e => {
     <div><div class="eyebrow" style="margin-bottom:7px">Pièces justificatives</div>${proofHTML}</div>
     <div class="actions"><button class="btn ghost" data-dupexp="${dep.id}">Dupliquer</button>
       <button class="btn no" data-delexp="${dep.id}">Supprimer</button></div>
+    ${blocPieces(dep, "exp")}
     ${blocEditerEcriture(dep, "exp")}`;
   $("#drawer").classList.add("open"); $("#scrim").classList.add("open"); $("#closeDrawer").focus();
 });
@@ -2251,7 +2253,7 @@ $("#d_body").addEventListener("click", async e => {
 });
 
 /* ---------- pièces jointes multiples ---------- */
-const staged = { exp:[], inc:[], req:[], fix:[], dir:[] , msg: [] };
+const staged = { exp:[], inc:[], req:[], fix:[], dir:[] , msg: [], pj: [] };
 const PREUVE_ACHAT   = ["Facture","Ticket de caisse","Bon de commande"];
 const PREUVE_PAIEMENT = ["Extrait de compte","Preuve de virement","Reçu de paiement par carte","Reçu signé du commerçant"];
 
@@ -2299,7 +2301,8 @@ function majControle(){
 }
 
 function renderStaged(cle){
-  const el = $({exp:"#e_staged", inc:"#i_staged", req:"#r_staged", fix:"#d_staged", dir:"#fd_staged"}[cle]);
+  const el = $({exp:"#e_staged", inc:"#i_staged", req:"#r_staged", fix:"#d_staged", dir:"#fd_staged", pj:"#pj_staged"}[cle]);
+  if(!el) return;
   el.innerHTML = staged[cle].map((p,n) => `<div class="stitem">
     <span class="k">${esc(p.kind)}</span>
     <span class="f">${esc(p.file.name)} · ${Math.round(p.file.size/1024)} Ko</span>
@@ -2552,18 +2555,25 @@ function piecesDe(o){
   return [];
 }
 
-async function afficherPieces(o){
+/* retirable : { id, type } passé uniquement depuis les tiroirs Dépenses et Recettes.
+   Le bouton de retrait n'apparaît que pour le trésorier ; la table reste protégée
+   côté serveur, l'affichage n'est qu'un garde-fou de plus. */
+async function afficherPieces(o, retirable){
   const list = piecesDe(o);
   if(!list.length) return `<div class="noproof">Aucune pièce justificative jointe.</div>`;
-  const blocs = await Promise.all(list.map(async p => {
+  const peutRetirer = !!retirable && isTreso() && Array.isArray(o.attachments);
+  const blocs = await Promise.all(list.map(async (p, n) => {
+    const btnDel = peutRetirer
+      ? ` <button type="button" class="btn no sm" data-pjdel="${retirable.id}" data-pjdeltype="${retirable.type}" data-pjdeln="${n}">Retirer</button>`
+      : "";
     const { data } = await sb.storage.from("justificatifs").createSignedUrl(p.path, 3600);
     const url = data?.signedUrl;
     if(!url) return `<div class="piece"><div class="ph"><span class="k">${esc(p.kind)}</span>
-      <span style="color:var(--red)">pièce introuvable</span></div></div>`;
+      <span style="color:var(--red)">pièce introuvable</span>${btnDel}</div></div>`;
     const corps = p.type?.startsWith("image/") ? `<img src="${url}" alt="${esc(p.kind)}">` : "";
     return `<div class="piece"><div class="ph"><span class="k">${esc(p.kind)}</span>
       <span style="color:var(--ink-2);font-size:12px">${esc(p.name||"")}</span>
-      <a href="${url}" target="_blank" rel="noopener">Ouvrir ↗</a></div>${corps}</div>`;
+      <a href="${url}" target="_blank" rel="noopener">Ouvrir ↗</a>${btnDel}</div>${corps}</div>`;
   }));
   return `<div class="pieces">${blocs.join("")}</div>`;
 }
@@ -3288,6 +3298,30 @@ const opts = (liste, choisi) => liste.map(o =>
   `<option${o === choisi ? " selected" : ""}>${esc(o)}</option>`).join("");
 
 // formulaire commun aux deux registres : seuls les libellés changent
+/* Ajout d'une pièce à une écriture déjà enregistrée (dépense ou recette).
+   Les pièces existantes sont conservées : les nouvelles sont ajoutées à la suite. */
+const PIECES_DEPENSE = ["Facture","Ticket de caisse","Extrait de compte","Preuve de virement",
+  "Reçu de paiement par carte","Bon de commande","Autre pièce"];
+const PIECES_RECETTE = ["Extrait de compte","Convention de subside","Facture émise","Reçu",
+  "Attestation de don","Décompte d'événement","Autre pièce"];
+
+function blocPieces(o, type){
+  if(!isTreso()) return "";
+  const liste = type === "exp" ? PIECES_DEPENSE : PIECES_RECETTE;
+  return `<div class="fixbox">
+    <b>Ajouter une pièce justificative</b>
+    <p>L'extrait de compte, une facture reçue plus tard, un justificatif plus lisible. Les pièces déjà présentes sont conservées.</p>
+    <div class="attach">
+      <select id="pj_kind">${liste.map(k => `<option>${esc(k)}</option>`).join("")}</select>
+      <input type="file" id="pj_file" accept="image/*,application/pdf,.pdf">
+      <button type="button" class="btn ghost sm" data-act="pj-add">Joindre</button>
+    </div>
+    <div id="pj_staged" class="staged"></div>
+    <div id="pjErr" class="err" hidden></div>
+    <div class="actions"><button class="btn ok" data-act="pj-send" data-pj="${o.id}" data-pjtype="${type}">Envoyer les pièces</button></div>
+  </div>`;
+}
+
 function blocEditerEcriture(o, type){
   const dep = type === "exp";
   const cats = dep ? CATS_DEPENSE : CATS_RECETTE;
@@ -3323,6 +3357,39 @@ $("#d_body").addEventListener("click", async e => {
   const act = b.dataset.act;
   if(act === "ec-open"){ $("#ecZone").hidden = false; $("#ecOuvrir").hidden = true; $("#ec_object")?.focus(); return; }
   if(act === "ec-cancel"){ $("#ecZone").hidden = true; $("#ecOuvrir").hidden = false; return; }
+
+  /* --- pièces ajoutées à une écriture déjà enregistrée --- */
+  if(act === "pj-add"){
+    const f = $("#pj_file")?.files[0];
+    if(!f) return erreurForm("#pjErr", "Choisissez d'abord un fichier.");
+    if(staged.pj.length >= 8) return erreurForm("#pjErr", "Huit pièces maximum par envoi.");
+    staged.pj.push({ kind: $("#pj_kind").value, file: f });
+    $("#pj_file").value = "";
+    renderStaged("pj"); erreurForm("#pjErr", null);
+    return;
+  }
+  if(act === "pj-send"){
+    if(!staged.pj.length) return erreurForm("#pjErr", "Joignez au moins une pièce.");
+    const dep = b.dataset.pjtype === "exp";
+    const table = dep ? "expenses" : "incomes";
+    const o = (dep ? state.expenses : state.incomes).find(x => x.id === b.dataset.pj);
+    if(!o) return erreurForm("#pjErr", "Écriture introuvable : rouvrez la fiche.");
+    b.disabled = true; b.textContent = "Envoi…";
+    try{
+      const ajouts = await envoyerPieces("pj", dep ? "dep" : "rec");
+      const avant = Array.isArray(o.attachments) ? o.attachments : [];
+      const { error } = await sb.from(table)
+        .update({ attachments: avant.concat(ajouts) }).eq("id", o.id);
+      if(error) throw error;
+      staged.pj = [];
+      closeDrawer(); await refresh();
+      toast(ajouts.length + " pièce(s) ajoutée(s).");
+    }catch(err){
+      erreurForm("#pjErr", "Envoi impossible : " + (err && err.message ? err.message : String(err)));
+    }
+    b.disabled = false; b.textContent = "Envoyer les pièces";
+    return;
+  }
   if(act !== "ec-save") return;
 
   const type = b.dataset.ectype, dep = type === "exp";
@@ -4010,7 +4077,8 @@ $("#incForm").addEventListener("submit", async e => {
 $("#viewIncomes").addEventListener("click", async e => {
   const r = e.target.closest("[data-inc]"); if(!r) return;
   const rec = state.incomes.find(x => x.id === r.dataset.inc); if(!rec) return;
-  const proofHTML = await afficherPieces(rec);
+  staged.pj = [];                                   // repartir d'une file vide
+  const proofHTML = await afficherPieces(rec, { id: rec.id, type: "inc" });
 
   state.selected = null;
   $("#d_ref").textContent = "Recette";
@@ -4029,8 +4097,35 @@ $("#viewIncomes").addEventListener("click", async e => {
     <div><div class="eyebrow" style="margin-bottom:7px">Pièces justificatives</div>${proofHTML}</div>
     <div class="actions"><button class="btn ghost" data-dupinc="${rec.id}">Dupliquer</button>
       <button class="btn no" data-delinc="${rec.id}">Supprimer</button></div>
+    ${blocPieces(rec, "inc")}
     ${blocEditerEcriture(rec, "inc")}`;
   $("#drawer").classList.add("open"); $("#scrim").classList.add("open"); $("#closeDrawer").focus();
+});
+
+/* Retrait d'une pièce déjà envoyée. Réservé au trésorier : la ligne sort de la
+   liste des pièces, puis le fichier est effacé du stockage. Si l'effacement du
+   fichier échoue, l'écriture est déjà à jour — il ne reste qu'un fichier orphelin. */
+$("#d_body").addEventListener("click", async e => {
+  const b = e.target.closest("[data-pjdel]"); if(!b) return;
+  if(!isTreso()) return toast("Seul le trésorier peut retirer une pièce.");
+  const dep = b.dataset.pjdeltype === "exp";
+  const table = dep ? "expenses" : "incomes";
+  const o = (dep ? state.expenses : state.incomes).find(x => x.id === b.dataset.pjdel);
+  if(!o) return toast("Écriture introuvable : rouvrez la fiche.");
+  const n = Number(b.dataset.pjdeln);
+  const liste = Array.isArray(o.attachments) ? o.attachments : [];
+  const cible = liste[n];
+  if(!cible) return toast("Pièce introuvable : rouvrez la fiche.");
+  if(!await demander("Retirer cette pièce",
+      (cible.kind || "Pièce") + (cible.name ? " — " + cible.name : "")
+      + "\n\nElle sera définitivement retirée de cette écriture.",
+      { bouton:"Retirer", danger:true })) return;
+  b.disabled = true;
+  const reste = liste.filter((_, i) => i !== n);
+  const { error } = await sb.from(table).update({ attachments: reste }).eq("id", o.id);
+  if(error){ b.disabled = false; return toast("Retrait impossible : " + error.message); }
+  if(cible.path){ try{ await sb.storage.from("justificatifs").remove([cible.path]); }catch(_){} }
+  closeDrawer(); await refresh(); toast("Pièce retirée.");
 });
 
 $("#d_body").addEventListener("click", async e => {
