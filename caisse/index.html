@@ -2764,15 +2764,16 @@ function renderReprise(){
       <div class="date mono" style="font-size:13px">${fdate(e.expense_date)}</div>
       <div><div class="obj">${esc(e.object||"")}${rembourse
         ? ` <span class="tag" style="background:#1e3a24;color:#9fe0b0">REMBOURSÉ</span>` : ""}</div>
-        <div class="meta">${esc(e.payee||"")}</div></div>
+        <div class="meta">${esc(e.payee||"")}</div>
+        <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:8px">
+          ${rembourse
+            ? `<button class="btn ghost sm" data-annulremb="${e.id}">Annuler le remboursement</button>`
+            : `<button class="btn ok sm" data-remb="${e.id}">Remboursé</button>`}
+          <button class="btn no sm" data-delrep="${e.id}" title="Supprimer cette ligne">Supprimer</button>
+        </div></div>
       <div class="meta" style="margin:0">${carteDe(e) ? `<span class="mono">${esc(carteDe(e))}</span><br>` : ""}${esc(refExtrait(e))}</div>
       <div class="amt">−${euro(e.amount)}</div>
-      <div class="chev" style="display:flex;gap:6px;align-items:center">
-        ${rembourse
-          ? `<button class="btn ghost sm" data-annulremb="${e.id}" title="Annuler le remboursement">Annuler</button>`
-          : `<button class="btn ok sm" data-remb="${e.id}" title="Enregistrer le remboursement">Remboursé</button>`}
-        <button class="btn no sm" data-delrep="${e.id}" title="Supprimer">×</button>
-      </div>
+      <div class="chev"></div>
     </div>`; }).join("")
     : emptyHTML(voirRemboursees ? "Aucune dépense du CA sortant" : "Tout est remboursé",
         voirRemboursees ? "Encodez ici les dépenses engagées par le conseil précédent."
