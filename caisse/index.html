@@ -751,7 +751,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
       <div class="kpi"><div class="eyebrow">Remboursé aux membres</div><div class="n" id="o_paye">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Paiements directs</div><div class="n" id="o_direct">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Dépenses directes</div><div class="n" id="o_depenses">0 €</div></div>
-      <div class="kpi"><div class="eyebrow">Dépense CA sortant</div><div class="n" id="o_reprise">0 €</div></div>
+      <div class="kpi" id="o_repriseCard"><div class="eyebrow">Dépense CA sortant</div><div class="n" id="o_reprise">0 €</div></div>
       <div class="kpi" id="o_sortiesCard"><div class="eyebrow">Total des sorties</div><div class="n" id="o_sorties">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Solde initial</div><div class="n" id="o_initial">0 €</div></div>
       <div class="kpi done"><div class="eyebrow">Recettes encaissées</div><div class="n" id="o_recettes">0 €</div></div>
@@ -953,6 +953,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         <button class="btn ghost sm" id="repXlsx" style="margin-left:8px">Exporter en Excel</button>
         <button class="btn ghost sm" id="repCsvBtn" style="margin-left:8px">Importer un CSV</button>
         <input type="file" id="repCsvFile" accept=".csv,text/csv" hidden>
+        <button class="btn ghost sm" id="repVoirRemb" style="margin-left:8px" hidden></button>
       </div>
       <div class="card" style="overflow:hidden">
         <div class="head" data-tri-cle="rep"><span data-tri="date">Date</span><span data-tri="objet">Objet / bénéficiaire</span><span data-tri="mode">Carte / extrait</span><span class="r" data-tri="montant">Montant</span><span></span></div>
@@ -2719,7 +2720,12 @@ function majSelectAnnees(sel, source, champ){
 // Stockées dans la table des dépenses, marquées par leur catégorie : aucun changement de base.
 // Une seule catégorie, fixe : c'est elle qui distingue ces lignes de vos propres dépenses.
 const CAT_CA_SORTANT = "Dépense CA sortant";
-const estReprise = e => String(e.category||"").trim() === CAT_CA_SORTANT;
+const CAT_CA_SORTANT_OK = "Dépense CA sortant remboursée";
+// estReprise : toutes les dépenses du CA sortant, remboursées ou non (elles restent
+// des sorties : l'argent est bien parti). estRepriseDue : celles encore à rembourser.
+const estReprise = e => { const c = String(e.category||"").trim();
+  return c === CAT_CA_SORTANT || c === CAT_CA_SORTANT_OK; };
+const estRepriseDue = e => String(e.category||"").trim() === CAT_CA_SORTANT;
 // La carte est rangée dans le champ « moyen de paiement » : aucune colonne à ajouter en base.
 const CARTES_REPRISE = ["Sans carte", "Carte …0065", "Carte …1142"];
 const carteDe = e => {
@@ -2737,33 +2743,58 @@ const refExtrait = e => {
 const mesDepenses = () => (state.expenses||[]).filter(e => !estReprise(e));
 const depensesReprises = () => (state.expenses||[]).filter(estReprise);
 
+let voirRemboursees = false;      // les lignes remboursées sortent de la liste par défaut
 function renderReprise(){
   if(!$("#repList")) return;
   const q = slug(($("#repSearch")?.value || "").trim());
+  const nbRemb = depensesReprises().filter(e => !estRepriseDue(e)).length;
   const liste = trier(ouvert(depensesReprises())
+    .filter(e => voirRemboursees || estRepriseDue(e))
     .filter(e => !q || champsEcriture(e, e.payee).includes(q)), "rep");
   const total = liste.reduce((s,e)=>s+Number(e.amount||0),0);
-  const tous = depensesReprises().reduce((s,e)=>s+Number(e.amount||0),0);
+  const du = depensesReprises().filter(estRepriseDue).reduce((s,e)=>s+Number(e.amount||0),0);
 
-  if($("#rp_count")) $("#rp_count").textContent = depensesReprises().length;
-  if($("#rp_total")) $("#rp_total").textContent = euro(tous);
+  if($("#rp_count")) $("#rp_count").textContent = depensesReprises().filter(estRepriseDue).length;
+  if($("#rp_total")) $("#rp_total").textContent = euro(du);
 
-  $("#repList").innerHTML = liste.length ? liste.map(e => `
-    <div class="row" style="cursor:default">
+  $("#repList").innerHTML = liste.length ? liste.map(e => {
+    const rembourse = !estRepriseDue(e);
+    return `
+    <div class="row" style="cursor:default${rembourse ? ";opacity:.62" : ""}">
       <div class="date mono" style="font-size:13px">${fdate(e.expense_date)}</div>
-      <div><div class="obj">${esc(e.object||"")}</div><div class="meta">${esc(e.payee||"")}</div></div>
+      <div><div class="obj">${esc(e.object||"")}${rembourse
+        ? ` <span class="tag" style="background:#1e3a24;color:#9fe0b0">REMBOURSÉ</span>` : ""}</div>
+        <div class="meta">${esc(e.payee||"")}</div></div>
       <div class="meta" style="margin:0">${carteDe(e) ? `<span class="mono">${esc(carteDe(e))}</span><br>` : ""}${esc(refExtrait(e))}</div>
       <div class="amt">−${euro(e.amount)}</div>
-      <div class="chev"><button class="btn no sm" data-delrep="${e.id}" title="Supprimer">×</button></div>
-    </div>`).join("")
-    : emptyHTML("Aucune dépense du CA sortant","Encodez ici les dépenses engagées par le conseil précédent.");
+      <div class="chev" style="display:flex;gap:6px;align-items:center">
+        ${rembourse
+          ? `<button class="btn ghost sm" data-annulremb="${e.id}" title="Annuler le remboursement">Annuler</button>`
+          : `<button class="btn ok sm" data-remb="${e.id}" title="Enregistrer le remboursement">Remboursé</button>`}
+        <button class="btn no sm" data-delrep="${e.id}" title="Supprimer">×</button>
+      </div>
+    </div>`; }).join("")
+    : emptyHTML(voirRemboursees ? "Aucune dépense du CA sortant" : "Tout est remboursé",
+        voirRemboursees ? "Encodez ici les dépenses engagées par le conseil précédent."
+                        : "Plus aucune dépense du conseil précédent n'est en attente de remboursement.");
 
+  const bascule = $("#repVoirRemb");
+  if(bascule){
+    bascule.hidden = !nbRemb;
+    bascule.textContent = voirRemboursees
+      ? "Masquer les " + nbRemb + " ligne(s) remboursée(s)"
+      : "Afficher les " + nbRemb + " ligne(s) remboursée(s)";
+  }
+
+  const totalDu = liste.filter(estRepriseDue).reduce((s,e)=>s+Number(e.amount||0),0);
   $("#repTotal").innerHTML = liste.length
-    ? `<div class="lbl">${liste.length} opération(s)${q ? " trouvée(s)" : ""}</div>
+    ? `<div class="lbl">${liste.length} opération(s)${q ? " trouvée(s)" : ""}${
+         totalDu < total ? " · reste dû " + esc(euro(totalDu)) : ""}</div>
        <div class="val">−${esc(euro(total))}</div>` : "";
 }
 
 if($("#repSearch")) $("#repSearch").oninput = renderReprise;
+if($("#repVoirRemb")) $("#repVoirRemb").onclick = () => { voirRemboursees = !voirRemboursees; renderReprise(); };
 
 if($("#repForm")) $("#repForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -2797,6 +2828,71 @@ if($("#repForm")) $("#repForm").addEventListener("submit", async e => {
 });
 
 if($("#btnCancelRep")) $("#btnCancelRep").onclick = () => { $("#repForm").reset(); erreurForm("#repErr",""); };
+
+/* Remboursement d'une dépense du CA sortant.
+   La dépense reste dans les comptes : l'argent est bien sorti. On enregistre en
+   face une recette du même montant et du même objet, l'argent revenant en caisse.
+   Effet net nul sur le solde ; seul le « reste dû » du bilan diminue. */
+if($("#repList")) $("#repList").addEventListener("click", async e => {
+  const b = e.target.closest("[data-remb]"); if(!b) return;
+  const d = state.expenses.find(x => x.id === b.dataset.remb); if(!d) return;
+  if(!estRepriseDue(d)) return toast("Cette dépense est déjà remboursée.");
+  const aujourdhui = new Date().toISOString().slice(0,10);
+  if(estClos(aujourdhui)) return toast("L'exercice en cours est clôturé : recette impossible.");
+  if(!await demander("Confirmer le remboursement",
+      (d.object||"") + "\n" + euro(d.amount) + " — " + (d.payee || "bénéficiaire inconnu")
+      + "\nDépense du " + fdate(d.expense_date)
+      + "\n\nConfirmez-vous que cette dépense a bien été remboursée ?"
+      + "\n\nUne recette du même montant et du même objet sera créée, et la ligne quittera cet onglet.",
+      { bouton:"Oui, remboursée" })) return;
+  b.disabled = true;
+  const { data: rec, error: eRec } = await sb.from("incomes").insert({
+    income_date: aujourdhui, amount: Number(d.amount||0), object: d.object || "",
+    category: "Remboursement reçu", source: d.payee || "CA sortant", method: "Virement",
+    note: "Remboursement de la dépense du CA sortant du " + fdate(d.expense_date),
+    created_by: state.profile.id, author_name: state.profile.name || "", attachments: []
+  }).select("id");
+  if(eRec){ b.disabled = false; return toast("Recette impossible : " + eRec.message); }
+  const { error: eMaj } = await sb.from("expenses")
+    .update({ category: CAT_CA_SORTANT_OK }).eq("id", d.id);
+  if(eMaj){                                   // on ne laisse pas une recette orpheline
+    const idRec = rec && rec[0] && rec[0].id;
+    if(idRec) await sb.from("incomes").delete().eq("id", idRec);
+    b.disabled = false;
+    return toast("Marquage impossible : " + eMaj.message + " — recette annulée.");
+  }
+  await refresh();
+  await dire("Remboursement enregistré",
+    (d.object||"") + "\n" + euro(d.amount)
+    + "\n\nUne recette « Remboursement reçu » a été créée à la date du jour."
+    + "\nLa ligne a quitté l'onglet du CA sortant.");
+});
+
+/* Annulation : on retire la recette correspondante et on rouvre la dépense. */
+if($("#repList")) $("#repList").addEventListener("click", async e => {
+  const b = e.target.closest("[data-annulremb]"); if(!b) return;
+  const d = state.expenses.find(x => x.id === b.dataset.annulremb); if(!d) return;
+  const note = "Remboursement de la dépense du CA sortant du " + fdate(d.expense_date);
+  const rec = (state.incomes||[]).filter(i =>
+    String(i.note||"") === note && Number(i.amount||0) === Number(d.amount||0));
+  if(!await demander("Annuler ce remboursement",
+      (d.object||"") + " — " + euro(d.amount)
+      + (rec.length ? "\n\nLa recette correspondante sera supprimée."
+                    : "\n\nAucune recette correspondante trouvée : seule la dépense sera rouverte."),
+      { bouton:"Annuler le remboursement", danger:true })) return;
+  b.disabled = true;
+  if(rec.length){
+    const { error } = await sb.from("incomes").delete().eq("id", rec[0].id);
+    if(error){ b.disabled = false; return toast("Suppression de la recette impossible : " + error.message); }
+  }
+  const { error: eMaj } = await sb.from("expenses")
+    .update({ category: CAT_CA_SORTANT }).eq("id", d.id);
+  if(eMaj){ b.disabled = false; return toast("Réouverture impossible : " + eMaj.message); }
+  await refresh();
+  await dire("Remboursement annulé",
+    (d.object||"") + "\n" + euro(d.amount)
+    + "\n\nLa dépense est de nouveau en attente de remboursement.");
+});
 
 if($("#repList")) $("#repList").addEventListener("click", async e => {
   const b = e.target.closest("[data-delrep]"); if(!b) return;
@@ -3556,6 +3652,8 @@ function renderOverview(){
   const depAn = (state.expenses||[]).filter(e => dansAnnee(e.expense_date, an));
   const depDirectes = depAn.filter(e => !estReprise(e)).reduce((s,e)=>s+Number(e.amount||0),0);
   const depReprise  = depAn.filter(estReprise).reduce((s,e)=>s+Number(e.amount||0),0);
+  // reste dû par le CA sortant : les remboursements reçus ne comptent plus ici
+  const depRepriseDue = depAn.filter(estRepriseDue).reduce((s,e)=>s+Number(e.amount||0),0);
   const totalSort  = versMembre + versTiers + depDirectes + depReprise;
   const totalRec   = totalRecettes(an);
   // le report de l'exercice précédent n'est pas une recette de l'année : on l'isole
@@ -3566,7 +3664,9 @@ function renderOverview(){
   $("#o_paye").textContent     = euro(versMembre);
   $("#o_direct").textContent   = euro(versTiers);
   $("#o_depenses").textContent = euro(depDirectes);
-  if($("#o_reprise")) $("#o_reprise").textContent = euro(depReprise);
+  if($("#o_reprise")) $("#o_reprise").textContent = euro(depRepriseDue);
+  // plus rien à rembourser : la carte disparaît du bilan
+  if($("#o_repriseCard")) $("#o_repriseCard").hidden = !(depRepriseDue > 0);
   $("#o_sorties").textContent  = euro(totalSort);
   $("#o_initial").textContent  = euro(soldeInitial);
   $("#o_recettes").textContent = euro(recettesAn);
@@ -3609,7 +3709,7 @@ function renderOverview(){
   const du = som(list,"Validée") + som(list,"En attente");
   $("#o_info").textContent = (du ? "Reste à verser : " + euro(du) + " · " : "")
     + "Solde = " + euro(soldeInitial) + " (initial) + " + euro(recettesAn) + " (recettes) − "
-    + euro(totalSort) + " (sorties" + (depReprise ? ", dont " + euro(depReprise) + " engagés par le CA sortant" : "") + ")";
+    + euro(totalSort) + " (sorties" + (depRepriseDue ? ", dont " + euro(depRepriseDue) + " restant dus par le CA sortant" : "") + ")";
   renderHoraires();
   const _solde = totalRec - totalSort;
   if($("#o_soldeLbl")) $("#o_soldeLbl").textContent = an === "all" ? "Solde de la caisse" : "Solde " + an + " (recettes − sorties)";
