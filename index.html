@@ -649,13 +649,22 @@ const MAIL_TEMPLATES = [
     corps:"Bonjour,\n\nDans le cadre de nos activités, nous nous permettons de vous contacter concernant [objet de la demande].\n\n[Présentation de la demande / proposition de partenariat.]\n\nNous restons à votre disposition pour en discuter.\n\nBien à vous," },
 ];
 async function envoyerNotifCA(subject, corpsHtml, avecCaisse){
-  const dest=destinatairesCA(); if(!dest.length) return;
+  /* Liste brute (membres actifs + diffusion externe) avant filtrage des désabonnés,
+     pour pouvoir dire à l'expéditeur combien d'adresses ont été écartées. */
+  const brut=new Set();
+  membresActifs().forEach(a=>{ if(a.email) brut.add(String(a.email).toLowerCase().trim()); });
+  (S.mailing||[]).forEach(m=>{ if(m.email) brut.add(String(m.email).toLowerCase().trim()); });
+  const dest=destinatairesCA();
+  const nbDesab=Math.max(0, [...brut].filter(Boolean).length - dest.length);
+  if(!dest.length) return {ok:0, err:0, total:0, desabonnes:nbDesab};
   const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corpsHtml}${blocInvitationCA()}${avecCaisse?blocCaisseCA():""}${blocNoReplyCA()}</div>`;
   const headers=await caSendHeaders();
+  let ok=0, err=0;
   for(const to of dest){
-    try{ await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html})}); }catch(e){}
+    try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html})}); if(r && r.ok===false) err++; else ok++; }catch(e){ err++; }
     await new Promise(r=>setTimeout(r,120));
   }
+  return {ok, err, total:dest.length, desabonnes:nbDesab};
 }
 async function envoyerNotifCAListe(dest, subject, corpsHtml, sansInvitation){
   const liste=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))].filter(e=>!estDesabonne(e));
@@ -1345,7 +1354,7 @@ function tabBudgets(){
     <div class="two"><select class="f" id="b_type">${B_TYPES.map(t=>`<option>${t}</option>`).join("")}</select>
       <input class="f" id="b_cout" inputmode="decimal" placeholder="Coût estimé (€)"></div>
     <textarea id="b_desc" placeholder="Description : à quoi sert ce budget, ce que ça finance…"></textarea>
-    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="b_notify"> Prévenir les membres par e-mail</label>
+    <p class="du" style="margin:6px 0 0">Un budget soumis au vote est toujours notifié par e-mail — ${destinatairesCA().length} destinataire(s) actuellement.</p>
     <div class="row-btn"><button class="btn" data-action="add-budget">Soumettre au vote</button><button class="btn ghost" data-action="budgets-pdf">⬇ Export PDF</button></div></div>`;
   const badge={vote:["open","En vote"],approuve:["ok","Approuvé"],refuse:["no","Refusé"]};
   if(S.budgets.length===0) return stats+compose+`<div class="empty">Aucune demande. Soumettez un budget ou un projet au vote.</div>`;
@@ -2047,6 +2056,7 @@ function tabRgpd(){
   if(estCoopte()) return tabRgpdCoopte();
   const contacts=(S.contacts||[]);
   const desab=[...(S.desabonnes||new Set())];
+  const estProprio=!!(S.session&&S.session.role==="owner");
   return `<div class="compose">
     <h3 class="serif">Vos donn\u00e9es</h3>
     <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Vous pouvez r\u00e9cup\u00e9rer \u00e0 tout moment une copie de tout ce que l'application conserve \u00e0 votre sujet, ou demander sa suppression.</p>
@@ -2078,7 +2088,8 @@ function tabRgpd(){
   <div class="compose">
     <h3 class="serif">D\u00e9sabonn\u00e9s</h3>
     <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Ces adresses se sont d\u00e9sabonn\u00e9es ; elles sont exclues de tous les envois de l'application (mails compos\u00e9s, notifications et rappels).</p>
-    ${desab.length? `<div class="mail-chips">${desab.map(e=>`<span class="mail-chip" style="cursor:default">${esc(e)}</span>`).join("")}</div>` : `<div class="empty">Aucun d\u00e9sabonn\u00e9.</div>`}
+    ${estProprio?`<p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">En tant que propri\u00e9taire, vous pouvez r\u00e9abonner une adresse d\u00e9sabonn\u00e9e par erreur \u2014 uniquement avec l'accord de la personne concern\u00e9e.</p>`:""}
+    ${desab.length? `<div class="mail-chips">${desab.map(e=>`<span class="mail-chip" style="cursor:default">${esc(e)}${estProprio?` <button class="link" data-action="desab-reabo" data-em="${esc(e)}" style="margin-left:6px">r\u00e9abonner</button>`:""}</span>`).join("")}</div>` : `<div class="empty">Aucun d\u00e9sabonn\u00e9.</div>`}
   </div>`;
 }
 
@@ -2357,6 +2368,12 @@ document.addEventListener("click", async e=>{
     case "cal-today2": { S.calMonth=null; render(); break; }
     case "cal-ics": { telechargerICS(); break; }
     case "budgets-pdf": { genererBudgetsPDF(); break; }
+    case "desab-reabo": { if(!(S.session&&S.session.role==="owner")||!sb) break;
+      const em=String(el.dataset.em||"").toLowerCase().trim(); if(!em) break;
+      if(!(await modaleConfirm("R\u00e9abonner "+em+" ? Cette personne recevra \u00e0 nouveau tous les e-mails du bureau. \u00c0 ne faire qu'avec son accord."))) break;
+      const r=await sb.from("ca_desabonnes").delete().ilike("email", em);
+      if(r&&r.error){ modaleInfo("R\u00e9abonnement impossible : "+r.error.message); break; }
+      await loadDesabonnes(); logAct("R\u00e9abonnement de "+em); render(); break; }
     case "rgpd-export": { const c=(S.contacts||[]).find(x=>x.id===el.dataset.id); if(!c) break; telechargerJSON("contact-"+(c.nom||"donnees").replace(/[^a-zA-Z0-9]/g,"_")+".json", c); break; }
     case "mail-chip": { S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; captureMailFields(); const tgt=S.mailUI.target||"to"; ajouterEmailsChamp(tgt, listeEmails(el.dataset.email)); persistMailDraft(); render(); break; }
     case "mail-add-manual": { S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; captureMailFields(); const brut=val("mail_manual"); const emails=listeEmails(brut); const err=document.getElementById("mail_manual_err"); const tgt=S.mailUI.target||"to";
@@ -2905,7 +2922,20 @@ ${sections||"<p>Aucun retour.</p>"}
     case "rsvp": { if(!sb) break; const r=await sb.from("ca_dispos").upsert({creneau_id:id,membre_id:S.session.id,nom:me.sig,statut:el.dataset.st},{onConflict:"creneau_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Disponibilité non enregistrée : "+r.error.message); break; } await loadCreneaux(); render(); break; }
     case "del-creneau": if(!estSecretaire()){ if(window.alert) window.alert("Seul le secr\u00e9tariat peut retirer un cr\u00e9neau."); break; } if(!sb) break; await sb.from("ca_creneaux").delete().eq("id",id); await loadCreneaux(); render(); break;
     /* budgets */
-    case "add-budget": { const t=val("b_titre").trim(); if(!t||!sb) return; const cout=parseFloat(String(val("b_cout")).replace(",","."))||0; await sb.from("ca_budgets").insert({titre:t,type:val("b_type"),cout:cout,description:val("b_desc").trim(),demandeur:me.sig,statut:"vote",cree_par:S.session.id}); { const n=document.getElementById("b_notify"); if(n&&n.checked) notifCreationCA("Nouveau budget/projet soumis au vote", t, ""); } await loadBudgets(); render(); break; }
+    case "add-budget": { const t=val("b_titre").trim(); if(!t||!sb) return; const cout=parseFloat(String(val("b_cout")).replace(",","."))||0;
+      const ins=await sb.from("ca_budgets").insert({titre:t,type:val("b_type"),cout:cout,description:val("b_desc").trim(),demandeur:me.sig,statut:"vote",cree_par:S.session.id});
+      if(ins&&ins.error){ modaleInfo("La demande n'a pas pu être enregistrée : "+ins.error.message); break; }
+      await loadBudgets(); render();
+      /* Un budget soumis au vote est toujours notifié : ce n'est pas une info facultative. */
+      let res=null;
+      try{ res=await notifCreationCA("Nouveau budget/projet soumis au vote", t, cout?(cout.toFixed(2)+" €"):""); }
+      catch(e){ res=null; }
+      const exclus = (res&&res.desabonnes)? " "+res.desabonnes+" adresse(s) désabonnée(s) ont été écartées." : "";
+      if(!res || res.total===0){ modaleInfo("Demande enregistrée, mais aucun e-mail n'a pu être envoyé : aucun destinataire disponible."+exclus, "Budget soumis au vote"); }
+      else if(res.err && !res.ok){ modaleInfo("Demande enregistrée, mais l'envoi des e-mails a échoué. Vérifiez la connexion et prévenez les membres autrement."+exclus, "Budget soumis au vote"); }
+      else if(res.err){ modaleInfo(res.ok+" membre(s) prévenu(s), "+res.err+" échec(s)."+exclus, "Budget soumis au vote"); }
+      else { modaleInfo("✓ "+res.total+" membre(s) prévenu(s) par e-mail."+exclus, "Budget soumis au vote"); }
+      break; }
     case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; const r=await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix},{onConflict:"budget_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadBudgets(); render(); break; }
     case "bdecide": { if(!estPresidente()||!sb) break; const st=el.dataset.st; await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id); await loadBudgets(); render(); break; }
     case "del-budget": { if(!estPresidente()||!sb) break; if(!(await modaleConfirm("Supprimer cette demande de budget ?"))) break; await sb.from("ca_budgets").delete().eq("id",id); logAct("Budget supprimé"); await loadBudgets(); render(); break; }
