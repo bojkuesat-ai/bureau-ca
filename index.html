@@ -1105,7 +1105,11 @@ const val = id => { const e=document.getElementById(id); return e ? e.value : ""
 
 /* ============================ RENDU ============================ */
 const root = () => document.getElementById("root");
-function renderVue(){ return S.view==="home" && !S.goto ? viewHome() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.needProfile ? viewCompleteProfile() : viewAuth()) : (S.session.statut==="attente" ? viewPending() : viewDash())); }
+function viewRevoque(){ return `<div class="wrap" style="max-width:520px;margin:60px auto;text-align:center">
+  <h1 class="serif" style="font-size:26px;margin:0 0 10px">Accès retiré</h1>
+  <p style="color:var(--ink-soft);font-size:14px;margin:0 0 18px">Votre accès à l'espace CA a été retiré par le secrétariat. Si vous pensez qu'il s'agit d'une erreur, contactez le bureau.</p>
+  <button class="chip" data-action="logout">Se déconnecter</button></div>`; }
+function renderVue(){ return S.view==="home" && !S.goto ? viewHome() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.needProfile ? viewCompleteProfile() : viewAuth()) : (S.session.statut==="attente" ? viewPending() : (S.session.statut==="revoque" ? viewRevoque() : viewDash()))); }
 function render(){ if(S.recovery){ root().innerHTML = viewNewPwd(); return; } root().innerHTML = renderVue(); }
 function viewNewPwd(){
   return `<div class="auth-wrap"><div class="auth">
@@ -1141,7 +1145,13 @@ function viewAdmin(){
      deja la session de l'utilisateur connecte. */
   if(!(S.session && S.session.role==="owner")) return `<div class="empty">Espace r\u00e9serv\u00e9 au propri\u00e9taire.</div>`;
   const pend = S.admins.filter(a=>a.statut==="attente");
-  const actifs = S.admins.filter(a=>a.statut!=="attente");
+  const actifs = S.admins.filter(a=>a.statut!=="attente" && a.statut!=="revoque");
+  const revoques = S.admins.filter(a=>a.statut==="revoque");
+  const revHtml = revoques.map(a=>`<div class="doc" style="cursor:default;opacity:.72">
+      <span class="ic">✕</span>
+      <span class="meta"><p class="dt">${esc(a.prenom?a.prenom+" "+a.nom:a.nom)}</p><p class="du">${esc([a.fonction,a.email||a.id].filter(Boolean).join(" · "))} — accès retiré</p></span>
+      <button class="chip" data-action="reactiver-admin" data-id="${esc(a.id)}">Réactiver</button>
+    </div>`).join("");
   const pendHtml = pend.length ? pend.map(a=>`<div class="doc" style="cursor:default">
       <span class="ic">⏳</span>
       <span class="meta"><p class="dt">${esc(a.prenom?a.prenom+" "+a.nom:a.nom)}</p><p class="du">${esc([a.fonction,a.email||a.id,"inscrit le "+dateFR(a.ts)].filter(Boolean).join(" · "))}</p></span>
@@ -1153,7 +1163,7 @@ function viewAdmin(){
   const actHtml = actifs.map(a=>{ const self=a.id===S.session.id;
     return `<div class="doc" style="cursor:default">
       <span class="ic">${a.role==="owner"?"★":"✓"}</span>
-      <span class="meta"><p class="dt">${esc(a.prenom?a.prenom+" "+a.nom:a.nom)}${self?" (vous)":""}</p><p class="du">${esc([a.fonction,a.email||a.id].filter(Boolean).join(" · "))}</p></span>
+      <span class="meta"><p class="dt">${esc(a.prenom?a.prenom+" "+a.nom:a.nom)}${self?" (vous)":""}</p><p class="du">${esc([a.fonction,a.email?("connexion : "+a.email):"aucune adresse enregistrée"].filter(Boolean).join(" · "))}${a.emailAlt?`<br><span style="opacity:.8">adresse ULB : ${esc(a.emailAlt)}</span>`:""}</p></span>
       ${a.email?`<button class="link" data-action="reset-pwd" data-id="${esc(a.id)}">Réinitialiser le mot de passe</button>`:""}
       ${(!self && a.role!=="owner")?`<button class="link" data-action="revoke-admin" data-id="${esc(a.id)}">Révoquer</button>`:""}
     </div>`;
@@ -1167,6 +1177,9 @@ function viewAdmin(){
     ${pendHtml}
     <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Comptes validés</h2><span class="c">${actifs.length}</span><span class="l"></span></div>
     ${actHtml}
+    ${revoques.length?`<div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Comptes révoqués</h2><span class="c">${revoques.length}</span><span class="l"></span></div>
+    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 10px">Ces personnes n'ont plus accès à l'espace et ne reçoivent aucun e-mail. Leurs votes et présences passés sont conservés.</p>
+    ${revHtml}`:""}
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Bilans moraux</h2><span class="l"></span></div>
     <div class="compose"><h3 class="serif">${bilanEtat()==="ouvert"?"Collecte en cours":(bilanEtat()==="cloture"?"Campagne clôturée":"Fermé")}</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Chaque membre dépose un bilan <b>anonyme</b> sur les autres (ce qui a fonctionné / à améliorer). <b>Pendant la collecte, personne ne lit rien.</b> Après la clôture, seul le secrétariat lit les retours, prépare le texte et le publie aux membres.</p>
@@ -3013,9 +3026,20 @@ ${sections||"<p>Aucun retour.</p>"}
       if(id===S.session.id) break;
       const ad=S.admins.find(a=>a.id===id);
       const label=ad?((ad.prenom?ad.prenom+" "+ad.nom:ad.nom)+(ad.fonction?" ("+ad.fonction+")":"")):"ce compte";
-      if(!(await modaleConfirm("Révoquer le compte de "+label+" ?"))) break;
-      try{ await sb.from("ca_membres").delete().eq("id",id); }catch(e){} await loadAccounts(); render(); break;
+      if(!(await modaleConfirm("Révoquer le compte de "+label+" ?\n\nCette personne perd l'accès à l'espace CA et ne reçoit plus aucun e-mail. Ses votes et ses présences sont conservés, et vous pourrez la réactiver en un clic."))) break;
+      { const r=await sb.from("ca_membres").update({statut:"revoque"}).eq("id",id);
+        if(r&&r.error){ modaleInfo("Révocation impossible : "+r.error.message); break; }
+        logAct("Compte révoqué : "+label); }
+      await loadAccounts(); render(); break;
     }
+    case "reactiver-admin": { if(!sb) break;
+      const ad2=S.admins.find(a=>a.id===id);
+      const lab2=ad2?((ad2.prenom?ad2.prenom+" "+ad2.nom:ad2.nom)||"ce compte"):"ce compte";
+      if(!(await modaleConfirm("Réactiver le compte de "+lab2+" ? La personne retrouve son accès et ses e-mails."))) break;
+      { const r=await sb.from("ca_membres").update({statut:"actif"}).eq("id",id);
+        if(r&&r.error){ modaleInfo("Réactivation impossible : "+r.error.message); break; }
+        logAct("Compte réactivé : "+lab2); }
+      await loadAccounts(); render(); break; }
     case "set-tab": S.tab=el.dataset.tab; S.mailFlash=null; if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
     /* organigramme */
     case "edit-poste": S.editPoste=id; render(); break;
