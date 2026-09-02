@@ -377,48 +377,10 @@ dl.facts dd{margin:0;word-break:break-word;font-size:14px}
 .toast.show{transform:translate(-50%,0);opacity:1}
 footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
 
-/* ---------- bilan imprimable ---------- */
-.report{position:fixed;inset:0;background:#fff;z-index:80;overflow:auto;display:none}
-.report.open{display:block}
-.rbar{position:sticky;top:0;background:var(--bg2);color:var(--text);padding:12px 18px;
-  display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line)}
-.rbar strong{font-family:'Fraunces',serif;font-weight:600;font-size:17px}
-.rbar label{color:var(--muted);font-size:12px;text-transform:none;letter-spacing:0}
-.rbar input,.rbar select{width:auto;padding:9px 11px;font-size:13px;color-scheme:dark}
-.sheet{max-width:900px;margin:0 auto;padding:36px 30px 60px;color:#000;background:#fff}
-.sheet h1{font-size:28px;margin-bottom:2px;color:#000}
-.sheet .meta{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#444;
-  letter-spacing:.05em;text-transform:uppercase;margin-bottom:26px}
-.sheet h2{font-size:16px;margin:30px 0 10px;padding-bottom:6px;border-bottom:2px solid #000;color:#000}
-.sheet p{color:#333}
-table.rt{width:100%;border-collapse:collapse;font-size:13px}
-table.rt th{text-align:left;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;
-  text-transform:uppercase;color:#444;border-bottom:1px solid #000;padding:6px 8px}
-table.rt td{padding:6px 8px;border-bottom:1px solid #DDD;vertical-align:top;color:#000}
-table.rt td.n,table.rt th.n{text-align:right;font-family:'IBM Plex Mono',monospace;
-  font-variant-numeric:tabular-nums;white-space:nowrap}
-table.rt tr.tot td{border-top:2px solid #000;border-bottom:0;font-weight:700;padding-top:9px}
-table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
-.charts{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:6px;align-items:start}
-.charts figure{margin:0}
-.charts figcaption{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;
-  text-transform:uppercase;color:#444;margin-bottom:8px}
-.legend{display:grid;gap:5px;margin-top:10px;font-size:11.5px;color:#222}
-.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:7px}
-@media(max-width:700px){.charts{grid-template-columns:1fr}}
-.sign{margin-top:46px;display:grid;grid-template-columns:1fr 1fr;gap:40px;font-size:12.5px;color:#333}
-.sign .line{border-bottom:1px solid #000;height:52px;margin-bottom:6px}
-@media print{
-  @page{size:A4;margin:14mm}
-  body{background:#fff}
-  #app,.drawer,.scrim,.toast,.rbar,.auth{display:none!important}
-  .report{position:static;display:block!important;overflow:visible}
-  .sheet{max-width:none;margin:0;padding:0}
-  table.rt tbody tr:nth-child(even) td{background:transparent}
-  table.rt{page-break-inside:auto}
-  table.rt tr{page-break-inside:avoid}
-  .sheet h2{page-break-after:avoid}
-}
+/* ---------- bilan (PDF / Excel) ---------- */
+.bline{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:620px){.bline{grid-template-columns:1fr}}
+@media print{ @page{size:A4;margin:14mm} }
 
 @media (max-width:820px){
   header.top{padding:16px}
@@ -768,8 +730,7 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
         <label for="o_annee" class="eyebrow" style="margin-right:8px">Exercice</label>
         <select id="o_annee"></select>
         <button class="btn ghost sm" id="reportBtn" style="margin-left:10px">Bilan à imprimer</button>
-        <button class="btn ghost sm" id="exportBtn">Exporter en CSV</button>
-        <button class="btn ghost sm" id="exportXlsx">Exporter en Excel</button>
+        <button class="btn ghost sm" id="detailBtn">Détail des comptes</button>
         <div class="spacer"></div>
         <span class="hint" id="o_info"></span>
       </div>
@@ -1108,22 +1069,40 @@ table.rt tbody tr:nth-child(even) td{background:#FAFAFA}
 </footer>
 </div>
 
-<div class="report" id="report">
-  <div class="rbar">
-    <strong style="font-family:'Fraunces',serif">Bilan</strong>
-    <label for="r_from">Du</label><input type="date" id="r_from">
-    <label for="r_to">au</label><input type="date" id="r_to">
-    <select id="r_scope" style="padding:7px 9px;border-radius:4px;border:1px solid rgba(255,255,255,.25);background:#fff;font-size:13px">
-      <option value="all">Toutes les demandes</option>
-      <option value="paid">Remboursements effectués uniquement</option>
-      <option value="due">Sommes encore dues uniquement</option>
-    </select>
-    <div class="spacer"></div>
-    <button class="btn ghost sm" id="zipBtn">Télécharger les pièces</button>
-    <button class="btn sm" id="printBtn">Imprimer / PDF</button>
-    <button class="btn ghost sm" id="closeReport">Fermer</button>
+<div class="overlay" id="bilanBox">
+  <div class="sheetd" style="max-width:540px">
+    <div class="sh"><strong>Bilan à imprimer</strong><div class="spacer"></div>
+      <button class="btn ghost sm" id="closeReport">Fermer</button></div>
+    <div class="sb">
+      <p class="hint" style="margin:0 0 16px">Les entrées et les sorties de la période : résultat, recettes et dépenses par catégorie, graphiques. Le détail écriture par écriture est dans « Détail des comptes ».</p>
+      <div class="bline">
+        <div class="field"><label for="r_from">Du</label><input type="date" id="r_from"></div>
+        <div class="field"><label for="r_to">au</label><input type="date" id="r_to"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px">
+        <button class="btn" id="bilanPdfBtn" style="flex:1;min-width:150px">Télécharger en PDF</button>
+        <button class="btn ghost" id="bilanXlsBtn" style="flex:1;min-width:150px">Télécharger en Excel</button>
+      </div>
+      <button class="btn ghost wide" id="bilanPptBtn" style="margin-top:10px">Télécharger en PowerPoint</button>
+      <p class="hint" style="margin:8px 0 0">Le PowerPoint est fait pour être projeté : chiffres clés, camembert des dépenses et barres mois par mois.</p>
+      <button class="btn ghost sm wide" id="zipBtn" style="margin-top:14px">Télécharger les pièces justificatives</button>
+    </div>
   </div>
-  <div class="sheet" id="sheet"></div>
+</div>
+
+<div class="overlay" id="detailBox">
+  <div class="sheetd" style="max-width:520px">
+    <div class="sh"><strong>Détail des comptes</strong><div class="spacer"></div>
+      <button class="btn ghost sm" id="closeDetail">Fermer</button></div>
+    <div class="sb">
+      <p class="hint" id="detailQuoi" style="margin:0 0 16px"></p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn" id="exportXlsx" style="flex:1;min-width:150px">Télécharger en Excel</button>
+        <button class="btn ghost" id="exportBtn" style="flex:1;min-width:150px">Télécharger en CSV</button>
+      </div>
+      <p class="hint" style="margin:10px 0 0">L'exercice suivi est celui choisi dans l'Aperçu. Les numéros de compte n'y figurent qu'en partie masquée.</p>
+    </div>
+  </div>
 </div>
 
 <div class="overlay" id="pieceInfo">
@@ -2578,57 +2557,6 @@ async function afficherPieces(o, retirable){
   return `<div class="pieces">${blocs.join("")}</div>`;
 }
 
-/* ---------- graphiques du bilan ---------- */
-const TEINTES = ["#2f4b7c","#a05195","#d45087","#f95d6a","#ff7c43","#ffa600",
-                 "#665191","#003f5c","#488f31","#de425b","#7c9885","#b08968"];
-
-function camembert(entrees){
-  const tot = entrees.reduce((s,e)=>s+e.v,0);
-  if(!tot) return "";
-  const R=78, C=90; let ang=-Math.PI/2, parts="";
-  entrees.forEach((e,n) => {
-    const a = e.v/tot*Math.PI*2, fin = ang+a;
-    const x1=C+R*Math.cos(ang), y1=C+R*Math.sin(ang);
-    const x2=C+R*Math.cos(fin), y2=C+R*Math.sin(fin);
-    const d = entrees.length===1
-      ? `M ${C-R} ${C} a ${R} ${R} 0 1 0 ${R*2} 0 a ${R} ${R} 0 1 0 ${-R*2} 0`
-      : `M ${C} ${C} L ${x1.toFixed(1)} ${y1.toFixed(1)} A ${R} ${R} 0 ${a>Math.PI?1:0} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z`;
-    parts += `<path d="${d}" fill="${TEINTES[n%TEINTES.length]}" stroke="#fff" stroke-width="1.5"/>`;
-    ang = fin;
-  });
-  const legende = entrees.map((e,n) =>
-    `<div><i style="background:${TEINTES[n%TEINTES.length]}"></i>${esc(e.k)} — ${euro(e.v)} (${Math.round(e.v/tot*100)}%)</div>`).join("");
-  return `<figure><figcaption>Répartition des dépenses par catégorie</figcaption>
-    <svg viewBox="0 0 180 180" width="180" height="180" role="img"
-      aria-label="Répartition des dépenses par catégorie">${parts}</svg>
-    <div class="legend">${legende}</div></figure>`;
-}
-
-function barresMensuelles(recs, deps, paye){
-  const mois = {};
-  const add = (d,k,v) => { const m=String(d).slice(0,7); (mois[m] = mois[m] || {r:0,d:0})[k] += Number(v||0); };
-  recs.forEach(o => add(o.income_date,"r",o.amount));
-  deps.forEach(o => add(o.expense_date,"d",o.amount));
-  paye.forEach(o => add(o.paid_at ? String(o.paid_at).slice(0,10) : o.expense_date,"d",o.amount));
-  const cles = Object.keys(mois).sort();
-  if(!cles.length) return "";
-  const max = Math.max(...cles.map(m => Math.max(mois[m].r, mois[m].d))) || 1;
-  const L=34, H=112, G=9;
-  const barres = cles.map((m,n) => {
-    const x = n*L, hr = mois[m].r/max*H, hd = mois[m].d/max*H;
-    const lib = m.slice(5)+"/"+m.slice(2,4);
-    return `<rect x="${x+3}" y="${H-hr}" width="${(L-G)/2}" height="${hr.toFixed(1)}" fill="#488f31"/>
-      <rect x="${x+3+(L-G)/2+1}" y="${H-hd}" width="${(L-G)/2}" height="${hd.toFixed(1)}" fill="#de425b"/>
-      <text x="${x+L/2}" y="${H+13}" font-size="8" text-anchor="middle" fill="#444">${lib}</text>`;
-  }).join("");
-  return `<figure><figcaption>Recettes et dépenses par mois</figcaption>
-    <svg viewBox="0 0 ${Math.max(cles.length*L,160)} ${H+20}" width="100%" height="150" role="img"
-      aria-label="Recettes et dépenses par mois">
-      <line x1="0" y1="${H}" x2="${cles.length*L}" y2="${H}" stroke="#000" stroke-width=".7"/>${barres}</svg>
-    <div class="legend"><div><i style="background:#488f31"></i>Recettes</div>
-      <div><i style="background:#de425b"></i>Dépenses</div></div></figure>`;
-}
-
 /* ---------- archive des justificatifs ---------- */
 $("#zipBtn").onclick = async () => {
   const from = $("#r_from").value, to = $("#r_to").value;
@@ -3993,7 +3921,7 @@ $("#closeBtn").onclick = async () => {
       resteront ouvertes et le bilan du mandat devra être reconstitué à la main.
       ${apres ? `<div style="margin-top:8px"><b>${apres} écriture(s) postérieure(s) à ${y} existent déjà dans la base.</b></div>` : ""}
     </div>
-    <p style="margin:10px 0 0;color:#666;font-size:13.5px">Avant de continuer : imprimez le bilan de la période. La clôture reste réversible, mais autant garder une trace.</p>`;
+    <p style="margin:10px 0 0;color:#666;font-size:13.5px">Avant de continuer : téléchargez le bilan de la période (PDF ou Excel) depuis l'Aperçu. La clôture reste réversible, mais autant garder une trace.</p>`;
 
   const feu = await demanderPhrase({
     titre: "Clôturer l'exercice " + y + " ?",
@@ -5511,7 +5439,23 @@ $("#exportBtn").onclick = () => {
   ].sort((a,b) => String(a[2]).localeCompare(String(b[2])));
   if(!lignes.length) return toast("Aucune écriture pour l'exercice " + an + ".");
   const rows = lignes.map(l => l.map(v => `"${String(v).replace(/"/g,'""')}"`).join(";"));
-  const blob = new Blob(["\uFEFF"+cols.join(";")+"\n"+rows.join("\n")], {type:"text/csv;charset=utf-8"});
+  // les remboursements ne sont plus dans le bilan : leur suivi est joint ici
+  const d = detailRemboursements(an);
+  const mnt = v => String(Number(v||0).toFixed(2)).replace(".",",");
+  const bloc = [];
+  if(d.list.length){
+    bloc.push("", "REMBOURSEMENTS PAR PERSONNE",
+      ["Nom","Poste","Demandes","Remboursé","Restant dû","Refusé","Total retenu"].join(";"));
+    d.personnes.forEach(p => bloc.push([p.nom, p.poste||"", p.n, mnt(p.paye),
+      mnt(p.valide+p.attente), mnt(p.refuse), mnt(p.paye+p.valide+p.attente)]
+      .map(v => `"${String(v).replace(/"/g,'""')}"`).join(";")));
+    bloc.push("", "REMBOURSEMENTS PAR STATUT", "Statut;Montant",
+      "Remboursés;"+mnt(d.paye), "Validés, virement à effectuer;"+mnt(d.valide),
+      "En attente de décision;"+mnt(d.attente), "Refusés;"+mnt(d.refuse),
+      "Sommes encore dues aux membres;"+mnt(d.du));
+  }
+  const blob = new Blob(["\uFEFF"+cols.join(";")+"\n"+rows.join("\n")+(bloc.length?"\n"+bloc.join("\n"):"")],
+    {type:"text/csv;charset=utf-8"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "caisse-" + (an === "all" ? "tous-exercices" : an) + "-" + new Date().toISOString().slice(0,10) + ".csv";
@@ -5523,7 +5467,7 @@ $("#exportXlsx").onclick = async () => {
   const btn = $("#exportXlsx"); btn.disabled = true; btn.textContent = "Préparation…";
   let XLSX;
   try{ XLSX = await import("https://esm.sh/xlsx@0.18.5"); }
-  catch(e){ btn.disabled=false; btn.textContent="Exporter en Excel"; return toast("Module Excel indisponible (connexion ?)."); }
+  catch(e){ btn.disabled=false; btn.textContent="Télécharger en Excel"; return toast("Module Excel indisponible (connexion ?)."); }
   const jour = t => t ? new Date(t).toISOString().slice(0,10) : "";
   const num = v => (v===""||v==null) ? "" : Number(v);
   const an = ($("#o_annee") && $("#o_annee").value) || "all";
@@ -5537,7 +5481,7 @@ $("#exportXlsx").onclick = async () => {
     ...depsX.map(e => ["Dépense directe","", e.expense_date, e.payee, "", e.object, e.category, "", num(e.amount), e.method, "Payée", "", e.expense_date, e.note||""]),
     ...itemsX.map(i => ["Remboursement", refOf(i), i.expense_date, i.requester_name, i.requester_position||"", i.object, i.category, "", num(i.amount), ibanMasque(i.iban), i.status, jour(i.decided_at), jour(i.paid_at), i.decision_note||""])
   ].sort((a,b) => String(a[2]).localeCompare(String(b[2])));
-  if(!lignes.length){ btn.disabled=false; btn.textContent="Exporter en Excel"; return toast("Aucune écriture pour l'exercice "+an+"."); }
+  if(!lignes.length){ btn.disabled=false; btn.textContent="Télécharger en Excel"; return toast("Aucune écriture pour l'exercice "+an+"."); }
   const totRec = recsX.reduce((s,r)=>s+Number(r.amount||0),0);
   const totDep = depsX.reduce((s,e)=>s+Number(e.amount||0),0)
     + itemsX.filter(i=>i.status==="Remboursée").reduce((s,i)=>s+Number(i.amount||0),0);
@@ -5547,188 +5491,431 @@ $("#exportXlsx").onclick = async () => {
   ws["!cols"] = cols.map((c,idx) => ({ wch: idx===5?34 : idx===13?26 : idx===9?24 : 13 }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Grand livre");
+
+  // les remboursements ne sont plus dans le bilan : leur suivi a sa propre feuille
+  const d = detailRemboursements(an);
+  if(d.list.length){
+    const r2 = v => Number(Number(v||0).toFixed(2));
+    const aoaR = [["Suivi des remboursements", an === "all" ? "Tous exercices" : "Exercice " + an], [],
+      ["PAR PERSONNE","Poste","Demandes","Remboursé (€)","Restant dû (€)","Refusé (€)","Total retenu (€)"]];
+    d.personnes.forEach(p => aoaR.push([p.nom, p.poste||"", p.n, r2(p.paye),
+      r2(p.valide+p.attente), r2(p.refuse), r2(p.paye+p.valide+p.attente)]));
+    aoaR.push(["Total","", d.list.length, r2(d.paye), r2(d.du), r2(d.refuse), r2(d.paye+d.du)], [],
+      ["PAR STATUT","Montant (€)"],
+      ["Remboursés", r2(d.paye)],
+      ["Validés, virement à effectuer", r2(d.valide)],
+      ["En attente de décision", r2(d.attente)],
+      ["Refusés", r2(d.refuse)],
+      ["Sommes encore dues aux membres", r2(d.du)]);
+    const wsR = XLSX.utils.aoa_to_sheet(aoaR);
+    wsR["!cols"] = [{wch:30},{wch:22},{wch:12},{wch:16},{wch:16},{wch:14},{wch:17}];
+    XLSX.utils.book_append_sheet(wb, wsR, "Remboursements");
+  }
   XLSX.writeFile(wb, "caisse-" + (an === "all" ? "tous-exercices" : an) + "-" + new Date().toISOString().slice(0,10) + ".xlsx");
-  btn.disabled = false; btn.textContent = "Exporter en Excel";
+  btn.disabled = false; btn.textContent = "Télécharger en Excel";
   toast("Fichier Excel téléchargé.");
 };
 
-/* ---------- bilan imprimable ---------- */
+/* ---------- bilan : entrées et sorties (PDF / Excel / PowerPoint) ---------- */
 $("#reportBtn").onclick = () => {
   if(!$("#r_from").value){
     const y = new Date().getFullYear();
     $("#r_from").value = y+"-01-01";
     $("#r_to").value = new Date().toISOString().slice(0,10);
   }
-  buildReport();
-  $("#report").classList.add("open");
+  $("#bilanBox").classList.add("open");
 };
-$("#closeReport").onclick = () => $("#report").classList.remove("open");
-$("#printBtn").onclick = () => window.print();
-["#r_from","#r_to","#r_scope"].forEach(s => $(s).addEventListener("change", buildReport));
+$("#closeReport").onclick = () => $("#bilanBox").classList.remove("open");
+$("#bilanBox").addEventListener("click", e => { if(e.target.id === "bilanBox") $("#bilanBox").classList.remove("open"); });
 
-function buildReport(){
-  const from = $("#r_from").value, to = $("#r_to").value, scope = $("#r_scope").value;
-  let list = state.items.filter(i =>
-    (!from || i.expense_date >= from) && (!to || i.expense_date <= to));
-  if(scope==="paid") list = list.filter(i => i.status==="Remboursée");
-  if(scope==="due")  list = list.filter(i => i.status==="En attente" || i.status==="Validée");
-  list = list.slice().sort((a,b) =>
-    a.requester_name.localeCompare(b.requester_name,"fr") || a.expense_date.localeCompare(b.expense_date));
+/* montant lisible partout (jsPDF ne rend pas l'espace insécable étroit) */
+const eu = n => {
+  const v = (Number(n)||0).toFixed(2).split(".");
+  return v[0].replace(/\B(?=(\d{3})+(?!\d))/g," ") + "," + v[1] + " €";
+};
+const TEINTES_BILAN = ["e8b04b","3ccf94","f2645f","7c9cf5","c98bdb","f2ac3f",
+                       "5ecfd4","a49dc6","8fd694","d98b5f","9b8ce0","d4b483"];
+const rgbDe = h => [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
 
-  const somme = a => a.reduce((s,i)=>s+Number(i.amount||0),0);
-  const st = s => list.filter(i=>i.status===s);
-  const paye = st("Remboursée"), valide = st("Validée"), attente = st("En attente"), refuse = st("Refusée");
+/* le bilan ne regarde que l'argent entré et sorti, pas le suivi des dossiers */
+function bilanCalc(){
+  const from = $("#r_from").value, to = $("#r_to").value;
+  const dedans = d => (!from || d >= from) && (!to || d <= to);
 
-  // Récapitulatif par personne
-  const parNom = {};
+  const recsTout = (state.incomes||[]).filter(r => dedans(r.income_date));
+  const recs = recsTout.filter(r => !estOuverture(r));
+  const report = recsTout.filter(estOuverture).reduce((s,r)=>s+Number(r.amount||0),0);
+
+  const depsReg = (state.expenses||[]).filter(e => dedans(e.expense_date));
+  const remb = (state.items||[]).filter(i => i.status === "Remboursée" && dedans(i.expense_date));
+  const totalRecs = recs.reduce((s,r)=>s+Number(r.amount||0),0);
+  const totalDeps = depsReg.reduce((s,e)=>s+Number(e.amount||0),0)
+                  + remb.reduce((s,i)=>s+Number(i.amount||0),0);
+
+  const grouper = liste => {
+    const m = {};
+    liste.forEach(o => { const k = String(o.category||"").trim() || "Autre";
+      m[k] = m[k] || { k, v:0, n:0 }; m[k].v += Number(o.amount||0); m[k].n++; });
+    return Object.values(m).sort((a,b) => b.v - a.v);
+  };
+  const catRec = grouper(recs);
+  const catDep = grouper([...depsReg, ...remb]);
+
+  const mois = {};
+  const add = (d, k, v) => { const m = String(d||"").slice(0,7); if(!m) return;
+    (mois[m] = mois[m] || {r:0,d:0})[k] += Number(v||0); };
+  recs.forEach(o => add(o.income_date,"r",o.amount));
+  depsReg.forEach(o => add(o.expense_date,"d",o.amount));
+  remb.forEach(o => add(o.expense_date,"d",o.amount));
+  const mensuel = Object.keys(mois).sort().map(m => ({
+    m, lib: m.slice(5)+"/"+m.slice(2,4), r: mois[m].r, d: mois[m].d }));
+
+  return {
+    from, to, recs, depsReg, remb, report, totalRecs, totalDeps,
+    resultat: totalRecs - totalDeps, catRec, catDep, mensuel,
+    nbSorties: depsReg.length + remb.length,
+    periode: (from||to) ? `Du ${fdate(from)} au ${fdate(to)}` : "Toutes périodes confondues",
+    nomFichier: "bilan-" + (from || "debut") + "_" + (to || "fin")
+  };
+}
+
+/* ---------- bilan en PDF ---------- */
+$("#bilanPdfBtn").onclick = async () => {
+  const btn = $("#bilanPdfBtn"); btn.disabled = true; btn.textContent = "Préparation…";
+  const fini = () => { btn.disabled = false; btn.textContent = "Télécharger en PDF"; };
+  let mod;
+  try{ mod = await import("https://esm.sh/jspdf@2.5.1"); }
+  catch(e){ fini(); return toast("Module PDF indisponible (connexion ?)."); }
+  try{
+    const jsPDF = mod.jsPDF || (mod.default && mod.default.jsPDF) || mod.default;
+    const b = bilanCalc();
+    const doc = new jsPDF({ unit:"mm", format:"a4" });
+    const L = 18, R = 192, BAS = 268;
+    let y = 20;
+
+    const place = h => { if(y + (h||8) > BAS){ doc.addPage(); y = 20; return true; } return false; };
+    const coupe = (t, w) => {
+      t = String(t == null ? "" : t);
+      if(doc.getTextWidth(t) <= w) return t;
+      while(t.length > 1 && doc.getTextWidth(t + "…") > w) t = t.slice(0, -1);
+      return t + "…";
+    };
+    const titre = t => {
+      place(22); y += 8;
+      doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(0);
+      doc.text(t, L, y);
+      y += 2.6; doc.setDrawColor(0); doc.setLineWidth(.5); doc.line(L, y, R, y); y += 7;
+    };
+    const ligne = (lib, mid, val, gras) => {
+      place(7);
+      doc.setFont("helvetica", gras ? "bold" : "normal"); doc.setFontSize(10); doc.setTextColor(0);
+      doc.text(coupe(lib, 100), L, y);
+      if(mid){ doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(115);
+               doc.text(String(mid), 140, y, {align:"right"}); }
+      doc.setFont("helvetica", gras ? "bold" : "normal"); doc.setFontSize(10); doc.setTextColor(0);
+      doc.text(String(val), R, y, {align:"right"});
+      y += 6.4;
+    };
+    const filet = fort => { doc.setDrawColor(fort?0:210); doc.setLineWidth(fort?.5:.2);
+      doc.line(L, y-4.4, R, y-4.4); };
+    const tableau = (entrees, total, libTotal) => {
+      if(!entrees.length){
+        place(8); doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(115);
+        doc.text("Aucun mouvement sur cette période.", L, y); doc.setTextColor(0); y += 6; return;
+      }
+      entrees.forEach(c => ligne(c.k, c.n + " écriture(s) · " + (total ? Math.round(c.v/total*100) : 0) + " %", eu(c.v)));
+      filet(true); ligne(libTotal, "", eu(total), true);
+    };
+
+    /* en-tête */
+    doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(0);
+    doc.text("Le bureau étudiant", L, y);
+    doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(115);
+    doc.text("Trésorerie", R, y, {align:"right"});
+    y += 3.5; doc.setDrawColor(200); doc.setLineWidth(.2); doc.line(L, y, R, y); y += 14;
+    doc.setFont("helvetica","bold"); doc.setFontSize(21); doc.setTextColor(0);
+    doc.text("Bilan de la caisse", L, y); y += 7;
+    doc.setFont("helvetica","normal"); doc.setFontSize(9.5); doc.setTextColor(100);
+    doc.text(b.periode, L, y); y += 5;
+    doc.text("Édité le " + fdate(new Date().toISOString().slice(0,10)) + " par " + (state.profile.name||""), L, y);
+    y += 4;
+
+    /* résultat */
+    titre("RÉSULTAT DE LA PÉRIODE");
+    if(b.report) ligne("Solde repris de l'exercice précédent", "", eu(b.report));
+    ligne("Recettes encaissées", b.recs.length + " écriture(s)", "+ " + eu(b.totalRecs));
+    ligne("Dépenses payées", b.nbSorties + " écriture(s)", "- " + eu(b.totalDeps));
+    filet(true);
+    ligne(b.resultat < 0 ? "Déficit de la période" : "Excédent de la période", "",
+          (b.resultat < 0 ? "- " : "+ ") + eu(Math.abs(b.resultat)), true);
+    if(b.report) ligne("Solde en fin de période", "", eu(b.report + b.resultat), true);
+
+    /* camembert des dépenses */
+    const secteur = (cx, cy, r, a0, a1, coul) => {
+      const pas = Math.max(3, Math.ceil((a1-a0) / (Math.PI/60)));
+      let px = cx + r*Math.cos(a0), py = cy + r*Math.sin(a0);
+      const x0 = px, y0 = py, pts = [];
+      for(let k=1; k<=pas; k++){
+        const a = a0 + (a1-a0)*k/pas;
+        const x = cx + r*Math.cos(a), yy = cy + r*Math.sin(a);
+        pts.push([x-px, yy-py]); px = x; py = yy;
+      }
+      pts.push([cx-px, cy-py]);
+      const c = rgbDe(coul);
+      doc.setFillColor(c[0], c[1], c[2]);
+      doc.lines(pts, x0, y0, [1,1], "F", true);
+    };
+
+    if(b.catDep.length && b.totalDeps > 0){
+      titre("RÉPARTITION DES DÉPENSES PAR CATÉGORIE");
+      place(66);
+      const cx = L + 28, cy = y + 26, ray = 24;
+      let ang = -Math.PI/2;
+      b.catDep.forEach((c, n) => {
+        const a = c.v / b.totalDeps * Math.PI*2;
+        if(a > 0) secteur(cx, cy, ray, ang, ang + a, TEINTES_BILAN[n % TEINTES_BILAN.length]);
+        ang += a;
+      });
+      let ly = y + 5;
+      b.catDep.slice(0, 10).forEach((c, n) => {
+        const co = rgbDe(TEINTES_BILAN[n % TEINTES_BILAN.length]);
+        doc.setFillColor(co[0], co[1], co[2]);
+        doc.rect(L + 62, ly - 2.6, 3.2, 3.2, "F");
+        doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(0);
+        doc.text(coupe(c.k, 55), L + 68, ly);
+        doc.text(eu(c.v) + "  (" + Math.round(c.v/b.totalDeps*100) + " %)", R, ly, {align:"right"});
+        ly += 5;
+      });
+      y = Math.max(cy + ray + 8, ly + 4);
+    }
+
+    /* barres mensuelles */
+    if(b.mensuel.length){
+      titre("RECETTES ET DÉPENSES PAR MOIS");
+      place(58);
+      const H = 34, base = y + H;
+      const pas = (R - L) / b.mensuel.length;
+      const larg = Math.min(14, pas - 3);
+      const maxi = Math.max(...b.mensuel.map(m => Math.max(m.r, m.d)), 1);
+      const vert = rgbDe("2f9e6b"), rouge = rgbDe("d1483f");
+      b.mensuel.forEach((m, n) => {
+        const x = L + n*pas + (pas - larg)/2;
+        const hr = m.r/maxi*H, hd = m.d/maxi*H;
+        doc.setFillColor(vert[0],vert[1],vert[2]);
+        if(hr > 0) doc.rect(x, base - hr, larg/2 - .4, hr, "F");
+        doc.setFillColor(rouge[0],rouge[1],rouge[2]);
+        if(hd > 0) doc.rect(x + larg/2 + .4, base - hd, larg/2 - .4, hd, "F");
+        doc.setFont("helvetica","normal"); doc.setFontSize(6.5); doc.setTextColor(90);
+        doc.text(m.lib, x + larg/2, base + 4, {align:"center"});
+      });
+      doc.setDrawColor(0); doc.setLineWidth(.3); doc.line(L, base, R, base);
+      doc.setFillColor(vert[0],vert[1],vert[2]); doc.rect(L, base + 8, 3.2, 3.2, "F");
+      doc.setFillColor(rouge[0],rouge[1],rouge[2]); doc.rect(L + 30, base + 8, 3.2, 3.2, "F");
+      doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(0);
+      doc.text("Recettes", L + 6, base + 10.8);
+      doc.text("Dépenses", L + 36, base + 10.8);
+      y = base + 18;
+    }
+
+    /* entrées et sorties */
+    titre("LES RECETTES");
+    tableau(b.catRec, b.totalRecs, "Total des recettes");
+    titre("LES DÉPENSES");
+    tableau(b.catDep, b.totalDeps, "Total des dépenses");
+
+    /* signatures */
+    place(34); y += 18;
+    doc.setDrawColor(120); doc.setLineWidth(.3);
+    doc.line(L, y, L+62, y); doc.line(112, y, 174, y);
+    doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(0);
+    doc.text("Le trésorier — " + (state.profile.name||""), L, y+5);
+    doc.text("Vérificateur aux comptes", 112, y+5);
+
+    const pages = doc.internal.getNumberOfPages();
+    for(let n = 1; n <= pages; n++){
+      doc.setPage(n);
+      doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(140);
+      doc.text("Bilan de la caisse · " + b.periode, L, 287);
+      doc.text(n + " / " + pages, R, 287, {align:"right"});
+    }
+    doc.save(b.nomFichier + ".pdf");
+    toast("Bilan PDF téléchargé.");
+  }catch(err){
+    toast("Bilan impossible : " + (err.message || err));
+  }finally{ fini(); }
+};
+
+/* ---------- bilan en Excel ---------- */
+$("#bilanXlsBtn").onclick = async () => {
+  const btn = $("#bilanXlsBtn"); btn.disabled = true; btn.textContent = "Préparation…";
+  const fini = () => { btn.disabled = false; btn.textContent = "Télécharger en Excel"; };
+  let XLSX;
+  try{ XLSX = await import("https://esm.sh/xlsx@0.18.5"); }
+  catch(e){ fini(); return toast("Module Excel indisponible (connexion ?)."); }
+  try{
+    const b = bilanCalc();
+    const n2 = v => Number(Number(v||0).toFixed(2));
+    const aoa = [
+      ["Bilan de la caisse — le bureau étudiant"],
+      [b.periode],
+      ["Édité le " + fdate(new Date().toISOString().slice(0,10)) + " par " + (state.profile.name||"")],
+      [],
+      ["RÉSULTAT DE LA PÉRIODE","Écritures","Montant (€)"]
+    ];
+    if(b.report) aoa.push(["Solde repris de l'exercice précédent","", n2(b.report)]);
+    aoa.push(["Recettes encaissées", b.recs.length, n2(b.totalRecs)]);
+    aoa.push(["Dépenses payées", b.nbSorties, n2(-b.totalDeps)]);
+    aoa.push([b.resultat < 0 ? "Déficit de la période" : "Excédent de la période", "", n2(b.resultat)]);
+    if(b.report) aoa.push(["Solde en fin de période","", n2(b.report + b.resultat)]);
+    aoa.push([], ["LES RECETTES","Écritures","Montant (€)","Part"]);
+    b.catRec.forEach(c => aoa.push([c.k, c.n, n2(c.v), b.totalRecs ? Math.round(c.v/b.totalRecs*100)+" %" : ""]));
+    aoa.push(["Total des recettes", b.recs.length, n2(b.totalRecs), ""], []);
+    aoa.push(["LES DÉPENSES","Écritures","Montant (€)","Part"]);
+    b.catDep.forEach(c => aoa.push([c.k, c.n, n2(c.v), b.totalDeps ? Math.round(c.v/b.totalDeps*100)+" %" : ""]));
+    aoa.push(["Total des dépenses", b.nbSorties, n2(b.totalDeps), ""], []);
+    aoa.push(["MOIS PAR MOIS","Recettes (€)","Dépenses (€)","Solde (€)"]);
+    b.mensuel.forEach(m => aoa.push([m.lib, n2(m.r), n2(m.d), n2(m.r - m.d)]));
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [{wch:40},{wch:14},{wch:16},{wch:14}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Bilan");
+    XLSX.writeFile(wb, b.nomFichier + ".xlsx");
+    toast("Bilan Excel téléchargé.");
+  }catch(err){
+    toast("Bilan impossible : " + (err.message || err));
+  }finally{ fini(); }
+};
+
+/* ---------- bilan en PowerPoint (à projeter) ---------- */
+$("#bilanPptBtn").onclick = async () => {
+  const btn = $("#bilanPptBtn"); btn.disabled = true; btn.textContent = "Préparation…";
+  const fini = () => { btn.disabled = false; btn.textContent = "Télécharger en PowerPoint"; };
+  let mod;
+  try{ mod = await import("https://esm.sh/pptxgenjs@3.12.0"); }
+  catch(e){ fini(); return toast("Module PowerPoint indisponible (connexion ?)."); }
+  try{
+    const PptxGenJS = mod.default || mod.PptxGenJS || mod;
+    const b = bilanCalc();
+    const FOND="141026", SURF="241C46", OR="E8B04B", TXT="F4EFE6",
+          MUET="A49DC6", VERT="3CCF94", ROUGE="F2645F", TRAIT="3B3170";
+    const pptx = new PptxGenJS();
+    pptx.layout = "LAYOUT_16x9";
+    pptx.defineSlideMaster({ title:"BILAN", background:{ color:FOND } });
+    const nouvelle = t => {
+      const s = pptx.addSlide({ masterName:"BILAN" });
+      s.addText(t, { x:.5, y:.3, w:9, h:.5, fontSize:24, bold:true, color:TXT });
+      s.addShape(pptx.ShapeType.rect, { x:.5, y:.85, w:1.2, h:.05, fill:{ color:OR } });
+      return s;
+    };
+
+    const s1 = pptx.addSlide({ masterName:"BILAN" });
+    s1.addText("Bilan de la caisse", { x:.7, y:1.7, w:8.6, h:.9, fontSize:44, bold:true, color:TXT });
+    s1.addText(b.periode, { x:.7, y:2.6, w:8.6, h:.5, fontSize:18, color:OR });
+    s1.addText("Le bureau étudiant — Trésorerie · " + (state.profile.name||""),
+      { x:.7, y:4.5, w:8.6, h:.4, fontSize:12, color:MUET });
+
+    const s2 = nouvelle("Résultat de la période");
+    const carte = (x, lib, val, coul) => {
+      s2.addShape(pptx.ShapeType.roundRect, { x, y:1.5, w:2.8, h:2, fill:{ color:SURF }, rectRadius:.12 });
+      s2.addText(lib, { x, y:1.75, w:2.8, h:.4, fontSize:12, color:MUET, align:"center" });
+      s2.addText(val, { x, y:2.3, w:2.8, h:.8, fontSize:21, bold:true, color:coul, align:"center" });
+    };
+    carte(.5, "Recettes encaissées", eu(b.totalRecs), VERT);
+    carte(3.6, "Dépenses payées", eu(b.totalDeps), ROUGE);
+    carte(6.7, b.resultat < 0 ? "Déficit" : "Excédent", eu(Math.abs(b.resultat)), b.resultat < 0 ? ROUGE : OR);
+    s2.addText(b.recs.length + " recette(s) · " + b.nbSorties + " dépense(s)"
+      + (b.report ? " · solde repris : " + eu(b.report) + " · solde en fin de période : " + eu(b.report + b.resultat) : ""),
+      { x:.5, y:3.9, w:9, h:.4, fontSize:13, color:MUET, align:"center" });
+
+    if(b.catDep.length && b.totalDeps > 0){
+      const s3 = nouvelle("Les dépenses par catégorie");
+      s3.addChart(pptx.ChartType.pie,
+        [{ name:"Dépenses", labels:b.catDep.map(c=>c.k), values:b.catDep.map(c=>Number(c.v.toFixed(2))) }],
+        { x:.3, y:1.05, w:5.2, h:4.1, showLegend:false, showPercent:true,
+          chartColors:b.catDep.map((c,n)=>TEINTES_BILAN[n%TEINTES_BILAN.length].toUpperCase()),
+          dataLabelColor:FOND, dataLabelFontSize:11 });
+      s3.addTable(
+        [[{ text:"Catégorie", options:{ bold:true, color:MUET } },
+          { text:"Montant", options:{ bold:true, color:MUET, align:"right" } }],
+         ...b.catDep.slice(0,9).map((c,n) => [
+           { text:"■ " + c.k, options:{ color:TEINTES_BILAN[n%TEINTES_BILAN.length].toUpperCase() } },
+           { text:eu(c.v), options:{ align:"right", color:TXT } }])],
+        { x:5.7, y:1.25, w:3.8, fontSize:11, color:TXT, fill:{ color:SURF },
+          border:{ type:"solid", color:TRAIT, pt:.5 } });
+    }
+
+    if(b.mensuel.length){
+      const s4 = nouvelle("Recettes et dépenses par mois");
+      s4.addChart(pptx.ChartType.bar,
+        [{ name:"Recettes", labels:b.mensuel.map(m=>m.lib), values:b.mensuel.map(m=>Number(m.r.toFixed(2))) },
+         { name:"Dépenses", labels:b.mensuel.map(m=>m.lib), values:b.mensuel.map(m=>Number(m.d.toFixed(2))) }],
+        { x:.5, y:1.15, w:9, h:3.9, barDir:"col", chartColors:[VERT, ROUGE],
+          showLegend:true, legendPos:"b", legendColor:TXT,
+          catAxisLabelColor:MUET, valAxisLabelColor:MUET,
+          catAxisLineColor:TRAIT, valAxisLineColor:TRAIT,
+          valGridLine:{ color:TRAIT, style:"dash" } });
+    }
+
+    const slideTableau = (t, lignes, total, libTotal) => {
+      if(!lignes.length) return;
+      const s = nouvelle(t);
+      const corps = [[{ text:"Catégorie", options:{ bold:true, color:MUET } },
+                      { text:"Écritures", options:{ bold:true, color:MUET, align:"center" } },
+                      { text:"Montant", options:{ bold:true, color:MUET, align:"right" } },
+                      { text:"Part", options:{ bold:true, color:MUET, align:"right" } }]];
+      lignes.slice(0,11).forEach(c => corps.push([
+        { text:c.k, options:{ color:TXT } },
+        { text:String(c.n), options:{ align:"center", color:MUET } },
+        { text:eu(c.v), options:{ align:"right", color:TXT } },
+        { text:(total ? Math.round(c.v/total*100) : 0) + " %", options:{ align:"right", color:MUET } }]));
+      corps.push([{ text:libTotal, options:{ bold:true, color:OR } }, { text:"" },
+        { text:eu(total), options:{ align:"right", bold:true, color:OR } }, { text:"" }]);
+      s.addTable(corps, { x:.5, y:1.1, w:9, fontSize:12, color:TXT, fill:{ color:SURF },
+        border:{ type:"solid", color:TRAIT, pt:.5 }, autoPage:false });
+    };
+    slideTableau("Les recettes", b.catRec, b.totalRecs, "Total des recettes");
+    slideTableau("Les dépenses", b.catDep, b.totalDeps, "Total des dépenses");
+
+    await pptx.writeFile({ fileName: b.nomFichier + ".pptx" });
+    toast("Bilan PowerPoint téléchargé.");
+  }catch(err){
+    toast("Bilan impossible : " + (err.message || err));
+  }finally{ fini(); }
+};
+
+/* ---------- détail des comptes ---------- */
+$("#detailBtn").onclick = () => {
+  const an = ($("#o_annee") && $("#o_annee").value) || "all";
+  $("#detailQuoi").textContent = an === "all"
+    ? "Toutes les écritures, tous exercices confondus, avec le suivi des remboursements par personne et par statut."
+    : "Toutes les écritures de l'exercice " + an + ", avec le suivi des remboursements par personne et par statut.";
+  $("#detailBox").classList.add("open");
+};
+$("#closeDetail").onclick = () => $("#detailBox").classList.remove("open");
+$("#detailBox").addEventListener("click", e => { if(e.target.id === "detailBox") $("#detailBox").classList.remove("open"); });
+
+/* les remboursements sortent du bilan : ils sont détaillés ici */
+function detailRemboursements(an){
+  const list = (state.items||[]).filter(i => dansAnnee(i.expense_date, an));
+  const som = st => list.filter(i => i.status === st).reduce((s,i)=>s+Number(i.amount||0),0);
+  const par = {};
   for(const i of list){
     const k = i.requester_name || "(sans nom)";
-    parNom[k] = parNom[k] || { n:0, paye:0, valide:0, attente:0, refuse:0, poste:"" };
-    if(i.requester_position) parNom[k].poste = i.requester_position;
-    parNom[k].n++;
-    if(i.status==="Remboursée") parNom[k].paye += Number(i.amount);
-    if(i.status==="Validée")    parNom[k].valide += Number(i.amount);
-    if(i.status==="En attente") parNom[k].attente += Number(i.amount);
-    if(i.status==="Refusée")    parNom[k].refuse += Number(i.amount);
+    par[k] = par[k] || { nom:k, poste:"", n:0, paye:0, valide:0, attente:0, refuse:0 };
+    if(i.requester_position) par[k].poste = i.requester_position;
+    par[k].n++;
+    const m = Number(i.amount||0);
+    if(i.status==="Remboursée") par[k].paye    += m;
+    if(i.status==="Validée")    par[k].valide  += m;
+    if(i.status==="En attente") par[k].attente += m;
+    if(i.status==="Refusée")    par[k].refuse  += m;
   }
-  const noms = Object.keys(parNom).sort((a,b)=>a.localeCompare(b,"fr"));
-
-  const periode = (from||to)
-    ? `Dépenses du ${fdate(from)} au ${fdate(to)}`
-    : "Toutes périodes confondues";
-  const scopeTxt = scope==="paid" ? " · remboursements effectués"
-                 : scope==="due"  ? " · sommes encore dues" : "";
-
-  // Dépenses directes de la période (exclues si l'on ne regarde que les sommes dues)
-  const deps = scope==="due" ? [] : state.expenses
-    .filter(e => (!from || e.expense_date >= from) && (!to || e.expense_date <= to))
-    .sort((a,b) => a.expense_date.localeCompare(b.expense_date));
-  const totalDeps = somme(deps);
-  const sortiesReelles = somme(paye) + totalDeps;
-
-  // Recettes de la période
-  const recs = scope==="due" ? [] : state.incomes
-    .filter(r => (!from || r.income_date >= from) && (!to || r.income_date <= to))
-    .sort((a,b) => a.income_date.localeCompare(b.income_date));
-  const totalRecs = recs.reduce((s,r)=>s+Number(r.amount||0),0);
-  const solde = totalRecs - sortiesReelles;
-
-  const categoriesDepenses = (deps, paye) => {
-    const m = {};
-    [...deps, ...paye].forEach(o => { m[o.category || "Autre"] = (m[o.category || "Autre"] || 0) + Number(o.amount||0); });
-    return Object.entries(m).map(([k,v]) => ({k,v})).sort((a,b) => b.v - a.v);
+  return {
+    list, personnes: Object.values(par).sort((a,b)=>a.nom.localeCompare(b.nom,"fr")),
+    paye:som("Remboursée"), valide:som("Validée"), attente:som("En attente"), refuse:som("Refusée"),
+    du: som("Validée") + som("En attente")
   };
-
-  const lignesRecs = recs.map(r => `<tr>
-    <td class="n">${fdate(r.income_date)}</td>
-    <td>${esc(r.source)}</td>
-    <td>${esc(r.object)}<br><span style="color:#666;font-size:11.5px">${esc(r.category)}${r.note?" — "+esc(r.note):""}</span></td>
-    <td>${esc(r.method)}</td>
-    <td class="n">${piecesDe(r).length || "—"}</td>
-    <td class="n">${euro(r.amount)}</td></tr>`).join("");
-
-  const lignesDeps = deps.map(e => `<tr>
-    <td class="n">${fdate(e.expense_date)}</td>
-    <td>${esc(e.payee)}</td>
-    <td>${esc(e.object)}<br><span style="color:#666;font-size:11.5px">${esc(e.category)}${e.note?" — "+esc(e.note):""}</span></td>
-    <td>${esc(e.method)}</td>
-    <td class="n">${piecesDe(e).length || "—"}</td>
-    <td class="n">${euro(e.amount)}</td></tr>`).join("");
-
-  const lignesNoms = noms.map(nom => {
-    const p = parNom[nom];
-    const du = p.valide + p.attente;
-    return `<tr><td>${esc(nom)}</td><td style="color:#555">${esc(p.poste)||"—"}</td><td class="n">${p.n}</td>
-      <td class="n">${euro(p.paye)}</td><td class="n">${euro(du)}</td>
-      <td class="n">${p.refuse ? euro(p.refuse) : "—"}</td>
-      <td class="n"><b>${euro(p.paye + du)}</b></td></tr>`;
-  }).join("");
-
-  const lignesDetail = list.map(i => `<tr>
-    <td class="n">${fdate(i.expense_date)}</td>
-    <td>${esc(i.requester_name)}${i.requester_position?`<br><span style="color:#666;font-size:11px">${esc(i.requester_position)}</span>`:""}${
-      i.user_id === state.profile.id ? '<br><span style="color:#000;font-size:10px;border:1px solid #000;padding:1px 4px">auto-validée</span>' : ""}</td>
-    <td>${esc(i.object)}<br><span style="color:#666;font-size:11.5px">${esc(i.category)} · payé par ${esc(i.payment_method||"—")}${i.decision_note?" — "+esc(i.decision_note):""}</span></td>
-    <td>${i.status}</td>
-    <td class="n">${i.paid_at ? fdate(new Date(i.paid_at).toISOString().slice(0,10)) : "—"}</td>
-    <td class="n">${piecesDe(i).length || "—"}</td>
-    <td class="n">${euro(i.amount)}</td></tr>`).join("");
-
-  $("#sheet").innerHTML = `
-    <h1>Registre de la caisse</h1>
-    <div class="meta">${periode}${scopeTxt} · édité le ${fdate(new Date().toISOString().slice(0,10))} par ${esc(state.profile.name)}</div>
-
-    <h2>Résultat de la période</h2>
-    <table class="rt">
-      <tbody>
-        <tr><td><b>Recettes encaissées</b></td><td class="n">${recs.length} pièce(s)</td><td class="n"><b>+ ${euro(totalRecs)}</b></td></tr>
-        <tr><td>Dépenses directes de la caisse</td><td class="n">${deps.length}</td><td class="n">− ${euro(totalDeps)}</td></tr>
-        <tr><td>Remboursements versés aux membres</td><td class="n">${paye.length}</td><td class="n">− ${euro(somme(paye))}</td></tr>
-        <tr><td><b>Total des sorties</b></td><td class="n">${deps.length + paye.length}</td><td class="n"><b>− ${euro(sortiesReelles)}</b></td></tr>
-        <tr class="tot"><td>${solde < 0 ? "Déficit de la période" : "Excédent de la période"}</td><td></td>
-            <td class="n" style="font-size:15px">${solde < 0 ? "− " : "+ "}${euro(Math.abs(solde))}</td></tr>
-      </tbody>
-    </table>
-    ${(valide.length || attente.length) ? `<p style="font-size:12px;color:#444;margin-top:8px">
-      Reste à verser aux membres après cette période : ${euro(somme(valide)+somme(attente))}
-      (${valide.length} validé(s) en attente de virement, ${attente.length} en attente de décision).</p>` : ""}
-
-    <h2>Remboursements — situation détaillée</h2>
-    <table class="rt">
-      <tbody>
-        <tr><td>Remboursements effectués</td><td class="n">${paye.length} demande(s)</td><td class="n"><b>${euro(somme(paye))}</b></td></tr>
-        <tr><td>Validés, virement à effectuer</td><td class="n">${valide.length}</td><td class="n">${euro(somme(valide))}</td></tr>
-        <tr><td>En attente de décision</td><td class="n">${attente.length}</td><td class="n">${euro(somme(attente))}</td></tr>
-        <tr><td>Refusés</td><td class="n">${refuse.length}</td><td class="n">${euro(somme(refuse))}</td></tr>
-        <tr class="tot"><td>Engagements de la caisse envers les membres</td><td class="n">${list.length - refuse.length}</td>
-            <td class="n">${euro(somme(paye)+somme(valide)+somme(attente))}</td></tr>
-      </tbody>
-    </table>
-
-    <h2>Récapitulatif par personne</h2>
-    <table class="rt">
-      <thead><tr><th>Nom</th><th>Poste</th><th class="n">Demandes</th><th class="n">Remboursé</th>
-        <th class="n">Restant dû</th><th class="n">Refusé</th><th class="n">Total retenu</th></tr></thead>
-      <tbody>${lignesNoms || '<tr><td colspan="7" style="padding:16px;color:#666">Aucune dépense sur cette période.</td></tr>'}</tbody>
-      ${noms.length ? `<tfoot><tr class="tot"><td colspan="2">Total</td><td class="n">${list.length}</td>
-        <td class="n">${euro(somme(paye))}</td><td class="n">${euro(somme(valide)+somme(attente))}</td>
-        <td class="n">${euro(somme(refuse))}</td>
-        <td class="n">${euro(somme(paye)+somme(valide)+somme(attente))}</td></tr></tfoot>` : ""}
-    </table>
-
-    <h2>Vue d'ensemble</h2>
-    <div class="charts">
-      ${camembert(categoriesDepenses(deps, paye))}
-      ${barresMensuelles(recs, deps, paye)}
-    </div>
-
-    <h2>Détail des recettes</h2>
-    <table class="rt">
-      <thead><tr><th class="n">Date</th><th>Provenance</th><th>Objet</th><th>Encaissement</th>
-        <th class="n">Pièces</th><th class="n">Montant</th></tr></thead>
-      <tbody>${lignesRecs || '<tr><td colspan="6" style="padding:16px;color:#666">Aucune recette sur cette période.</td></tr>'}</tbody>
-      ${recs.length ? `<tfoot><tr class="tot"><td colspan="5">Total</td><td class="n">${euro(totalRecs)}</td></tr></tfoot>` : ""}
-    </table>
-
-    <h2>Détail des dépenses directes de la caisse</h2>
-    <table class="rt">
-      <thead><tr><th class="n">Date</th><th>Bénéficiaire</th><th>Objet</th><th>Paiement</th>
-        <th class="n">Pièces</th><th class="n">Montant</th></tr></thead>
-      <tbody>${lignesDeps || '<tr><td colspan="6" style="padding:16px;color:#666">Aucune dépense directe sur cette période.</td></tr>'}</tbody>
-      ${deps.length ? `<tfoot><tr class="tot"><td colspan="5">Total</td><td class="n">${euro(totalDeps)}</td></tr></tfoot>` : ""}
-    </table>
-
-    <h2>Détail des remboursements aux membres</h2>
-    <table class="rt">
-      <thead><tr><th class="n">Date</th><th>Demandeur</th><th>Objet</th><th>Statut</th>
-        <th class="n">Payé le</th><th class="n">Pièces</th><th class="n">Montant</th></tr></thead>
-      <tbody>${lignesDetail || '<tr><td colspan="7" style="padding:16px;color:#666">Aucune dépense sur cette période.</td></tr>'}</tbody>
-    </table>
-
-    <div class="sign">
-      <div><div class="line"></div>Le trésorier — ${esc(state.profile.name)}</div>
-      <div><div class="line"></div>Vérificateur aux comptes</div>
-    </div>`;
 }
 
 /* ---------- notifications système ---------- */
