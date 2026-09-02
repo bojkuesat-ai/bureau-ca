@@ -383,7 +383,7 @@ const SB_URL="https://mlgzdfyqjhvyubrywuim.supabase.co";
 const SB_KEY="sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createClient(SB_URL,SB_KEY):null;
 function sess2session(user,prof){ return {id:user.id,email:user.email,prenom:prof.prenom,nom:((prof.prenom||"")+" "+(prof.nom||"")).trim(),fonction:prof.fonction,sig:((prof.prenom||prof.nom||"")+(prof.fonction?" \u00b7 "+prof.fonction:"")),statut:prof.statut||"attente",role:prof.role||"membre"}; }
-async function loadAccounts(){ try{ const {data}=await sb.from("ca_membres").select("*"); S.admins=(data||[]).map(a=>({id:a.id,email:a.email,prenom:a.prenom,nom:a.nom,fonction:a.fonction,statut:a.statut,role:a.role,ts:a.created_at,viaCode:a.via_code||""})); }catch(e){} }
+async function loadAccounts(){ try{ const {data}=await sb.from("ca_membres").select("*"); S.admins=(data||[]).map(a=>({id:a.id,email:a.email,emailAlt:a.email_alt||"",prenom:a.prenom,nom:a.nom,fonction:a.fonction,statut:a.statut,role:a.role,ts:a.created_at,viaCode:a.via_code||""})); }catch(e){} }
 async function loadAvis(){ try{ const {data}=await sb.from("ca_avis").select("*").order("created_at",{ascending:false}); S.avis=(data||[]).map(x=>({id:x.id,membreId:x.membre_id,auteur:x.auteur,sujet:x.sujet,texte:x.texte,ts:x.created_at})); }catch(e){ S.avis=[]; } }
 async function loadAvisVotes(){ try{ const {data}=await sb.from("ca_avis_votes").select("*"); S.avisVotes=(data||[]).map(v=>({avisId:v.avis_id,membreId:v.membre_id,valeur:v.valeur})); }catch(e){ S.avisVotes=[]; } }
 async function loadMailing(){ try{ const {data}=await sb.from("ca_mailing").select("*").order("created_at",{ascending:true}); S.mailing=(data||[]).map(m=>({id:m.id,email:m.email})); }catch(e){ S.mailing=[]; } }
@@ -534,10 +534,34 @@ function destinatairesMembres(){
   membresActifs().forEach(a=>set.add(String(a.email).toLowerCase().trim()));
   return [...set].filter(Boolean).filter(e=>!estDesabonne(e));
 }
-/* Membres + liste de diffusion externe (annonces, documents, votes). */
+/* Toutes les adresses déjà rattachées à un compte : celle de connexion et,
+   pour ceux qui se sont inscrits avec une adresse privée, leur adresse ULB.
+   Sert à ne pas écrire deux fois à la même personne. */
+function adressesDesComptes(){
+  const set=new Set();
+  (S.admins||[]).forEach(a=>{
+    if(a.email) set.add(String(a.email).toLowerCase().trim());
+    if(a.emailAlt) set.add(String(a.emailAlt).toLowerCase().trim());
+  });
+  return set;
+}
+/* Membres du CA qui n'ont pas encore créé de compte : présents dans la liste
+   de diffusion, rattachés à aucun compte. Ils reçoivent les rappels avec une
+   étape d'inscription en plus. */
+function nonInscrits(){
+  const connus=adressesDesComptes();
+  const set=new Set();
+  (S.mailing||[]).forEach(m=>{ const e=String(m.email||"").toLowerCase().trim();
+    if(e && !connus.has(e)) set.add(e); });
+  return [...set].filter(e=>!estDesabonne(e));
+}
+/* Membres + liste de diffusion externe (annonces, documents, votes).
+   Une adresse déjà couverte par un compte n'est jamais ajoutée en double. */
 function destinatairesCA(){
   const set=new Set(destinatairesMembres());
-  (S.mailing||[]).forEach(m=>{ if(m.email) set.add(String(m.email).toLowerCase().trim()); });
+  const connus=adressesDesComptes();
+  (S.mailing||[]).forEach(m=>{ const e=String(m.email||"").toLowerCase().trim();
+    if(e && !connus.has(e)) set.add(e); });
   return [...set].filter(Boolean).filter(e=>!estDesabonne(e));
 }
 /* Evenements uniquement (diner, soiree...) : les cooptes y sont invites.
@@ -730,7 +754,7 @@ function manquantsRappel(type, obj){
   if(type==="budget") (obj.votes||[]).forEach(v=>{ if(v.membreId) repondu.add(v.membreId); });
   else if(type==="vote") (obj.voters||[]).forEach(v=>{ if(v.membreId) repondu.add(v.membreId); });
   else (S.presence||[]).forEach(p=>{ if(p.evenement_id===obj.id && p.membre_id) repondu.add(p.membre_id); });
-  return membresActifs().filter(a=>!repondu.has(a.id)).length;
+  return membresActifs().filter(a=>!repondu.has(a.id)).length + nonInscrits().length;
 }
 /* Convertit un ISO en valeur d'input datetime-local (heure locale). */
 function dtLocal(iso){
@@ -769,7 +793,7 @@ async function appelRappel(type, id, quand){
 /* Bloc affiché sous un budget / vote / événement ouvert. */
 function blocRappel(type, obj){
   if(!peutRappeler(obj)) return "";
-  const nb=manquantsRappel(type,obj), tot=membresActifs().length;
+  const nb=manquantsRappel(type,obj), tot=membresActifs().length+nonInscrits().length;
   const quoi = type==="evenement" ? "n'ont pas indiqué leur présence" : "n'ont pas encore voté";
   const recent = obj.rappelLe && (Date.now()-new Date(obj.rappelLe).getTime()) < 12*3600000;
   const lignes=[];
