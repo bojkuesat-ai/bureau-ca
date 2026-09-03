@@ -2252,15 +2252,14 @@ function tabAccueil(){
 }
 
 /* ---- Génération de VRAIS fichiers PDF (téléchargement direct) ----
-   On réutilise la mise en page HTML de chaque document, rendue hors écran,
-   puis convertie en .pdf via html2pdf (jsPDF + html2canvas). */
+   Le document est rendu VISIBLE à l'écran (derrière un voile) le temps de la
+   capture : html2canvas produirait une page blanche s'il était hors écran. */
 function chargerHtml2pdf(){
   if(window.__h2pReady) return window.__h2pReady;
   window.__h2pReady=new Promise((resolve,reject)=>{
     if(window.html2pdf) return resolve(window.html2pdf);
     let n=0; const attendre=()=>{ if(window.html2pdf) return resolve(window.html2pdf); if(n++>60) return charger(); setTimeout(attendre,100); };
     const charger=()=>{ const s=document.createElement("script"); s.src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.3/dist/html2pdf.bundle.min.js"; s.onload=()=>resolve(window.html2pdf); s.onerror=()=>{ window.__h2pReady=null; reject(new Error("html2pdf")); }; document.head.appendChild(s); };
-    /* le script est déjà en <head defer> : on lui laisse le temps d'arriver, sinon on le (re)charge */
     if(window.html2pdf) resolve(window.html2pdf); else attendre();
   });
   return window.__h2pReady;
@@ -2272,25 +2271,33 @@ async function telechargerPDF(nomFichier, styleCSS, corpsHTML, orientation){
   try{ h2p=await chargerHtml2pdf(); }
   catch(e){ if(window.alert) window.alert("Générateur PDF indisponible. Vérifiez votre connexion et réessayez."); return; }
   const paysage = orientation==="landscape";
+  const largeur = paysage?1123:794;
   const css=String(styleCSS||"").replace(/(^|[^-\w.#])body\b/g,"$1.pdf-page");
-  const wrap=document.createElement("div");
-  wrap.setAttribute("aria-hidden","true");
-  wrap.style.cssText="position:fixed;left:-10000px;top:0;z-index:-1;background:#fff;width:"+(paysage?"1123px":"794px");
   const antiCoupure="tr,li,.b,.k,section,.pt{page-break-inside:avoid}thead{display:table-header-group}";
-  wrap.innerHTML="<style>"+css+"\n"+antiCoupure+"</style><div class=\"pdf-page\" style=\"max-width:none;width:auto;margin:0;padding:28px 30px;box-sizing:border-box\">"+corpsHTML+"</div>";
-  document.body.appendChild(wrap);
-  const cible=wrap.querySelector(".pdf-page");
+  /* voile affiché (feedback) + feuille blanche calée en HAUT-GAUCHE (origine 0,0).
+     Ne PAS centrer la feuille : un décalage horizontal ferait couper le bord gauche à la capture. */
+  const overlay=document.createElement("div");
+  overlay.style.cssText="position:fixed;inset:0;z-index:2147483000;background:rgba(20,24,40,.55);overflow:auto";
+  const info=document.createElement("div");
+  info.textContent="Génération du PDF…";
+  info.style.cssText="position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:2147483001;color:#fff;font:600 14px system-ui,sans-serif;background:rgba(0,0,0,.5);padding:8px 16px;border-radius:20px";
+  const feuille=document.createElement("div");
+  feuille.style.cssText="position:absolute;left:0;top:0;background:#fff;width:"+largeur+"px";
+  feuille.innerHTML="<style>"+css+"\n"+antiCoupure+"</style><div class=\"pdf-page\" style=\"max-width:none;width:auto;margin:0;padding:20px 24px;box-sizing:border-box\">"+corpsHTML+"</div>";
+  overlay.appendChild(feuille); document.body.appendChild(overlay); document.body.appendChild(info);
+  const cible=feuille.querySelector(".pdf-page");
+  await new Promise(r=>setTimeout(r,150)); /* laisser peindre avant capture */
   const opt={
-    margin:[8,8,10,8],
+    margin:10,
     filename:nomFichier||("document-"+todayISO()+".pdf"),
     image:{type:"jpeg",quality:0.98},
-    html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff",windowWidth:wrap.offsetWidth},
+    html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff",windowWidth:largeur,scrollX:0,scrollY:0,x:0,y:0,logging:false},
     jsPDF:{unit:"mm",format:"a4",orientation:paysage?"landscape":"portrait"},
     pagebreak:{mode:["css","legacy"]}
   };
   try{ await h2p().set(opt).from(cible).save(); }
   catch(e){ if(window.alert) window.alert("La génération du PDF a échoué. Réessayez."); }
-  finally{ wrap.remove(); }
+  finally{ overlay.remove(); info.remove(); }
 }
 function nomPDF(titre){ return String(titre||"document").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)+"-"+todayISO()+".pdf"; }
 
