@@ -127,6 +127,7 @@ input[type=date]{color-scheme:dark}
 .mail-tgt{border:1px solid var(--line);background:var(--paper);border-radius:7px;padding:5px 12px;font-size:12.5px;color:var(--ink-soft);font-weight:600}
 .mail-tgt[aria-pressed="true"]{background:var(--stamp);color:#241100;border-color:var(--stamp)}
 .mail-tgt:hover{border-color:var(--stamp)}
+.mail-quick{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--bg2)}
 .mail-src{margin:0 0 12px}
 .mail-src-h{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:600;color:var(--ink-soft);margin:0 0 6px}
 .mail-chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -363,6 +364,23 @@ const CHOIX = [{id:"pour",label:"Pour",v:"--green"},{id:"contre",label:"Contre",
 
 /* ============================ OUTILS ============================ */
 const uid = () => Math.random().toString(36).slice(2,9);
+/* Type réel d'un fichier. Certains navigateurs (surtout sur téléphone) laissent file.type vide :
+   le PDF partait alors dans le stockage comme du texte, et le destinataire ne pouvait plus l'ouvrir. */
+const MIME_EXT={pdf:"application/pdf",doc:"application/msword",docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",xls:"application/vnd.ms-excel",xlsx:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",ppt:"application/vnd.ms-powerpoint",pptx:"application/vnd.openxmlformats-officedocument.presentationml.presentation",odt:"application/vnd.oasis.opendocument.text",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",gif:"image/gif",webp:"image/webp",heic:"image/heic",svg:"image/svg+xml",txt:"text/plain",csv:"text/csv",zip:"application/zip"};
+function typeFichier(f){ const t=(f&&f.type)||""; if(t && t!=="application/octet-stream") return t;
+  const n=(f&&f.name)||""; const i=n.lastIndexOf("."); const ext=i>=0?n.slice(i+1).toLowerCase():"";
+  return MIME_EXT[ext]||"application/octet-stream"; }
+/* Ouverture d'une pièce jointe. Dans l'app installée (mode plein écran), window.open reste dans une
+   vue interne qui n'affiche pas les PDF — d'où l'écran vide façon image cassée. On passe par un vrai
+   lien de téléchargement : le fichier s'ouvre avec le lecteur du téléphone ou de l'ordinateur. */
+function ouvrirFichier(url, nom){
+  try{
+    const a=document.createElement("a"); a.href=url; a.target="_blank"; a.rel="noopener";
+    if(nom) a.download=nom;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ try{ a.remove(); }catch(e){} }, 0);
+  }catch(e){ try{ window.open(url,"_blank"); }catch(e2){} }
+}
 const dateFR = ts => new Date(ts).toLocaleDateString("fr-BE",{day:"2-digit",month:"short",year:"numeric"});
 function fmtDateLong(d){ try{ return new Date(d+"T00:00").toLocaleDateString("fr-BE",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}); }catch(e){ return d; } }
 function fmtQuand(ts){ try{ return new Date(ts).toLocaleString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
@@ -604,7 +622,7 @@ async function envoyerMailComposeCA({toList, ccList, bccList, objet, corpsTexte,
   tous=tous.filter(a=>!estDesabonne(a));               // RGPD : on n'écrit jamais à un désabonné
   const nbDesab=nbTotalAvant-tous.length;
   if(!tous.length) return {ok:0, err:0, total:0, desabonnes:nbDesab};
-  const pieceHtml = lienPiece ? `<p style="margin:16px 0 0;padding:10px 12px;background:#f5f4fb;border:1px solid #e2e0ef;border-radius:8px;font-size:13px">📎 Pièce jointe : <a href="${lienPiece}" style="color:#241c46;font-weight:bold">${caMailEsc(nomPiece||"Télécharger le fichier")}</a></p>` : "";
+  const pieceHtml = lienPiece ? `<p style="margin:16px 0 0;padding:10px 12px;background:#f5f4fb;border:1px solid #e2e0ef;border-radius:8px;font-size:13px">📎 Pièce jointe : <a href="${caMailEsc(lienPiece)}" style="color:#241c46;font-weight:bold">${caMailEsc(nomPiece||"Télécharger le fichier")}</a></p>` : "";
   const corpsHtml=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#1a1a2e;font-size:14px;line-height:1.6">`
     +`<div style="white-space:pre-wrap">${caMailEsc(corpsTexte)}</div>`
     +pieceHtml
@@ -903,7 +921,7 @@ async function traiterEnvoisProgrammes(){
       if(!claim||!claim.length) continue;               // déjà pris par un autre appareil
       const d=p.dest||{};
       let lien="";
-      if(p.piecePath){ try{ const su=await sb.storage.from("ca-documents").createSignedUrl(p.piecePath, 7776000); if(su&&su.data&&su.data.signedUrl) lien=su.data.signedUrl; }catch(e){} }
+      if(p.piecePath){ try{ const su=await sb.storage.from("ca-documents").createSignedUrl(p.piecePath, 7776000, {download: p.nomPiece||true}); if(su&&su.data&&su.data.signedUrl) lien=su.data.signedUrl; }catch(e){} }
       const res=await envoyerMailComposeCA({toList:d.to||[],ccList:d.cc||[],bccList:d.cci||[],objet:p.objet,corpsTexte:p.corps,lienPiece:lien,nomPiece:p.nomPiece});
       await sb.from("ca_mail_programmes").update({statut:"envoye"}).eq("id",p.id);
       logAct("Mail programmé envoyé : « "+p.objet+" » à "+res.total+" destinataire(s)");
@@ -1795,7 +1813,7 @@ function tabMessages(){
   const other=(S.admins||[]).find(p=>p.id===S.msgUI.sel)||{prenom:"?",nom:"",fonction:""};
   const thread=(S.messages||[]).filter(m=>(m.fromId===meId&&m.to===S.msgUI.sel)||(m.fromId===S.msgUI.sel&&m.to===meId));
   const bubbles=thread.length?thread.map(m=>{const mine=m.fromId===meId; const fn=m.fichier?m.fichier.substring(m.fichier.indexOf("-")+1):"";
-    return `<div class="bub ${mine?"me":"them"}">${m.texte?esc(m.texte):""}${m.fichier?`<div class="att" data-action="open-att" data-path="${esc(m.fichier)}" style="cursor:pointer;text-decoration:underline">📎 ${esc(fn)}</div>`:""}<div class="m-meta">${mine?"Vous":esc(other.prenom)} · ${dateFR(m.ts)}</div></div>`;}).join(""):`<div class="empty" style="border:none;color:var(--slate)">Aucun message. Écrivez le premier.</div>`;
+    return `<div class="bub ${mine?"me":"them"}">${m.texte?esc(m.texte):""}${m.fichier?`<div class="att" data-action="open-att" data-path="${esc(m.fichier)}" data-nom="${esc(fn)}" style="cursor:pointer;text-decoration:underline">📎 ${esc(fn)}</div>`:""}<div class="m-meta">${mine?"Vous":esc(other.prenom)} · ${dateFR(m.ts)}</div></div>`;}).join(""):`<div class="empty" style="border:none;color:var(--slate)">Aucun message. Écrivez le premier.</div>`;
   return `
     <div class="msg-head"><button class="btn ghost sm" data-action="msg-back">← Membres</button>
       <span class="msg-av" style="width:32px;height:32px">${esc(initials((other.prenom||"")+" "+(other.nom||"")))}</span>
@@ -1998,13 +2016,21 @@ function tabMail(){
   const diffusion=(S.mailing||[]).filter(x=>x.email).map(x=>({label:x.email, email:x.email}));
   const chip=(o)=>`<button class="mail-chip" data-action="mail-chip" data-email="${esc(o.email)}" title="${esc(o.email)}">+ ${esc(o.label)}</button>`;
   const grp=(titre,arr,allEmails)=> arr.length? `<div class="mail-src">
-      <div class="mail-src-h"><span>${titre}</span>${allEmails?`<button class="link" data-action="mail-chip" data-email="${esc(allEmails)}">tout ajouter</button>`:""}</div>
+      <div class="mail-src-h"><span>${titre} <span style="color:var(--slate);font-weight:400">(${arr.length})</span></span>${allEmails?`<button class="btn sm ghost" data-action="mail-chip" data-email="${esc(allEmails)}">Tout ajouter à ${cibleNom}</button>`:""}</div>
       <div class="mail-chips">${arr.map(chip).join("")}</div></div>` : "";
   const sig=(S.session&&((S.session.nom||S.session.prenom||"")+(S.session.fonction?" — "+S.session.fonction:"")))||"";
   const tgtBtn=(k,lbl)=>`<button class="mail-tgt" aria-pressed="${cible===k}" data-action="mail-target" data-tgt="${k}">${lbl}</button>`;
   return `<div class="compose">
     <h3 class="serif">Envoyer un mail</h3>
     <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Prévenez des contacts d'un événement. Saisissez les adresses <b>directement dans les champs ci-dessous</b> (séparées par des virgules), ou choisissez-les dans le carnet plus bas. Chaque destinataire reçoit une copie individuelle ; les adresses ne sont pas visibles entre elles (les <b>CCI</b> restent masqués). La signature du bureau et la mention « ne pas répondre » sont ajoutées automatiquement.</p>
+
+    <div class="mail-quick">
+      <span style="font-size:12px;color:var(--ink-soft);font-weight:600">Ajout rapide dans « ${cibleNom} » :</span>
+      ${membres.length?`<button class="btn sm" data-action="mail-chip" data-email="${esc(membres.map(x=>x.email).join(","))}">Tous les membres (${membres.length})</button>`:""}
+      ${diffusion.length?`<button class="btn sm ghost" data-action="mail-chip" data-email="${esc(diffusion.map(x=>x.email).join(","))}">Liste de diffusion (${diffusion.length})</button>`:""}
+      ${contacts.length?`<button class="btn sm ghost" data-action="mail-chip" data-email="${esc(contacts.map(x=>x.email).join(","))}">Tous les contacts (${contacts.length})</button>`:""}
+      ${(!membres.length&&!diffusion.length&&!contacts.length)?`<span style="font-size:12px;color:var(--slate)">Aucune adresse enregistrée pour l'instant.</span>`:""}
+    </div>
 
     <div class="mail-tpl"><span style="font-size:12px;color:var(--ink-soft);font-weight:600">Modèle :</span>${MAIL_TEMPLATES.map((t,i)=>`<button class="mail-chip" data-action="mail-template" data-tpl="${i}">${esc(t.nom)}</button>`).join("")}</div>
 
@@ -2428,7 +2454,7 @@ document.addEventListener("change", async e=>{
     extraireEmailsDepuisFichier(fl).then(list=>{ if(!list.length){ if(window.alert) window.alert("Aucune adresse e-mail trouvée dans ce fichier."); return; } const avant=compterEmails(S.mailUI[tgt]); ajouterEmailsChamp(tgt,list); const apres=compterEmails(S.mailUI[tgt]); persistMailDraft(); render(); if(window.alert) window.alert((apres-avant)+" adresse(s) ajoutée(s) au champ « "+tgtNom+" » ("+list.length+" trouvée(s) dans le fichier)."); })
       .catch(()=>{ if(window.alert) window.alert("Impossible de lire ce fichier. Formats acceptés : .xlsx, .xls, .csv"); });
     el.value=""; return; }
-  if(el.dataset.change==="docreplace"){ const fl=el.files&&el.files[0]; const did=el.dataset.id; if(!fl||!did||!sb) return; const d=(S.docs||[]).find(x=>x.id===did); if(!d) return; const meId=S.session&&S.session.id; if(!(((S.session&&S.session.role==="owner"))||d.cree_par_id===meId)) return; (async()=>{ const safe=fl.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=uid()+"-"+safe; const up=await sb.storage.from("ca-documents").upload(path,fl); if(up&&up.error){ if(window.alert) window.alert("Échec du remplacement : "+up.error.message); return; } const oldPath=d.chemin; const r=await sb.from("ca_docs").update({chemin:path}).eq("id",did); if(r&&r.error){ if(window.alert) window.alert("Mise à jour impossible : "+r.error.message); return; } try{ if(oldPath) await sb.storage.from("ca-documents").remove([oldPath]); }catch(e){} await loadDocs(); render(); })(); return; }
+  if(el.dataset.change==="docreplace"){ const fl=el.files&&el.files[0]; const did=el.dataset.id; if(!fl||!did||!sb) return; const d=(S.docs||[]).find(x=>x.id===did); if(!d) return; const meId=S.session&&S.session.id; if(!(((S.session&&S.session.role==="owner"))||d.cree_par_id===meId)) return; (async()=>{ const safe=fl.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=uid()+"-"+safe; const up=await sb.storage.from("ca-documents").upload(path,fl,{contentType:typeFichier(fl), upsert:false}); if(up&&up.error){ if(window.alert) window.alert("Échec du remplacement : "+up.error.message); return; } const oldPath=d.chemin; const r=await sb.from("ca_docs").update({chemin:path}).eq("id",did); if(r&&r.error){ if(window.alert) window.alert("Mise à jour impossible : "+r.error.message); return; } try{ if(oldPath) await sb.storage.from("ca-documents").remove([oldPath]); }catch(e){} await loadDocs(); render(); })(); return; }
 });
 document.addEventListener("click", async e=>{
   const el=e.target.closest("[data-action]"); if(!el) return;
@@ -2529,7 +2555,7 @@ document.addEventListener("click", async e=>{
       if(mu.pieceFile){
         try{
           const safe=mu.pieceFile.name.replace(/[^a-zA-Z0-9._-]/g,"_"); piecePath=uid()+"-"+safe;
-          const up=await sb.storage.from("ca-documents").upload(piecePath, mu.pieceFile);
+          const up=await sb.storage.from("ca-documents").upload(piecePath, mu.pieceFile, {contentType:typeFichier(mu.pieceFile), upsert:false});
           if(up&&up.error) throw up.error;
           piece=mu.pieceFile.name;
         }catch(e){ S.mailFlash={type:"err",msg:"Échec de l'envoi de la pièce jointe. Réessayez ou retirez le fichier."}; render(); break; }
@@ -2572,9 +2598,9 @@ document.addEventListener("click", async e=>{
         try{
           const p=document.getElementById("mail_progress"); if(p) p.textContent="Envoi de la pièce jointe…";
           const safe=mu.pieceFile.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=uid()+"-"+safe;
-          const up=await sb.storage.from("ca-documents").upload(path, mu.pieceFile);
+          const up=await sb.storage.from("ca-documents").upload(path, mu.pieceFile, {contentType:typeFichier(mu.pieceFile), upsert:false});
           if(up && up.error){ throw up.error; }
-          const su=await sb.storage.from("ca-documents").createSignedUrl(path, 7776000);
+          const su=await sb.storage.from("ca-documents").createSignedUrl(path, 7776000, {download: mu.pieceFile.name||true});
           if(su && su.data && su.data.signedUrl){ lienPiece=su.data.signedUrl; nomPiece=mu.pieceFile.name; }
         }catch(e){ S.mailSending=false; S.mailFlash={type:"err",msg:"Échec de l'envoi de la pièce jointe. Réessayez ou retirez le fichier."}; render(); break; }
       }
@@ -2645,7 +2671,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       const txt=val("msg_txt").trim(), file=S.msgUI.file;
       if(!txt && !file) break;
       let path=null;
-      if(file){ const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,"_"); path=uid()+"-"+safe; const up=await sb.storage.from("ca-messages").upload(path,file); if(up&&up.error){ if(window.alert)window.alert("Échec de la pièce jointe : "+up.error.message); break; } }
+      if(file){ const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,"_"); path=uid()+"-"+safe; const up=await sb.storage.from("ca-messages").upload(path,file,{contentType:typeFichier(file), upsert:false}); if(up&&up.error){ if(window.alert)window.alert("Échec de la pièce jointe : "+up.error.message); break; } }
       const ins=await sb.from("ca_messages").insert({ from_id:S.session.id, to_id:S.msgUI.sel, texte:txt, fichier:path });
       if(ins&&ins.error){ if(window.alert)window.alert("Message non envoyé : "+ins.error.message); break; }
       S.msgUI.draft=""; S.msgUI.file=null;
@@ -2653,9 +2679,10 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
     }
     case "open-att": {
       const path=el.dataset.path; if(!path||!sb) break;
-      const {data,error}=await sb.storage.from("ca-messages").createSignedUrl(path,3600);
+      const nomF=el.dataset.nom||path.substring(path.indexOf("-")+1);
+      const {data,error}=await sb.storage.from("ca-messages").createSignedUrl(path,3600,{download:nomF||true});
       if(error||!data){ if(window.alert)window.alert("Impossible d'ouvrir la pièce jointe."); break; }
-      window.open(data.signedUrl,"_blank"); break;
+      ouvrirFichier(data.signedUrl, nomF); break;
     }
     case "reset-pwd": {
       if(!(S.session&&S.session.role==="owner")||!sb) break;
@@ -3114,16 +3141,17 @@ ${sections||"<p>Aucun retour.</p>"}
       if(fEl&&fEl.files&&fEl.files.length){
         for(const f of fEl.files){
           const safe=f.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=uid()+"-"+safe;
-          const up=await sb.storage.from("ca-documents").upload(path,f);
+          const up=await sb.storage.from("ca-documents").upload(path,f,{contentType:typeFichier(f), upsert:false});
           if(up&&up.error){ if(window.alert) window.alert("Échec du document « "+f.name+" » : "+up.error.message); continue; }
           vdocs.push({name:f.name,path:path});
         }
       }
       const {data,error}=await sb.from("ca_votes").insert({question:q,statut:"open",cree_par:S.session.id,docs:vdocs}).select().single(); if(error||!data) break; await sb.from("ca_vote_options").insert(opts.map(l=>({vote_id:data.id,label:l}))); await loadVotes(); { const vn=document.getElementById("v_notify"); if(vn&&vn.checked){ notifVoteCA(q); } } render(); break; }
     case "vpick": { if(!sb) break; const v=(S.votes||[]).find(x=>x.id===id); if(!v||v.statut!=="open") break; const r=await sb.from("ca_vote_ballots").upsert({vote_id:id,membre_id:S.session.id,option_id:el.dataset.opt,nom:me.sig},{onConflict:"vote_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadVotes(); render(); break; }
-    case "vdoc": { if(!sb) break; const {data,error}=await sb.storage.from("ca-documents").createSignedUrl(el.dataset.path,3600);
+    case "vdoc": { if(!sb) break; const nomVd=String(el.dataset.path||""); const nomVdc=nomVd.substring(nomVd.indexOf("-")+1);
+      const {data,error}=await sb.storage.from("ca-documents").createSignedUrl(el.dataset.path,3600,{download:nomVdc||true});
       if(error||!data){ if(window.alert) window.alert("Document introuvable."); break; }
-      window.open(data.signedUrl,"_blank","noopener"); break; }
+      ouvrirFichier(data.signedUrl, nomVdc); break; }
     case "vtoggle": { if(!sb) break; const v=(S.votes||[]).find(x=>x.id===id); if(!v) break; await sb.from("ca_votes").update({statut:v.statut==="open"?"closed":"open"}).eq("id",id); await loadVotes(); render(); break; }
     case "del-vote": if(!sb) break; await sb.from("ca_votes").delete().eq("id",id); await loadVotes(); render(); break;
     /* documents */
@@ -3138,7 +3166,7 @@ ${sections||"<p>Aucun retour.</p>"}
       derr("Envoi en cours…"); const el3=document.getElementById("d_err"); if(el3) el3.style.color="var(--ink-soft)";
       const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
       const path=uid()+"-"+safe;
-      const up=await sb.storage.from("ca-documents").upload(path, file);
+      const up=await sb.storage.from("ca-documents").upload(path, file, {contentType:typeFichier(file), upsert:false});
       if(up && up.error) return derr("Échec de l'envoi : "+up.error.message);
       const ins=await sb.from("ca_docs").insert({ titre:t, categorie:cat, chemin:path, cree_par:S.session.id });
       if(ins && ins.error) return derr("Fichier envoyé mais non enregistré : "+ins.error.message);
@@ -3148,9 +3176,10 @@ ${sections||"<p>Aucun retour.</p>"}
     }
     case "open-doc": {
       const d=(S.docs||[]).find(x=>x.id===id); if(!d) break;
-      const {data,error}=await sb.storage.from("ca-documents").createSignedUrl(d.chemin, 3600);
+      const chDoc=String(d.chemin||""); const nomDoc=chDoc.substring(chDoc.indexOf("-")+1);
+      const {data,error}=await sb.storage.from("ca-documents").createSignedUrl(d.chemin, 3600, {download:nomDoc||true});
       if(error||!data){ if(window.alert) window.alert("Impossible d'ouvrir le fichier."); break; }
-      window.open(data.signedUrl, "_blank"); break;
+      ouvrirFichier(data.signedUrl, nomDoc); break;
     }
     case "del-doc": {
       const d=(S.docs||[]).find(x=>x.id===id); if(!d) break;
