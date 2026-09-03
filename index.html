@@ -296,6 +296,7 @@ select.f{width:100%}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.3/dist/html2pdf.bundle.min.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -2250,19 +2251,59 @@ function tabAccueil(){
   </div>`;
 }
 
-/* ---- Document imprimable (PDF via le navigateur) ---- */
+/* ---- Génération de VRAIS fichiers PDF (téléchargement direct) ----
+   On réutilise la mise en page HTML de chaque document, rendue hors écran,
+   puis convertie en .pdf via html2pdf (jsPDF + html2canvas). */
+function chargerHtml2pdf(){
+  if(window.__h2pReady) return window.__h2pReady;
+  window.__h2pReady=new Promise((resolve,reject)=>{
+    if(window.html2pdf) return resolve(window.html2pdf);
+    let n=0; const attendre=()=>{ if(window.html2pdf) return resolve(window.html2pdf); if(n++>60) return charger(); setTimeout(attendre,100); };
+    const charger=()=>{ const s=document.createElement("script"); s.src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.3/dist/html2pdf.bundle.min.js"; s.onload=()=>resolve(window.html2pdf); s.onerror=()=>{ window.__h2pReady=null; reject(new Error("html2pdf")); }; document.head.appendChild(s); };
+    /* le script est déjà en <head defer> : on lui laisse le temps d'arriver, sinon on le (re)charge */
+    if(window.html2pdf) resolve(window.html2pdf); else attendre();
+  });
+  return window.__h2pReady;
+}
+/* nomFichier: "budgets-2026-05-01.pdf"  |  styleCSS: le contenu du <style> du document
+   (les règles "body{…}" sont automatiquement appliquées à la page)  |  corpsHTML: le contenu du <body> */
+async function telechargerPDF(nomFichier, styleCSS, corpsHTML, orientation){
+  let h2p;
+  try{ h2p=await chargerHtml2pdf(); }
+  catch(e){ if(window.alert) window.alert("Générateur PDF indisponible. Vérifiez votre connexion et réessayez."); return; }
+  const paysage = orientation==="landscape";
+  const css=String(styleCSS||"").replace(/(^|[^-\w.#])body\b/g,"$1.pdf-page");
+  const wrap=document.createElement("div");
+  wrap.setAttribute("aria-hidden","true");
+  wrap.style.cssText="position:fixed;left:-10000px;top:0;z-index:-1;background:#fff;width:"+(paysage?"1123px":"794px");
+  const antiCoupure="tr,li,.b,.k,section,.pt{page-break-inside:avoid}thead{display:table-header-group}";
+  wrap.innerHTML="<style>"+css+"\n"+antiCoupure+"</style><div class=\"pdf-page\" style=\"max-width:none;width:auto;margin:0;padding:28px 30px;box-sizing:border-box\">"+corpsHTML+"</div>";
+  document.body.appendChild(wrap);
+  const cible=wrap.querySelector(".pdf-page");
+  const opt={
+    margin:[8,8,10,8],
+    filename:nomFichier||("document-"+todayISO()+".pdf"),
+    image:{type:"jpeg",quality:0.98},
+    html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff",windowWidth:wrap.offsetWidth},
+    jsPDF:{unit:"mm",format:"a4",orientation:paysage?"landscape":"portrait"},
+    pagebreak:{mode:["css","legacy"]}
+  };
+  try{ await h2p().set(opt).from(cible).save(); }
+  catch(e){ if(window.alert) window.alert("La génération du PDF a échoué. Réessayez."); }
+  finally{ wrap.remove(); }
+}
+function nomPDF(titre){ return String(titre||"document").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)+"-"+todayISO()+".pdf"; }
+
+/* ---- Document imprimable → vrai PDF (utilisé par les budgets) ---- */
 function ouvrirDocImprimable(titre, corpsHTML){
-  const doc=`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>${esc(titre)}</title>
-<style>body{font-family:Georgia,serif;max-width:820px;margin:40px auto;padding:0 24px;color:#1b2338;line-height:1.55}
+  const css=`body{font-family:Georgia,serif;color:#1b2338;line-height:1.55}
 h1{font-size:24px;margin:0 0 2px}.d{color:#6a7182;font-size:13px;margin:0 0 20px}
 h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bottom:4px}
 table{width:100%;border-collapse:collapse;margin:8px 0 16px;font-size:13px}
 th,td{border:1px solid #d8dae2;padding:7px 9px;text-align:left;vertical-align:top}
-th{background:#f3f2f8}
-@media print{.noprint{display:none}}.noprint{background:#1b2338;color:#fff;border:none;padding:10px 16px;border-radius:8px;font:inherit;cursor:pointer;margin-bottom:20px}</style></head>
-<body><button class="noprint" onclick="window.print()">Imprimer / Enregistrer en PDF</button>${corpsHTML}
-<p class="d" style="margin-top:30px">Document g\u00e9n\u00e9r\u00e9 automatiquement.</p></body></html>`;
-  const w=window.open("","_blank"); if(w){ w.document.open(); w.document.write(doc); w.document.close(); } else if(window.alert){ window.alert("Autorisez les fen\u00eatres pop-up pour g\u00e9n\u00e9rer le PDF."); }
+th{background:#f3f2f8}`;
+  const corps=corpsHTML+`<p class="d" style="margin-top:30px">Document g\u00e9n\u00e9r\u00e9 automatiquement.</p>`;
+  telechargerPDF(nomPDF(titre), css, corps);
 }
 function genererBudgetsPDF(){
   const B=S.budgets||[];
@@ -2575,21 +2616,18 @@ document.addEventListener("click", async e=>{
       const nomDeCle=k=>{ const a=(S.admins||[]).find(x=>x.id===k); if(a) return ((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||k; const p=PERSONNES.find(x=>x.id===k); return p?(p.prenom+" "+p.nom):k; };
       const names=v=>Object.keys(pres).filter(k=>pres[k]===v).map(k=>esc(nomDeCle(k)));
       const pts=(m.ordre||[]).map((p,i)=>`<div class="pt"><h3>${i+1}. ${esc(p.texte)} ${p.fait?"<span class='ok'>✓ traité</span>":""}</h3>${p.par?`<p class='muted' style='font-size:12px;margin:0 0 4px'>Proposé par ${esc(p.par)}</p>`:""}${p.notes?`<p>${esc(p.notes)}</p>`:"<p class='muted'>—</p>"}</div>`).join("");
-      const doc=`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>PV — ${esc(m.titre)}</title>
-<style>body{font-family:Georgia,serif;max-width:780px;margin:40px auto;padding:0 24px;color:#1b2338;line-height:1.55}
+      const cssPV=`body{font-family:Georgia,serif;color:#1b2338;line-height:1.55}
 h1{font-size:24px;margin:0 0 2px}.d{color:#6a7182;font-size:13px;margin:0 0 20px}
 h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bottom:4px}
-.pt h3{font-size:14px;margin:12px 0 2px}.pt p{margin:0 0 6px}.muted{color:#9aa1ad}.ok{color:#3c7a58;font-size:12px}
-@media print{.noprint{display:none}}.noprint{background:#1b2338;color:#fff;border:none;padding:10px 16px;border-radius:8px;font:inherit;cursor:pointer;margin-bottom:20px}</style></head>
-<body><button class="noprint" onclick="window.print()">Imprimer / Enregistrer en PDF</button>
-<h1>Procès-verbal — ${esc(m.titre)}</h1><p class="d">${m.date?fmtDateLong(m.date):""}</p>
+.pt h3{font-size:14px;margin:12px 0 2px}.pt p{margin:0 0 6px}.muted{color:#9aa1ad}.ok{color:#3c7a58;font-size:12px}`;
+      const corpsPV=`<h1>Procès-verbal — ${esc(m.titre)}</h1><p class="d">${m.date?fmtDateLong(m.date):""}</p>
 <h2>Présences</h2>
 <p><b>Présents :</b> ${names('present').join(", ")||"—"}</p>
 <p><b>Excusés :</b> ${names('excuse').join(", ")||"—"}</p>
 <p><b>Absents :</b> ${names('absent').join(", ")||"—"}</p>
 <h2>Ordre du jour</h2>${pts||"<p class='muted'>—</p>"}
-<p class="d" style="margin-top:30px">Document généré automatiquement.</p></body></html>`;
-      const w=window.open("","_blank"); if(w){ w.document.open(); w.document.write(doc); w.document.close(); }
+<p class="d" style="margin-top:30px">Document généré automatiquement.</p>`;
+      telechargerPDF(nomPDF("PV "+(m.titre||"")), cssPV, corpsPV);
       break;
     }
     case "msg-open": S.msgUI={sel:el.dataset.id,draft:"",file:null}; if(sb){ await loadMessages(); } render(); break;
@@ -2819,19 +2857,16 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
         const res=(v.options||[]).map(o=>`${esc(o.label)} : ${(v.voters||[]).filter(x=>x.optionId===o.id).length}`).join(" · ");
         return `<div class="b"><h3>${esc(v.question)}</h3><p class="s">${res} — majorité simple ${seuil}/${n}</p></div>`;
       }).join("");
-      const html=`<html><head><meta charset="utf-8"><title>Archive de mandat ${an}</title>
-        <style>body{font-family:Georgia,serif;max-width:820px;margin:30px auto;padding:0 20px;color:#1a1a2e}
+      const cssArch=`body{font-family:Georgia,serif;color:#1a1a2e}
         h1{border-bottom:2px solid #241c46;padding-bottom:8px}h2{margin-top:34px;border-bottom:1px solid #ccc}
-        .b{border:1px solid #ddd;border-radius:9px;padding:14px;margin:14px 0}.s{color:#666;font-size:13px;margin:0 0 8px}
-        @media print{.np{display:none}}</style></head><body>
-        <h1>Archive de mandat — ${an}</h1>
+        .b{border:1px solid #ddd;border-radius:9px;padding:14px;margin:14px 0}.s{color:#666;font-size:13px;margin:0 0 8px}`;
+      const corpsArch=`<h1>Archive de mandat — ${an}</h1>
         <p>${esc(S.meta.nom||"Bureau étudiant")} — document de passation, arrêté le ${esc(fmtQuand(new Date().toISOString()))}.</p>
         <h2>Composition</h2><ul>${(S.admins||[]).filter(a=>a.statut==="actif").map(a=>`<li>${esc(((a.prenom||"")+" "+(a.nom||"")).trim())}${a.fonction?" — "+esc(a.fonction):""}</li>`).join("")}</ul>
         <h2>Réunions et procès-verbaux</h2>${blocsR||"<p>Aucune réunion.</p>"}
         <h2>Votes</h2>${blocsV||"<p>Aucun vote.</p>"}
-        ${S.meta.bilanPublie?`<h2>Synthèse des bilans moraux</h2><p style="white-space:pre-wrap">${esc(S.meta.bilanPublie)}</p>`:""}
-        <p class="np"><button onclick="window.print()">Enregistrer en PDF</button></p></body></html>`;
-      const w=window.open("","_blank"); if(w){ w.document.write(html); w.document.close(); }
+        ${S.meta.bilanPublie?`<h2>Synthèse des bilans moraux</h2><p style="white-space:pre-wrap">${esc(S.meta.bilanPublie)}</p>`:""}`;
+      telechargerPDF(nomPDF("archive-mandat-"+an), cssArch, corpsArch);
       logAct("Archive de mandat générée");
       break; }
     case "reu-pv-approuver": {
@@ -2862,15 +2897,12 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
           <p style="margin:0 0 10px;font-size:13px;font-weight:bold;color:${pvApprouve(m)?"#2d6a4f":"#a33"}">${pvApprouve(m)?("PV approuv\u00e9"+(m.pvApprouveNote?" \u2014 "+esc(m.pvApprouveNote):"")+(m.pvApprouveLe?" ("+esc(fmtQuand(m.pvApprouveLe))+")":"")):"PROJET \u2014 non approuv\u00e9"}</p>
           <ol>${pts}</ol></div>`;
       }).join("");
-      const html=`<html><head><meta charset="utf-8"><title>Registre des PV</title>
-        <style>body{font-family:Georgia,serif;max-width:820px;margin:30px auto;padding:0 20px;color:#1a1a2e}
-        h1{border-bottom:2px solid #241c46;padding-bottom:8px}ol{padding-left:20px}li{margin:7px 0}
-        @media print{.np{display:none}}</style></head><body>
-        <h1>Registre des proc\u00e8s-verbaux</h1>
+      const cssReg=`body{font-family:Georgia,serif;color:#1a1a2e}
+        h1{border-bottom:2px solid #241c46;padding-bottom:8px}ol{padding-left:20px}li{margin:7px 0}`;
+      const corpsReg=`<h1>Registre des proc\u00e8s-verbaux</h1>
         <p>${esc(S.meta.nom||"Bureau \u00e9tudiant")} \u2014 ${R.length} PV</p>
-        ${blocs||"<p>Aucun PV enregistr\u00e9.</p>"}
-        <p class="np"><button onclick="window.print()">Enregistrer en PDF</button></p></body></html>`;
-      const w=window.open("","_blank"); if(w){ w.document.write(html); w.document.close(); } break; }
+        ${blocs||"<p>Aucun PV enregistr\u00e9.</p>"}`;
+      telechargerPDF(nomPDF("registre-pv"), cssReg, corpsReg); break; }
     case "rapport-activite": { if(!peutVoirRapports()) break;
       const R=(S.reunions||[]).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
       const an=new Date().getFullYear();
@@ -2879,18 +2911,16 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       const votesClos=(S.votes||[]).filter(v=>v.statut!=="open").length;
       const taches=(S.taches||[]).length, tfait=(S.taches||[]).filter(t=>t.statut==="done").length;
       const lignes=R.map(m=>`<tr><td>${m.date?esc(fmtDateLong(m.date)):"—"}</td><td>${esc(m.titre)}</td><td style="text-align:center">${(m.ordre||[]).length}</td><td style="text-align:center">${(m.ordre||[]).filter(p=>p.fait).length}</td><td style="text-align:center">${Object.values(m.presences||{}).filter(v=>v==="present").length}</td></tr>`).join("");
-      const html=`<html><head><meta charset="utf-8"><title>Rapport d'activit\u00e9</title>
-        <style>body{font-family:Georgia,serif;max-width:800px;margin:30px auto;padding:0 20px;color:#1a1a2e}
+      const cssRap=`body{font-family:Georgia,serif;color:#1a1a2e}
         h1{border-bottom:2px solid #241c46;padding-bottom:8px}table{width:100%;border-collapse:collapse;margin:14px 0}
         th,td{border:1px solid #ddd;padding:7px 9px;font-size:14px}th{background:#f4f2fa;text-align:left}
         .kpis{display:flex;gap:14px;flex-wrap:wrap;margin:18px 0}.k{flex:1;min-width:120px;border:1px solid #ddd;border-radius:9px;padding:12px;text-align:center}
-        .k b{display:block;font-size:24px}@media print{.np{display:none}}</style></head><body>
-        <h1>Rapport d'activit\u00e9 ${an}</h1>
+        .k b{display:block;font-size:24px}`;
+      const corpsRap=`<h1>Rapport d'activit\u00e9 ${an}</h1>
         <p>${esc(S.meta.nom||"Bureau \u00e9tudiant")} \u2014 \u00e9dit\u00e9 le ${esc(fmtDateLong(new Date().toISOString().slice(0,10)))}</p>
         <div class="kpis"><div class="k"><b>${R.length}</b>r\u00e9unions</div><div class="k"><b>${pts}</b>points trait\u00e9s au total</div><div class="k"><b>${dec}</b>d\u00e9cisions</div><div class="k"><b>${votesClos}</b>votes clos</div><div class="k"><b>${tfait}/${taches}</b>t\u00e2ches faites</div></div>
-        <h2>R\u00e9unions</h2><table><tr><th>Date</th><th>Intitul\u00e9</th><th>Points</th><th>Trait\u00e9s</th><th>Pr\u00e9sents</th></tr>${lignes||'<tr><td colspan="5">Aucune r\u00e9union</td></tr>'}</table>
-        <p class="np"><button onclick="window.print()">Enregistrer en PDF</button></p></body></html>`;
-      const w=window.open("","_blank"); if(w){ w.document.write(html); w.document.close(); } break; }
+        <h2>R\u00e9unions</h2><table><tr><th>Date</th><th>Intitul\u00e9</th><th>Points</th><th>Trait\u00e9s</th><th>Pr\u00e9sents</th></tr>${lignes||'<tr><td colspan="5">Aucune r\u00e9union</td></tr>'}</table>`;
+      telechargerPDF(nomPDF("rapport-activite-"+an), cssRap, corpsRap); break; }
     case "suivi-presence": { if(!peutVoirRapports()) break;
       const R=(S.reunions||[]).filter(m=>Object.keys(m.presences||{}).length);
       const membres=(S.admins||[]).filter(a=>a.statut==="actif");
@@ -2901,16 +2931,13 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
         return {nom:((a.prenom||"")+" "+(a.nom||"")).trim()||a.email, fonction:a.fonction||"", p:p,ab:ab,ex:ex,tx:tx};
       }).sort((x,y)=>x.tx-y.tx);
       const lignes=rows.map(r=>`<tr${r.tx<50?' style="background:#fdf2f2"':''}><td>${esc(r.nom)}</td><td>${esc(r.fonction)}</td><td style="text-align:center">${r.p}</td><td style="text-align:center">${r.ab}</td><td style="text-align:center">${r.ex}</td><td style="text-align:center"><b>${r.tx}%</b></td></tr>`).join("");
-      const html=`<html><head><meta charset="utf-8"><title>Suivi de pr\u00e9sence</title>
-        <style>body{font-family:Georgia,serif;max-width:760px;margin:30px auto;padding:0 20px;color:#1a1a2e}
+      const cssSuivi=`body{font-family:Georgia,serif;color:#1a1a2e}
         h1{border-bottom:2px solid #241c46;padding-bottom:8px}table{width:100%;border-collapse:collapse;margin:14px 0}
-        th,td{border:1px solid #ddd;padding:7px 9px;font-size:14px}th{background:#f4f2fa;text-align:left}
-        @media print{.np{display:none}}</style></head><body>
-        <h1>Suivi de pr\u00e9sence</h1>
+        th,td{border:1px solid #ddd;padding:7px 9px;font-size:14px}th{background:#f4f2fa;text-align:left}`;
+      const corpsSuivi=`<h1>Suivi de pr\u00e9sence</h1>
         <p>Sur ${R.length} r\u00e9union(s) point\u00e9e(s). Les lignes ros\u00e9es signalent moins de 50 % de pr\u00e9sence.</p>
-        <table><tr><th>Membre</th><th>Fonction</th><th>Pr\u00e9sent</th><th>Absent</th><th>Excus\u00e9</th><th>Taux</th></tr>${lignes||'<tr><td colspan="6">Aucun pointage</td></tr>'}</table>
-        <p class="np"><button onclick="window.print()">Enregistrer en PDF</button></p></body></html>`;
-      const w=window.open("","_blank"); if(w){ w.document.write(html); w.document.close(); } break; }
+        <table><tr><th>Membre</th><th>Fonction</th><th>Pr\u00e9sent</th><th>Absent</th><th>Excus\u00e9</th><th>Taux</th></tr>${lignes||'<tr><td colspan="6">Aucun pointage</td></tr>'}</table>`;
+      telechargerPDF(nomPDF("suivi-presence"), cssSuivi, corpsSuivi); break; }
     case "save-secr-cfg": { if(!estSecretaire()||!sb) break;
       const h=parseInt(val("cfg_cloture")||"0",10)||0;
       const mo=(val("cfg_modele")||"").split("\n").map(x=>x.trim()).filter(Boolean);
@@ -2975,21 +3002,17 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
           <h3 style="color:#3c7a58">Points positifs</h3><ul>${pos.map(li).join("")||"<li>—</li>"}</ul>
           <h3 style="color:#a6323f">Points à améliorer</h3><ul>${am.map(li).join("")||"<li>—</li>"}</ul></section>`;
       }).join("");
-      const doc=`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Bilans moraux — ${esc(S.meta.nom)}</title>
-<style>body{font-family:Georgia,serif;max-width:780px;margin:40px auto;padding:0 24px;color:#1b2338;line-height:1.55}
+      const cssBil=`body{font-family:Georgia,serif;color:#1b2338;line-height:1.55}
 h1{font-size:26px;margin:0 0 2px}.d{color:#6a7182;font-size:13px;margin:0 0 24px}
 section{margin:0 0 26px;page-break-inside:avoid}
 h2{font-size:19px;margin:22px 0 4px;border-bottom:2px solid #e8b04b;padding-bottom:4px}
 h2 .f{font-size:13px;color:#6a7182;font-weight:normal}
 h3{font-size:14px;margin:12px 0 4px}h3+ul{margin-top:0}li{margin:0 0 6px}
-.n{color:#6a7182;font-size:12px;margin-top:30px}
-@media print{.noprint{display:none}}
-.noprint{background:#1b2338;color:#fff;border:none;padding:10px 16px;border-radius:8px;font:inherit;cursor:pointer;margin-bottom:20px}</style></head>
-<body><button class="noprint" onclick="window.print()">Imprimer / Enregistrer en PDF</button>
-<h1>Bilans moraux — ${esc(S.meta.nom)}</h1><p class="d">${d} · retours anonymes</p>
+.n{color:#6a7182;font-size:12px;margin-top:30px}`;
+      const corpsBil=`<h1>Bilans moraux — ${esc(S.meta.nom)}</h1><p class="d">${d} · retours anonymes</p>
 ${sections||"<p>Aucun retour.</p>"}
-<p class="n">Document généré automatiquement · les auteurs des commentaires sont anonymes.</p></body></html>`;
-      const w=window.open("","_blank"); if(w){ w.document.open(); w.document.write(doc); w.document.close(); }
+<p class="n">Document généré automatiquement · les auteurs des commentaires sont anonymes.</p>`;
+      telechargerPDF(nomPDF("bilans-moraux"), cssBil, corpsBil);
       break;
     }
     case "go-admin": { if(S.session&&S.session.role==="owner"){ S.view="ca"; S.tab="admin"; } render(); break; }
