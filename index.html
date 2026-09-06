@@ -439,6 +439,10 @@ const CA_SEUIL_RELANCE = 3;
 const CA_LIEN_DUREE = 2592000;
 /* Rappels de vote / de présence : la liste des retardataires est calculée côté serveur. */
 const CA_RAPPEL_FN = SB_URL + "/functions/v1/rappels";
+/* Previent l'auteur d'un signalement qu'on lui a repondu. Cote serveur, parce
+   que son identite n'est plus lisible depuis le navigateur : la fonction
+   resout l'adresse en interne et ne renvoie qu'un compteur. */
+const CA_NOTIF_AUTEUR_FN = SB_URL + "/functions/v1/notifier-auteur";
 /* En-têtes d'envoi : on transmet le JETON de l'utilisateur connecté (et non la seule clé publique),
    pour que la fonction serveur puisse exiger une personne authentifiée. */
 async function caSendHeaders(){
@@ -616,6 +620,16 @@ function destinatairesEvenements(){
   const set=new Set(destinatairesCA());
   cooptesActifs().forEach(a=>{ if(a.email) set.add(String(a.email).toLowerCase().trim()); });
   return [...set].filter(Boolean).filter(e=>!estDesabonne(e));
+}
+/* Personnes designees pour la mediation. On ne se fie plus a la fonction
+   declaree : depuis le 06/09/2026, ce droit vient d'une liste que le
+   proprietaire coche, et le serveur applique la meme regle. */
+function destinatairesMediation(){
+  const ids=directionExtra();
+  return (S.admins||[])
+    .filter(a=>a.statut==="actif" && a.email && ids.indexOf(a.id)>=0)
+    .map(a=>String(a.email).toLowerCase().trim())
+    .filter(e=>!estDesabonne(e));
 }
 function blocInvitationCA(){ const url=caAppUrl();
   return `<div style="background:#f5f4fb;border:1px solid #e2e0ef;border-radius:8px;padding:14px;margin:18px 0;font-size:13px;color:#3a3a5a"><b>Pas encore de compte sur l'espace CA ?</b><br>Toutes nos communications (annonces, documents, votes) passent par l'espace CA. Pour y accéder :<br>&bull; <b>Créez un compte</b> ici : <a href="${url}">${url}</a><br>&bull; Si vous avez déjà un compte pour la <b>Caisse</b>, connectez-vous avec les mêmes identifiants et <b>finalisez votre profil CA</b>.</div>`;
@@ -1403,9 +1417,13 @@ function viewDash(){
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   /* Les cooptes n'ont acces qu'a leur espace de contribution et aux annonces. */
-  if(estCoopte() && ["agenda","avis","rgpd"].indexOf(S.tab)<0) S.tab="agenda";
+  /* Les coopte·es ont acces a la mediation : c'est meme la raison pour laquelle
+     leur espace existe. Ils y deposent un signalement et suivent leur fil,
+     comme un membre ; la base l'autorisait deja (conf_ins n'exige que
+     membre_id = auth.uid()), seule l'app le leur refusait. */
+  if(estCoopte() && ["agenda","avis","conflits","rgpd"].indexOf(S.tab)<0) S.tab="agenda";
   const tabs = estCoopte()
-    ? [["agenda","\ud83d\udcc5","Agenda"],["avis","\ud83d\udca1","Id\u00e9es & avis"],["rgpd","12","Mes donn\u00e9es"]]
+    ? [["agenda","\ud83d\udcc5","Agenda"],["avis","\ud83d\udca1","Id\u00e9es & avis"],["conflits","\ud83e\udd1d","M\u00e9diation"],["rgpd","12","Mes donn\u00e9es"]]
     : [...TABS,["avis","\ud83d\udca1","Id\u00e9es & avis"]];
   /* L'espace admin n'est plus une porte visible depuis l'accueil : c'est un onglet
      qui n'existe que pour le proprietaire, une fois connecte. */
@@ -3094,12 +3112,15 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       const {error}=await sb.from("ca_conflits").insert({fil_id:fil,membre_id:me.id,auteur:anon?null:me.sig,anonyme:anon,de_direction:false,texte:t});
       if(error){ if(window.alert) window.alert("Envoi impossible : "+error.message); break; }
       await loadConflits(); render();
-      const dests=(S.admins||[]).filter(a=>a.statut==="actif"&&a.email&&/^(vice[- ]?)?pr\u00e9sident|^(vice[- ]?)?president/i.test(a.fonction||"")).map(a=>a.email);
+      const dests=destinatairesMediation();
       if(dests.length){
         const corps=`<h2 style="margin:0 0 10px">Nouveau signalement (m\u00e9diation)</h2><p>Un membre a signal\u00e9 une situation${anon?" de mani\u00e8re <b>anonyme</b>":""}.</p><p>Le contenu est consultable uniquement dans l'espace CA, onglet M\u00e9diation.</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
         envoyerNotifCAListe(dests,"Nouveau signalement \u2014 m\u00e9diation",corps);
       }
-      if(window.alert) window.alert("Message envoy\u00e9 \u00e0 la pr\u00e9sidence."); break; }
+      modaleInfo(dests.length
+        ? "Votre signalement a \u00e9t\u00e9 enregistr\u00e9. La personne charg\u00e9e de la m\u00e9diation vient d'\u00eatre pr\u00e9venue par e-mail."
+        : "Votre signalement a \u00e9t\u00e9 enregistr\u00e9, mais personne n'est actuellement d\u00e9sign\u00e9 pour la m\u00e9diation : pr\u00e9venez le bureau pour qu'il le soit.",
+        "Signalement envoy\u00e9"); break; }
     case "cf-repondre": { if(!sb||!estDirection()) break;
       const fil=el.dataset.fil; const t=(val("cf_rep_"+fil)||"").trim(); if(!t) break;
       const prem=(S.conflits||[]).find(x=>x.fil_id===fil);
@@ -3108,12 +3129,36 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
          d'origine, qui porte deja son identifiant. */
       const rr=await sb.from("ca_conflits").insert({fil_id:fil,auteur:me.sig,anonyme:false,de_direction:true,texte:t});
       if(rr&&rr.error){ modaleInfo("Réponse non enregistrée : "+rr.error.message); break; }
-      await loadConflits(); render(); break; }
+      await loadConflits(); render();
+      /* L'echec de la notification ne doit pas faire croire que la reponse
+         n'est pas enregistree : elle l'est. On le dit, sans plus. */
+      let prevenu=false;
+      try{
+        const h=await caSendHeaders();
+        const rn=await fetch(CA_NOTIF_AUTEUR_FN,{method:"POST",headers:h,body:JSON.stringify({fil:fil})});
+        const j=await rn.json().catch(()=>null);
+        prevenu=!!(j&&j.envoye);
+      }catch(e){}
+      modaleInfo(prevenu
+        ? "R\u00e9ponse enregistr\u00e9e. L'auteur du signalement a \u00e9t\u00e9 pr\u00e9venu par e-mail."
+        : "R\u00e9ponse enregistr\u00e9e. L'auteur n'a pas pu \u00eatre pr\u00e9venu par e-mail \u2014 il la verra en rouvrant l'app.",
+        "M\u00e9diation");
+      break; }
     case "cf-suite": { if(!sb||!me) break;
       const fil=el.dataset.fil; const t=(val("cf_suite_"+fil)||"").trim(); if(!t) break;
       const prem=(S.conflits||[]).find(x=>x.fil_id===fil);
-      await sb.from("ca_conflits").insert({fil_id:fil,membre_id:me.id,auteur:(prem&&prem.anonyme)?null:me.sig,anonyme:!!(prem&&prem.anonyme),de_direction:false,texte:t});
-      await loadConflits(); render(); break; }
+      const rs=await sb.from("ca_conflits").insert({fil_id:fil,membre_id:me.id,auteur:(prem&&prem.anonyme)?null:me.sig,anonyme:!!(prem&&prem.anonyme),de_direction:false,texte:t});
+      if(rs&&rs.error){ modaleInfo("Message non enregistr\u00e9 : "+rs.error.message); break; }
+      await loadConflits(); render();
+      /* Sans cet envoi, un message ajout\u00e9 \u00e0 un fil existant restait invisible
+         tant que la personne charg\u00e9e de la m\u00e9diation ne rouvrait pas l'app. */
+      { const d=destinatairesMediation();
+        if(d.length) envoyerNotifCAListe(d, "M\u00e9diation \u2014 nouveau message",
+          '<h2 style="margin:0 0 10px">Nouveau message dans un signalement</h2>'
+          +"<p>Une personne a ajout\u00e9 un message \u00e0 un \u00e9change de m\u00e9diation en cours.</p>"
+          +"<p>Le contenu est consultable uniquement dans l'espace CA, onglet M\u00e9diation.</p>"
+          +'<p><a href="'+caAppUrl()+'" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l\'espace CA</a></p>'); }
+      break; }
     case "guide-ok": { try{ localStorage.setItem("ca:guide:"+el.dataset.guide,"1"); }catch(e){} render(); break; }
     case "rgpd-export-moi": {
       const moi=S.session; if(!moi) break;
