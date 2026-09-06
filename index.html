@@ -2256,7 +2256,13 @@ function tabMail(){
   const membres=(S.admins||[]).filter(a=>a.email && a.statut==="actif")
     .map(a=>({label:((a.prenom||"")+" "+(a.nom||"")).trim()||a.email, email:a.email}));
   const contacts=(S.contacts||[]).filter(c=>c.email).map(c=>({label:c.nom||c.email, email:c.email}));
-  const diffusion=(S.mailing||[]).filter(x=>x.email).map(x=>({label:x.email, email:x.email}));
+  /* Comme les envois automatiques : une adresse deja rattachee a un compte
+     (adresse de connexion ou adresse ULB) n\'est pas reproposee ici, sinon
+     « Tous les membres » puis « Liste de diffusion » ecrit deux fois a la
+     meme personne. */
+  const comptes=adressesDesComptes();
+  const diffusion=(S.mailing||[]).filter(x=>x.email && !comptes.has(String(x.email).toLowerCase().trim()))
+    .map(x=>({label:x.email, email:x.email}));
   const chip=(o)=>`<button class="mail-chip" data-action="mail-chip" data-email="${esc(o.email)}" title="${esc(o.email)}">+ ${esc(o.label)}</button>`;
   const grp=(titre,arr,allEmails)=> arr.length? `<div class="mail-src">
       <div class="mail-src-h"><span>${titre} <span style="color:var(--slate);font-weight:400">(${arr.length})</span></span>${allEmails?`<button class="btn sm ghost" data-action="mail-chip" data-email="${esc(allEmails)}">Tout ajouter à ${cibleNom}</button>`:""}</div>
@@ -3522,7 +3528,25 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       S.meta.bilanPublie=""; S.meta.bilanPublieLe=null; S.meta.bilanEtat="ferme"; S.meta.bilanActif=false; S.bilanPubDraft=undefined;
       await loadBilans(); logAct("Bilans moraux réinitialisés"); render(); break; }
     case "add-mail": { if(!(S.session&&S.session.role==="owner")||!sb) break; const em=val("mail_new").trim().toLowerCase(); const merr=m=>{const x=document.getElementById("mail_err");if(x){x.textContent=m;x.style.display="block";}}; if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return merr("Adresse e-mail invalide."); const r=await sb.from("ca_mailing").insert({email:em}); if(r&&r.error){ return merr(/duplicate|unique/i.test(r.error.message)?"Cette adresse est déjà dans la liste.":r.error.message); } await loadMailing(); render(); break; }
-    case "del-mail": { if(!(S.session&&S.session.role==="owner")||!sb) break; await sb.from("ca_mailing").delete().eq("id",id); await loadMailing(); render(); break; }
+    case "del-mail": { if(!(S.session&&S.session.role==="owner")||!sb) break;
+      const av=(S.mailing||[]).find(m=>m.id===id);
+      const adr=(av&&av.email)||"cette adresse";
+      if(!(await modaleConfirm("Retirer "+adr+" de la liste de diffusion ?\n\nElle ne recevra plus les annonces, les documents ni les votes."))) break;
+      const rm=await sb.from("ca_mailing").delete().eq("id",id).select();
+      if(rm&&rm.error){ modaleInfo("Suppression impossible : "+rm.error.message); break; }
+      /* Supabase ne l\'eve pas d\'exception quand la RLS ecarte la ligne : sans ce
+         controle, l\'adresse disparaissait de l\'ecran et revenait au rechargement. */
+      if(!rm||!rm.data||!rm.data.length){ modaleInfo("Suppression refus\u00e9e par le serveur : l\'adresse est toujours dans la liste."); await loadMailing(); render(); break; }
+      logAct("Adresse retir\u00e9e de la liste de diffusion"+(av&&av.email?" : "+av.email:""));
+      await loadMailing(); render();
+      /* Confirmation apres coup : la ligne a bien ete renvoyee par le serveur,
+         donc la suppression est reelle et non un simple effet d'affichage. */
+      const reste=(S.mailing||[]).some(m=>m.id===id);
+      modaleInfo(reste
+        ? "Le serveur a accept\u00e9 la suppression, mais l\'adresse est encore dans la liste. Rechargez la page."
+        : "\u2713 "+adr+" a \u00e9t\u00e9 retir\u00e9e de la liste de diffusion.",
+        "Suppression confirm\u00e9e");
+      break; }
     case "reset-data": {
       if(!(S.session&&S.session.role==="owner")||!sb) break;
       const rerr=m=>{ const e=document.getElementById("reset_err"); if(e){e.textContent=m;e.style.display="block";} };
