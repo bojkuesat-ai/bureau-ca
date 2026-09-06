@@ -322,13 +322,22 @@ select.f{width:100%}
    l'utilisateur devant un ecran mort. */
 window.addEventListener("DOMContentLoaded", function(){
   if(window.supabase && window.supabase.createClient) return;
-  document.body.innerHTML='<div style="max-width:520px;margin:12vh auto;padding:28px;'
-    +'font-family:system-ui,sans-serif;text-align:center;color:#1a1a2e">'
-    +'<h1 style="font-size:20px">Le serveur n\'a pas pu etre charge</h1>'
-    +'<p style="font-size:14px;line-height:1.6">Le script Supabase n\'a pas passe le controle '
-    +'d\'integrite, ou le reseau l\'a bloque. L\'application ne peut pas demarrer.</p>'
-    +'<p style="font-size:13px;color:#666">Signalez-le au tresorier : le controle d\'integrite '
-    +'ajoute le 06/09/2026 doit etre verifie.</p></div>';
+  /* Le script n'est pas la. Deux causes tres differentes :
+     - hors ligne ou reseau bloque : l'app doit continuer de s'afficher, comme
+       avant, avec ses pages qui ne demandent pas le serveur ;
+     - en ligne : c'est le controle d'integrite qui a refuse le fichier.
+     Dans les deux cas on AJOUTE un bandeau, on ne remplace jamais la page :
+     effacer le corps detruisait #root et rendait l'app inutilisable. */
+  var horsLigne = (typeof navigator!=="undefined" && navigator.onLine===false);
+  var b=document.createElement("div");
+  b.setAttribute("role","alert");
+  b.style.cssText="position:sticky;top:0;z-index:9999;padding:10px 14px;font-family:system-ui,sans-serif;"
+    +"font-size:13px;line-height:1.5;text-align:center;background:#3b2a12;color:#f4e6c8;border-bottom:1px solid #6b5320";
+  b.innerHTML = horsLigne
+    ? "<b>Hors ligne.</b> Vous pouvez consulter cette page, mais rien ne peut etre charge ni enregistre tant que la connexion n'est pas revenue."
+    : "<b>Le serveur n'a pas pu etre charge.</b> Le script Supabase n'a pas passe le controle d'integrite ajoute le 06/09/2026, ou il a ete bloque. Connexion et enregistrement sont indisponibles \u2014 signalez-le au tresorier.";
+  if(document.body.firstChild) document.body.insertBefore(b, document.body.firstChild);
+  else document.body.appendChild(b);
 });
 </script>
 </head>
@@ -1036,18 +1045,25 @@ async function traiterRecapIdees(){
     if(ins&&ins.error) return;                            // deja envoye cette semaine
     if(!ins||!ins.data||!ins.data.length) return;
   }catch(e){ return; }
-  const n=(id,v)=>(S.avisVotes||[]).filter(x=>x.avisId===id&&x.valeur===v).length;
+  /* Meme decompte que dans l'app : seules les voix des membres du conseil
+     comptent, et le seuil est la majorite simple sur l'effectif. */
+  const n=(id,v)=>voixMembres(id,v);
+  const seuil=seuilMajorite(), eff=effectifCA();
   const carte=x=>'<div style="border:1px solid #e2e0ef;border-radius:8px;padding:12px;margin:10px 0">'
     +'<b>'+caMailEsc(x.sujet||"Sans sujet")+'</b>'
-    +'<span style="color:#777;font-size:12px"> \u2014 '+caMailEsc(x.auteur||"")+'</span>'
+    +'<span style="color:#777;font-size:12px"> \u2014 '+caMailEsc(x.auteur||"")+(avisDeCoopte(x)?" (coopt\u00e9\u00b7e)":"")+'</span>'
+    +'<span style="float:right;font-size:12px;color:#777">'+caMailEsc(libelleStatutAvis(x.statut)[1])+'</span>'
     +'<p style="margin:6px 0 8px;font-size:13.5px;white-space:pre-wrap">'+caMailEsc(x.texte||"")+'</p>'
-    +'<p style="margin:0;font-size:13px;color:#444">Pour : <b>'+n(x.id,"pour")+'</b> \u00b7 Mitig\u00e9 : <b>'+n(x.id,"mitige")+'</b> \u00b7 Contre : <b>'+n(x.id,"contre")+'</b></p></div>';
+    +'<p style="margin:0;font-size:13px;color:#444">Pour : <b>'+n(x.id,"pour")+'</b> \u00b7 Mitig\u00e9 : <b>'+n(x.id,"mitige")+'</b> \u00b7 Contre : <b>'+n(x.id,"contre")+'</b>'
+    +(voixCooptes(x.id)?' <span style="color:#777">\u00b7 '+voixCooptes(x.id)+' avis de coopt\u00e9\u00b7e(s), hors d\u00e9compte</span>':'')
+    +(n(x.id,"pour")>=seuil?' <span style="color:#1e7a4d"><b>\u2014 majorit\u00e9 atteinte</b></span>':'')
+    +'</p></div>';
   const tri=(S.avis||[]).slice().sort((a,b)=>(n(b.id,"pour")-n(a.id,"pour")));
   const corps='<h2 style="margin:0 0 10px">Id\u00e9es de la semaine</h2>'
     +'<p>'+(A.length?('<b>'+A.length+'</b> nouvelle(s) id\u00e9e(s) cette semaine.'):"Aucune nouvelle id\u00e9e cette semaine.")
     +' '+total+' id\u00e9e(s) au total, class\u00e9es ci-dessous par soutien.</p>'
     +tri.slice(0,10).map(carte).join("")
-    +'<p style="color:#777;font-size:12.5px">Ces sondages sont indicatifs : ils n\'engagent pas le CA.</p>'
+    +'<p style="color:#777;font-size:12.5px">Majorit\u00e9 simple sur l\'effectif du conseil : '+seuil+' voix pour sur '+eff+' membres. La d\u00e9cision finale revient au bureau.</p>'
     +'<p><a href="'+caAppUrl()+'" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;display:inline-block">Ouvrir l\'espace CA</a></p>';
   const dest=[...new Set([...destinatairesMembres(), ...cooptesActifs().map(a=>String(a.email||"").toLowerCase().trim())])]
     .filter(Boolean).filter(e=>!estDesabonne(e));
@@ -1209,6 +1225,47 @@ function viewRevoque(){ return `<div class="wrap" style="max-width:520px;margin:
   <button class="chip" data-action="logout">Se déconnecter</button></div>`; }
 function renderVue(){ return S.view==="home" && !S.goto ? viewHome() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.needProfile ? viewCompleteProfile() : viewAuth()) : (S.session.statut==="attente" ? viewPending() : (S.session.statut==="revoque" ? viewRevoque() : viewDash()))); }
 function render(){ if(S.recovery){ root().innerHTML = viewNewPwd(); return; } root().innerHTML = renderVue(); }
+
+/* ---- Redessiner sans effacer ce que la personne est en train d'ecrire ----
+   Un render() reconstruit tout l'ecran : les champs repartent du HTML et ce qui
+   etait tape est perdu. Ce n'est pas genant quand c'est l'utilisateur qui a
+   declenche l'action, mais l'app se redessine aussi toute seule — au retour sur
+   l'onglet, le navigateur rafraichit le jeton et onAuthStateChange se declenche.
+   D'ou : quitter l'app pour Word, revenir, et retrouver son annonce vide.
+   Ces deux fonctions ne servent QUE pour les redessins de fond. */
+function saisieEnCours(){
+  const saisis=[], r=root(); if(!r) return saisis;
+  r.querySelectorAll("input[id], textarea[id], select[id]").forEach(el=>{
+    const t=(el.type||"").toLowerCase();
+    /* On ne touche ni aux interrupteurs ni aux fichiers : leur etat vient de S
+       ou ne peut pas etre restaure. */
+    if(t==="checkbox"||t==="radio"||t==="file") return;
+    if(el.value==null || el.value==="") return;
+    saisis.push({id:el.id, valeur:el.value,
+      debut:(typeof el.selectionStart==="number")?el.selectionStart:null,
+      fin:(typeof el.selectionEnd==="number")?el.selectionEnd:null,
+      actif:(document.activeElement===el)});
+  });
+  return saisis;
+}
+function rendreEnPreservant(){
+  const saisis=saisieEnCours();
+  const defilement=(window.scrollY||window.pageYOffset||0);
+  render();
+  saisis.forEach(sv=>{
+    const el=document.getElementById(sv.id);
+    if(!el) return;
+    /* Si le champ revient deja rempli par le rendu, on ne remplace que s'il
+       etait different : la saisie de la personne prime sur le HTML. */
+    el.value=sv.valeur;
+    if(sv.actif){
+      try{ el.focus({preventScroll:true});
+        if(sv.debut!=null && el.setSelectionRange) el.setSelectionRange(sv.debut, sv.fin);
+      }catch(e){}
+    }
+  });
+  try{ window.scrollTo(0, defilement); }catch(e){}
+}
 function viewNewPwd(){
   return `<div class="auth-wrap"><div class="auth">
     <div class="top"><span class="eyebrow">${esc(S.meta.nom||"Bureau étudiant")} · CA</span><button class="link" data-action="go-home">← Accueil</button></div>
@@ -3722,8 +3779,17 @@ async function boot(){
   if(!sb){ render(); return; }
   try{ const h=String(location.hash||""); if(/type=recovery/.test(h)||/[?&]type=recovery/.test(location.search)){ S.recovery=true; } }catch(e){}
   try{ await refreshSession(); }catch(e){} render();
-  if(S.session){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") render(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterRecapIdees().catch(()=>{}); traiterInscriptions().catch(()=>{}); }
-  try{ sb.auth.onAuthStateChange(async (evt)=>{ if(evt==="PASSWORD_RECOVERY"){ S.recovery=true; render(); return; } if(S.recovery) return; await refreshSession(); render(); }); }catch(e){} }
+  if(S.session){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") rendreEnPreservant(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterRecapIdees().catch(()=>{}); traiterInscriptions().catch(()=>{}); }
+  try{ sb.auth.onAuthStateChange(async (evt)=>{
+    if(evt==="PASSWORD_RECOVERY"){ S.recovery=true; render(); return; }
+    if(S.recovery) return;
+    const avant=(S.session&&S.session.id)||null;
+    await refreshSession();
+    const apres=(S.session&&S.session.id)||null;
+    /* Meme personne qu'avant : c'est un simple rafraichissement de jeton, pas
+       une connexion. On redessine en gardant la saisie en cours. */
+    if(avant===apres) rendreEnPreservant(); else render();
+  }); }catch(e){} }
 boot();
 
 </script>
