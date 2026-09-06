@@ -422,7 +422,7 @@ const SB_KEY="sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createClient(SB_URL,SB_KEY):null;
 function sess2session(user,prof){ return {id:user.id,email:user.email,prenom:prof.prenom,nom:((prof.prenom||"")+" "+(prof.nom||"")).trim(),fonction:prof.fonction,sig:((prof.prenom||prof.nom||"")+(prof.fonction?" \u00b7 "+prof.fonction:"")),statut:prof.statut||"attente",role:prof.role||"membre"}; }
 async function loadAccounts(){ try{ const {data}=await sb.from("ca_membres").select("*"); S.admins=(data||[]).map(a=>({id:a.id,email:a.email,emailAlt:a.email_alt||"",prenom:a.prenom,nom:a.nom,fonction:a.fonction,statut:a.statut,role:a.role,ts:a.created_at,viaCode:a.via_code||""})); }catch(e){} }
-async function loadAvis(){ try{ const {data}=await sb.from("ca_avis").select("*").order("created_at",{ascending:false}); S.avis=(data||[]).map(x=>({id:x.id,membreId:x.membre_id,auteur:x.auteur,sujet:x.sujet,texte:x.texte,ts:x.created_at})); }catch(e){ S.avis=[]; } }
+async function loadAvis(){ try{ const {data}=await sb.from("ca_avis").select("*").order("created_at",{ascending:false}); S.avis=(data||[]).map(x=>({id:x.id,membreId:x.membre_id,auteur:x.auteur,sujet:x.sujet,texte:x.texte,ts:x.created_at,statut:x.statut||"nouveau",reponse:x.reponse||"",reponduPar:x.repondu_par||"",reponduLe:x.repondu_le||null,odjReunion:x.odj_reunion||null})); }catch(e){ S.avis=[]; } }
 async function loadAvisVotes(){ try{ const {data}=await sb.from("ca_avis_votes").select("*"); S.avisVotes=(data||[]).map(v=>({avisId:v.avis_id,membreId:v.membre_id,valeur:v.valeur})); }catch(e){ S.avisVotes=[]; } }
 async function loadMailing(){ try{ const {data}=await sb.from("ca_mailing").select("*").order("created_at",{ascending:true}); S.mailing=(data||[]).map(m=>({id:m.id,email:m.email})); }catch(e){ S.mailing=[]; } }
 
@@ -1938,6 +1938,48 @@ function blocApprobationPV(m){
 /* Sondage consultatif sur une idee. Aucune valeur decisionnelle :
    les decisions du CA passent par l'onglet Votes, ou les cooptes n'entrent pas. */
 const AVIS_CHOIX=[["pour","\ud83d\udc4d Pour"],["mitige","\ud83e\udd14 Mitig\u00e9"],["contre","\ud83d\udc4e Contre"]];
+const AVIS_STATUTS=[["nouveau","\u00c0 traiter","--slate"],["retenue","Retenue","--green"],["discuter","\u00c0 discuter","--stamp"],["ecartee","\u00c9cart\u00e9e","--red"]];
+
+/* Meme regle que les budgets : majorite simple sur l'effectif du conseil,
+   pas sur le nombre de votants. Le decompte eclaire ; il ne decide pas. */
+function verdictAvis(a){
+  const n=effectifCA(), seuil=seuilMajorite();
+  if(!n) return "";
+  const pour=voixMembres(a.id,"pour"), contre=voixMembres(a.id,"contre"), mitige=voixMembres(a.id,"mitige");
+  const co=voixCooptes(a.id);
+  const atteint=pour>=seuil;
+  const detail=`${pour} pour \u00b7 ${mitige} mitig\u00e9 \u00b7 ${contre} contre`
+    + (co?` \u00b7 ${co} avis de coopt\u00e9\u00b7e(s), hors d\u00e9compte`:"");
+  return `<p class="du" style="margin:8px 0 0;color:${atteint?"var(--green)":"var(--ink-soft)"}">`
+    + (atteint
+        ? `\u2713 Majorit\u00e9 atteinte \u2014 ${pour} voix pour sur ${n} membres (il en faut ${seuil}).`
+        : `${seuil - pour} voix manquent pour la majorit\u00e9 (${seuil} sur ${n} membres).`)
+    + `<br><span style="color:var(--slate)">${detail}</span></p>`;
+}
+function libelleStatutAvis(k){ const e=AVIS_STATUTS.find(x=>x[0]===k)||AVIS_STATUTS[0]; return e; }
+/* Le vote des membres eclaire, mais la decision revient au proprietaire.
+   La policy ca_avis_repondre dit exactement la meme chose cote base. */
+function peutRepondreAvis(){ return !!(S.session && S.session.role==="owner"); }
+/* Repere « coopte » deduit du role au moment de l'affichage, sans colonne a tenir. */
+function avisDeCoopte(a){ const m=(S.admins||[]).find(x=>x.id===a.membreId); return !!(m && m.role==="coopte"); }
+/* Les voix qui comptent sont celles des membres du conseil. Les coopte·es
+   peuvent se prononcer, mais ils ne siegent pas : leur avis est affiche a
+   part et n'entre pas dans la majorite. */
+function voixMembres(id, valeur){
+  const membres=new Set(membresActifs().map(a=>a.id));
+  return (S.avisVotes||[]).filter(v=>v.avisId===id && v.valeur===valeur && membres.has(v.membreId)).length;
+}
+function voixCooptes(id){
+  const co=new Set(cooptesActifs().map(a=>a.id));
+  return (S.avisVotes||[]).filter(v=>v.avisId===id && co.has(v.membreId)).length;
+}
+function avisPour(id){ return voixMembres(id,"pour"); }
+/* Prochaine reunion a venir : celle vers laquelle une idee retenue est dirigee. */
+function prochaineReunion(){
+  const auj=todayISO();
+  return (S.reunions||[]).filter(m=>m.date && m.date>=auj)
+    .sort((a,b)=>(a.date||"").localeCompare(b.date||""))[0] || null;
+}
 function barreAvisVote(avisId){
   const V=(S.avisVotes||[]).filter(v=>v.avisId===avisId);
   const moi=(S.session||{}).id;
@@ -1946,7 +1988,7 @@ function barreAvisVote(avisId){
   const boutons=AVIS_CHOIX.map(([k,lab])=>`<button class="chip" data-action="avis-vote" data-id="${avisId}" data-val="${k}" style="${mien===k?"background:var(--ink);color:#fff;border-color:var(--ink)":""}">${lab}${n(k)?" \u00b7 "+n(k):""}</button>`).join("");
   return `<div style="margin:10px 0 0">
     <div style="display:flex;flex-wrap:wrap;gap:7px">${boutons}${mien?`<button class="link" data-action="avis-vote" data-id="${avisId}" data-val="" style="font-size:12px">retirer mon avis</button>`:""}</div>
-    <p class="du" style="margin:6px 0 0;font-size:11.5px">Sondage indicatif \u2014 il n'engage pas le CA.</p></div>`;
+    <p class="du" style="margin:6px 0 0;font-size:11.5px">Vote du conseil \u00b7 majorit\u00e9 simple sur l'effectif. La d\u00e9cision finale revient au bureau.</p></div>`;
 }
 function tabAvis(){
   const A=(S.avis||[]).slice();
@@ -1963,12 +2005,43 @@ function tabAvis(){
     <textarea class="f" id="av_texte" rows="4" placeholder="Votre avis, votre proposition\u2026"></textarea>
     <div class="row-btn"><button class="btn" data-action="avis-add">Envoyer</button></div></div>`;
   if(!A.length) return compose+`<div class="empty">Aucune contribution pour l'instant.</div>`;
-  const list=A.map(x=>`<div class="vote">
-    <div class="vote-h"><h4 class="serif">${esc(x.sujet||"Sans sujet")}</h4><span class="badge">${esc(x.auteur||"")}</span></div>
+  const repond=peutRepondreAvis();
+  const reu=prochaineReunion();
+  const seuilAvis=seuilMajorite();
+  const list=A.map(x=>{
+    const [,libelle,coul]=libelleStatutAvis(x.statut);
+    const pour=avisPour(x.id);
+    const prete = x.statut!=="ecartee" && !x.odjReunion && (x.statut==="retenue" || (seuilAvis>0 && pour>=seuilAvis));
+    /* Une idee venue de l'exterieur du conseil : le CA gagne a le savoir en la lisant. */
+    const marque = avisDeCoopte(x) ? `<span class="badge" style="background:var(--surface2);color:var(--slate)">coopt\u00e9\u00b7e</span>` : "";
+    const reponse = x.reponse
+      ? `<div style="margin:10px 0 0;padding:10px 12px;border-radius:10px;background:var(--surface2);border-left:3px solid var(${coul})">
+          <p class="du" style="margin:0 0 4px">R\u00e9ponse du bureau${x.reponduPar?" \u2014 "+esc(x.reponduPar):""}${x.reponduLe?" \u00b7 "+esc(dateFR(x.reponduLe)):""}</p>
+          <p style="white-space:pre-wrap;margin:0;font-size:14px">${esc(x.reponse)}</p></div>`
+      : "";
+    const odjFait = x.odjReunion
+      ? `<p class="du" style="margin:8px 0 0;color:var(--green)">\u2713 Port\u00e9e \u00e0 l'ordre du jour d'une r\u00e9union.</p>` : "";
+    /* Bloc de suivi : reserve au secretariat et au proprietaire. */
+    const suivi = repond ? `<div class="foot-line" style="flex-direction:column;align-items:stretch;gap:7px">
+        <select class="f" id="av_st_${x.id}" style="max-width:220px">${AVIS_STATUTS.map(([k,l])=>`<option value="${k}" ${x.statut===k?"selected":""}>${l}</option>`).join("")}</select>
+        <textarea class="f" id="av_rep_${x.id}" rows="2" placeholder="Mot d'explication envoy\u00e9 \u00e0 l'auteur\u2026">${esc(x.reponse||"")}</textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn sm" data-action="avis-repondre" data-id="${x.id}">Enregistrer et pr\u00e9venir l'auteur</button>
+          ${prete?`<button class="btn ghost sm" data-action="avis-odj" data-id="${x.id}">\u2192 ${reu?"Porter \u00e0 l'ordre du jour du "+esc(fmtDateLong(reu.date)):"Aucune r\u00e9union \u00e0 venir"}</button>`:""}
+        </div></div>` : "";
+    return `<div class="vote">
+    <div class="vote-h"><h4 class="serif">${esc(x.sujet||"Sans sujet")}</h4>
+      <span class="badge" style="background:var(${coul});color:#fff">${libelle}</span>${marque}
+      <span class="badge">${esc(x.auteur||"")}</span></div>
     <p style="white-space:pre-wrap;margin:8px 0 0;font-size:14px">${esc(x.texte||"")}</p>
     ${barreAvisVote(x.id)}
+    ${verdictAvis(x)}
+
+    ${reponse}${odjFait}
+    ${suivi}
     <div class="foot-line"><span class="by">${x.ts?esc(fmtQuand(x.ts)):""}</span>
-      ${(x.membreId===moi||(S.session&&S.session.role==="owner"))?`<button class="link" data-action="avis-del" data-id="${x.id}" style="margin-left:auto">Supprimer</button>`:""}</div></div>`).join("");
+      ${(x.membreId===moi||(S.session&&S.session.role==="owner"))?`<button class="link" data-action="avis-del" data-id="${x.id}" style="margin-left:auto">Supprimer</button>`:""}</div></div>`;
+  }).join("");
   return compose+list;
 }
 
@@ -3024,6 +3097,48 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
         if(r&&r.error){ if(window.alert) window.alert("\u00c9chec : "+r.error.message); break; }
       }
       await loadAvisVotes(); render(); break; }
+    case "avis-repondre": {
+      if(!peutRepondreAvis()||!sb){ modaleInfo("Seuls le secr\u00e9tariat et le propri\u00e9taire peuvent r\u00e9pondre \u00e0 une id\u00e9e."); break; }
+      const a=(S.avis||[]).find(x=>x.id===id); if(!a) break;
+      const st=val("av_st_"+id)||"nouveau";
+      const rep=(val("av_rep_"+id)||"").trim();
+      if(st!=="nouveau" && !rep){ modaleInfo("\u00c9crivez un mot d'explication : c'est ce que l'auteur recevra."); break; }
+      const maj=await sb.from("ca_avis").update({statut:st, reponse:rep||null,
+        repondu_par:(me&&me.sig)||null, repondu_le:new Date().toISOString()}).eq("id",id).select();
+      if(maj&&maj.error){ modaleInfo("Enregistrement impossible : "+maj.error.message); break; }
+      if(!maj||!maj.data||!maj.data.length){ modaleInfo("Enregistrement refus\u00e9 par le serveur : vous n'avez pas les droits."); break; }
+      await loadAvis(); render();
+      logAct("Id\u00e9e « "+((a.sujet||"").slice(0,40))+" » : "+libelleStatutAvis(st)[1]);
+      /* Sans retour, une personne qui propose ne revient pas. On previent l'auteur,
+         sauf s'il ne s'est rien passe (statut inchange et pas de mot). */
+      const dest=(S.admins||[]).find(x=>x.id===a.membreId);
+      if(st==="nouveau" || !dest || !dest.email || estDesabonne(String(dest.email).toLowerCase())){
+        modaleInfo(dest&&dest.email? "Enregistr\u00e9. L'auteur n'a pas \u00e9t\u00e9 pr\u00e9venu par e-mail." : "Enregistr\u00e9. Aucune adresse connue pour l'auteur.","Id\u00e9e mise \u00e0 jour");
+        break; }
+      const corps='<h2 style="margin:0 0 10px">R\u00e9ponse \u00e0 votre proposition</h2>'
+        +"<p>Votre proposition <b>"+caMailEsc(a.sujet||"")+"</b> a \u00e9t\u00e9 examin\u00e9e par le bureau.</p>"
+        +'<p style="font-size:16px"><b>'+caMailEsc(libelleStatutAvis(st)[1])+"</b></p>"
+        +'<p style="white-space:pre-wrap;background:#f7f7fb;border-radius:8px;padding:12px">'+caMailEsc(rep)+"</p>"
+        +'<p><a href="'+caAppUrl()+'" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l\'espace CA</a></p>';
+      const r=await envoyerNotifCAListe([dest.email], "Votre proposition \u2014 "+libelleStatutAvis(st)[1], corps, true);
+      modaleInfo((r&&r.ok)? "Enregistr\u00e9. L'auteur a \u00e9t\u00e9 pr\u00e9venu par e-mail."
+                          : "Enregistr\u00e9, mais l'e-mail \u00e0 l'auteur n'est pas parti.","Id\u00e9e mise \u00e0 jour");
+      break; }
+    case "avis-odj": {
+      if(!peutRepondreAvis()||!sb) break;
+      const a=(S.avis||[]).find(x=>x.id===id); if(!a) break;
+      const reu=prochaineReunion();
+      if(!reu){ modaleInfo("Aucune r\u00e9union \u00e0 venir n'est cr\u00e9\u00e9e. Cr\u00e9ez-la dans l'onglet R\u00e9unions, puis revenez ici."); break; }
+      if(!(await modaleConfirm("Porter « "+(a.sujet||"")+" » \u00e0 l'ordre du jour de la r\u00e9union du "+fmtDateLong(reu.date)+" ?"))) break;
+      const texte="Id\u00e9e : "+(a.sujet||"sans sujet")+(a.auteur?" (propos\u00e9e par "+a.auteur+")":"");
+      const okOdj=await majReunion(reu.id, f=>({ordre:[...f.ordre,{id:uid(),texte:texte,fait:false,notes:"",parId:(me&&me.id)||null,par:(me&&me.sig)||""}]}));
+      if(!okOdj) break;
+      const maj=await sb.from("ca_avis").update({odj_reunion:reu.id, statut:"retenue"}).eq("id",id).select();
+      if(maj&&maj.error){ modaleInfo("Point ajout\u00e9 \u00e0 l'ordre du jour, mais l'id\u00e9e n'a pas pu \u00eatre marqu\u00e9e : "+maj.error.message); }
+      await loadAvis(); await loadReunions(); render();
+      logAct("Id\u00e9e port\u00e9e \u00e0 l'ordre du jour : "+((a.sujet||"").slice(0,40)));
+      modaleInfo("Ajout\u00e9e \u00e0 l'ordre du jour de la r\u00e9union du "+fmtDateLong(reu.date)+".","Id\u00e9e retenue");
+      break; }
     case "avis-del": {
       if(!sb) break;
       const r=await sb.from("ca_avis").delete().eq("id",id);
