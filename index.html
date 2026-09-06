@@ -182,6 +182,20 @@ select.f{width:100%}
 .task p{margin:0 0 8px;font-size:13.5px;line-height:1.45}
 .task .tag{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--slate);display:block;margin-bottom:7px}
 .task-act{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+/* Interrupteurs. C'est un vrai input[type=checkbox] : tout le code qui lit
+   .checked ou reagit au data-action continue de fonctionner sans changement. */
+.sw{appearance:none;-webkit-appearance:none;position:relative;flex:0 0 auto;
+  width:42px;height:23px;border-radius:23px;background:var(--surface2);
+  border:1px solid var(--line);cursor:pointer;margin:0;
+  transition:background .18s ease,border-color .18s ease}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;
+  border-radius:50%;background:#efeaf8;box-shadow:0 1px 3px rgba(0,0,0,.45);
+  transition:transform .18s ease,background .18s ease}
+.sw:checked{background:linear-gradient(150deg,var(--stamp),var(--gold-dim));border-color:var(--gold-dim)}
+.sw:checked::after{transform:translateX(19px);background:#fff}
+.sw:disabled{opacity:.45;cursor:not-allowed}
+.sw:focus-visible{outline:2px solid var(--stamp);outline-offset:2px}
+.sw:active::after{width:20px}
 .chip{border:1px solid var(--line);background:var(--paper);border-radius:6px;padding:4px 9px;font-size:11.5px;color:var(--ink-soft)}
 .chip:hover{border-color:var(--ink-soft);color:var(--ink)}
 .x{margin-left:auto;background:none;border:none;color:var(--slate);font-size:12px;padding:2px 4px}
@@ -561,6 +575,15 @@ function ordreFerme(m){
    déclarée à l'inscription : celle-ci ne prouve rien. Ces deux fonctions
    reproduisent exactement ce que la base autorise (ca_est_secretaire,
    ca_est_direction), pour que l'app n'affiche jamais un accès refusé ensuite. */
+/* Ligne d'etat sous un interrupteur de droits : dire si le serveur a bien
+   enregistre, plutot que de laisser croire au geste. */
+function ligneEtatDroit(type, id){
+  const e=(S.droitsEtat||{})[type+":"+id];
+  if(!e) return "";
+  return e.ok
+    ? `<p class="du" style="margin:-2px 0 6px 51px;color:var(--green)">\u2713 Enregistr\u00e9 \u00e0 ${esc(e.quand)}</p>`
+    : `<p class="du" style="margin:-2px 0 6px 51px;color:var(--red)">\u26a0 Non enregistr\u00e9 \u2014 ${esc(e.msg||"le serveur a refus\u00e9")}. L'interrupteur ci-dessus montre l'\u00e9tat r\u00e9el.</p>`;
+}
 function directionExtra(){ return (S.meta && Array.isArray(S.meta.direction)) ? S.meta.direction : []; }
 function estSecretaire(){
   const u=S.session; if(!u) return false;
@@ -1148,6 +1171,7 @@ async function loadDocs(){ try{ const {data}=await sb.from("ca_docs").select("*"
 /* ============================ ÉTAT ============================ */
 const S = {
   view:"home", tab:"accueil", authMode:"login", editPoste:null, avis:[], avisVotes:[],
+  droitsEtat:{},   /* dernier resultat d'ecriture par interrupteur de droits */
   session:null,
   meta:   store.get("meta",{nom:"Bureau étudiant",caisseUrl:"https://bojkuesat-ai.github.io/bureau-ca/caisse/"}),
   admins: [],
@@ -1282,8 +1306,9 @@ function viewAdmin(){
       ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte").map(a=>{
         const on=secretairesExtra().indexOf(a.id)>=0;
         return `<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
-          <input type="checkbox" ${on?"checked":""} data-action="toggle-secretaire" data-id="${a.id}">
-          ${esc(((a.prenom||"")+" "+(a.nom||"")).trim()||a.email)} <span class="du">${esc(a.fonction||"")}</span></label>`;
+          <input type="checkbox" class="sw" role="switch" ${on?"checked":""} data-action="toggle-secretaire" data-id="${a.id}">
+          ${esc(((a.prenom||"")+" "+(a.nom||"")).trim()||a.email)} <span class="du">${esc(a.fonction||"")}</span></label>
+        ${ligneEtatDroit("secretariat",a.id)}`;
       }).join("")}
       ${secretairesExtra().length?"":`<p class="du" style="color:var(--red)">Personne n'est désigné : plus aucun compte ne peut clôturer ni publier les bilans moraux.</p>`}
     </div>
@@ -1292,8 +1317,9 @@ function viewAdmin(){
       ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte").map(a=>{
         const on=directionExtra().indexOf(a.id)>=0;
         return `<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
-          <input type="checkbox" ${on?"checked":""} data-action="toggle-direction" data-id="${a.id}">
-          ${esc(((a.prenom||"")+" "+(a.nom||"")).trim()||a.email)} <span class="du">${esc(a.fonction||"")}</span></label>`;
+          <input type="checkbox" class="sw" role="switch" ${on?"checked":""} data-action="toggle-direction" data-id="${a.id}">
+          ${esc(((a.prenom||"")+" "+(a.nom||"")).trim()||a.email)} <span class="du">${esc(a.fonction||"")}</span></label>
+        ${ligneEtatDroit("mediation",a.id)}`;
       }).join("")}
       ${directionExtra().length?"":`<p class="du" style="color:var(--red)">Personne n'est désigné : les signalements déposés ne seront lus par personne.</p>`}
     </div>`:""}
@@ -1496,7 +1522,7 @@ function tabTaches(){
     <div class="two"><select class="f" id="t_poste">${TOUS_POSTES.map(p=>`<option value="${p.id}">${esc(p.titre)} — ${esc(p.qui)}</option>`).join("")}</select>
       <input class="f" id="t_ech" type="date" title="Échéance"></div>
     <select class="f" id="t_prio"><option value="normale">Priorité normale</option><option value="haute">Priorité haute</option><option value="basse">Priorité basse</option></select>
-    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="t_notify"> Prévenir les membres par e-mail</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="t_notify"> Prévenir les membres par e-mail</label>
     <div class="row-btn"><button class="btn" data-action="add-tache">Ajouter la tâche</button></div></div>`;
   if(S.taches.length===0) return compose+`<div class="empty">Aucune tâche pour l’instant.</div>`;
   const cols=STATUTS.map(s=>{
@@ -1524,7 +1550,7 @@ function tabPlanning(){
   const compose=estSecretaire()?`<div class="compose"><h3 class="serif">Nouveau créneau ou événement</h3>
     <input class="f" id="cr_titre" placeholder="Ex. Permanence salle · Conférence · AG">
     <div class="two"><input class="f" id="cr_date" type="date"><input class="f" id="cr_lieu" placeholder="Lieu (facultatif)"></div>
-    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="cr_notify" checked> Prévenir les membres par e-mail</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="cr_notify" checked> Prévenir les membres par e-mail</label>
     <div class="row-btn"><button class="btn" data-action="add-creneau">Ajouter le créneau</button></div></div>`
     :`<p class="du" style="margin-bottom:12px">L'agenda est tenu par le secr\u00e9tariat. Vous pouvez le consulter et indiquer vos disponibilit\u00e9s.</p>`;
   if(S.creneaux.length===0) return compose+`<div class="empty">Aucun créneau pour l’instant.</div>`;
@@ -1620,7 +1646,7 @@ function tabVotes(){
     <div class="opt-inputs">${[0,1,2,3,4].map(i=>`<div class="oi"><input class="f" id="v_o${i}" placeholder="Option ${i+1}${i>1?" (facultatif)":""}"></div>`).join("")}</div>
     <label class="fld" style="display:block;margin-top:8px;font-size:13px">Documents joints (PDF, Word, images — facultatif)</label>
     <input class="f" type="file" id="v_files" multiple accept=".pdf,.doc,.docx,.odt,image/*">
-    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="v_notify"> Prévenir les membres par e-mail</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="v_notify"> Prévenir les membres par e-mail</label>
     <div class="row-btn"><button class="btn" data-action="add-vote">Lancer le vote</button></div></div>`;
   if(S.votes.length===0) return compose+`<div class="empty">Aucun vote. Lancez une question pour décider en groupe.</div>`;
   const list=S.votes.map(v=>{
@@ -1651,8 +1677,8 @@ function tabDocs(){
     <div class="two"><select class="f" id="d_cat">${CATS.map(c=>`<option>${c}</option>`).join("")}</select>
       <input class="f" id="d_file" type="file"></div>
     <p class="err" id="d_err" style="display:none"></p>
-    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="d_notify"> Prévenir les membres par e-mail</label>
-    ${owner?`<label style="display:flex;align-items:center;gap:8px;margin:2px 0 6px;font-size:13px"><input type="checkbox" id="d_treso"> Ajouter le message : remboursements &amp; contact uniquement via l'app Caisse</label>`:""}
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="d_notify"> Prévenir les membres par e-mail</label>
+    ${owner?`<label style="display:flex;align-items:center;gap:8px;margin:2px 0 6px;font-size:13px"><input type="checkbox" class="sw" role="switch" id="d_treso"> Ajouter le message : remboursements &amp; contact uniquement via l'app Caisse</label>`:""}
     <div class="row-btn"><button class="btn" data-action="upload-doc">Déposer le fichier</button></div></div>`;
   if(!S.docs||S.docs.length===0) return compose+`<div class="empty">Aucun document. Déposez vos PV, budgets, fichiers…</div>`;
   const meId=S.session&&S.session.id;
@@ -1669,7 +1695,7 @@ function tabDocs(){
 function tabAnnonces(){
   const compose=`<div class="compose"><h3 class="serif">Publier une annonce</h3>
     <textarea id="a_txt" placeholder="Info, décision de réunion, rappel…"></textarea>
-    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="an_notify"> Prévenir les membres par e-mail</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="an_notify"> Prévenir les membres par e-mail</label>
     <div class="row-btn"><button class="btn" data-action="add-annonce">Publier en tant que ${esc(S.session.sig||S.session.nom)}</button></div></div>`;
   if(S.annonces.length===0) return compose+`<div class="empty">Pas encore d’annonce.</div>`;
   const list=S.annonces.map(a=>{
@@ -1883,7 +1909,7 @@ function tabConflits(){
   return `<div class="compose"><h3 class="serif">Signaler un probl\u00e8me</h3>
     <p class="du">Votre message n'est lu que par la ou les personnes d\u00e9sign\u00e9es pour la m\u00e9diation. Aucun autre membre n'y a acc\u00e8s.</p>
     <textarea id="cf_texte" placeholder="D\u00e9crivez la situation\u2026"></textarea>
-    <label style="display:flex;align-items:center;gap:9px;margin:8px 0;font-size:14px;cursor:pointer"><input type="checkbox" id="cf_anon"> Envoyer de mani\u00e8re anonyme</label>
+    <label style="display:flex;align-items:center;gap:9px;margin:8px 0;font-size:14px;cursor:pointer"><input type="checkbox" class="sw" role="switch" id="cf_anon"> Envoyer de mani\u00e8re anonyme</label>
     <p class="du" style="margin:0 0 8px">Anonyme signifie que la personne qui vous r\u00e9pond ne voit pas votre nom, m\u00eame en cherchant. Elle peut malgr\u00e9 tout dialoguer avec vous dans ce fil. Seule r\u00e9serve : l'administrateur technique du bureau garde un acc\u00e8s direct \u00e0 la base.</p>
     <div class="row-btn"><button class="btn" data-action="cf-envoyer">Envoyer</button></div></div>
     ${cles.length?`<h3 class="serif" style="margin-top:20px">Vos \u00e9changes</h3>${historique}`:""}`;
@@ -2055,8 +2081,8 @@ function tabReunions(){
       <input class="f" id="reu_titre" placeholder="Ex. Réunion du bureau">
       <input class="f" id="reu_date" type="date">
       <input class="f" id="reu_lieu" placeholder="Lieu (facultatif)">
-      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="reu_modele" checked> Pr\u00e9-remplir avec les points r\u00e9currents</label>
-      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="reu_notify"> Prévenir les membres par e-mail</label>
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="reu_modele" checked> Pr\u00e9-remplir avec les points r\u00e9currents</label>
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="reu_notify"> Prévenir les membres par e-mail</label>
       <div class="row-btn"><button class="btn" data-action="reu-create">Créer la réunion</button></div></div>`:`<p class="du" style="margin-bottom:12px">Les réunions sont créées par le secrétariat. Vous pouvez les consulter et proposer des points à l'ordre du jour.</p>`}
       <div class="row-btn" style="margin-bottom:12px"><button class="btn ghost" data-action="registre-pv">Registre des PV</button>${peutVoirRapports()?`<button class="btn ghost" data-action="rapport-activite">Rapport d'activit\u00e9</button><button class="btn ghost" data-action="suivi-presence">Suivi de pr\u00e9sence</button>`:""}</div>
       ${R.length?`<div class="msg-list">${list}</div>`:`<div class="empty">Aucune réunion pour l'instant.</div>`}`;
@@ -2100,7 +2126,7 @@ function tabEvenements(){
     return `<div class="compose"><h3 class="serif">Nouvel événement</h3>
       <input class="f" id="ev_titre" placeholder="Ex. Events Week BE">
       <input class="f" id="ev_date" type="date">
-      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" id="ev_notify"> Prévenir les membres par e-mail</label>
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="ev_notify"> Prévenir les membres par e-mail</label>
       <div class="row-btn"><button class="btn" data-action="ev-create">Créer l'événement</button></div></div>
       ${E.length?`<div class="msg-list">${list}</div>`:`<div class="empty">Aucun événement. Créez-en un ci-dessus.</div>`}`;
   }
@@ -3416,22 +3442,24 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       S.meta.clotureOdj=h; S.meta.modeleOdj=mo;
       logAct("R\u00e9glages secr\u00e9tariat modifi\u00e9s"); render();
       if(window.alert) window.alert("Enregistr\u00e9."); break; }
-    case "toggle-direction": { if(!(S.session&&S.session.role==="owner")||!sb) break;
-      const cur=directionExtra().slice(); const i=cur.indexOf(el.dataset.id);
+    case "toggle-direction": case "toggle-secretaire": {
+      if(!(S.session&&S.session.role==="owner")||!sb) break;
+      const mediation = el.dataset.action==="toggle-direction";
+      const type = mediation ? "mediation" : "secretariat";
+      const colonne = mediation ? "direction" : "secretaires";
+      const cur = (mediation ? directionExtra() : secretairesExtra()).slice();
+      const i = cur.indexOf(el.dataset.id);
       if(i>=0) cur.splice(i,1); else cur.push(el.dataset.id);
-      const r=await sb.from("ca_meta").update({direction:cur}).eq("id",1).select();
-      if(r&&r.error){ modaleInfo("Modification non enregistr\u00e9e : "+r.error.message); break; }
-      if(!r||!r.data||!r.data.length){ modaleInfo("Modification refus\u00e9e par le serveur."); break; }
-      S.meta.direction=cur;
-      logAct("Droits m\u00e9diation modifi\u00e9s"); render(); break; }
-    case "toggle-secretaire": { if(!(S.session&&S.session.role==="owner")||!sb) break;
-      const cur=secretairesExtra().slice(); const i=cur.indexOf(el.dataset.id);
-      if(i>=0) cur.splice(i,1); else cur.push(el.dataset.id);
-      const r=await sb.from("ca_meta").update({secretaires:cur}).eq("id",1).select();
-      if(r&&r.error){ modaleInfo("Modification non enregistr\u00e9e : "+r.error.message); break; }
-      if(!r||!r.data||!r.data.length){ modaleInfo("Modification refus\u00e9e par le serveur."); break; }
-      S.meta.secretaires=cur;
-      logAct("Droits secr\u00e9tariat modifi\u00e9s"); render(); break; }
+      S.droitsEtat=S.droitsEtat||{};
+      const r=await sb.from("ca_meta").update({[colonne]:cur}).eq("id",1).select();
+      /* L'interrupteur a deja bascule visuellement : si le serveur refuse, on
+         remet l'affichage sur l'etat reel et on l'ecrit noir sur blanc. */
+      if(r&&r.error){ S.droitsEtat[type+":"+el.dataset.id]={ok:false,msg:r.error.message}; render(); break; }
+      if(!r||!r.data||!r.data.length){ S.droitsEtat[type+":"+el.dataset.id]={ok:false,msg:"le serveur a refus\u00e9 la modification"}; render(); break; }
+      if(mediation) S.meta.direction=cur; else S.meta.secretaires=cur;
+      S.droitsEtat[type+":"+el.dataset.id]={ok:true,quand:new Date().toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"})};
+      logAct((mediation?"Droits m\u00e9diation":"Droits secr\u00e9tariat")+" modifi\u00e9s");
+      render(); break; }
     case "reset-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break; if(!(await modaleConfirm("Effacer TOUS les bilans moraux déjà déposés et remettre le compteur à zéro ? Action irréversible."))) break; const r=await sb.rpc("ca_reset_bilans"); if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
       await sb.from("ca_meta").update({bilan_publie:null, bilan_publie_le:null, bilan_etat:"ferme", bilan_actif:false}).eq("id",1);
       S.meta.bilanPublie=""; S.meta.bilanPublieLe=null; S.meta.bilanEtat="ferme"; S.meta.bilanActif=false; S.bilanPubDraft=undefined;
