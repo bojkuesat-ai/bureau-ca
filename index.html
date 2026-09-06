@@ -775,13 +775,6 @@ function manquantsRappel(type, obj){
   else (S.presence||[]).forEach(p=>{ if(p.evenement_id===obj.id && p.membre_id) repondu.add(p.membre_id); });
   return membresActifs().filter(a=>!repondu.has(a.id)).length + nonInscrits().length;
 }
-/* Convertit un ISO en valeur d'input datetime-local (heure locale). */
-function dtLocal(iso){
-  if(!iso) return "";
-  try{ const d=new Date(iso); const p=n=>String(n).padStart(2,"0");
-    return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes());
-  }catch(e){ return ""; }
-}
 async function rechargerObjet(type){
   if(type==="budget") await loadBudgets();
   else if(type==="vote") await loadVotes();
@@ -826,7 +819,6 @@ function blocRappel(type, obj){
   } else {
     lignes.push(`<span class="du">✓ tout le monde a répondu</span>`);
   }
-  lignes.push(`<label class="du" style="display:flex;align-items:center;gap:6px">Date limite <input class="f" type="datetime-local" data-change="datelimite" data-type="${type}" data-id="${obj.id}" value="${dtLocal(obj.dateLimite)}" style="max-width:200px;display:inline-block"></label>`);
   if(obj.rappelProg) lignes.push(`<span class="du">⏰ rappel programmé le ${esc(fmtQuand(obj.rappelProg))}</span>`);
   return `<div class="foot-line" style="flex-wrap:wrap;gap:8px;align-items:center">${lignes.join("")}</div>`;
 }
@@ -862,9 +854,9 @@ async function loadBilans(){
   try{ const f=await sb.from("ca_bilan_faits").select("membre_id"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){ S.meta.bilanSubmitters=[]; }
   try{ const c=await sb.rpc("ca_bilans_nb_deposes"); S.meta.bilanNbDeposes=(c&&typeof c.data==="number")?c.data:(S.meta.bilanSubmitters||[]).length; }catch(e){ S.meta.bilanNbDeposes=(S.meta.bilanSubmitters||[]).length; } }
 async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").select("*").order("created_at",{ascending:false}); S.journal=(data||[]).map(j=>({ts:j.created_at,who:j.who,txt:j.txt})); }catch(e){} }
-async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,dateLimite:b.date_limite,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id}))})); }catch(e){ S.budgets=[]; } }
-async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,dateLimite:v.date_limite,rappelLe:v.rappel_le,rappelProg:v.rappel_prog_at,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
-async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,dateLimite:e.date_limite,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
+async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id}))})); }catch(e){ S.budgets=[]; } }
+async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,rappelLe:v.rappel_le,rappelProg:v.rappel_prog_at,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
+async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
 async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,lieu:m.lieu||"",ordre:m.ordre||[],presences:m.presences||{},pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } }
 async function loadCreneaux(){ try{ const c=await sb.from("ca_creneaux").select("*").order("date",{ascending:true}); const d=await sb.from("ca_dispos").select("*"); const dl=(d&&d.data)||[]; S.creneaux=(((c&&c.data))||[]).map(x=>({id:x.id,titre:x.titre,date:x.date,lieu:x.lieu,creePar:x.cree_par,dispos:dl.filter(y=>y.creneau_id===x.id).map(y=>({nom:y.nom,statut:y.statut,membreId:y.membre_id}))})); }catch(e){ S.creneaux=[]; } }
 async function loadOrg(){ try{ const {data}=await sb.from("ca_org").select("*"); const o={}; (data||[]).forEach(r=>{ o[r.poste_id]={missions:r.missions,contact:r.contact}; }); S.org=o; }catch(e){} }
@@ -1475,8 +1467,20 @@ function tabPlanning(){
 }
 
 /* ---- onglet BUDGETS ---- */
+/* Qui a voté quoi. Prénoms seuls, dans l'app comme dans le PDF. */
+function detailVoixBudget(b){
+  const pour=prenomsParChoix(b,"pour"), contre=prenomsParChoix(b,"contre"), abst=prenomsParChoix(b,"abst");
+  const sans=prenomsNonVotants(b);
+  if(!pour.length && !contre.length && !abst.length && !sans.length) return "";
+  const ligne=(t,l,c)=>l.length?`<p class="voters" style="margin:4px 0"><b style="color:var(${c})">${t} (${l.length})</b> : ${esc(l.join(", "))}</p>`:"";
+  return `<div style="margin:10px 0 0">${ligne("Pour",pour,"--green")}${ligne("Contre",contre,"--red")}${ligne("Abstention",abst,"--slate")}
+    ${sans.length?`<p class="voters" style="margin:4px 0"><b>N'ont pas voté (${sans.length})</b> : ${esc(sans.join(", "))}</p>`:""}</div>`;
+}
 function tabBudgets(){
   const peutDecider = estPresidente();
+  const owner = !!(S.session && S.session.role==="owner");
+  const peutCloturer = peutDecider || owner;
+  const effectif = effectifCA(), seuil = seuilMajorite();
   const totalApp=S.budgets.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(b.cout||0),0);
   const enVote=S.budgets.filter(b=>b.statut==="vote").length;
   const stats=`<div class="stat-row">
@@ -1493,7 +1497,7 @@ function tabBudgets(){
   const badge={vote:["open","En vote"],approuve:["ok","Approuvé"],refuse:["no","Refusé"]};
   if(S.budgets.length===0) return stats+compose+`<div class="empty">Aucune demande. Soumettez un budget ou un projet au vote.</div>`;
   const list=S.budgets.map(b=>{
-    const count=ch=>b.votes.filter(x=>x.choix===ch).length; const total=b.votes.length; const open=b.statut==="vote";
+    const count=ch=>b.votes.filter(x=>x.choix===ch).length; const open=b.statut==="vote";
     const [cls,label]=badge[b.statut]; const mien=b.votes.find(x=>x.nom.toLowerCase()===(S.session.sig||"").toLowerCase());
     return `<div class="vote"><div class="vote-h"><div><h4 class="serif">${esc(b.titre)}</h4>
       <p class="b-meta"><span class="b-type">${esc(b.type)}</span>${b.cout>0?`<span class="b-cost">${eur(b.cout)}</span>`:""}${b.demandeur?`<span class="by" style="margin:0">par ${esc(b.demandeur)}</span>`:""}</p></div>
@@ -1502,9 +1506,12 @@ function tabBudgets(){
       ${b.desc?`<p class="b-desc">${esc(b.desc)}</p>`:""}
       <div class="tallies">${CHOIX.map(ch=>`<span class="tally"><span class="sq" style="background:var(${ch.v})"></span><b>${count(ch.id)}</b> ${ch.label}</span>`).join("")}</div>
       ${open?`<div class="foot-line" style="border-top:none;padding-top:0"><div class="mini">${CHOIX.map(ch=>`<button aria-pressed="${mien&&mien.choix===ch.id}" data-action="bvote" data-id="${b.id}" data-choix="${ch.id}">${ch.label}</button>`).join("")}</div></div>`:""}
-      ${total?`<p class="voters">${total} votant${total>1?"s":""} : ${esc(b.votes.map(x=>x.nom).join(", "))}</p>`:""}
+      ${detailVoixBudget(b)}
+      ${(open&&effectif)?`<p class="du" style="margin:8px 0 0">${count("pour")>=seuil?`✓ Majorité atteinte : ${count("pour")} voix pour sur ${effectif} membres (il en faut ${seuil}).`:`Majorité simple requise : ${seuil} voix pour sur ${effectif} membres — il en manque ${seuil-count("pour")}.`}</p>`:""}
       ${open?blocRappel("budget",b):""}
-      ${peutDecider?`<div class="foot-line">${open?`<button class="chip" data-action="bdecide" data-id="${b.id}" data-st="approuve">✓ Approuver</button><button class="chip" data-action="bdecide" data-id="${b.id}" data-st="refuse">✕ Refuser</button>`:`<button class="link" data-action="bdecide" data-id="${b.id}" data-st="vote">Rouvrir le vote</button>`}
+      ${(open&&peutCloturer&&effectif)?`<div class="foot-line"><button class="btn sm" data-action="bcloture" data-id="${b.id}">🔒 Clôturer le vote</button>
+        ${(owner&&count("pour")<seuil)?`<button class="link" data-action="bcloture" data-id="${b.id}" data-force="1" style="color:var(--stamp)">⚠ Forcer l'approbation</button>`:""}</div>`:""}
+      ${peutDecider?`<div class="foot-line">${open?`${(effectif&&count("pour")>=seuil)?`<button class="chip" data-action="bdecide" data-id="${b.id}" data-st="approuve">✓ Approuver</button>`:""}<button class="chip" data-action="bdecide" data-id="${b.id}" data-st="refuse">✕ Refuser</button>`:`<button class="link" data-action="bdecide" data-id="${b.id}" data-st="vote">Rouvrir le vote</button>`}
         <button class="link" data-action="del-budget" data-id="${b.id}" style="margin-left:auto">Supprimer</button></div>`:""}</div>`;
   }).join("");
   return stats+compose+list;
@@ -2292,7 +2299,7 @@ function chargerHtml2pdf(){
 }
 /* nomFichier: "budgets-2026-05-01.pdf"  |  styleCSS: le contenu du <style> du document
    (les règles "body{…}" sont automatiquement appliquées à la page)  |  corpsHTML: le contenu du <body> */
-async function telechargerPDF(nomFichier, styleCSS, corpsHTML, orientation){
+async function telechargerPDF(nomFichier, styleCSS, corpsHTML, orientation, mode){
   let h2p;
   try{ h2p=await chargerHtml2pdf(); }
   catch(e){ if(window.alert) window.alert("Générateur PDF indisponible. Vérifiez votre connexion et réessayez."); return; }
@@ -2321,20 +2328,28 @@ async function telechargerPDF(nomFichier, styleCSS, corpsHTML, orientation){
     jsPDF:{unit:"mm",format:"a4",orientation:paysage?"landscape":"portrait"},
     pagebreak:{mode:["css","legacy"]}
   };
-  try{ await h2p().set(opt).from(cible).save(); }
-  catch(e){ if(window.alert) window.alert("La génération du PDF a échoué. Réessayez."); }
+  let sortie=null;
+  try{
+    const tache=h2p().set(opt).from(cible);
+    if(mode==="blob") sortie=await tache.outputPdf("blob"); else await tache.save();
+  }
+  catch(e){ if(mode!=="blob" && window.alert) window.alert("La génération du PDF a échoué. Réessayez."); }
   finally{ overlay.remove(); info.remove(); }
+  return sortie;
 }
 function nomPDF(titre){ return String(titre||"document").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)+"-"+todayISO()+".pdf"; }
 
 /* ---- Document imprimable → vrai PDF (utilisé par les budgets) ---- */
-function ouvrirDocImprimable(titre, corpsHTML){
-  const css=`body{font-family:Georgia,serif;color:#1b2338;line-height:1.55}
+function cssDocImprimable(){
+  return `body{font-family:Georgia,serif;color:#1b2338;line-height:1.55}
 h1{font-size:24px;margin:0 0 2px}.d{color:#6a7182;font-size:13px;margin:0 0 20px}
 h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bottom:4px}
 table{width:100%;border-collapse:collapse;margin:8px 0 16px;font-size:13px}
 th,td{border:1px solid #d8dae2;padding:7px 9px;text-align:left;vertical-align:top}
 th{background:#f3f2f8}`;
+}
+function ouvrirDocImprimable(titre, corpsHTML){
+  const css=cssDocImprimable();
   const corps=corpsHTML+`<p class="d" style="margin-top:30px">Document g\u00e9n\u00e9r\u00e9 automatiquement.</p>`;
   telechargerPDF(nomPDF(titre), css, corps);
 }
@@ -2349,6 +2364,171 @@ function genererBudgetsPDF(){
     <table><thead><tr><th>Intitul\u00e9</th><th>Type</th><th>Co\u00fbt</th><th>Statut</th><th>Demandeur</th><th>Pour/Contre/Abst.</th></tr></thead><tbody>${rows||`<tr><td colspan="6">Aucun budget.</td></tr>`}</tbody></table>
     <p><b>Total approuv\u00e9 :</b> ${euro(total)}</p>`;
   ouvrirDocImprimable("Budgets & projets", corps);
+}
+
+/* ===== Clôture d'un budget : verdict, PDF et envoi à tout le CA =====
+   La règle est celle du CA : majorité simple sur l'EFFECTIF (19 membres → 10 voix).
+   Le propriétaire peut approuver hors seuil ; c'est écrit dans le PDF et le mail. */
+/* Prénom seul. Les votes anciens n'ont pas de membre_id : on retombe sur la
+   signature enregistrée, qui vaut « Prénom · Fonction ». */
+function prenomVotant(v){
+  const a=(S.admins||[]).find(x=>x.id===v.membreId);
+  if(a && String(a.prenom||"").trim()) return String(a.prenom).trim();
+  const s=String(v.nom||"").split("\u00b7")[0].trim();
+  return s||"\u2014";
+}
+function sigMembre(a){ return ((a.prenom||a.nom||"")+(a.fonction?" \u00b7 "+a.fonction:"")).trim().toLowerCase(); }
+function prenomsParChoix(b, ch){ return (b.votes||[]).filter(v=>v.choix===ch).map(prenomVotant); }
+function prenomsNonVotants(b){
+  const parId=new Set((b.votes||[]).map(v=>v.membreId).filter(Boolean));
+  /* Votes déposés avant l'ajout de membre_id : on ne peut les rattacher que par
+     la signature. Si la fonction a changé depuis, on retombe sur le prénom seul. */
+  const anciens=(b.votes||[]).filter(v=>!v.membreId);
+  const parSig=new Set(anciens.map(v=>String(v.nom||"").trim().toLowerCase()));
+  const parPrenom=new Set(anciens.map(v=>String(v.nom||"").split("\u00b7")[0].trim().toLowerCase()).filter(Boolean));
+  return membresActifs()
+    .filter(a=>!parId.has(a.id) && !parSig.has(sigMembre(a)) && !parPrenom.has(String(a.prenom||"").trim().toLowerCase()))
+    .map(a=>String(a.prenom||"").trim()||String(a.nom||"").trim()||"\u2014");
+}
+function budgetForce(b){ return /hors seuil/i.test(String(b.decidePar||"")); }
+function listePrenoms(l){ return l.length?l.join(", "):"\u2014"; }
+/* Corps du PDF d'un budget clôturé. */
+function corpsPDFBudget(b){
+  const n=effectifCA(), seuil=seuilMajorite();
+  const pour=prenomsParChoix(b,"pour"), contre=prenomsParChoix(b,"contre"), abst=prenomsParChoix(b,"abst");
+  const sans=prenomsNonVotants(b);
+  const force=budgetForce(b);
+  const verdict = b.statut==="approuve"
+    ? (force
+        ? "Approuv\u00e9 hors seuil \u2014 "+pour.length+" voix pour sur "+n+" membres (majorit\u00e9 simple : "+seuil+")."
+        : "Approuv\u00e9 \u2014 "+pour.length+" voix pour sur "+n+" membres (majorit\u00e9 simple : "+seuil+")." )
+    : "Refus\u00e9 \u2014 "+pour.length+" voix pour sur "+n+" membres, il en fallait "+seuil+".";
+  return `<h1>${esc(b.titre||"Budget")}</h1>
+    <p class="d">D\u00e9cision du ${new Date().toLocaleDateString("fr-BE")} \u2014 Bureau \u00e9tudiant, conseil d'administration</p>
+    <h2>La demande</h2>
+    <table><tbody>
+      <tr><th style="width:150px">Intitul\u00e9</th><td>${esc(b.titre||"\u2014")}</td></tr>
+      <tr><th>Type</th><td>${esc(b.type||"\u2014")}</td></tr>
+      <tr><th>Co\u00fbt estim\u00e9</th><td>${b.cout>0?esc(eur(b.cout)):"\u2014"}</td></tr>
+      <tr><th>Demandeur</th><td>${esc(b.demandeur||"\u2014")}</td></tr>
+      ${b.desc?`<tr><th>Description</th><td>${esc(b.desc)}</td></tr>`:""}
+    </tbody></table>
+    <h2>R\u00e9sultat</h2>
+    <p style="font-size:15px"><b>${esc(verdict)}</b></p>
+    ${force?`<p style="color:#8a2b2b"><b>Approbation hors seuil</b> \u2014 la majorit\u00e9 simple n'\u00e9tait pas atteinte. D\u00e9cision prise par ${esc(String(b.decidePar||"").replace(/\s*\(hors seuil\)\s*$/i,""))}.</p>`:""}
+    <table><thead><tr><th>Pour</th><th>Contre</th><th>Abstention</th><th>N'ont pas vot\u00e9</th></tr></thead>
+      <tbody><tr><td>${pour.length}</td><td>${contre.length}</td><td>${abst.length}</td><td>${sans.length}</td></tr></tbody></table>
+    <h2>D\u00e9tail des voix</h2>
+    <table><tbody>
+      <tr><th style="width:150px">Pour (${pour.length})</th><td>${esc(listePrenoms(pour))}</td></tr>
+      <tr><th>Contre (${contre.length})</th><td>${esc(listePrenoms(contre))}</td></tr>
+      <tr><th>Abstention (${abst.length})</th><td>${esc(listePrenoms(abst))}</td></tr>
+      <tr><th>N'ont pas vot\u00e9 (${sans.length})</th><td>${esc(listePrenoms(sans))}</td></tr>
+    </tbody></table>`;
+}
+/* Blob → base64 pour la pièce jointe. */
+function blobEnBase64(blob){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>{ const s=String(r.result||""); res(s.slice(s.indexOf(",")+1)); };
+    r.onerror=()=>rej(new Error("lecture"));
+    r.readAsDataURL(blob);
+  });
+}
+/* Envoi avec pièce jointe réelle. Le lien signé est TOUJOURS dans le corps :
+   si la pièce jointe est refusée par le serveur, le mail reste utilisable. */
+async function envoyerAvecPiece(dest, subject, corpsHtml, piece){
+  const liste=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))].filter(e=>!estDesabonne(e));
+  if(!liste.length) return {ok:0,err:0,total:0,sansPiece:false};
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corpsHtml}${blocInvitationCA()}${blocNoReplyCA()}</div>`;
+  const headers=await caSendHeaders();
+  let ok=0, err=0, avec=!!piece, sansPiece=false, okAvecPiece=0;
+  for(const to of liste){
+    let bon=false;
+    if(avec){
+      try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html,attachments:[piece]})}); bon=!(r&&r.ok===false); }catch(e){ bon=false; }
+      if(bon) okAvecPiece++;
+    }
+    if(!bon){
+      /* Second essai sans la pièce : le lien signé suffit à ne rien perdre. */
+      try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html})}); bon=!(r&&r.ok===false); }catch(e){ bon=false; }
+      /* Si aucune pièce jointe n'est jamais passée, c'est le serveur qui la refuse :
+         inutile de la retenter pour les suivants. Après un premier envoi réussi avec
+         pièce, un échec isolé est un incident réseau : on garde la pièce. */
+      if(avec && !okAvecPiece){ avec=false; sansPiece=true; }
+    }
+    if(bon) ok++; else err++;
+    await new Promise(r=>setTimeout(r,120));
+  }
+  return {ok, err, total:liste.length, sansPiece};
+}
+/* Destinataires de la décision : les membres du CA, comptes inscrits ou non. */
+function destinatairesDecision(){
+  return [...new Set(destinatairesMembres().concat(nonInscrits()))];
+}
+async function cloturerBudget(id, force){
+  if(!sb) return;
+  const owner = !!(S.session && S.session.role==="owner");
+  if(!(estPresidente()||owner)){ modaleInfo("Seules la pr\u00e9sidence et le propri\u00e9taire peuvent cl\u00f4turer un budget."); return; }
+  if(force && !owner){ modaleInfo("Seul le propri\u00e9taire peut approuver hors seuil."); return; }
+  const b=(S.budgets||[]).find(x=>x.id===id);
+  if(!b || b.statut!=="vote") return;
+  const n=effectifCA(), seuil=seuilMajorite();
+  if(!n){ modaleInfo("La liste des membres n'est pas charg\u00e9e : le seuil de majorit\u00e9 ne peut pas \u00eatre calcul\u00e9. Rechargez la page et r\u00e9essayez."); return; }
+  const pour=(b.votes||[]).filter(v=>v.choix==="pour").length;
+  const st = force ? "approuve" : (pour>=seuil ? "approuve" : "refuse");
+  const question = force
+    ? "Approuver « "+(b.titre||"")+" » alors que la majorit\u00e9 n'est pas atteinte ("+pour+" voix pour sur "+n+", il en faut "+seuil+") ?\n\nLa mention « hors seuil » figurera dans le PDF et dans le mail envoy\u00e9 \u00e0 tout le CA."
+    : "Cl\u00f4turer « "+(b.titre||"")+" » ?\n\nR\u00e9sultat : "+(st==="approuve"?"APPROUV\u00c9":"REFUS\u00c9")+" ("+pour+" voix pour sur "+n+", majorit\u00e9 simple : "+seuil+").\nLe PDF de la d\u00e9cision sera envoy\u00e9 \u00e0 tous les membres du CA.";
+  if(!(await modaleConfirm(question, force?"Approuver hors seuil":"Cl\u00f4turer le vote"))) return;
+  const sig=(S.session&&S.session.sig)||"\u2014";
+  const maj=await sb.from("ca_budgets").update({statut:st, decide_par:sig+(force?" (hors seuil)":""), decide_le:new Date().toISOString()}).eq("id",id);
+  if(maj&&maj.error){ modaleInfo("La cl\u00f4ture n'a pas pu \u00eatre enregistr\u00e9e : "+maj.error.message); return; }
+  logAct("Budget "+(st==="approuve"?"approuv\u00e9":"refus\u00e9")+(force?" hors seuil":"")+" : "+(b.titre||""));
+  await loadBudgets(); render();
+  /* Le PDF documente la décision qui vient d'être prise. On ne se fie pas au
+     rechargement : s'il échoue, l'objet en mémoire est resté « en vote » et le
+     PDF annoncerait un refus. Statut et signataire sont donc imposés ici. */
+  const bf=Object.assign({}, (S.budgets||[]).find(x=>x.id===id)||b,
+    {statut:st, decidePar:sig+(force?" (hors seuil)":""), decideLe:new Date().toISOString()});
+
+  /* PDF fabriqué dans le navigateur, puis déposé dans ca-documents pour le lien. */
+  const nomFichier=nomPDF("budget-"+(bf.titre||""));
+  let blob=null;
+  try{ blob=await telechargerPDF(nomFichier, cssDocImprimable(), corpsPDFBudget(bf), null, "blob"); }catch(e){ blob=null; }
+  if(!blob){ modaleInfo("Vote cl\u00f4tur\u00e9 : "+(st==="approuve"?"approuv\u00e9":"refus\u00e9")+".\nLe PDF n'a pas pu \u00eatre g\u00e9n\u00e9r\u00e9, aucun mail n'a \u00e9t\u00e9 envoy\u00e9.","Cl\u00f4ture enregistr\u00e9e"); return; }
+  let lien="";
+  try{
+    const chemin=uid()+"-"+nomFichier;
+    const up=await sb.storage.from("ca-documents").upload(chemin, blob, {contentType:"application/pdf", upsert:false});
+    if(!(up&&up.error)){
+      const su=await sb.storage.from("ca-documents").createSignedUrl(chemin, 7776000, {download:nomFichier});
+      if(su&&su.data&&su.data.signedUrl) lien=su.data.signedUrl;
+    }
+  }catch(e){}
+
+  let piece=null;
+  try{
+    const b64=await blobEnBase64(blob);
+    if(b64.length < 4500000) piece={filename:nomFichier, content:b64, contentType:"application/pdf"};
+  }catch(e){ piece=null; }
+
+  const pourL=prenomsParChoix(bf,"pour"), contreL=prenomsParChoix(bf,"contre"), abstL=prenomsParChoix(bf,"abst");
+  const titreMail=(st==="approuve"?"Budget approuv\u00e9 \u2014 ":"Budget refus\u00e9 \u2014 ")+(bf.titre||"");
+  const corps=`<h2 style="margin:0 0 10px">${st==="approuve"?"Budget approuv\u00e9":"Budget refus\u00e9"}</h2>`
+    +`<p style="font-size:16px"><b>${caMailEsc(bf.titre||"")}</b>${bf.cout>0?" \u2014 "+caMailEsc(eur(bf.cout)):""}</p>`
+    +`<p>${caMailEsc(pourL.length+" voix pour sur "+n+" membres (majorit\u00e9 simple : "+seuil+").")}</p>`
+    +(force?`<p style="background:#fff4f4;border:1px solid #e8c4c4;border-radius:8px;padding:10px;color:#8a2b2b"><b>Approbation hors seuil</b> \u2014 la majorit\u00e9 simple n'\u00e9tait pas atteinte. D\u00e9cision prise par ${caMailEsc(sig)}.</p>`:"")
+    +`<p><b>Pour (${pourL.length}) :</b> ${caMailEsc(listePrenoms(pourL))}<br>`
+    +`<b>Contre (${contreL.length}) :</b> ${caMailEsc(listePrenoms(contreL))}<br>`
+    +`<b>Abstention (${abstL.length}) :</b> ${caMailEsc(listePrenoms(abstL))}</p>`
+    +(lien?`<p><a href="${lien}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">T\u00e9l\u00e9charger le PDF de la d\u00e9cision</a></p>`:"")
+    +`<p>Le d\u00e9tail complet, non-votants compris, figure dans le PDF de la d\u00e9cision.</p>`;
+  const res=await envoyerAvecPiece(destinatairesDecision(), titreMail, corps, piece);
+  const tete="Vote cl\u00f4tur\u00e9 \u2014 "+(st==="approuve"?"approuv\u00e9":"refus\u00e9");
+  if(!res.total) modaleInfo("D\u00e9cision enregistr\u00e9e, mais aucun destinataire disponible.",tete);
+  else modaleInfo("\u2713 "+res.ok+" membre(s) pr\u00e9venu(s)"+(res.err?", "+res.err+" \u00e9chec(s)":"")+"."
+    +((res.sansPiece&&res.ok)?"\n\u26a0 Le serveur a refus\u00e9 la pi\u00e8ce jointe : le mail contient le lien de t\u00e9l\u00e9chargement.":""),tete);
 }
 
 /* ---- Notification e-mail : nouvelle demande d'inscription ---- */
@@ -2434,15 +2614,6 @@ document.addEventListener("change", async e=>{
       if(window.alert) window.alert("Affichage local uniquement. Rechargez la page pour revenir aux données réelles.");
     }catch(e){ if(window.alert) window.alert("Fichier de sauvegarde invalide."); } };
     rd.readAsText(fl); return; }
-  if(el.dataset.change==="datelimite"){
-    const tp=el.dataset.type, oid=el.dataset.id;
-    const tbl=({budget:"ca_budgets",vote:"ca_votes",evenement:"ca_evenements"})[tp];
-    if(!tbl||!sb) return;
-    const iso = el.value ? new Date(el.value).toISOString() : null;
-    (async()=>{ const r=await sb.from(tbl).update({date_limite:iso}).eq("id",oid);
-      if(r&&r.error){ modaleInfo("Date limite non enregistrée : "+r.error.message); return; }
-      await rechargerObjet(tp); render(); })();
-    return; }
   if(el.dataset.change==="evfield"){ const ev=(S.evenements||[]).find(x=>x.id===(S.evUI&&S.evUI.sel)); if(ev){ ev[el.dataset.field]=el.value; if(sb){ const col=({budgetPrevu:"budget_prevu",budgetReel:"budget_reel"})[el.dataset.field]||el.dataset.field; const v=(col==="budget_prevu"||col==="budget_reel")?(parseFloat(String(el.value).replace(",","."))||0):el.value; sb.from("ca_evenements").update({[col]:v}).eq("id",ev.id); } } return; }
   if(el.dataset.change==="reunote"){ if(!estSecretaire()) return; const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(m&&sb){ const pid=el.dataset.pt, txt=el.value; majReunion(m.id, f=>({ordre:f.ordre.map(p=>p.id===pid?{...p,notes:txt}:p)})); } return; }
   if(el.dataset.change==="msgfile"){ S.msgUI=S.msgUI||{sel:null,draft:"",file:null}; S.msgUI.draft=val("msg_txt"); const fl=el.files&&el.files[0]; S.msgUI.file=fl||null; render(); return; }
@@ -3133,6 +3304,7 @@ ${sections||"<p>Aucun retour.</p>"}
       break; }
     case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; const r=await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix},{onConflict:"budget_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadBudgets(); render(); break; }
     case "bdecide": { if(!estPresidente()||!sb) break; const st=el.dataset.st; await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id); await loadBudgets(); render(); break; }
+    case "bcloture": { await cloturerBudget(id, el.dataset.force==="1"); break; }
     case "del-budget": { if(!estPresidente()||!sb) break; if(!(await modaleConfirm("Supprimer cette demande de budget ?"))) break; await sb.from("ca_budgets").delete().eq("id",id); logAct("Budget supprimé"); await loadBudgets(); render(); break; }
     /* votes */
     case "add-vote": { const q=val("v_q").trim(); const opts=[0,1,2,3,4].map(i=>val("v_o"+i).trim()).filter(Boolean); if(!q||opts.length<2||!sb) return;
