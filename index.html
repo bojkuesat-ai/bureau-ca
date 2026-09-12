@@ -2729,8 +2729,14 @@ async function cloturerBudget(id, force){
     : "Cl\u00f4turer « "+(b.titre||"")+" » ?\n\nR\u00e9sultat : "+(st==="approuve"?"APPROUV\u00c9":"REFUS\u00c9")+" ("+pour+" voix pour sur "+n+", majorit\u00e9 simple : "+seuil+").\nLe PDF de la d\u00e9cision sera envoy\u00e9 \u00e0 tous les membres du CA.";
   if(!(await modaleConfirm(question, force?"Approuver hors seuil":"Cl\u00f4turer le vote"))) return;
   const sig=(S.session&&S.session.sig)||"\u2014";
-  const maj=await sb.from("ca_budgets").update({statut:st, decide_par:sig+(force?" (hors seuil)":""), decide_le:new Date().toISOString()}).eq("id",id);
+  const maj=await sb.from("ca_budgets").update({statut:st, decide_par:sig+(force?" (hors seuil)":""), decide_le:new Date().toISOString()}).eq("id",id).select();
   if(maj&&maj.error){ modaleInfo("La cl\u00f4ture n'a pas pu \u00eatre enregistr\u00e9e : "+maj.error.message); return; }
+  /* Filet indispensable : une mise \u00e0 jour bloqu\u00e9e par les droits (RLS) ne renvoie
+     PAS d'erreur, mais 0 ligne. Sans ce contr\u00f4le, le bouton restait actif et un
+     PDF/mail annon\u00e7ait une d\u00e9cision jamais enregistr\u00e9e. */
+  if(!maj||!maj.data||!maj.data.length){
+    await loadBudgets(); render();
+    modaleInfo("La cl\u00f4ture a \u00e9t\u00e9 refus\u00e9e par le serveur : aucune ligne n'a \u00e9t\u00e9 modifi\u00e9e.\n\nC'est presque toujours une question de droits (r\u00e8gle RLS sur la table ca_budgets) : la base n'autorise pas ce compte \u00e0 cl\u00f4turer un budget. Rien n'a chang\u00e9, aucun PDF ni mail n'a \u00e9t\u00e9 envoy\u00e9.","Cl\u00f4ture non enregistr\u00e9e"); return; }
   logAct("Budget "+(st==="approuve"?"approuv\u00e9":"refus\u00e9")+(force?" hors seuil":"")+" : "+(b.titre||""));
   await loadBudgets(); render();
   /* Le PDF documente la décision qui vient d'être prise. On ne se fie pas au
@@ -3694,7 +3700,7 @@ ${sections||"<p>Aucun retour.</p>"}
       else { modaleInfo("✓ "+res.total+" membre(s) prévenu(s) par e-mail."+exclus, "Budget soumis au vote"); }
       break; }
     case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; const r=await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix},{onConflict:"budget_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadBudgets(); render(); break; }
-    case "bdecide": { if(!estPresidente()||!sb) break; const st=el.dataset.st; await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id); await loadBudgets(); render(); break; }
+    case "bdecide": { if(!estPresidente()||!sb) break; const st=el.dataset.st; const md=await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id).select(); if(md&&md.error){ modaleInfo("Enregistrement impossible : "+md.error.message); break; } if(!md||!md.data||!md.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 la modification (aucune ligne chang\u00e9e) \u2014 il s'agit d'une r\u00e8gle de droits (RLS) sur ca_budgets.","Action non enregistr\u00e9e"); break; } await loadBudgets(); render(); break; }
     case "bcloture": { await cloturerBudget(id, el.dataset.force==="1"); break; }
     case "del-budget": { if(!estPresidente()||!sb) break; if(!(await modaleConfirm("Supprimer cette demande de budget ?"))) break; await sb.from("ca_budgets").delete().eq("id",id); logAct("Budget supprimé"); await loadBudgets(); render(); break; }
     /* votes */
