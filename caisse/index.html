@@ -215,10 +215,28 @@ input[type=file]::file-selector-button:hover{color:var(--gold-soft);border-color
   align-items:center;flex-wrap:wrap;background:var(--surface)}
 .sheetd .sh strong{font-family:'Fraunces',serif;font-weight:600;font-size:18px}
 .sheetd .sb{padding:20px}
-.vrow{display:grid;grid-template-columns:22px 1fr 140px;gap:14px;align-items:center;
+.vrow{display:grid;grid-template-columns:auto 1fr 140px;gap:14px;align-items:center;
   padding:13px 0;border-bottom:1px solid var(--line)}
 .vrow:last-child{border-bottom:0}
 .vrow input[type=checkbox]{width:18px;height:18px;accent-color:var(--gold);margin:0}
+/* ---------- Interrupteurs à glisser (remplacent toutes les cases à cocher) ---------- */
+input[type=checkbox].tgl{appearance:none;-webkit-appearance:none;position:relative;box-sizing:border-box;
+  width:46px;height:26px;min-width:46px;border-radius:999px;background:var(--line);
+  border:1px solid var(--line);cursor:pointer;flex:none;margin:0;padding:0;
+  transition:background .18s ease,border-color .18s ease;vertical-align:middle}
+input[type=checkbox].tgl::before{content:"";position:absolute;top:2px;left:2px;
+  width:20px;height:20px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.45);transition:transform .18s ease}
+input[type=checkbox].tgl:checked{background:var(--green);border-color:var(--green)}
+input[type=checkbox].tgl:checked::before{transform:translateX(20px)}
+input[type=checkbox].tgl:disabled{opacity:.45;cursor:not-allowed}
+input[type=checkbox].tgl:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+input[type=checkbox].tgl.sm{width:38px;height:22px;min-width:38px}
+input[type=checkbox].tgl.sm::before{width:16px;height:16px}
+input[type=checkbox].tgl.sm:checked::before{transform:translateX(16px)}
+.tglstate{font-size:12px;font-weight:600;letter-spacing:.02em}
+.tglstate.on{color:var(--green)}
+.tglstate.off{color:var(--muted2)}
 .vrow .who2{font-weight:600}
 .vrow .ib{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted);margin-top:2px}
 .vrow .mt{text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:600;font-variant-numeric:tabular-nums}
@@ -574,8 +592,9 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
           <div id="cashNote" class="callout" hidden>
             <b>Paiement en espèces</b>
             <p>Le ticket de caisse tient lieu de preuve de paiement, à condition que le mode de règlement y soit lisible : la mention <b>ESPÈCES</b>, <b>CASH</b> ou <b>COMPTANT</b>, ou la ligne « Reçu / Rendu » avec la monnaie rendue. Si votre ticket ne l'indique pas, faites-le signer par le commerçant et joignez-le comme « Reçu signé du commerçant ».</p>
-            <label class="check"><input type="checkbox" id="cashOk">
+            <label class="check" style="align-items:center"><input type="checkbox" id="cashOk" class="tgl">
               <span>Je confirme que la pièce jointe fait apparaître le paiement en espèces.</span></label>
+            <div class="tglstate off" id="cashOkState" style="margin-top:6px">Non confirmé — faites glisser pour confirmer</div>
           </div>
           <span class="hint" id="proofHint"></span>
         </div>
@@ -1201,7 +1220,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = s => document.querySelector(s);
 const HORAIRES_DEFAUT = {1:{ouvert:true,limite:null},2:{ouvert:true,limite:null},3:{ouvert:true,limite:null},4:{ouvert:true,limite:null},5:{ouvert:true,limite:null},6:{ouvert:true,limite:null},7:{ouvert:true,limite:null}};
-const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], horaires:HORAIRES_DEFAUT, selected:null, view:"mine", proofUrls:{},
+const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], horaires:HORAIRES_DEFAUT, horEdited:false, selected:null, view:"mine", proofUrls:{},
                 channel:null, lastStatus:{}, primed:false, lastSync:null, sel:new Set(),
                 drawerDirty:false, tresoEmail:null, tronque:null };
 
@@ -2138,6 +2157,7 @@ async function refresh(){
   renderMessagesUI();
   verifierLienRecu();
   verifierLienReexamen();
+  try{ majHoraire(); }catch(_){}   // horaires chargés depuis la base : on réévalue l'ouverture
 }
 
 /* ---------- dépenses directes ---------- */
@@ -2240,11 +2260,21 @@ const PREUVE_PAIEMENT = ["Extrait de compte","Preuve de virement","Reçu de paie
    et l'IBAN devient inutile si la personne veut être remboursée de la main à la main. */
 function especes(){ return $("#f_pay").value === "Espèces"; }
 
+/* Message d'état sous l'interrupteur « paiement en espèces » */
+function syncCashOk(){
+  const box = $("#cashOk"), etat = $("#cashOkState");
+  if(!box || !etat) return;
+  if(box.checked){ etat.textContent = "✅ Confirmé"; etat.className = "tglstate on"; }
+  else { etat.textContent = "Non confirmé — faites glisser pour confirmer"; etat.className = "tglstate off"; }
+}
+if($("#cashOk")) $("#cashOk").addEventListener("change", syncCashOk);
+
 function majFormulaire(){
   const cash = especes();
   $("#myIban").textContent = state.profile?.iban || "IBAN non renseigné";
   $("#cashNote").hidden = !cash;
   if(!cash) $("#cashOk").checked = false;
+  syncCashOk();
   majControle();
   $("#proofHint").innerHTML = cash
     ? "Photo ou PDF. Joignez <b>la facture ou le ticket de caisse</b>, si possible acquitté ou signé par le commerçant. Aucun extrait de compte n'est demandé pour un paiement en espèces."
@@ -3413,7 +3443,10 @@ function buildPayrun(){
   const nExp = list.filter(i=>i.exported_at).length;
   const banner = nExp ? `<div class="hint" style="margin-bottom:10px;border:1px solid #c47f17;color:#c47f17">⚠ ${nExp} demande(s) déjà exportée(s) vers la banque. Ne renvoyez pas le fichier si les virements ont déjà été faits — marquez-les plutôt comme remboursées.</div>` : "";
   $("#payBody").innerHTML = banner + list.map(i => `<div class="vrow">
-      <input type="checkbox" data-pay="${i.id}" checked>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+        <input type="checkbox" class="tgl sm" data-pay="${i.id}" checked>
+        <span class="tglstate on" data-paystate="${i.id}" style="font-size:10px">Inclus</span>
+      </div>
       <div><div class="who2">${esc(payeeName(i))}${i.kind==="direct"?` <span class="tag" style="background:#3a2d6e;color:#cdbcff;font-size:10px">DIRECT</span>`:""}</div>
         <div class="ib">${esc(payeeIban(i) || "IBAN MANQUANT")}</div>
         <div class="ib" style="color:var(--muted2)">${refOf(i)} · ${esc(i.object)}</div>
@@ -3422,6 +3455,11 @@ function buildPayrun(){
     + `<div class="vtot"><span style="font-family:Inter,sans-serif;font-size:13px;color:var(--muted)">${list.length} virement(s)</span><span>${euro(total)}</span></div>`;
 }
 
+document.addEventListener("change", e => {
+  const c = e.target.closest("[data-pay]"); if(!c) return;
+  const s = document.querySelector(`[data-paystate="${c.dataset.pay}"]`);
+  if(s){ s.textContent = c.checked ? "Inclus" : "Exclu"; s.className = "tglstate " + (c.checked ? "on" : "off"); }
+});
 function payCoches(){
   return [...document.querySelectorAll("[data-pay]:checked")]
     .map(c => state.items.find(i => i.id === c.dataset.pay)).filter(Boolean);
@@ -3600,13 +3638,20 @@ $("#payDone").onclick = async () => {
 const JOURS_H = [[1,"Lundi"],[2,"Mardi"],[3,"Mercredi"],[4,"Jeudi"],[5,"Vendredi"],[6,"Samedi"],[7,"Dimanche"]];
 function renderHoraires(){
   const box = $("#horBox"); if(!box) return;
+  // Ne pas réécrire l'éditeur pendant que le trésorier le modifie (sinon un
+  // rafraîchissement temps réel effacerait ses réglages avant l'enregistrement).
+  if(state.horEdited && box.children.length) return;
   const H = state.horaires || HORAIRES_DEFAUT;
   const heures = ["","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23"];
   box.innerHTML = JOURS_H.map(([j,nom])=>{
     const c = H[j] || H[String(j)] || {ouvert:false,limite:null};
     const opts = heures.map(x=>`<option value="${x}" ${String(c.limite==null?"":c.limite)===x?"selected":""}>${x===""?"Sans limite":x+"h"}</option>`).join("");
-    return `<div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--line)">
-      <label style="display:flex;align-items:center;gap:8px;min-width:150px;cursor:pointer"><input type="checkbox" data-hj="${j}" data-hf="ouvert" ${c.ouvert?"checked":""}> <b>${nom}</b></label>
+    return `<div style="display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
+      <input type="checkbox" class="tgl" data-hj="${j}" data-hf="ouvert" ${c.ouvert?"checked":""} aria-label="${nom}">
+      <div style="min-width:130px">
+        <b>${nom}</b>
+        <div class="tglstate ${c.ouvert?"on":"off"}" data-hstate="${j}">${c.ouvert?"Ouvert":"Fermé"}</div>
+      </div>
       <span style="color:var(--muted2)">Heure limite :</span>
       <select data-hj="${j}" data-hf="limite" ${c.ouvert?"":"disabled"}>${opts}</select>
     </div>`;
@@ -3627,7 +3672,7 @@ async function saveHoraires(){
   const H = lireHorairesUI();
   const { error } = await sb.from("caisse_config").upsert({ id:1, horaires:H, updated_at:new Date().toISOString() });
   if(error){ toast("Échec : "+error.message); return; }
-  state.horaires = H; renderHoraires(); majHoraire && majHoraire(); toast("Horaires enregistrés.");
+  state.horaires = H; state.horEdited = false; renderHoraires(); majHoraire && majHoraire(); toast("Horaires enregistrés.");
 }
 function renderOverview(){
   const sel = $("#o_annee");
@@ -3799,8 +3844,16 @@ if($("#viderBrouillonDir")) $("#viderBrouillonDir").onclick = () => {
   effacerBrouillon("dir"); $("#directForm").reset(); staged.dir = []; renderStaged("dir"); toast("Formulaire réinitialisé.");
 };
 if($("#horSave")) $("#horSave").onclick = saveHoraires;
-if($("#horReset")) $("#horReset").onclick = () => { state.horaires = JSON.parse(JSON.stringify(HORAIRES_DEFAUT)); renderHoraires(); toast("Réglages par défaut restaurés (pense à Enregistrer)."); };
-document.addEventListener("change", e => { const c = e.target.closest('[data-hf="ouvert"]'); if(!c) return; const j=c.dataset.hj; const sel=document.querySelector(`[data-hj="${j}"][data-hf="limite"]`); if(sel) sel.disabled = !c.checked; });
+if($("#horReset")) $("#horReset").onclick = () => { state.horaires = JSON.parse(JSON.stringify(HORAIRES_DEFAUT)); state.horEdited = false; renderHoraires(); toast("Réglages par défaut restaurés (pense à Enregistrer)."); };
+document.addEventListener("change", e => {
+  const c = e.target.closest('[data-hf="ouvert"]'); if(!c) return;
+  const j = c.dataset.hj;
+  const sel = document.querySelector(`[data-hj="${j}"][data-hf="limite"]`);
+  if(sel) sel.disabled = !c.checked;
+  const etat = document.querySelector(`[data-hstate="${j}"]`);
+  if(etat){ etat.textContent = c.checked ? "Ouvert" : "Fermé"; etat.className = "tglstate " + (c.checked ? "on" : "off"); }
+  state.horEdited = true;   // réglages en cours, à préserver jusqu'à l'enregistrement
+});
 
 if($("#btnCancelReq")) $("#btnCancelReq").onclick = () => {
   effacerBrouillon("req"); $("#reqForm").reset(); staged.req = []; renderStaged("req"); majControle(); erreurForm("#reqErr", null);
@@ -4496,7 +4549,7 @@ const barreAvancement = it => {
   return `<span style="display:inline-flex;gap:6px;align-items:center">${dot(1,"Envoyée")}${sep}${dot(2,"Validée")}${sep}${dot(3,"Payée")}</span>`;
 };
 const rowHTML = (it, showWho) => `<div class="row" data-id="${it.id}" tabindex="0" role="button">
-  <div class="date mono" style="font-size:13px">${showWho?`<input type="checkbox" data-selchk data-id="${it.id}" ${state.sel&&state.sel.has(it.id)?"checked":""} style="margin-right:7px;vertical-align:middle;cursor:pointer">`:""}${fdate(it.expense_date)}</div>
+  <div class="date mono" style="font-size:13px">${showWho?`<input type="checkbox" class="tgl sm" data-selchk data-id="${it.id}" ${state.sel&&state.sel.has(it.id)?"checked":""} style="margin-right:9px;vertical-align:middle;cursor:pointer">`:""}${fdate(it.expense_date)}</div>
   <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div><div style="margin-top:4px">${barreAvancement(it)}</div></div>
   <div><span class="tag ${tagClass(it.status)}">${it.status}</span></div>
   <div class="amt">${euro(it.amount)}</div><div class="chev">›</div></div>`;
@@ -4702,6 +4755,7 @@ if($("#btnMsg")) $("#btnMsg").onclick = () => { if(state.profile) ouvrirMessager
 
 function render(){
   if(!state.profile?.approved) return;
+  try{ majHoraire(); }catch(_){}   // banderole ouvert/fermé et verrou du formulaire toujours à jour
   const mineAll = ouvert(state.items).filter(i => i.user_id === state.profile.id);
   const mine = mineAll.filter(i => i.kind !== "direct");
   const mineDirect = mineAll.filter(i => i.kind === "direct");
