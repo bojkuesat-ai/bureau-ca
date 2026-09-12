@@ -1,9 +1,11 @@
-/* Espace CA — service worker minimal.
+/* Espace CA — service worker.
    Stratégie : RÉSEAU D'ABORD. On sert toujours la version en ligne ;
    le cache ne sert que de filet quand le réseau tombe.
-   Objectif : rendre l'app installable (PWA) sans jamais servir une version périmée. */
+   IMPORTANT : incrémente CACHE à chaque déploiement (v2, v3, …).
+   Le changement de nom déclenche la purge de l'ancien cache dans "activate",
+   donc plus aucune vieille version ne peut rester coincée. */
 
-const CACHE = "ca-v1";
+const CACHE = "ca-v17";
 
 self.addEventListener("install", () => self.skipWaiting());
 
