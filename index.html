@@ -1671,6 +1671,7 @@ function tabBudgets(){
       ${open?blocRappel("budget",b):""}
       ${(open&&peutCloturer&&effectif)?`<div class="foot-line"><button class="btn sm" data-action="bcloture" data-id="${b.id}">🔒 Clôturer le vote</button>
         ${(owner&&count("pour")<seuil)?`<button class="link" data-action="bcloture" data-id="${b.id}" data-force="1" style="color:var(--stamp)">⚠ Forcer l'approbation</button>`:""}</div>`:""}
+      ${owner?`<div class="foot-line"><button class="link" data-action="edit-cout" data-id="${b.id}">✏ Modifier le montant (propriétaire)</button></div>`:""}
       ${peutDecider?`<div class="foot-line">${open?`${(effectif&&count("pour")>=seuil)?`<button class="chip" data-action="bdecide" data-id="${b.id}" data-st="approuve">✓ Approuver</button>`:""}<button class="chip" data-action="bdecide" data-id="${b.id}" data-st="refuse">✕ Refuser</button>`:`<button class="link" data-action="bdecide" data-id="${b.id}" data-st="vote">Rouvrir le vote</button>`}
         <button class="link" data-action="del-budget" data-id="${b.id}" style="margin-left:auto">Supprimer</button></div>`:""}</div>`;
   }).join("");
@@ -3703,6 +3704,20 @@ ${sections||"<p>Aucun retour.</p>"}
     case "bdecide": { if(!estPresidente()||!sb) break; const st=el.dataset.st; const md=await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id).select(); if(md&&md.error){ modaleInfo("Enregistrement impossible : "+md.error.message); break; } if(!md||!md.data||!md.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 la modification (aucune ligne chang\u00e9e) \u2014 il s'agit d'une r\u00e8gle de droits (RLS) sur ca_budgets.","Action non enregistr\u00e9e"); break; } await loadBudgets(); render(); break; }
     case "bcloture": { await cloturerBudget(id, el.dataset.force==="1"); break; }
     case "del-budget": { if(!estPresidente()||!sb) break; if(!(await modaleConfirm("Supprimer cette demande de budget ?"))) break; await sb.from("ca_budgets").delete().eq("id",id); logAct("Budget supprimé"); await loadBudgets(); render(); break; }
+    case "edit-cout": {
+      /* Modification du montant : r\u00e9serv\u00e9e au propri\u00e9taire, c\u00f4t\u00e9 interface ET c\u00f4t\u00e9 base
+         (la RPC ca_budget_set_cout v\u00e9rifie ca_is_owner()). La pr\u00e9sidence ne voit pas ce bouton
+         et, avec le verrou de colonne SQL, ne peut pas non plus \u00e9crire cout directement. */
+      if(!(S.session&&S.session.role==="owner")||!sb){ modaleInfo("Seul le propri\u00e9taire peut modifier le montant."); break; }
+      const b=(S.budgets||[]).find(x=>x.id===id); if(!b) break;
+      const saisie=await modaleSaisie("Nouveau montant en euros pour \u00ab "+(b.titre||"")+" \u00bb (actuel : "+eur(b.cout||0)+").","Modifier le montant","Ex. 250");
+      if(saisie===null) break;
+      const nv=parseFloat(String(saisie).replace(",",".").replace(/[^0-9.]/g,""));
+      if(isNaN(nv)||nv<0){ modaleInfo("Montant invalide."); break; }
+      const r=await sb.rpc("ca_budget_set_cout",{p_id:id,p_cout:nv});
+      if(r&&r.error){ modaleInfo("Modification refus\u00e9e : "+r.error.message); break; }
+      logAct("Montant du budget modifi\u00e9 : "+(b.titre||"")+" \u2192 "+eur(nv));
+      await loadBudgets(); render(); break; }
     /* votes */
     case "add-vote": { const q=val("v_q").trim(); const opts=[0,1,2,3,4].map(i=>val("v_o"+i).trim()).filter(Boolean); if(!q||opts.length<2||!sb) return;
       let vdocs=[];
