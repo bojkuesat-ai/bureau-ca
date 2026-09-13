@@ -5037,6 +5037,20 @@ if($("#c_exportBtn")) $("#c_exportBtn").onclick = () => {
   patRows += row("Total des dettes", pat.totDettes, "tot");
   patRows += row("Patrimoine net", pat.patNet, "tot");
 
+  // budget de l'exercice (inclut les saisies non enregistrées)
+  const b = budYear(an);
+  document.querySelectorAll("[data-bud]").forEach(el => { const [g,r]=el.dataset.bud.split("|"); b[g]=b[g]||{}; b[g][r]=el.value; });
+  const budRecT = RUB_REC.reduce((s,r)=>s+nnum(b.rec&&b.rec[r]),0);
+  const budDepT = RUB_DEP.reduce((s,r)=>s+nnum(b.dep&&b.dep[r]),0);
+  let budRows = "";
+  if(budRecT || budDepT){
+    budRows = `<tr class="grp"><td colspan="2">Recettes prévues</td></tr>`;
+    RUB_REC.forEach(r => budRows += row(r, nnum(b.rec&&b.rec[r])));
+    budRows += `<tr class="grp"><td colspan="2">Dépenses prévues</td></tr>`;
+    RUB_DEP.forEach(r => budRows += row(r, nnum(b.dep&&b.dep[r])));
+    budRows += row("Résultat prévisionnel", budRecT-budDepT, "tot");
+  }
+
   const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <title>Comptes annuels — ${esc(nom)} — ${esc(per)}</title>
 <style>
@@ -5070,6 +5084,7 @@ if($("#c_exportBtn")) $("#c_exportBtn").onclick = () => {
   <h2>Annexe — État du patrimoine</h2>
   <table>${patRows}</table>
   ${pat.droits.trim()?`<h2>Annexe — Droits et engagements importants</h2><div class="regles">${esc(pat.droits)}</div>`:""}
+  ${budRows?`<h2>Budget prévisionnel (soumis à l'approbation de l'AG)</h2><table>${budRows}</table>`:""}
 
   <div class="foot">Document généré le ${esc(new Date().toLocaleDateString("fr-BE"))} depuis l'application Caisse.
   À faire approuver par l'assemblée générale, puis à déposer au greffe du tribunal de l'entreprise dans les 30 jours.</div>
