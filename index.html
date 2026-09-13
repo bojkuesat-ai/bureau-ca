@@ -2627,6 +2627,11 @@ function prenomVotant(v){
 }
 function sigMembre(a){ return ((a.prenom||a.nom||"")+(a.fonction?" \u00b7 "+a.fonction:"")).trim().toLowerCase(); }
 function prenomsParChoix(b, ch){ return (b.votes||[]).filter(v=>v.choix===ch).map(prenomVotant); }
+function nomDepuisEmail(e){
+  const loc = String(e||"").split("@")[0] || "";
+  const mot = s => s ? s.charAt(0).toUpperCase()+s.slice(1) : "";
+  return loc.split(/[._-]+/).filter(Boolean).map(mot).join(" ") || String(e||"");
+}
 function prenomsNonVotants(b){
   const parId=new Set((b.votes||[]).map(v=>v.membreId).filter(Boolean));
   /* Votes déposés avant l'ajout de membre_id : on ne peut les rattacher que par
@@ -2634,9 +2639,13 @@ function prenomsNonVotants(b){
   const anciens=(b.votes||[]).filter(v=>!v.membreId);
   const parSig=new Set(anciens.map(v=>String(v.nom||"").trim().toLowerCase()));
   const parPrenom=new Set(anciens.map(v=>String(v.nom||"").split("\u00b7")[0].trim().toLowerCase()).filter(Boolean));
-  return membresActifs()
+  const inscrits = membresActifs()
     .filter(a=>!parId.has(a.id) && !parSig.has(sigMembre(a)) && !parPrenom.has(String(a.prenom||"").trim().toLowerCase()))
     .map(a=>String(a.prenom||"").trim()||String(a.nom||"").trim()||"\u2014");
+  /* Les membres du CA sans compte ne peuvent pas voter : ils comptent toujours
+     comme non-votants, comme dans le compteur de rappel juste au-dessus. */
+  const sansCompte = nonInscrits().map(e => nomDepuisEmail(e) + " (pas encore inscrit·e)");
+  return inscrits.concat(sansCompte);
 }
 function budgetForce(b){ return /hors seuil/i.test(String(b.decidePar||"")); }
 function listePrenoms(l){ return l.length?l.join(", "):"\u2014"; }
