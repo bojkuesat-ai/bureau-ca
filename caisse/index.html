@@ -412,6 +412,23 @@ dl.facts dd{margin:0;word-break:break-word;font-size:14px}
 .toast.show{transform:translate(-50%,0);opacity:1}
 footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
 
+/* ---------- onglet Comptabilité ---------- */
+.cpt-tbl{border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--surface2)}
+.cpt-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px}
+.cpt-row:last-child{border-bottom:none}
+.cpt-row .v{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.cpt-row.sub{padding-left:28px;color:var(--muted2);font-size:13px}
+.cpt-row.sub .v{font-weight:500}
+.cpt-row.tot{background:var(--surface);font-weight:800}
+.cpt-row.tot .v{color:var(--gold-soft)}
+.cpt-row.head2{background:var(--bg2);font-weight:700;color:var(--gold-soft);text-transform:uppercase;font-size:12px;letter-spacing:.04em}
+.cpt-in{width:130px;text-align:right;font-variant-numeric:tabular-nums;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg2);color:var(--text)}
+.cpt-note{background:var(--bg2);border:1px solid var(--line);border-radius:11px;padding:12px 14px;font-size:13px;color:var(--muted);line-height:1.6}
+.cpt-note b{color:var(--text)}
+.cpt-flag{border-radius:11px;padding:13px 15px;font-weight:600;border:1px solid var(--line);font-size:13.5px}
+.cpt-flag.ok{background:var(--green-bg);border-color:#1f6b4f;color:var(--green)}
+.cpt-flag.warn{background:var(--amber-bg);border-color:#7a5410;color:var(--amber)}
+#c_regles{width:100%;min-height:150px;box-sizing:border-box;font-size:13.5px;line-height:1.6}
 /* ---------- bilan (PDF / Excel) ---------- */
 .bline{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:620px){.bline{grid-template-columns:1fr}}
@@ -548,6 +565,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
     <button id="tabMembers" aria-pressed="false" hidden>Membres<span class="pill" id="pillMem" hidden>0</span></button>
     <button id="tabMessages" aria-pressed="false" hidden>Messages<span class="pill" id="pillMsg" hidden>0</span></button>
     <button id="tabBudget" aria-pressed="false" hidden>Budget</button>
+    <button id="tabCompta" aria-pressed="false" hidden>Comptabilité</button>
   </div>
   <div class="who"><b id="whoName">—</b><span id="whoRole">—</span><button id="btnMsg" class="btn ghost sm" style="display:none;margin-left:auto">✉️ Messagerie<span class="pill" id="btnMsgPill" hidden>0</span></button></div>
   <button class="btn ghost sm" id="changePass">Mot de passe</button>
@@ -811,6 +829,90 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
         <div id="horBox"></div>
         <div style="display:flex;gap:10px;margin-top:12px"><button class="btn ok" id="horSave">Enregistrer les horaires</button><button class="btn ghost" id="horReset">Tout ouvrir (défaut)</button></div>
       </div>
+    </div>
+
+  </section>
+
+  <!-- comptabilité -->
+  <section id="viewCompta" class="stack" hidden>
+
+    <div class="toolbar">
+      <label for="c_annee" class="eyebrow" style="margin-right:8px">Exercice</label>
+      <select id="c_annee"></select>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" id="c_exportBtn">Comptes annuels à imprimer</button>
+    </div>
+    <p class="hint" style="margin:-4px 0 0">Tout ce qu'il faut pour boucler l'année d'une petite ASBL en comptabilité simplifiée : l'état des recettes et dépenses, l'état du patrimoine et l'annexe, réunis ici. Les montants sont repris automatiquement de tes onglets Recettes / Dépenses / demandes ; tu ne complètes à la main que ce que l'app ne peut pas déduire.</p>
+
+    <!-- indicateur taxe patrimoniale -->
+    <div id="c_taxeFlag" class="cpt-flag ok"></div>
+
+    <!-- état des recettes et dépenses -->
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">1 · État des recettes et dépenses</div></div>
+      <p class="hint" style="margin:0 0 10px">Schéma minimum normalisé (annexe 8 de l'AR d'exécution du CSA). Tes catégories libres sont regroupées dans les rubriques légales ; le détail par catégorie est affiché en dessous de chaque rubrique pour que tu retrouves tout.</p>
+      <div class="cpt-tbl" id="c_rd"></div>
+    </div>
+
+    <!-- état du patrimoine -->
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">2 · État du patrimoine</div></div>
+      <p class="hint" style="margin:0 0 10px">Photographie de ce que possède et doit l'ASBL à la clôture. Les liquidités, les créances du CA sortant et les dettes envers les membres (demandes validées non encore virées) sont calculées automatiquement. Complète les autres postes à la main s'ils existent (sinon laisse 0).</p>
+      <div class="cpt-tbl" id="c_pat"></div>
+    </div>
+
+    <!-- règles d'évaluation -->
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">3 · Règles d'évaluation (annexe)</div></div>
+      <details class="pliable" style="margin-bottom:10px">
+        <summary><span class="eyebrow">À quoi ça sert ? Comment les rédiger ?</span></summary>
+        <div class="cpt-note" style="margin-top:10px">
+          <p style="margin:0 0 8px"><b>Ce que c'est.</b> Les règles que votre conseil d'administration décide pour chiffrer ce que l'ASBL possède dans l'état du patrimoine (à quel montant on inscrit le matériel, les créances, etc.). Elles font partie de l'annexe des comptes annuels.</p>
+          <p style="margin:0 0 8px"><b>Qui les fixe.</b> C'est l'organe d'administration (vous) qui les arrête, avec suffisamment de précision.</p>
+          <p style="margin:0 0 8px"><b>Comment faire.</b> Quelques phrases suffisent. Clique sur « Insérer un modèle » pour pré-remplir un jeu de règles standard pour une petite ASBL, puis ajuste-le à ta réalité.</p>
+          <p style="margin:0"><b>Réflexe légal.</b> Si tu changes une règle d'une année à l'autre, mentionne-le et justifie-le ici même — c'est une obligation de l'annexe.</p>
+        </div>
+      </details>
+      <div style="display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+        <button class="btn ghost sm" id="c_modeleBtn" type="button">Insérer un modèle</button>
+      </div>
+      <textarea id="c_regles" placeholder="Ex. Les avoirs en banque et en caisse sont repris à leur valeur nominale au jour de la clôture…"></textarea>
+    </div>
+
+    <!-- budget (optionnel) -->
+    <div>
+      <details class="pliable">
+        <summary><span class="eyebrow">4 · Budget de l'exercice (optionnel)</span><span class="resume" id="c_budResume"></span></summary>
+        <div style="margin-top:10px">
+          <p class="hint" style="margin:0 0 10px">À présenter à l'AG au même schéma que l'état des recettes et dépenses. Facultatif dans l'app, mais l'AG doit approuver un budget chaque année.</p>
+          <div class="cpt-tbl" id="c_bud"></div>
+        </div>
+      </details>
+    </div>
+
+    <!-- identité + enregistrement -->
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">Identité de l'ASBL (pour l'impression)</div></div>
+      <div class="card" style="padding:14px 16px;display:grid;gap:10px">
+        <div><label class="eyebrow">Dénomination</label><input type="text" id="c_nomAsbl" placeholder="Nom complet de l'ASBL"></div>
+        <div><label class="eyebrow">Numéro d'entreprise (BCE)</label><input type="text" id="c_bce" placeholder="0xxx.xxx.xxx"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+          <button class="btn ok" id="c_saveBtn" type="button">Enregistrer les données comptables</button>
+          <span class="hint" id="c_saveHint" style="align-self:center"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- rappels démarches externes -->
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">Ce qui se fait hors de l'app</div></div>
+      <div class="cpt-note">
+        <p style="margin:0 0 8px"><b>Dépôt au greffe.</b> Une petite ASBL ne publie pas ses comptes à la Banque nationale, mais doit les déposer <b>gratuitement au greffe du tribunal de l'entreprise</b>, dans les 30 jours suivant leur approbation par l'AG. Utilise le bouton « Comptes annuels à imprimer » ci-dessus pour produire le document à déposer.</p>
+        <p style="margin:0 0 8px"><b>Registre UBO.</b> Les bénéficiaires effectifs (= les administrateurs) doivent être à jour dans le registre UBO, via MyMinfin. Démarche externe.</p>
+        <p style="margin:0 0 8px"><b>Impôt des personnes morales (IPM).</b> L'ASBL n'est en principe pas imposée sur ses activités désintéressées, mais une déclaration reste à rentrer.</p>
+        <p style="margin:0"><b>Taxe patrimoniale.</b> Déclaration due seulement si le patrimoine taxable dépasse 50 000 € (voir l'indicateur en haut), au plus tard le 31 mars.</p>
+      </div>
+      <p class="hint" style="margin-top:8px">Ces informations générales ne remplacent pas l'avis d'un expert-comptable. En cas de doute, fais valider par un professionnel ou via le SPF Finances.</p>
     </div>
 
   </section>
@@ -1254,7 +1356,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = s => document.querySelector(s);
 const HORAIRES_DEFAUT = {1:{ouvert:true,limite:null},2:{ouvert:true,limite:null},3:{ouvert:true,limite:null},4:{ouvert:true,limite:null},5:{ouvert:true,limite:null},6:{ouvert:true,limite:null},7:{ouvert:true,limite:null}};
-const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], budgets:[], caMembres:[], caMe:null, budgetFiltre:"tous", horaires:HORAIRES_DEFAUT, horEdited:false, selected:null, view:"mine", proofUrls:{},
+const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], budgets:[], caMembres:[], caMe:null, budgetFiltre:"tous", horaires:HORAIRES_DEFAUT, horEdited:false, compta:{}, comptaEdited:false, selected:null, view:"mine", proofUrls:{},
                 channel:null, lastStatus:{}, primed:false, lastSync:null, sel:new Set(),
                 drawerDirty:false, tresoEmail:null, tronque:null };
 
@@ -2133,6 +2235,7 @@ async function loadProfile(user){
   $("#tabMembers").hidden = !isTreso();
   $("#tabMessages").hidden = !isTreso();
   if($("#tabBudget")) $("#tabBudget").hidden = !isTreso();
+  if($("#tabCompta")) $("#tabCompta").hidden = !isTreso();
   if($("#btnMsg")) $("#btnMsg").style.display = isTreso() ? "none" : "inline-flex";
   try{ brancherBrouillon("req"); brancherBrouillon("dir"); restaurerBrouillon("req"); restaurerBrouillon("dir"); }catch(_){}
   if(!$("#f_date").value) $("#f_date").value = new Date().toISOString().slice(0,10);
@@ -2170,6 +2273,8 @@ async function refresh(){
   try{ const _hc = await sb.from("caisse_config").select("horaires").eq("id",1).maybeSingle(); if(_hc.data && _hc.data.horaires) state.horaires = _hc.data.horaires; }catch(_){}
   try{ const _tc = await sb.from("caisse_config").select("treso_email").eq("id",1).maybeSingle();
        if(_tc.data && _tc.data.treso_email) state.tresoEmail = String(_tc.data.treso_email).trim() || null; }catch(_){}
+  try{ const _cc = await sb.from("caisse_config").select("compta").eq("id",1).maybeSingle();
+       if(_cc.data && _cc.data.compta && typeof _cc.data.compta === "object") state.compta = _cc.data.compta; }catch(_){}
   state.lastSync = new Date();
   detecterChangements();
   try{
@@ -4609,6 +4714,7 @@ function setView(v){
   $("#tabMembers").setAttribute("aria-pressed", v==="members");
   $("#tabMessages").setAttribute("aria-pressed", v==="messages");
   if($("#tabBudget")) $("#tabBudget").setAttribute("aria-pressed", v==="budget");
+  if($("#tabCompta")) $("#tabCompta").setAttribute("aria-pressed", v==="compta");
   $("#tabDirect").setAttribute("aria-pressed", v==="direct");
   $("#viewMine").hidden = v!=="mine";
   $("#viewTreso").hidden = v!=="treso";
@@ -4623,6 +4729,8 @@ function setView(v){
   $("#viewMessages").hidden = v!=="messages";
   if($("#viewBudget")) $("#viewBudget").hidden = v!=="budget";
   if(v==="budget") renderBudget();
+  if($("#viewCompta")) $("#viewCompta").hidden = v!=="compta";
+  if(v==="compta") renderCompta();
   $("#viewDirect").hidden = v!=="direct";
   if(v==="expenses" && !$("#e_date").value) $("#e_date").value = new Date().toISOString().slice(0,10);
   if(v==="incomes" && !$("#i_date").value) $("#i_date").value = new Date().toISOString().slice(0,10);
@@ -4650,6 +4758,327 @@ if($("#tabExtraits")) $("#tabExtraits").onclick = () => choisirVue("extraits");
 $("#tabMembers").onclick = () => choisirVue("members");
 $("#tabMessages").onclick = () => choisirVue("messages");
 if($("#tabBudget")) $("#tabBudget").onclick = () => choisirVue("budget");
+if($("#tabCompta")) $("#tabCompta").onclick = () => choisirVue("compta");
+
+/* ============================================================
+   Onglet COMPTABILITÉ — comptes annuels d'une petite ASBL en
+   comptabilité simplifiée : état des recettes et dépenses (schéma
+   normalisé), état du patrimoine, règles d'évaluation, budget,
+   indicateur taxe patrimoniale et export à déposer au greffe.
+   Tout est recalculé depuis state.incomes / state.expenses / state.items ;
+   seuls les postes non déductibles sont saisis à la main et stockés
+   dans caisse_config.compta (colonne jsonb).
+   ============================================================ */
+
+const RUB_REC = ["Cotisations","Dons et legs","Subsides","Autres recettes"];
+const rubRec = cat => {
+  const c = String(cat||"").trim();
+  if(c==="Cotisations") return "Cotisations";
+  if(c==="Dons") return "Dons et legs";
+  if(c==="Subsides") return "Subsides";
+  return "Autres recettes";
+};
+const RUB_DEP = ["Marchandises, services et biens divers","Rémunérations","Autres dépenses"];
+const rubDep = cat => {
+  const c = String(cat||"").trim();
+  if(c==="Frais bancaires" || c==="Taxes & cotisations") return "Autres dépenses";
+  return "Marchandises, services et biens divers";
+};
+const SEUIL_TAXE_PATRIMONIALE = 50000;
+
+// nombre saisi -> valeur numérique (tolère la virgule décimale belge)
+const nnum = v => { const n = parseFloat(String(v??"").replace(/\s/g,"").replace(",",".")); return isNaN(n) ? 0 : n; };
+
+function comptaCfg(){ if(!state.compta || typeof state.compta!=="object") state.compta = {}; return state.compta; }
+function comptaKey(an){ return (an && an!=="all") ? String(an) : "courant"; }
+function patYear(an){ const c=comptaCfg(); c.patrimoine=c.patrimoine||{}; const k=comptaKey(an); c.patrimoine[k]=c.patrimoine[k]||{}; return c.patrimoine[k]; }
+function budYear(an){ const c=comptaCfg(); c.budget=c.budget||{}; const k=comptaKey(an); c.budget[k]=c.budget[k]||{}; return c.budget[k]; }
+
+// solde d'ouverture (report) de l'exercice
+function soldeOuverture(an){
+  return (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && estOuverture(i))
+                            .reduce((s,i)=>s+Number(i.amount||0),0);
+}
+
+// ---- calculs de l'état des recettes et dépenses (regroupés au schéma normalisé) ----
+function comptaRD(an){
+  const recs = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && !estOuverture(i));
+  const recRub = {}; RUB_REC.forEach(r=>recRub[r]=0);
+  const recDet = {}; RUB_REC.forEach(r=>recDet[r]={});
+  recs.forEach(i => { const r=rubRec(i.category); const m=Number(i.amount||0);
+    recRub[r]+=m; const c=String(i.category||"Autre").trim()||"Autre"; recDet[r][c]=(recDet[r][c]||0)+m; });
+  const totRec = RUB_REC.reduce((s,r)=>s+recRub[r],0);
+
+  const exps = (state.expenses||[]).filter(e => dansAnnee(e.expense_date, an));
+  const rembs = (state.items||[]).filter(i => i.status==="Remboursée" && dansAnnee(i.expense_date, an));
+  const depRub = {}; RUB_DEP.forEach(r=>depRub[r]=0);
+  const depDet = {}; RUB_DEP.forEach(r=>depDet[r]={});
+  exps.forEach(e => { const r=rubDep(e.category); const m=Number(e.amount||0);
+    depRub[r]+=m; const c=String(e.category||"Autre").trim()||"Autre"; depDet[r][c]=(depDet[r][c]||0)+m; });
+  if(rembs.length){ const r="Marchandises, services et biens divers"; const m=rembs.reduce((s,i)=>s+Number(i.amount||0),0);
+    depRub[r]+=m; depDet[r]["Remboursements aux membres / paiements directs"]=(depDet[r]["Remboursements aux membres / paiements directs"]||0)+m; }
+  const totDep = RUB_DEP.reduce((s,r)=>s+depRub[r],0);
+
+  return { recRub, recDet, totRec, depRub, depDet, totDep, resultat: totRec-totDep, ouverture: soldeOuverture(an) };
+}
+
+// ---- calculs de l'état du patrimoine (auto + saisie manuelle) ----
+function comptaPatrimoine(an){
+  const liquidites = totalRecettes(an) - totalSorties(an); // solde de trésorerie à la clôture
+  const creancesAuto = (state.expenses||[]).filter(e => estRepriseDue(e) && dansAnnee(e.expense_date, an))
+                          .reduce((s,e)=>s+Number(e.amount||0),0);
+  const dettesMembres = (state.items||[]).filter(i => i.status==="Validée" && dansAnnee(i.expense_date, an))
+                          .reduce((s,i)=>s+Number(i.amount||0),0);
+  const p = patYear(an);
+  const avoirs = {
+    "Liquidités (banque + caisse)": liquidites,
+    "Créances — reste dû par le CA sortant": creancesAuto,
+    "Autres créances": nnum(p.creancesAutres),
+    "Placements": nnum(p.placements),
+    "Immobilisations / matériel": nnum(p.materiel),
+    "Stocks": nnum(p.stocks),
+    "Autres avoirs": nnum(p.autresAvoirs)
+  };
+  const dettes = {
+    "Dettes envers les membres (demandes validées non payées)": dettesMembres,
+    "Dettes fournisseurs": nnum(p.dettesFournisseurs),
+    "Autres dettes": nnum(p.dettesAutres)
+  };
+  const totAvoirs = Object.values(avoirs).reduce((a,b)=>a+b,0);
+  const totDettes = Object.values(dettes).reduce((a,b)=>a+b,0);
+  return { avoirs, dettes, totAvoirs, totDettes, patNet: totAvoirs-totDettes,
+           auto:{liquidites, creancesAuto, dettesMembres}, droits: String(p.droitsEngagements||"") };
+}
+
+function renderCompta(){
+  if(!isTreso()) return;
+  const sel = $("#c_annee"); if(!sel) return;
+  const annees = [...new Set([
+    ...(state.incomes||[]).map(i=>String(i.income_date).slice(0,4)),
+    ...(state.expenses||[]).map(e=>String(e.expense_date).slice(0,4)),
+    ...(state.items||[]).map(i=>String(i.expense_date).slice(0,4))
+  ].filter(a=>/^\d{4}$/.test(a)))].sort().reverse();
+  const choix = sel.value;
+  sel.innerHTML = `<option value="all">Toutes les années</option>` +
+    annees.map(a => `<option${a===choix?" selected":""}>${a}</option>`).join("");
+  if(choix && [...sel.options].some(o=>o.value===choix)) sel.value = choix;
+  const an = sel.value;
+  const yearChanged = (an !== state._comptaAn);
+  state._comptaAn = an;
+
+  const rd  = comptaRD(an);
+  const pat = comptaPatrimoine(an);
+
+  // ---- indicateur taxe patrimoniale ----
+  const flag = $("#c_taxeFlag");
+  if(flag){
+    if(pat.totAvoirs > SEUIL_TAXE_PATRIMONIALE){
+      flag.className = "cpt-flag warn";
+      flag.innerHTML = `⚠ Patrimoine total ${esc(euro(pat.totAvoirs))} — au-dessus de ${esc(euro(SEUIL_TAXE_PATRIMONIALE))}. `
+        + `Une déclaration de taxe patrimoniale est en principe due, au plus tard le 31 mars. À confirmer avec le SPF Finances.`;
+    }else{
+      flag.className = "cpt-flag ok";
+      flag.innerHTML = `✓ Patrimoine total ${esc(euro(pat.totAvoirs))} — sous le seuil de ${esc(euro(SEUIL_TAXE_PATRIMONIALE))}. `
+        + `Pas de taxe patrimoniale due (exonération sous 50 000 € de biens taxables).`;
+    }
+  }
+
+  // ---- tableau état des recettes et dépenses ----
+  const detHTML = det => Object.keys(det).sort().map(c =>
+    `<div class="cpt-row sub"><span>${esc(c)}</span><span class="v">${esc(euro(det[c]))}</span></div>`).join("");
+  let rdHTML = `<div class="cpt-row head2"><span>Recettes</span><span class="v">Montant</span></div>`;
+  RUB_REC.forEach(r => { rdHTML += `<div class="cpt-row"><span>${esc(r)}</span><span class="v">${esc(euro(rd.recRub[r]))}</span></div>` + detHTML(rd.recDet[r]); });
+  rdHTML += `<div class="cpt-row tot"><span>Total des recettes</span><span class="v">${esc(euro(rd.totRec))}</span></div>`;
+  rdHTML += `<div class="cpt-row head2"><span>Dépenses</span><span class="v">Montant</span></div>`;
+  RUB_DEP.forEach(r => { rdHTML += `<div class="cpt-row"><span>${esc(r)}</span><span class="v">${esc(euro(rd.depRub[r]))}</span></div>` + detHTML(rd.depDet[r]); });
+  rdHTML += `<div class="cpt-row tot"><span>Total des dépenses</span><span class="v">${esc(euro(rd.totDep))}</span></div>`;
+  rdHTML += `<div class="cpt-row tot"><span>Résultat de l'exercice (recettes − dépenses)</span>`
+    + `<span class="v" style="color:${rd.resultat<0?"var(--red)":"var(--green)"}">${esc(euro(rd.resultat))}</span></div>`;
+  if(rd.ouverture) rdHTML += `<div class="cpt-row sub"><span>Pour mémoire — report de l'exercice précédent (hors résultat)</span><span class="v">${esc(euro(rd.ouverture))}</span></div>`;
+  $("#c_rd").innerHTML = rdHTML;
+
+  // ---- tableau état du patrimoine (avec inputs pour les postes manuels) ----
+  const AUTO = new Set([
+    "Liquidités (banque + caisse)",
+    "Créances — reste dû par le CA sortant",
+    "Dettes envers les membres (demandes validées non payées)"
+  ]);
+  const champ = { // libellé -> attribut data pour retrouver l'input
+    "Autres créances":"creancesAutres", "Placements":"placements",
+    "Immobilisations / matériel":"materiel", "Stocks":"stocks", "Autres avoirs":"autresAvoirs",
+    "Dettes fournisseurs":"dettesFournisseurs", "Autres dettes":"dettesAutres"
+  };
+  const p = patYear(an);
+  const b = budYear(an);
+  // les tableaux du patrimoine et du budget contiennent des champs de saisie :
+  // on ne les reconstruit pas tant qu'une saisie n'est pas enregistrée (même
+  // garde que les horaires), pour ne pas écraser ce qui est en train d'être tapé.
+  if(yearChanged || !state.comptaEdited){
+    const ligne = (lbl, val) => {
+      if(AUTO.has(lbl)) return `<div class="cpt-row"><span>${esc(lbl)} <span style="color:var(--muted2);font-size:11px">auto</span></span><span class="v">${esc(euro(val))}</span></div>`;
+      const key = champ[lbl];
+      return `<div class="cpt-row"><span>${esc(lbl)}</span><span><input class="cpt-in" data-pat="${key}" inputmode="decimal" value="${esc(p[key]??"")}" placeholder="0"></span></div>`;
+    };
+    let patHTML = `<div class="cpt-row head2"><span>Avoirs (actif)</span><span class="v">Montant</span></div>`;
+    Object.keys(pat.avoirs).forEach(l => patHTML += ligne(l, pat.avoirs[l]));
+    patHTML += `<div class="cpt-row tot"><span>Total des avoirs</span><span class="v">${esc(euro(pat.totAvoirs))}</span></div>`;
+    patHTML += `<div class="cpt-row head2"><span>Dettes (passif)</span><span class="v">Montant</span></div>`;
+    Object.keys(pat.dettes).forEach(l => patHTML += ligne(l, pat.dettes[l]));
+    patHTML += `<div class="cpt-row tot"><span>Total des dettes</span><span class="v">${esc(euro(pat.totDettes))}</span></div>`;
+    patHTML += `<div class="cpt-row tot"><span>Patrimoine net (avoirs − dettes)</span>`
+      + `<span class="v" style="color:${pat.patNet<0?"var(--red)":"var(--green)"}">${esc(euro(pat.patNet))}</span></div>`;
+    patHTML += `<div class="cpt-row head2"><span>Droits et engagements importants (annexe)</span><span></span></div>`;
+    patHTML += `<div style="padding:12px 14px"><textarea data-pat="droitsEngagements" style="width:100%;min-height:70px;box-sizing:border-box" placeholder="Ex. bail, garantie, subside promis non encore reçu, engagement pluriannuel… Laisse vide s'il n'y en a pas.">${esc(p.droitsEngagements||"")}</textarea></div>`;
+    $("#c_pat").innerHTML = patHTML;
+
+    // ---- budget (optionnel) : inputs par rubrique normalisée ----
+    const binput = (grp,r) => `<div class="cpt-row"><span>${esc(r)}</span><span><input class="cpt-in" data-bud="${grp}|${r}" inputmode="decimal" value="${esc((b[grp]&&b[grp][r])??"")}" placeholder="0"></span></div>`;
+    let budHTML = `<div class="cpt-row head2"><span>Recettes prévues</span><span class="v">Montant</span></div>`;
+    RUB_REC.forEach(r => budHTML += binput("rec", r));
+    budHTML += `<div class="cpt-row head2"><span>Dépenses prévues</span><span class="v">Montant</span></div>`;
+    RUB_DEP.forEach(r => budHTML += binput("dep", r));
+    const budRec = RUB_REC.reduce((s,r)=>s+nnum(b.rec&&b.rec[r]),0);
+    const budDep = RUB_DEP.reduce((s,r)=>s+nnum(b.dep&&b.dep[r]),0);
+    budHTML += `<div class="cpt-row tot"><span>Résultat prévisionnel</span>`
+      + `<span class="v" style="color:${(budRec-budDep)<0?"var(--red)":"var(--green)"}">${esc(euro(budRec-budDep))}</span></div>`;
+    $("#c_bud").innerHTML = budHTML;
+    if($("#c_budResume")) $("#c_budResume").textContent = (budRec||budDep) ? `prévu : +${euro(budRec)} / −${euro(budDep)}` : "non renseigné";
+  }
+
+  // ---- champs texte globaux (règles + identité) : ne pas écraser une saisie en cours ----
+  if(yearChanged || !state.comptaEdited){
+    if($("#c_regles"))  $("#c_regles").value  = comptaCfg().regles  || "";
+    if($("#c_nomAsbl")) $("#c_nomAsbl").value = comptaCfg().nomAsbl || "";
+    if($("#c_bce"))     $("#c_bce").value     = comptaCfg().bce     || "";
+    state.comptaEdited = false;
+  }
+  if($("#c_saveHint")) $("#c_saveHint").textContent = state.comptaEdited ? "Modifications non enregistrées." : "";
+}
+
+// marque une saisie en cours (même logique de garde que les horaires)
+document.addEventListener("input", e => {
+  const t = e.target;
+  if(t && (t.matches("[data-pat]") || t.matches("[data-bud]") || t.id==="c_regles" || t.id==="c_nomAsbl" || t.id==="c_bce")){
+    state.comptaEdited = true;
+    if($("#c_saveHint")) $("#c_saveHint").textContent = "Modifications non enregistrées.";
+  }
+});
+
+// modèle de règles d'évaluation prêt à l'emploi
+const MODELE_REGLES =
+`Règles d'évaluation arrêtées par l'organe d'administration :
+- Les avoirs en banque et en caisse sont repris à leur valeur nominale à la date de clôture de l'exercice.
+- Les créances sont reprises à leur valeur nominale, déduction faite des montants jugés irrécouvrables.
+- Les dettes sont reprises à leur valeur nominale à la date de clôture.
+- Le matériel durable est repris à son prix d'acquisition, le cas échéant diminué des réductions de valeur estimées nécessaires.
+- Les stocks éventuels sont repris à leur prix d'achat.
+Toute modification de ces règles d'un exercice à l'autre est mentionnée et justifiée ci-dessus.`;
+
+if($("#c_modeleBtn")) $("#c_modeleBtn").onclick = () => {
+  const ta = $("#c_regles"); if(!ta) return;
+  if(ta.value.trim() && !confirm("Remplacer le contenu actuel des règles d'évaluation par le modèle ?")) return;
+  ta.value = MODELE_REGLES; state.comptaEdited = true;
+  if($("#c_saveHint")) $("#c_saveHint").textContent = "Modifications non enregistrées.";
+};
+
+// enregistrement de toutes les données comptables saisies (règles, identité, patrimoine manuel, budget)
+if($("#c_saveBtn")) $("#c_saveBtn").onclick = async () => {
+  const an = $("#c_annee") ? $("#c_annee").value : "all";
+  const c = comptaCfg();
+  c.regles  = $("#c_regles")  ? $("#c_regles").value  : (c.regles||"");
+  c.nomAsbl = $("#c_nomAsbl") ? $("#c_nomAsbl").value.trim() : (c.nomAsbl||"");
+  c.bce     = $("#c_bce")     ? $("#c_bce").value.trim()     : (c.bce||"");
+  const p = patYear(an);
+  document.querySelectorAll("[data-pat]").forEach(el => { p[el.dataset.pat] = el.value; });
+  const b = budYear(an);
+  document.querySelectorAll("[data-bud]").forEach(el => {
+    const [grp,r] = el.dataset.bud.split("|"); b[grp]=b[grp]||{}; b[grp][r]=el.value;
+  });
+  const btn = $("#c_saveBtn"); btn.disabled = true; btn.textContent = "Enregistrement…";
+  const { error } = await sb.from("caisse_config").upsert({ id:1, compta:c, updated_at:new Date().toISOString() });
+  btn.disabled = false; btn.textContent = "Enregistrer les données comptables";
+  if(error){ toast("Échec de l'enregistrement : "+error.message); return; }
+  state.comptaEdited = false;
+  toast("Données comptables enregistrées.");
+  renderCompta();
+};
+
+// export imprimable des comptes annuels (à déposer au greffe)
+if($("#c_exportBtn")) $("#c_exportBtn").onclick = () => {
+  const an = $("#c_annee") ? $("#c_annee").value : "all";
+  // on prend en compte les saisies non enregistrées pour l'aperçu papier
+  const p = patYear(an);
+  document.querySelectorAll("[data-pat]").forEach(el => { p[el.dataset.pat] = el.value; });
+  const regles = $("#c_regles") ? $("#c_regles").value : (comptaCfg().regles||"");
+  const nom = ($("#c_nomAsbl") ? $("#c_nomAsbl").value.trim() : "") || comptaCfg().nomAsbl || "ASBL";
+  const bce = ($("#c_bce") ? $("#c_bce").value.trim() : "") || comptaCfg().bce || "";
+
+  const rd  = comptaRD(an);
+  const pat = comptaPatrimoine(an);
+  const per = an==="all" ? "Toutes les années" : ("Exercice " + an);
+
+  const row = (l,v,cls="") => `<tr class="${cls}"><td>${esc(l)}</td><td class="num">${esc(euro(v))}</td></tr>`;
+  const detRows = det => Object.keys(det).sort().map(c =>
+    `<tr class="sub"><td>${esc(c)}</td><td class="num">${esc(euro(det[c]))}</td></tr>`).join("");
+
+  let rdRows = `<tr class="grp"><td colspan="2">Recettes</td></tr>`;
+  RUB_REC.forEach(r => { rdRows += row(r, rd.recRub[r]) + detRows(rd.recDet[r]); });
+  rdRows += row("Total des recettes", rd.totRec, "tot");
+  rdRows += `<tr class="grp"><td colspan="2">Dépenses</td></tr>`;
+  RUB_DEP.forEach(r => { rdRows += row(r, rd.depRub[r]) + detRows(rd.depDet[r]); });
+  rdRows += row("Total des dépenses", rd.totDep, "tot");
+  rdRows += row("Résultat de l'exercice", rd.resultat, "tot");
+
+  let patRows = `<tr class="grp"><td colspan="2">Avoirs</td></tr>`;
+  Object.keys(pat.avoirs).forEach(l => patRows += row(l, pat.avoirs[l]));
+  patRows += row("Total des avoirs", pat.totAvoirs, "tot");
+  patRows += `<tr class="grp"><td colspan="2">Dettes</td></tr>`;
+  Object.keys(pat.dettes).forEach(l => patRows += row(l, pat.dettes[l]));
+  patRows += row("Total des dettes", pat.totDettes, "tot");
+  patRows += row("Patrimoine net", pat.patNet, "tot");
+
+  const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<title>Comptes annuels — ${esc(nom)} — ${esc(per)}</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:720px;margin:32px auto;padding:0 20px;font-size:13px;line-height:1.5}
+  h1{font-size:19px;margin:0 0 2px} h2{font-size:15px;margin:26px 0 8px;border-bottom:2px solid #333;padding-bottom:4px}
+  .meta{color:#555;font-size:12px;margin-bottom:6px}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  td{padding:5px 8px;border-bottom:1px solid #ddd;vertical-align:top}
+  td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  tr.grp td{background:#f0f0f0;font-weight:bold;text-transform:uppercase;font-size:11px;letter-spacing:.03em}
+  tr.tot td{font-weight:bold;border-top:2px solid #333;background:#fafafa}
+  tr.sub td{padding-left:26px;color:#666;font-size:12px;border-bottom:1px dotted #eee}
+  .regles{white-space:pre-wrap;background:#fafafa;border:1px solid #ddd;border-radius:6px;padding:12px;font-size:12px}
+  .foot{margin-top:30px;color:#888;font-size:11px}
+  @media print{ body{margin:0} .noprint{display:none} }
+  .noprint{margin:18px 0;text-align:center}
+  .noprint button{padding:9px 18px;font-size:14px;cursor:pointer}
+</style></head><body>
+  <div class="noprint"><button onclick="window.print()">Imprimer / enregistrer en PDF</button></div>
+  <h1>${esc(nom)}</h1>
+  <div class="meta">${bce?("Numéro d'entreprise : "+esc(bce)+" · "):""}Comptes annuels — ${esc(per)}</div>
+  <div class="meta">Comptabilité simplifiée · schéma minimum normalisé (annexe 8 de l'AR d'exécution du CSA)</div>
+
+  <h2>État des recettes et des dépenses</h2>
+  <table>${rdRows}</table>
+  ${rd.ouverture?`<div class="meta" style="margin-top:6px">Pour mémoire — report de l'exercice précédent : ${esc(euro(rd.ouverture))} (hors résultat).</div>`:""}
+
+  <h2>Annexe — Règles d'évaluation</h2>
+  <div class="regles">${esc(regles||"(à compléter par l'organe d'administration)")}</div>
+
+  <h2>Annexe — État du patrimoine</h2>
+  <table>${patRows}</table>
+  ${pat.droits.trim()?`<h2>Annexe — Droits et engagements importants</h2><div class="regles">${esc(pat.droits)}</div>`:""}
+
+  <div class="foot">Document généré le ${esc(new Date().toLocaleDateString("fr-BE"))} depuis l'application Caisse.
+  À faire approuver par l'assemblée générale, puis à déposer au greffe du tribunal de l'entreprise dans les 30 jours.</div>
+</body></html>`;
+
+  const w = window.open("", "_blank");
+  if(!w){ toast("Autorise les fenêtres pop-up pour générer le document."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+};
 
 /* ============================================================
    Onglet BUDGET — miroir en direct des budgets de l'app CA.
@@ -4988,6 +5417,7 @@ function render(){
     renderExpenses();
     renderIncomes();
     renderClosures();
+    if(state.view==="compta"){ try{ renderCompta(); }catch(_){} }
     majReset();
   }
   const verrouillees = state.items.length - ouvert(state.items).length
