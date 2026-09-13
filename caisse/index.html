@@ -429,6 +429,10 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
 .cpt-flag.ok{background:var(--green-bg);border-color:#1f6b4f;color:var(--green)}
 .cpt-flag.warn{background:var(--amber-bg);border-color:#7a5410;color:var(--amber)}
 #c_regles{width:100%;min-height:150px;box-sizing:border-box;font-size:13.5px;line-height:1.6}
+.tva-box{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--bg2)}
+.tva-box .eyebrow{color:var(--gold-soft)}
+.tva-live{font-variant-numeric:tabular-nums}
+.ubl-drop{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px dashed var(--line);border-radius:12px;padding:12px 14px;background:var(--bg2);margin-bottom:6px}
 /* ---------- bilan (PDF / Excel) ---------- */
 .bline{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:620px){.bline{grid-template-columns:1fr}}
@@ -566,6 +570,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
     <button id="tabMessages" aria-pressed="false" hidden>Messages<span class="pill" id="pillMsg" hidden>0</span></button>
     <button id="tabBudget" aria-pressed="false" hidden>Budget</button>
     <button id="tabCompta" aria-pressed="false" hidden>Comptabilité</button>
+    <button id="tabTva" aria-pressed="false" hidden>TVA</button>
   </div>
   <div class="who"><b id="whoName">—</b><span id="whoRole">—</span><button id="btnMsg" class="btn ghost sm" style="display:none;margin-left:auto">✉️ Messagerie<span class="pill" id="btnMsgPill" hidden>0</span></button></div>
   <button class="btn ghost sm" id="changePass">Mot de passe</button>
@@ -917,6 +922,50 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
 
   </section>
 
+  <!-- TVA -->
+  <section id="viewTva" class="stack" hidden>
+    <div class="toolbar">
+      <label for="tva_annee" class="eyebrow" style="margin-right:8px">Année</label>
+      <select id="tva_annee"></select>
+      <div class="spacer"></div>
+    </div>
+    <p class="hint" style="margin:-4px 0 0">Gestion de la TVA en régime de franchise : le seuil de chiffre d'affaires et le listing annuel des clients professionnels. La déclaration périodique ne s'active que si tu dépasses 25 000 €.</p>
+
+    <!-- indicateur seuil franchise -->
+    <div id="tva_seuilFlag" class="cpt-flag ok"></div>
+
+    <!-- listing clients -->
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">Listing clients annuel (TVA)</div></div>
+      <p class="hint" style="margin:0 0 10px">Clients <b>professionnels assujettis belges</b> à qui tu as facturé plus de 250 € (hors TVA) sur l'année. À transmettre pour le 31 mars. Les particuliers et les recettes « non concernées » (subsides, dons, cotisations) n'y figurent pas.</p>
+      <div class="cpt-tbl" id="tva_listing"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn ghost sm" id="tva_xmlBtn">Exporter en XML (Intervat)</button>
+        <button class="btn ghost sm" id="tva_csvBtn">Exporter en CSV</button>
+        <button class="btn ghost sm" id="tva_printBtn">Version à imprimer</button>
+      </div>
+      <p class="hint" style="margin-top:8px">Le dépôt officiel se fait via <b>Intervat</b> (SPF Finances). Le CSV et la version imprimable te servent à encoder le listing dans Intervat ou à le remettre à un comptable.</p>
+    </div>
+
+    <!-- déclaration périodique (activée au dépassement) -->
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">Déclaration périodique</div></div>
+      <div id="tva_perLocked" class="cpt-note"></div>
+      <div id="tva_perActive" hidden>
+        <div class="toolbar">
+          <select id="tva_perType"><option value="Q">Par trimestre</option><option value="M">Par mois</option></select>
+          <select id="tva_perNum" style="margin-left:8px"></select>
+          <div class="spacer"></div>
+          <button class="btn ghost sm" id="tva_perXmlBtn">Exporter en XML (Intervat)</button>
+        </div>
+        <div class="cpt-tbl" id="tva_perGrid"></div>
+        <div class="cpt-note" id="tva_perFoot" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <p class="hint" style="margin-top:4px">Informations générales, pas un conseil fiscal. En cas de doute, le SPF Finances ou un comptable confirme ta situation.</p>
+  </section>
+
   <!-- messagerie -->
   <section id="viewMessages" class="stack" hidden>
     <div>
@@ -959,9 +1008,16 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
       <h2 style="font-size:22px;margin:6px 0 6px">Enregistrer une dépense payée par la caisse</h2>
       <p class="hint" style="margin:0 0 16px">Les achats que vous réglez vous-même depuis le compte de l'association. Ils n'appellent aucun remboursement mais entrent dans le bilan.</p>
       <form id="expForm" class="stack" style="gap:14px">
+        <div class="ubl-drop">
+          <div style="flex:1;min-width:200px">
+            <b style="font-size:13px">Facture électronique (PEPPOL / UBL)</b>
+            <div class="hint" style="margin:2px 0 0">Dépose le fichier <b>.xml</b> : date, fournisseur, montant TTC et TVA se remplissent seuls. Un PDF n'est pas lisible automatiquement — joins-le comme pièce et encode le montant à la main.</div>
+          </div>
+          <input type="file" id="e_ubl" accept=".xml,text/xml,application/xml">
+        </div>
         <div class="grid2">
           <div class="field"><label for="e_date">Date de la dépense</label><input type="date" id="e_date" required></div>
-          <div class="field"><label for="e_amount">Montant (€)</label><input type="number" id="e_amount" step="0.01" min="0.01" placeholder="0,00" required></div>
+          <div class="field"><label for="e_amount">Montant TTC (€)</label><input type="number" id="e_amount" step="0.01" min="0.01" placeholder="0,00" required></div>
         </div>
         <div class="field"><label for="e_object">Objet de la dépense</label>
           <input type="text" id="e_object" maxlength="90" placeholder="Ex. Assurance responsabilité civile 2026" required></div>
@@ -973,6 +1029,15 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
         </div>
         <div class="field"><label for="e_method">Moyen de paiement</label>
           <select id="e_method"><option>Virement</option><option>Carte de l'association</option><option>Domiciliation</option><option>Espèces</option><option>Chèque</option></select></div>
+        <div class="tva-box">
+          <div class="eyebrow" style="margin-bottom:8px">TVA — achat</div>
+          <div class="grid2">
+            <div class="field"><label for="e_supplierVat">N° de TVA du fournisseur</label>
+              <input type="text" id="e_supplierVat" placeholder="BE 0xxx.xxx.xxx"></div>
+            <div class="field"><label for="e_vatRate">Taux de TVA</label><select id="e_vatRate"></select></div>
+          </div>
+          <div class="hint tva-live" id="e_tvaLive" style="margin:2px 0 0"></div>
+        </div>
         <div class="field">
           <label>Pièces justificatives</label>
           <div class="attach">
@@ -1128,7 +1193,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
       <form id="incForm" class="stack" style="gap:14px">
         <div class="grid2">
           <div class="field"><label for="i_date">Date d'encaissement</label><input type="date" id="i_date" required></div>
-          <div class="field"><label for="i_amount">Montant (€)</label><input type="number" id="i_amount" step="0.01" min="0.01" placeholder="0,00" required></div>
+          <div class="field"><label for="i_amount">Montant TTC (€)</label><input type="number" id="i_amount" step="0.01" min="0.01" placeholder="0,00" required></div>
         </div>
         <div class="field"><label for="i_object">Objet de la recette</label>
           <input type="text" id="i_object" maxlength="90" placeholder="Ex. Bénéfice de la fête de quartier 2026" required></div>
@@ -1137,6 +1202,17 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
             <input type="text" id="i_source" maxlength="80" placeholder="Ex. Commune de Schaerbeek" required></div>
           <div class="field"><label for="i_cat">Catégorie</label>
             <select id="i_cat"><option>Solde d'ouverture</option><option>Cotisations</option><option>Subsides</option><option>Dons</option><option>Sponsoring</option><option>Événements</option><option>Ventes</option><option>Intérêts bancaires</option><option>Remboursement reçu</option><option>Autre</option></select></div>
+        </div>
+        <div class="tva-box">
+          <div class="eyebrow" style="margin-bottom:8px">TVA — vente</div>
+          <div class="grid2">
+            <div class="field"><label for="i_clientType">Type de client</label>
+              <select id="i_clientType"><option value="non">Non concerné (subside, don, cotisation…)</option><option value="particulier">Particulier</option><option value="professionnel">Professionnel (assujetti)</option></select></div>
+            <div class="field"><label for="i_vatRate">Taux de TVA</label><select id="i_vatRate"></select></div>
+          </div>
+          <div class="field" id="i_clientVatWrap" style="display:none"><label for="i_clientVat">N° de TVA du client</label>
+            <input type="text" id="i_clientVat" placeholder="BE 0xxx.xxx.xxx"></div>
+          <div class="hint tva-live" id="i_tvaLive" style="margin:2px 0 0"></div>
         </div>
         <div class="field"><label for="i_method">Moyen d'encaissement</label>
           <select id="i_method"><option>Virement</option><option>Espèces</option><option>Paiement en ligne</option><option>Chèque</option></select></div>
@@ -2236,6 +2312,7 @@ async function loadProfile(user){
   $("#tabMessages").hidden = !isTreso();
   if($("#tabBudget")) $("#tabBudget").hidden = !isTreso();
   if($("#tabCompta")) $("#tabCompta").hidden = !isTreso();
+  if($("#tabTva")) $("#tabTva").hidden = !isTreso();
   if($("#btnMsg")) $("#btnMsg").style.display = isTreso() ? "none" : "inline-flex";
   try{ brancherBrouillon("req"); brancherBrouillon("dir"); restaurerBrouillon("req"); restaurerBrouillon("dir"); }catch(_){}
   if(!$("#f_date").value) $("#f_date").value = new Date().toISOString().slice(0,10);
@@ -2346,6 +2423,7 @@ $("#expForm").addEventListener("submit", async e => {
       expense_date: $("#e_date").value, amount: parseFloat($("#e_amount").value),
       object: $("#e_object").value.trim(), category: $("#e_cat").value,
       payee: $("#e_payee").value.trim(), method: $("#e_method").value,
+      vat_rate: $("#e_vatRate").value, supplier_vat: $("#e_supplierVat").value.trim(),
       note: $("#e_note").value.trim()
     });
     if(error) throw error;
@@ -4190,6 +4268,8 @@ $("#incForm").addEventListener("submit", async e => {
       income_date: $("#i_date").value, amount: parseFloat($("#i_amount").value),
       object: $("#i_object").value.trim(), category: $("#i_cat").value,
       source: $("#i_source").value.trim(), method: $("#i_method").value,
+      vat_rate: $("#i_vatRate").value, client_type: $("#i_clientType").value,
+      client_vat: $("#i_clientVat").value.trim(),
       note: $("#i_note").value.trim()
     });
     if(error) throw error;
@@ -4715,6 +4795,7 @@ function setView(v){
   $("#tabMessages").setAttribute("aria-pressed", v==="messages");
   if($("#tabBudget")) $("#tabBudget").setAttribute("aria-pressed", v==="budget");
   if($("#tabCompta")) $("#tabCompta").setAttribute("aria-pressed", v==="compta");
+  if($("#tabTva")) $("#tabTva").setAttribute("aria-pressed", v==="tva");
   $("#tabDirect").setAttribute("aria-pressed", v==="direct");
   $("#viewMine").hidden = v!=="mine";
   $("#viewTreso").hidden = v!=="treso";
@@ -4731,6 +4812,8 @@ function setView(v){
   if(v==="budget") renderBudget();
   if($("#viewCompta")) $("#viewCompta").hidden = v!=="compta";
   if(v==="compta") renderCompta();
+  if($("#viewTva")) $("#viewTva").hidden = v!=="tva";
+  if(v==="tva") renderTva();
   $("#viewDirect").hidden = v!=="direct";
   if(v==="expenses" && !$("#e_date").value) $("#e_date").value = new Date().toISOString().slice(0,10);
   if(v==="incomes" && !$("#i_date").value) $("#i_date").value = new Date().toISOString().slice(0,10);
@@ -4759,6 +4842,7 @@ $("#tabMembers").onclick = () => choisirVue("members");
 $("#tabMessages").onclick = () => choisirVue("messages");
 if($("#tabBudget")) $("#tabBudget").onclick = () => choisirVue("budget");
 if($("#tabCompta")) $("#tabCompta").onclick = () => choisirVue("compta");
+if($("#tabTva")) $("#tabTva").onclick = () => choisirVue("tva");
 
 /* ============================================================
    Onglet COMPTABILITÉ — comptes annuels d'une petite ASBL en
@@ -5090,6 +5174,324 @@ if($("#c_exportBtn")) $("#c_exportBtn").onclick = () => {
   À faire approuver par l'assemblée générale, puis à déposer au greffe du tribunal de l'entreprise dans les 30 jours.</div>
 </body></html>`;
 
+  const w = window.open("", "_blank");
+  if(!w){ toast("Autorise les fenêtres pop-up pour générer le document."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+};
+
+/* ============================================================
+   Onglet TVA — régime de franchise (petite entreprise).
+   - taux TVA sur ventes et achats, montant saisi en TTC, HT/TVA déduits ;
+   - listing clients annuel (pros belges > 250 € HT) ;
+   - indicateur de seuil 25 000 € ; au dépassement, aperçu de déclaration
+     périodique. Import de factures électroniques PEPPOL/UBL (.xml).
+   Champs stockés sur incomes (vat_rate, client_type, client_vat) et
+   expenses (vat_rate, supplier_vat).
+   ============================================================ */
+
+const TVA_RATES = [
+  { code:"NA", label:"TVA non applicable (franchise)" },
+  { code:"0",  label:"0 %" },
+  { code:"6",  label:"6 %" },
+  { code:"12", label:"12 %" },
+  { code:"21", label:"21 %" }
+];
+const SEUIL_FRANCHISE = 25000;
+const tvaRatePct = code => { const n = parseFloat(code); return isNaN(n) ? 0 : n; }; // 'NA' -> 0
+function ventile(ttc, code){ const t = Number(ttc)||0; const r = tvaRatePct(code);
+  const ht = r>0 ? t/(1+r/100) : t; return { ttc:t, ht, tva: t-ht }; }
+const normVat = s => String(s||"").replace(/\s+/g,"").replace(/\./g,"").toUpperCase();
+const round2 = n => Math.round((Number(n)||0)*100)/100;
+const estBelgeVat = s => { const v = normVat(s); return v.startsWith("BE") || /^[01]\d{9}$/.test(v); };
+// n° d'entreprise/TVA belge réduit à 10 chiffres (format exigé par Intervat), sinon ""
+const digits10 = s => { const d = normVat(s).replace(/\D/g,""); return d.length===10 ? d : ""; };
+// nettoyage pour le XML Intervat : sans accents ni caractères interdits
+const deaccent = s => String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+const cleanXmlName = s => deaccent(s).replace(/[<>&"'$*+|/\\;«»]/g,"").replace(/\s+/g," ").trim().slice(0,100);
+
+// génère le listing clients au format officiel Intervat (schéma ClientListingConsignment,
+// validé contre NewLK-in_v0_7.xsd). Renvoie {xml} ou {error}.
+function listingXML(listing, an){
+  const decVat = digits10(comptaCfg().bce);
+  if(!decVat) return { error:"Renseigne d'abord le numéro d'entreprise de l'ASBL (10 chiffres) dans l'onglet Comptabilité." };
+  const decName = cleanXmlName(comptaCfg().nomAsbl);
+  const clients = []; let skipped = 0;
+  listing.forEach(c => { const d = digits10(c.vat); if(!d){ skipped++; return; } clients.push({ vat:d, ht:round2(c.ht), tva:round2(c.tva) }); });
+  if(!clients.length) return { error:"Aucun client avec un n° de TVA belge à 10 chiffres exploitable." };
+  const totHT = round2(clients.reduce((s,c)=>s+c.ht,0)), totTVA = round2(clients.reduce((s,c)=>s+c.tva,0));
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+  xml += `<ClientListingConsignment xmlns="http://www.minfin.fgov.be/ClientListingConsignment" xmlns:common="http://www.minfin.fgov.be/InputCommon" ClientListingsNbr="1">\n`;
+  xml += `  <ClientListing SequenceNumber="1" ClientsNbr="${clients.length}" TurnOverSum="${totHT.toFixed(2)}" VATAmountSum="${totTVA.toFixed(2)}">\n`;
+  xml += `    <Declarant>\n      <common:VATNumber>${decVat}</common:VATNumber>\n`;
+  if(decName) xml += `      <common:Name>${esc(decName)}</common:Name>\n`;
+  xml += `    </Declarant>\n    <Period>${esc(an)}</Period>\n`;
+  clients.forEach((c,idx) => {
+    xml += `    <Client SequenceNumber="${idx+1}">\n`;
+    xml += `      <CompanyVATNumber issuedBy="BE">${c.vat}</CompanyVATNumber>\n`;
+    xml += `      <TurnOver>${c.ht.toFixed(2)}</TurnOver>\n      <VATAmount>${c.tva.toFixed(2)}</VATAmount>\n    </Client>\n`;
+  });
+  xml += `  </ClientListing>\n</ClientListingConsignment>\n`;
+  return { xml, skipped, count:clients.length };
+}
+
+// génère la déclaration TVA périodique au format officiel Intervat
+// (schéma VATConsignment, validé contre NewTVA-in_v0_7.xsd).
+function declarationXML(per){
+  if(!per) return { error:"Ouvre d'abord la déclaration périodique." };
+  const decVat = digits10(comptaCfg().bce);
+  if(!decVat) return { error:"Renseigne le numéro d'entreprise de l'ASBL (10 chiffres) dans l'onglet Comptabilité." };
+  const decName = cleanXmlName(comptaCfg().nomAsbl);
+  const g = per.g, amounts = [];
+  const add = (grid,val) => { const r=round2(val); if(r>0) amounts.push([grid, r.toFixed(2)]); };
+  add(1,g.b6); add(2,g.b12); add(3,g.b21);
+  const g54 = round2(g.tvaDue), g59 = round2(g.tvaDeduc), solde = round2(g54 - g59);
+  if(g54>0) amounts.push([54, g54.toFixed(2)]);
+  add(82,g.achatsHT);
+  if(g59>0) amounts.push([59, g59.toFixed(2)]);
+  amounts.push([solde>=0?71:72, Math.abs(solde).toFixed(2)]); // 71 ou 72 obligatoire, = 54 - 59
+  const perEl = per.type==="Q" ? `<Quarter>${per.num}</Quarter>` : `<Month>${per.num}</Month>`;
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+  xml += `<VATConsignment xmlns="http://www.minfin.fgov.be/VATConsignment" xmlns:common="http://www.minfin.fgov.be/InputCommon" VATDeclarationsNbr="1">\n`;
+  xml += `  <VATDeclaration SequenceNumber="1">\n    <Declarant>\n      <common:VATNumber>${decVat}</common:VATNumber>\n`;
+  if(decName) xml += `      <common:Name>${esc(decName)}</common:Name>\n`;
+  xml += `    </Declarant>\n    <Period>${perEl}<Year>${esc(String(per.an))}</Year></Period>\n    <Data>\n`;
+  amounts.forEach(([grd,val]) => { xml += `      <Amount GridNumber="${grd}">${val}</Amount>\n`; });
+  xml += `    </Data>\n    <ClientListingNihil>NO</ClientListingNihil>\n    <Ask Restitution="NO" Payment="NO"/>\n  </VATDeclaration>\n</VATConsignment>\n`;
+  return { xml };
+}
+
+// remplissage des sélecteurs de taux + calcul en direct HT/TVA
+function fillRateSelect(sel, def){ if(!sel) return; sel.innerHTML = TVA_RATES.map(r=>`<option value="${r.code}"${r.code===def?" selected":""}>${r.label}</option>`).join(""); }
+function majTvaLive(p){
+  const amtEl=$("#"+p+"_amount"), rateEl=$("#"+p+"_vatRate"), el=$("#"+p+"_tvaLive");
+  if(!amtEl||!rateEl||!el) return;
+  const amt=nnum(amtEl.value), code=rateEl.value;
+  if(!amt){ el.textContent=""; return; }
+  const v=ventile(amt, code);
+  el.innerHTML = (code==="NA")
+    ? `Hors TVA (franchise) — montant net ${esc(euro(v.ht))}.`
+    : `${esc(euro(v.ttc))} TTC → HT ${esc(euro(v.ht))} · TVA ${esc(euro(v.tva))} (${esc(code)} %).`;
+}
+fillRateSelect($("#i_vatRate"), "NA");
+fillRateSelect($("#e_vatRate"), "NA");
+["i","e"].forEach(p=>{
+  const amt=$("#"+p+"_amount"), rate=$("#"+p+"_vatRate");
+  if(amt) amt.addEventListener("input", ()=>majTvaLive(p));
+  if(rate) rate.addEventListener("change", ()=>majTvaLive(p));
+});
+if($("#i_clientType")) $("#i_clientType").addEventListener("change", () => {
+  if($("#i_clientVatWrap")) $("#i_clientVatWrap").style.display = ($("#i_clientType").value==="professionnel") ? "" : "none";
+});
+// après un reset de formulaire, remettre l'affichage TVA à zéro
+["incForm","expForm"].forEach(id=>{ const f=$("#"+id); if(f) f.addEventListener("reset", ()=>setTimeout(()=>{
+  if($("#i_clientVatWrap")) $("#i_clientVatWrap").style.display="none";
+  if($("#i_tvaLive")) $("#i_tvaLive").textContent="";
+  if($("#e_tvaLive")) $("#e_tvaLive").textContent="";
+},0)); });
+
+// ---- import d'une facture électronique PEPPOL / UBL (.xml) ----
+function parseUBL(xmlText){
+  const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+  if(doc.getElementsByTagName("parsererror").length) throw new Error("xml invalide");
+  const all = [...doc.getElementsByTagName("*")];
+  const pick = (root, ...names) => {
+    const scope = root ? [root, ...root.getElementsByTagName("*")] : all;
+    for(const n of names){ for(const e of scope){ if(e.localName===n && e.textContent.trim()) return e.textContent.trim(); } }
+    return "";
+  };
+  const root = doc.documentElement;
+  const directID = [...root.children].find(e=>e.localName==="ID");
+  const invoiceId = directID ? directID.textContent.trim() : "";
+  const issue = pick(root, "IssueDate");
+  const taxTotal = [...root.children].find(e=>e.localName==="TaxTotal");
+  const ttc = parseFloat(pick(root, "PayableAmount","TaxInclusiveAmount")) || 0;
+  const tva = parseFloat(taxTotal ? pick(taxTotal,"TaxAmount") : pick(root,"TaxAmount")) || 0;
+  const pct = parseFloat(pick(root, "Percent"));
+  const sup = all.find(e=>e.localName==="AccountingSupplierParty");
+  const supplierVat = sup ? pick(sup, "CompanyID","EndpointID") : "";
+  const name = sup ? pick(sup, "RegistrationName","Name") : "";
+  let rateCode = "";
+  if(!isNaN(pct)){ const r=Math.round(pct); rateCode = [0,6,12,21].includes(r) ? String(r) : ""; }
+  else if(ttc && tva===0) rateCode = "NA";
+  return { date:issue||"", ttc, tva, supplierVat:normVat(supplierVat), name, invoiceId, rateCode };
+}
+if($("#e_ubl")) $("#e_ubl").onchange = async () => {
+  const f = $("#e_ubl").files && $("#e_ubl").files[0]; if(!f) return;
+  try{
+    const d = parseUBL(await f.text());
+    if(d.date) $("#e_date").value = d.date;
+    if(d.ttc) $("#e_amount").value = d.ttc.toFixed(2);
+    if(d.supplierVat) $("#e_supplierVat").value = d.supplierVat;
+    if(d.name && !$("#e_payee").value.trim()) $("#e_payee").value = d.name.slice(0,80);
+    if(d.invoiceId && !$("#e_object").value.trim()) $("#e_object").value = ("Facture "+d.invoiceId).slice(0,90);
+    if(d.rateCode) $("#e_vatRate").value = d.rateCode;
+    majTvaLive("e");
+    toast("Facture PEPPOL importée — vérifie les champs.");
+  }catch(err){ toast("Fichier PEPPOL illisible. Encode les champs à la main."); }
+  $("#e_ubl").value = "";
+};
+
+// ---- rendu de l'onglet TVA ----
+function renderTva(){
+  if(!isTreso()) return;
+  const sel = $("#tva_annee"); if(!sel) return;
+  const annees = [...new Set((state.incomes||[]).map(i=>String(i.income_date).slice(0,4)).filter(a=>/^\d{4}$/.test(a)))].sort().reverse();
+  const choix = sel.value;
+  sel.innerHTML = annees.length ? annees.map(a=>`<option${a===choix?" selected":""}>${a}</option>`).join("") : `<option value="">—</option>`;
+  if(choix && [...sel.options].some(o=>o.value===choix)) sel.value = choix;
+  const an = sel.value || annees[0] || String(new Date().getFullYear());
+
+  // ventes de l'année (recettes marquées comme opérations client)
+  const ventes = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && (i.client_type==="particulier" || i.client_type==="professionnel"));
+  const caHT = ventes.reduce((s,i)=>s+ventile(i.amount, i.vat_rate||"NA").ht, 0);
+  const depasse = caHT > SEUIL_FRANCHISE;
+
+  const flag = $("#tva_seuilFlag");
+  if(depasse){
+    flag.className = "cpt-flag warn";
+    flag.innerHTML = `⚠ Chiffre d'affaires ${esc(euro(caHT))} pour ${esc(an)} — au-dessus de ${esc(euro(SEUIL_FRANCHISE))}. `
+      + `Le régime de franchise ne s'applique plus : passage au régime normal (formulaire e604B) et déclarations TVA périodiques. La section « Déclaration périodique » ci-dessous est activée.`;
+  }else{
+    flag.className = "cpt-flag ok";
+    flag.innerHTML = `✓ Chiffre d'affaires ${esc(euro(caHT))} pour ${esc(an)} — sous le seuil de ${esc(euro(SEUIL_FRANCHISE))} (marge restante ${esc(euro(SEUIL_FRANCHISE-caHT))}). `
+      + `Régime de franchise : pas de déclaration TVA périodique, seul le listing annuel est dû.`;
+  }
+
+  // listing clients pros belges > 250 € HT
+  const map = {};
+  ventes.filter(i => i.client_type==="professionnel" && estBelgeVat(i.client_vat)).forEach(i => {
+    const k = normVat(i.client_vat); const v = ventile(i.amount, i.vat_rate||"NA");
+    map[k] = map[k] || { vat:k, name:i.source||"", ht:0, tva:0 }; map[k].ht += v.ht; map[k].tva += v.tva;
+  });
+  const listing = Object.values(map).filter(c => c.ht > 250).sort((a,b)=>b.ht-a.ht);
+  state._tvaListing = listing; state._tvaAn = an;
+
+  const tbl = $("#tva_listing");
+  if(!listing.length){
+    tbl.innerHTML = `<div class="cpt-row"><span class="hint" style="grid-column:1/-1">Aucun client professionnel belge facturé au-dessus de 250 € HT sur ${esc(an)}. Si l'ASBL est assujettie, un listing « néant » reste à déposer.</span></div>`;
+  }else{
+    let h = `<div class="cpt-row head2"><span>Client (n° TVA)</span><span class="v">Base HT · TVA</span></div>`;
+    listing.forEach(c => h += `<div class="cpt-row"><span>${esc(c.vat)}${c.name?` — ${esc(c.name)}`:""}</span><span class="v">${esc(euro(c.ht))} · ${esc(euro(c.tva))}</span></div>`);
+    const totHT = listing.reduce((s,c)=>s+c.ht,0), totTVA = listing.reduce((s,c)=>s+c.tva,0);
+    h += `<div class="cpt-row tot"><span>Total (${listing.length} client${listing.length>1?"s":""})</span><span class="v">${esc(euro(totHT))} · ${esc(euro(totTVA))}</span></div>`;
+    tbl.innerHTML = h;
+  }
+
+  // déclaration périodique (activée seulement au dépassement)
+  const locked = $("#tva_perLocked"), active = $("#tva_perActive");
+  if(!depasse){
+    if(active) active.hidden = true;
+    if(locked){ locked.hidden = false; locked.innerHTML = `Tant que le chiffre d'affaires reste sous 25 000 €, tu es en franchise : <b>aucune déclaration TVA périodique n'est due</b>. Cette section s'activera automatiquement en cas de dépassement.`; }
+  }else{
+    if(locked) locked.hidden = true;
+    if(active) active.hidden = false;
+    renderPeriodique(an);
+  }
+}
+
+// calcule les grilles d'une période (trimestre ou mois) et remplit le tableau
+function periodeBornes(an, type, num){
+  const pad = n => String(n).padStart(2,"0");
+  if(type==="M") return { from:`${an}-${pad(num)}-01`, to:`${an}-${pad(num)}-31` };
+  const m1 = (num-1)*3+1, m3 = num*3;
+  return { from:`${an}-${pad(m1)}-01`, to:`${an}-${pad(m3)}-31` };
+}
+function grillesPeriode(an, type, num){
+  const {from,to} = periodeBornes(an, type, num);
+  const dans = d => { const s=String(d||""); return s>=from && s<=to; };
+  const ventes = (state.incomes||[]).filter(i => dans(i.income_date) && (i.client_type==="particulier"||i.client_type==="professionnel"));
+  let b6=0,b12=0,b21=0,tvaDue=0;
+  ventes.forEach(i => { const v=ventile(i.amount, i.vat_rate||"NA"); const r=Math.round(tvaRatePct(i.vat_rate||"NA"));
+    if(r===6) b6+=v.ht; else if(r===12) b12+=v.ht; else if(r===21) b21+=v.ht; tvaDue+=v.tva; });
+  let achatsHT=0, tvaDeduc=0;
+  (state.expenses||[]).filter(e => dans(e.expense_date)).forEach(e => { const v=ventile(e.amount, e.vat_rate||"NA"); achatsHT+=v.ht; tvaDeduc+=v.tva; });
+  return { b6,b12,b21,tvaDue,achatsHT,tvaDeduc, solde:tvaDue-tvaDeduc };
+}
+function renderPeriodique(an){
+  const type = $("#tva_perType") ? $("#tva_perType").value : "Q";
+  const numSel = $("#tva_perNum");
+  if(numSel){
+    const prev = numSel.value;
+    const opts = (type==="M")
+      ? Array.from({length:12},(_,k)=>`<option value="${k+1}">Mois ${String(k+1).padStart(2,"0")}</option>`)
+      : Array.from({length:4},(_,k)=>`<option value="${k+1}">Trimestre ${k+1}</option>`);
+    numSel.innerHTML = opts.join("");
+    if(prev && [...numSel.options].some(o=>o.value===prev)) numSel.value = prev;
+  }
+  const num = numSel ? parseInt(numSel.value,10)||1 : 1;
+  const g = grillesPeriode(an, type, num);
+  const soldeGrid = g.solde>=0 ? "71 — TVA à payer à l'État" : "72 — TVA à récupérer de l'État";
+  let h = `<div class="cpt-row head2"><span>Grille</span><span class="v">Montant</span></div>`;
+  h += `<div class="cpt-row"><span>03 — Ventes à 21 %</span><span class="v">${esc(euro(g.b21))}</span></div>`;
+  h += `<div class="cpt-row"><span>02 — Ventes à 12 %</span><span class="v">${esc(euro(g.b12))}</span></div>`;
+  h += `<div class="cpt-row"><span>01 — Ventes à 6 %</span><span class="v">${esc(euro(g.b6))}</span></div>`;
+  h += `<div class="cpt-row"><span>54 — TVA due sur les ventes</span><span class="v">${esc(euro(g.tvaDue))}</span></div>`;
+  h += `<div class="cpt-row"><span>82 — Achats (base HT, biens et services divers)</span><span class="v">${esc(euro(g.achatsHT))}</span></div>`;
+  h += `<div class="cpt-row"><span>59 — TVA déductible sur les achats</span><span class="v">${esc(euro(g.tvaDeduc))}</span></div>`;
+  h += `<div class="cpt-row tot"><span>${esc(soldeGrid)}</span><span class="v">${esc(euro(Math.abs(g.solde)))}</span></div>`;
+  if($("#tva_perGrid")) $("#tva_perGrid").innerHTML = h;
+  state._tvaPer = { an, type, num, g };
+  if($("#tva_perFoot")) $("#tva_perFoot").innerHTML = `Estimation calculée sur la période choisie à partir des données encodées. Les achats sont regroupés en grille 82 par défaut — à reclasser (81 marchandises / 83 biens d'investissement) et à vérifier par un comptable avant dépôt. Dépôt via <b>Intervat</b>.`;
+}
+
+// changement d'année ou de période TVA
+function tvaAn(){ const s=$("#tva_annee"); return (s && s.value) || String(new Date().getFullYear()); }
+if($("#tva_annee")) $("#tva_annee").onchange = renderTva;
+if($("#tva_perType")) $("#tva_perType").onchange = () => renderPeriodique(tvaAn());
+if($("#tva_perNum")) $("#tva_perNum").onchange = () => renderPeriodique(tvaAn());
+if($("#tva_perXmlBtn")) $("#tva_perXmlBtn").onclick = () => {
+  const res = declarationXML(state._tvaPer);
+  if(res.error){ toast(res.error); return; }
+  const p = state._tvaPer;
+  const blob = new Blob([res.xml], { type:"application/xml" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = `declaration-tva-${p.an}-${p.type}${p.num}.xml`; a.click(); URL.revokeObjectURL(a.href);
+  toast("Déclaration périodique XML générée — à vérifier dans Intervat avant envoi.");
+};
+
+// export XML officiel Intervat (listing clients)
+if($("#tva_xmlBtn")) $("#tva_xmlBtn").onclick = () => {
+  const listing = state._tvaListing || []; const an = state._tvaAn || "";
+  if(!listing.length){ toast("Aucun client dans le listing."); return; }
+  const res = listingXML(listing, an);
+  if(res.error){ toast(res.error); return; }
+  const blob = new Blob([res.xml], { type:"application/xml" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = `listing-clients-intervat-${an}.xml`; a.click(); URL.revokeObjectURL(a.href);
+  toast(res.skipped ? `XML généré — ${res.skipped} client(s) ignoré(s) faute de n° TVA à 10 chiffres.`
+                    : "XML Intervat généré — à vérifier dans Intervat avant envoi.");
+};
+
+// export CSV du listing clients
+if($("#tva_csvBtn")) $("#tva_csvBtn").onclick = () => {
+  const listing = state._tvaListing || []; const an = state._tvaAn || "";
+  if(!listing.length){ toast("Aucun client à exporter."); return; }
+  const rows = [["Numero TVA","Client","Base HT","Montant TVA"]];
+  listing.forEach(c => rows.push([c.vat, c.name, c.ht.toFixed(2), c.tva.toFixed(2)]));
+  const csv = rows.map(r => r.map(x => `"${String(x).replace(/"/g,'""')}"`).join(";")).join("\r\n");
+  const blob = new Blob(["\ufeff"+csv], { type:"text/csv;charset=utf-8" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = `listing-clients-tva-${an}.csv`; a.click(); URL.revokeObjectURL(a.href);
+};
+
+// version imprimable du listing clients
+if($("#tva_printBtn")) $("#tva_printBtn").onclick = () => {
+  const listing = state._tvaListing || []; const an = state._tvaAn || "";
+  const nom = comptaCfg().nomAsbl || "ASBL"; const bce = comptaCfg().bce || "";
+  const totHT = listing.reduce((s,c)=>s+c.ht,0), totTVA = listing.reduce((s,c)=>s+c.tva,0);
+  const rows = listing.map(c => `<tr><td>${esc(c.vat)}</td><td>${esc(c.name)}</td><td class="num">${esc(euro(c.ht))}</td><td class="num">${esc(euro(c.tva))}</td></tr>`).join("")
+    || `<tr><td colspan="4">Listing néant.</td></tr>`;
+  const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Listing clients TVA — ${esc(nom)} — ${esc(an)}</title>
+<style>body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:720px;margin:32px auto;padding:0 20px;font-size:13px}
+h1{font-size:18px;margin:0 0 2px}.meta{color:#555;font-size:12px;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;margin-top:8px}td,th{padding:6px 8px;border-bottom:1px solid #ddd;text-align:left}
+td.num,th.num{text-align:right;white-space:nowrap}tr.tot td{font-weight:bold;border-top:2px solid #333}
+.noprint{margin:16px 0}.foot{margin-top:24px;color:#888;font-size:11px}@media print{.noprint{display:none}body{margin:0}}</style></head><body>
+<div class="noprint"><button onclick="window.print()">Imprimer / enregistrer en PDF</button></div>
+<h1>${esc(nom)}</h1><div class="meta">${bce?("N° d'entreprise : "+esc(bce)+" · "):""}Listing annuel des clients assujettis — année ${esc(an)}</div>
+<table><thead><tr><th>N° de TVA</th><th>Client</th><th class="num">Base HT</th><th class="num">TVA</th></tr></thead>
+<tbody>${rows}<tr class="tot"><td colspan="2">Total (${listing.length})</td><td class="num">${esc(euro(totHT))}</td><td class="num">${esc(euro(totTVA))}</td></tr></tbody></table>
+<div class="foot">Généré le ${esc(new Date().toLocaleDateString("fr-BE"))}. Dépôt officiel via Intervat (SPF Finances), pour le 31 mars.</div></body></html>`;
   const w = window.open("", "_blank");
   if(!w){ toast("Autorise les fenêtres pop-up pour générer le document."); return; }
   w.document.open(); w.document.write(html); w.document.close();
@@ -5433,6 +5835,7 @@ function render(){
     renderIncomes();
     renderClosures();
     if(state.view==="compta"){ try{ renderCompta(); }catch(_){} }
+    if(state.view==="tva"){ try{ renderTva(); }catch(_){} }
     majReset();
   }
   const verrouillees = state.items.length - ouvert(state.items).length
