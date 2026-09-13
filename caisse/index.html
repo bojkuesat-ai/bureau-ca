@@ -4683,9 +4683,8 @@ function bSig(){
   if(me){ const nom = (me.prenom || me.nom || state.profile.name || "").trim(); return nom + (me.fonction ? " · " + me.fonction : ""); }
   return (state.profile && state.profile.name) || "Trésorier";
 }
-function bEstPresident(){ const f = String((state.caMe && state.caMe.fonction) || "").toLowerCase(); return f.indexOf("présid")===0 || f.indexOf("presid")===0; }
 function bEstOwner(){ return !!(state.caMe && state.caMe.role === "owner"); }
-function bPeutDecider(){ return bEstOwner() || bEstPresident(); }
+function bPeutDecider(){ return bEstOwner(); }   // seul le propriétaire approuve ou refuse
 function bEffectif(){ return (state.caMembres||[]).filter(a => a.email && a.statut==="actif" && a.role!=="coopte").length; }
 function bSeuil(){ const n = bEffectif(); return n ? Math.floor(n/2)+1 : 0; }
 function bMonVote(b){ const me = state.profile && state.profile.id; return (b.votes||[]).find(v => v.membreId === me); }
