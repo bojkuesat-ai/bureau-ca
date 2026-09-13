@@ -3854,6 +3854,10 @@ document.addEventListener("change", e => {
   if(etat){ etat.textContent = c.checked ? "Ouvert" : "Fermé"; etat.className = "tglstate " + (c.checked ? "on" : "off"); }
   state.horEdited = true;   // réglages en cours, à préserver jusqu'à l'enregistrement
 });
+// Un changement d'heure limite seul compte aussi comme une édition à préserver.
+document.addEventListener("change", e => {
+  if(e.target.closest('[data-hf="limite"]')) state.horEdited = true;
+});
 
 if($("#btnCancelReq")) $("#btnCancelReq").onclick = () => {
   effacerBrouillon("req"); $("#reqForm").reset(); staged.req = []; renderStaged("req"); majControle(); erreurForm("#reqErr", null);
