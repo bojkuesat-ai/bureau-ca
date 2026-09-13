@@ -237,6 +237,23 @@ input[type=checkbox].tgl.sm:checked::before{transform:translateX(16px)}
 .tglstate{font-size:12px;font-weight:600;letter-spacing:.02em}
 .tglstate.on{color:var(--green)}
 .tglstate.off{color:var(--muted2)}
+/* ---------- Onglet budget (miroir CA) ---------- */
+.b-card{padding:16px 17px}
+.b-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.b-meta{margin:4px 0 0;font-size:12.5px;color:var(--muted)}
+.b-meta b{color:var(--gold-soft)}
+.b-badge{font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:4px 9px;border-radius:999px;white-space:nowrap;align-self:flex-start}
+.b-badge.bg-open{background:var(--amber-bg);color:var(--amber);border:1px solid #7a561b}
+.b-badge.bg-ok{background:var(--green-bg);color:var(--green);border:1px solid #1f6b4f}
+.b-badge.bg-no{background:var(--red-bg);color:var(--red);border:1px solid #7a2531}
+.b-tallies{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--muted)}
+.b-tally{display:inline-flex;align-items:center;gap:6px}
+.b-tally b{color:var(--text)}
+.b-sq{width:11px;height:11px;border-radius:3px;display:inline-block;flex:none}
+.b-vote-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.b-vote-btns button[aria-pressed="true"]{border-color:var(--gold);color:var(--gold-soft);background:var(--gold-dim)}
+.b-foot{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.bfilters button[aria-pressed="true"]{border-color:var(--gold);color:var(--gold-soft);background:var(--gold-dim)}
 .vrow .who2{font-weight:600}
 .vrow .ib{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted);margin-top:2px}
 .vrow .mt{text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:600;font-variant-numeric:tabular-nums}
@@ -530,6 +547,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
     <button id="tabExtraits" aria-pressed="false" hidden>Extraits</button>
     <button id="tabMembers" aria-pressed="false" hidden>Membres<span class="pill" id="pillMem" hidden>0</span></button>
     <button id="tabMessages" aria-pressed="false" hidden>Messages<span class="pill" id="pillMsg" hidden>0</span></button>
+    <button id="tabBudget" aria-pressed="false" hidden>Budget</button>
   </div>
   <div class="who"><b id="whoName">—</b><span id="whoRole">—</span><button id="btnMsg" class="btn ghost sm" style="display:none;margin-left:auto">✉️ Messagerie<span class="pill" id="btnMsgPill" hidden>0</span></button></div>
   <button class="btn ghost sm" id="changePass">Mot de passe</button>
@@ -806,6 +824,22 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
         <div id="msgList"></div>
       </div>
       <p class="hint" style="margin-top:8px">Clique un membre pour ouvrir la conversation et lui écrire (tu peux démarrer la discussion). Les non-lus remontent en haut.</p>
+    </div>
+  </section>
+
+  <!-- budget : miroir en direct des budgets de l'app CA (mêmes tables ca_budgets / ca_budget_votes) -->
+  <section id="viewBudget" class="stack" hidden>
+    <div>
+      <div class="section-title"><div class="eyebrow">Budget du CA</div></div>
+      <p class="hint" style="margin:0 0 12px">Miroir en direct des budgets de l'espace CA — même base de données. Tu peux consulter, voter et approuver / refuser : tout est synchronisé automatiquement avec l'app CA.</p>
+      <div class="kpis" id="budgetStats"></div>
+      <div class="bfilters" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0">
+        <button class="btn ghost sm" data-bfilter="tous" aria-pressed="true">Tous</button>
+        <button class="btn ghost sm" data-bfilter="vote" aria-pressed="false">En vote</button>
+        <button class="btn ghost sm" data-bfilter="approuve" aria-pressed="false">Approuvés</button>
+        <button class="btn ghost sm" data-bfilter="refuse" aria-pressed="false">Refusés</button>
+      </div>
+      <div id="budgetList" class="stack" style="gap:12px"></div>
     </div>
   </section>
 
@@ -1220,7 +1254,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = s => document.querySelector(s);
 const HORAIRES_DEFAUT = {1:{ouvert:true,limite:null},2:{ouvert:true,limite:null},3:{ouvert:true,limite:null},4:{ouvert:true,limite:null},5:{ouvert:true,limite:null},6:{ouvert:true,limite:null},7:{ouvert:true,limite:null}};
-const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], horaires:HORAIRES_DEFAUT, horEdited:false, selected:null, view:"mine", proofUrls:{},
+const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], budgets:[], caMembres:[], caMe:null, budgetFiltre:"tous", horaires:HORAIRES_DEFAUT, horEdited:false, selected:null, view:"mine", proofUrls:{},
                 channel:null, lastStatus:{}, primed:false, lastSync:null, sel:new Set(),
                 drawerDirty:false, tresoEmail:null, tronque:null };
 
@@ -2070,6 +2104,8 @@ async function start(){
       .on("postgres_changes",{event:"*",schema:"public",table:"expenses"}, refresh)
       .on("postgres_changes",{event:"*",schema:"public",table:"incomes"}, refresh)
       .on("postgres_changes",{event:"*",schema:"public",table:"profiles"}, async () => { await loadProfile(user); await refresh(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"ca_budgets"}, async () => { try{ await loadBudgetsCaisse(); if(state.view==="budget") renderBudget(); }catch(_){} })
+      .on("postgres_changes",{event:"*",schema:"public",table:"ca_budget_votes"}, async () => { try{ await loadBudgetsCaisse(); if(state.view==="budget") renderBudget(); }catch(_){} })
       .subscribe();
   }
   await refresh();
@@ -2096,6 +2132,7 @@ async function loadProfile(user){
   $("#tabIncomes").hidden = !isTreso();
   $("#tabMembers").hidden = !isTreso();
   $("#tabMessages").hidden = !isTreso();
+  if($("#tabBudget")) $("#tabBudget").hidden = !isTreso();
   if($("#btnMsg")) $("#btnMsg").style.display = isTreso() ? "none" : "inline-flex";
   try{ brancherBrouillon("req"); brancherBrouillon("dir"); restaurerBrouillon("req"); restaurerBrouillon("dir"); }catch(_){}
   if(!$("#f_date").value) $("#f_date").value = new Date().toISOString().slice(0,10);
@@ -2151,6 +2188,7 @@ async function refresh(){
     if(y.tronque) state.tronque = "recettes";
     const c = await chargerTout("closures", "year", false);
     state.closures = c.data || [];
+    try{ await loadBudgetsCaisse(); }catch(_){}   // budgets de l'app CA (même base)
     if(!state.relanceAutoFaite){ state.relanceAutoFaite = true; relancerIncompletes(true); alerterDormantes(true); }
   }
   render();
@@ -2158,6 +2196,7 @@ async function refresh(){
   verifierLienRecu();
   verifierLienReexamen();
   try{ majHoraire(); }catch(_){}   // horaires chargés depuis la base : on réévalue l'ouverture
+  if(state.view==="budget"){ try{ renderBudget(); }catch(_){} }
 }
 
 /* ---------- dépenses directes ---------- */
@@ -4569,6 +4608,7 @@ function setView(v){
   $("#tabIncomes").setAttribute("aria-pressed", v==="incomes");
   $("#tabMembers").setAttribute("aria-pressed", v==="members");
   $("#tabMessages").setAttribute("aria-pressed", v==="messages");
+  if($("#tabBudget")) $("#tabBudget").setAttribute("aria-pressed", v==="budget");
   $("#tabDirect").setAttribute("aria-pressed", v==="direct");
   $("#viewMine").hidden = v!=="mine";
   $("#viewTreso").hidden = v!=="treso";
@@ -4581,6 +4621,8 @@ function setView(v){
   if(v==="extraits") renderExtraits();
   $("#viewMembers").hidden = v!=="members";
   $("#viewMessages").hidden = v!=="messages";
+  if($("#viewBudget")) $("#viewBudget").hidden = v!=="budget";
+  if(v==="budget") renderBudget();
   $("#viewDirect").hidden = v!=="direct";
   if(v==="expenses" && !$("#e_date").value) $("#e_date").value = new Date().toISOString().slice(0,10);
   if(v==="incomes" && !$("#i_date").value) $("#i_date").value = new Date().toISOString().slice(0,10);
@@ -4607,6 +4649,116 @@ if($("#tabReprise")) $("#tabReprise").onclick = () => choisirVue("reprise");
 if($("#tabExtraits")) $("#tabExtraits").onclick = () => choisirVue("extraits");
 $("#tabMembers").onclick = () => choisirVue("members");
 $("#tabMessages").onclick = () => choisirVue("messages");
+if($("#tabBudget")) $("#tabBudget").onclick = () => choisirVue("budget");
+
+/* ============================================================
+   Onglet BUDGET — miroir en direct des budgets de l'app CA.
+   Mêmes tables (ca_budgets / ca_budget_votes) et même base Supabase,
+   donc lecture/écriture synchronisées avec l'app CA sans duplication.
+   Réservé au trésorier ; permissions calquées sur l'app CA.
+   ============================================================ */
+const B_CHOIX = [{id:"pour",label:"Pour",v:"var(--green)"},{id:"contre",label:"Contre",v:"var(--red)"},{id:"abst",label:"Abstention",v:"var(--muted2)"}];
+const B_BADGE = { vote:["bg-open","En vote"], approuve:["bg-ok","Approuvé"], refuse:["bg-no","Refusé"] };
+
+async function loadBudgetsCaisse(){
+  if(!isTreso()){ state.budgets = []; return; }
+  try{
+    const bs  = await sb.from("ca_budgets").select("*").order("created_at",{ascending:false});
+    const bv  = await sb.from("ca_budget_votes").select("*");
+    const mem = await sb.from("ca_membres").select("*");
+    const vl  = (bv && bv.data) || [];
+    state.caMembres = (mem && mem.data) || [];
+    state.caMe = state.caMembres.find(a => a.id === state.profile.id) || null;
+    state.budgets = (((bs && bs.data)) || []).map(b => ({
+      id:b.id, titre:b.titre, type:b.type, cout:b.cout, desc:b.description,
+      demandeur:b.demandeur, statut:b.statut, decidePar:b.decide_par, decideLe:b.decide_le,
+      votes: vl.filter(v => v.budget_id === b.id).map(v => ({nom:v.nom, choix:v.choix, membreId:v.membre_id}))
+    }));
+  }catch(e){ state.budgets = []; }
+}
+
+/* Identité et droits, dérivés de la fiche ca_membres de l'utilisateur (même compte). */
+function bSig(){
+  const me = state.caMe;
+  if(me){ const nom = (me.prenom || me.nom || state.profile.name || "").trim(); return nom + (me.fonction ? " · " + me.fonction : ""); }
+  return (state.profile && state.profile.name) || "Trésorier";
+}
+function bEstPresident(){ const f = String((state.caMe && state.caMe.fonction) || "").toLowerCase(); return f.indexOf("présid")===0 || f.indexOf("presid")===0; }
+function bEstOwner(){ return !!(state.caMe && state.caMe.role === "owner"); }
+function bPeutDecider(){ return bEstOwner() || bEstPresident(); }
+function bEffectif(){ return (state.caMembres||[]).filter(a => a.email && a.statut==="actif" && a.role!=="coopte").length; }
+function bSeuil(){ const n = bEffectif(); return n ? Math.floor(n/2)+1 : 0; }
+function bMonVote(b){ const me = state.profile && state.profile.id; return (b.votes||[]).find(v => v.membreId === me); }
+
+function renderBudget(){
+  const box = $("#budgetList"); if(!box) return;
+  const f = state.budgetFiltre || "tous";
+  const all = state.budgets || [];
+  const totApp = all.filter(b => b.statut==="approuve").reduce((s,b)=>s+(Number(b.cout)||0),0);
+  const nVote  = all.filter(b => b.statut==="vote").length;
+  const stat = $("#budgetStats");
+  if(stat) stat.innerHTML =
+    `<div class="kpi"><div class="eyebrow">En vote</div><div class="n">${nVote}</div></div>`+
+    `<div class="kpi done"><div class="eyebrow">Budget approuvé</div><div class="n">${euro(totApp)}</div></div>`+
+    `<div class="kpi"><div class="eyebrow">Total demandes</div><div class="n">${all.length}</div></div>`;
+  ["tous","vote","approuve","refuse"].forEach(k => {
+    const btn = document.querySelector(`[data-bfilter="${k}"]`);
+    if(btn) btn.setAttribute("aria-pressed", String(k===f));
+  });
+  const list = f==="tous" ? all : all.filter(b => b.statut===f);
+  const eff = bEffectif(), seuil = bSeuil(), peutDec = bPeutDecider();
+  if(!list.length){ box.innerHTML = `<div class="card pad"><p class="hint" style="margin:0">Aucun budget à afficher${f==="tous"?"":" dans ce filtre"}.</p></div>`; return; }
+  box.innerHTML = list.map(b => {
+    const count = ch => (b.votes||[]).filter(v => v.choix===ch).length;
+    const open = b.statut==="vote";
+    const [cls,label] = B_BADGE[b.statut] || ["bg-open", esc(b.statut||"")];
+    const mien = bMonVote(b);
+    const tallies = B_CHOIX.map(ch => `<span class="b-tally"><span class="b-sq" style="background:${ch.v}"></span><b>${count(ch.id)}</b> ${ch.label}</span>`).join("");
+    const voteBtns = open ? `<div class="b-vote-btns">${B_CHOIX.map(ch => `<button class="btn ghost sm" aria-pressed="${!!(mien && mien.choix===ch.id)}" data-baction="vote" data-id="${b.id}" data-choix="${ch.id}">${ch.label}</button>`).join("")}</div>` : "";
+    const major = (open && eff) ? `<p class="hint" style="margin:8px 0 0">${count("pour")>=seuil ? `✓ Majorité atteinte : ${count("pour")} voix pour sur ${eff} membres (il en faut ${seuil}).` : `Majorité simple : ${seuil} voix pour sur ${eff} membres — il en manque ${Math.max(0,seuil-count("pour"))}.`}</p>` : "";
+    const decided = (!open && b.decidePar) ? `<p class="hint" style="margin:8px 0 0">${b.statut==="approuve"?"✓ Approuvé":"✕ Refusé"} par ${esc(b.decidePar)}${b.decideLe?" le "+fdate(String(b.decideLe).slice(0,10)):""}</p>` : "";
+    const decideBtns = peutDec ? `<div class="b-foot">${open ? `${(eff && count("pour")>=seuil)?`<button class="btn sm" data-baction="decide" data-id="${b.id}" data-st="approuve">✓ Approuver</button>`:""}<button class="btn ghost sm" data-baction="decide" data-id="${b.id}" data-st="refuse">✕ Refuser</button>` : `<button class="btn ghost sm" data-baction="decide" data-id="${b.id}" data-st="vote">Rouvrir le vote</button>`}</div>` : "";
+    return `<div class="card pad b-card">
+      <div class="b-head"><div><h3 style="margin:0;font-family:'Fraunces',serif;font-weight:600;font-size:18px">${esc(b.titre)}</h3>
+        <p class="b-meta">${esc(b.type||"")}${(Number(b.cout)>0)?` · <b>${euro(b.cout)}</b>`:""}${b.demandeur?` · par ${esc(b.demandeur)}`:""}</p></div>
+        <span class="b-badge ${cls}">${label}</span></div>
+      ${b.desc?`<p style="margin:8px 0 0;color:var(--muted);line-height:1.5">${esc(b.desc)}</p>`:""}
+      <div class="b-tallies">${tallies}</div>
+      ${voteBtns}${major}${decided}${decideBtns}</div>`;
+  }).join("");
+}
+
+async function budgetAction(action, ds){
+  const id = ds.id;
+  const b = (state.budgets||[]).find(x => x.id === id);
+  if(action === "vote"){
+    if(!b || b.statut !== "vote") return;
+    const r = await sb.from("ca_budget_votes").upsert(
+      { budget_id:id, membre_id:state.profile.id, nom:bSig(), choix:ds.choix },
+      { onConflict:"budget_id,membre_id" });
+    if(r && r.error){ toast("Vote non enregistré : " + r.error.message); return; }
+    await loadBudgetsCaisse(); renderBudget(); toast("Vote enregistré.");
+  } else if(action === "decide"){
+    if(!bPeutDecider()) return;
+    const st = ds.st;
+    const md = await sb.from("ca_budgets").update({
+      statut: st,
+      decide_par: st==="vote" ? null : bSig(),
+      decide_le:  st==="vote" ? null : new Date().toISOString()
+    }).eq("id", id).select();
+    if(md && md.error){ toast("Enregistrement impossible : " + md.error.message); return; }
+    if(!md || !md.data || !md.data.length){ await loadBudgetsCaisse(); renderBudget(); toast("Refusé par le serveur (droits RLS sur ca_budgets)."); return; }
+    await loadBudgetsCaisse(); renderBudget();
+    toast(st==="approuve" ? "Budget approuvé." : st==="refuse" ? "Budget refusé." : "Vote rouvert.");
+  }
+}
+
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-baction]");
+  if(el){ e.preventDefault(); budgetAction(el.dataset.baction, el.dataset); return; }
+  const fb = e.target.closest("[data-bfilter]");
+  if(fb){ state.budgetFiltre = fb.dataset.bfilter; renderBudget(); }
+});
 
 /* ---------- Messagerie membre ↔ trésorier ---------- */
 function cssq(x){ return String(x).replace(/["\\]/g, "\\$&"); }
