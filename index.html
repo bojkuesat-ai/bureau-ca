@@ -348,7 +348,7 @@ window.addEventListener("DOMContentLoaded", function(){
 const GROUPES = [
   { nom: "Bureau", postes: [
     { id:"presidence", titre:"Président", qui:"Rania Drissi", missions:"Coordonne le bureau étudiant, représente l’association et anime les réunions du bureau." },
-    { id:"vice", titre:"Vice-présidente", qui:"Hamza El Fartakhe", missions:"Seconde la présidence et assure la continuité en son absence." },
+    { id:"vice", titre:"Vice-président", qui:"Hamza El Fartakhe", missions:"Seconde la présidence et assure la continuité en son absence." },
     { id:"secretaire", titre:"Secrétaire", qui:"Zineb Makra", missions:"Rédige les PV, gère les convocations et tient les archives." },
     { id:"tresorier", titre:"Trésorier", qui:"Esat Bojku", missions:"Tient la comptabilité, suit le budget et les remboursements." },
   ]},
@@ -379,7 +379,7 @@ const POSTE_PAR_ID = Object.fromEntries(TOUS_POSTES.map(p => [p.id, p]));
 const NUM = Object.fromEntries(TOUS_POSTES.map((p,i) => [p.id, String(i+1).padStart(2,"0")]));
 const PERSONNES = [
   {id:"p01",prenom:"Rania",nom:"Drissi",fonction:"Président"},
-  {id:"p02",prenom:"Hamza",nom:"El Fartakhe",fonction:"Vice-présidente"},
+  {id:"p02",prenom:"Hamza",nom:"El Fartakhe",fonction:"Vice-président"},
   {id:"p03",prenom:"Zineb",nom:"Makra",fonction:"Secrétaire"},
   {id:"p04",prenom:"Esat",nom:"Bojku",fonction:"Trésorier"},
   {id:"p05",prenom:"Amandine",nom:"Verboekhoven",fonction:"Représentant de la délégation"},
@@ -1637,9 +1637,9 @@ function detailVoixBudget(b){
     ${sans.length?`<p class="voters" style="margin:4px 0"><b>N'ont pas voté (${sans.length})</b> : ${esc(sans.join(", "))}</p>`:""}</div>`;
 }
 function tabBudgets(){
-  const peutDecider = estPresidente();
   const owner = !!(S.session && S.session.role==="owner");
-  const peutCloturer = peutDecider || owner;
+  const peutDecider = owner;          // seul le propriétaire approuve ou refuse un budget
+  const peutCloturer = owner;         // clôturer décide aussi : même restriction
   const effectif = effectifCA(), seuil = seuilMajorite();
   const totalApp=S.budgets.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(b.cout||0),0);
   const enVote=S.budgets.filter(b=>b.statut==="vote").length;
@@ -2726,7 +2726,7 @@ function destinatairesDecision(){
 async function cloturerBudget(id, force){
   if(!sb) return;
   const owner = !!(S.session && S.session.role==="owner");
-  if(!(estPresidente()||owner)){ modaleInfo("Seules la pr\u00e9sidence et le propri\u00e9taire peuvent cl\u00f4turer un budget."); return; }
+  if(!owner){ modaleInfo("Seul le propri\u00e9taire peut cl\u00f4turer ou d\u00e9cider d\u2019un budget."); return; }
   if(force && !owner){ modaleInfo("Seul le propri\u00e9taire peut approuver hors seuil."); return; }
   const b=(S.budgets||[]).find(x=>x.id===id);
   if(!b || b.statut!=="vote") return;
@@ -3710,9 +3710,9 @@ ${sections||"<p>Aucun retour.</p>"}
       else { modaleInfo("✓ "+res.total+" membre(s) prévenu(s) par e-mail."+exclus, "Budget soumis au vote"); }
       break; }
     case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; const r=await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix},{onConflict:"budget_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadBudgets(); render(); break; }
-    case "bdecide": { if(!estPresidente()||!sb) break; const st=el.dataset.st; const md=await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id).select(); if(md&&md.error){ modaleInfo("Enregistrement impossible : "+md.error.message); break; } if(!md||!md.data||!md.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 la modification (aucune ligne chang\u00e9e) \u2014 il s'agit d'une r\u00e8gle de droits (RLS) sur ca_budgets.","Action non enregistr\u00e9e"); break; } await loadBudgets(); render(); break; }
+    case "bdecide": { if(!(S.session&&S.session.role==="owner")||!sb) break; const st=el.dataset.st; const md=await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id).select(); if(md&&md.error){ modaleInfo("Enregistrement impossible : "+md.error.message); break; } if(!md||!md.data||!md.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 la modification (aucune ligne chang\u00e9e) \u2014 il s'agit d'une r\u00e8gle de droits (RLS) sur ca_budgets.","Action non enregistr\u00e9e"); break; } await loadBudgets(); render(); break; }
     case "bcloture": { await cloturerBudget(id, el.dataset.force==="1"); break; }
-    case "del-budget": { if(!estPresidente()||!sb) break; if(!(await modaleConfirm("Supprimer cette demande de budget ?"))) break; await sb.from("ca_budgets").delete().eq("id",id); logAct("Budget supprimé"); await loadBudgets(); render(); break; }
+    case "del-budget": { if(!(S.session&&S.session.role==="owner")||!sb) break; if(!(await modaleConfirm("Supprimer cette demande de budget ?"))) break; await sb.from("ca_budgets").delete().eq("id",id); logAct("Budget supprimé"); await loadBudgets(); render(); break; }
     case "edit-cout": {
       /* Modification du montant : r\u00e9serv\u00e9e au propri\u00e9taire, c\u00f4t\u00e9 interface ET c\u00f4t\u00e9 base
          (la RPC ca_budget_set_cout v\u00e9rifie ca_is_owner()). La pr\u00e9sidence ne voit pas ce bouton
