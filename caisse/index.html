@@ -445,6 +445,12 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
 .jrn td.num,.jrn th.num{text-align:right;font-variant-numeric:tabular-nums}
 .jrn td.obj,.jrn th.obj{white-space:normal;min-width:150px}
 .jrn tr.tot td{font-weight:800;border-top:2px solid var(--line)}
+.cmp{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+.cmp th,.cmp td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cmp th:first-child,.cmp td:first-child{text-align:left;white-space:normal}
+.cmp th{color:var(--gold-soft);text-transform:uppercase;font-size:11px;letter-spacing:.03em;background:var(--bg2)}
+.cmp tr.grp td{background:var(--bg2);font-weight:700;color:var(--gold-soft);text-transform:uppercase;font-size:11px}
+.cmp tr.tot td{font-weight:800;border-top:2px solid var(--line)}
 /* ---------- bilan (PDF / Excel) ---------- */
 .bline{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:620px){.bline{grid-template-columns:1fr}}
@@ -915,6 +921,8 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
         <div style="margin-top:10px">
           <p class="hint" style="margin:0 0 10px">À présenter à l'AG au même schéma que l'état des recettes et dépenses. Facultatif dans l'app, mais l'AG doit approuver un budget chaque année.</p>
           <div class="cpt-tbl" id="c_bud"></div>
+          <div class="eyebrow" style="margin:14px 0 0">Budget vs réalisé</div>
+          <div id="c_budVs"></div>
         </div>
       </details>
     </div>
@@ -930,6 +938,17 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
           <span class="hint" id="c_saveHint" style="align-self:center"></span>
         </div>
       </div>
+    </div>
+
+    <!-- sauvegarde complète -->
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">Sauvegarde complète</div></div>
+      <p class="hint" style="margin:0 0 10px">Exporte <b>toutes</b> les données (recettes, dépenses, demandes, clôtures, membres, messages, configuration) en un fichier. À faire régulièrement, <b>avant toute « purge »</b>, et à transmettre au prochain bureau lors de la passation — exactement le filet qui vous a manqué à la reprise.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn ok" id="c_backupXlsx">Sauvegarde Excel (lisible)</button>
+        <button class="btn ghost sm" id="c_backupJson">Sauvegarde technique (JSON)</button>
+      </div>
+      <p class="hint" style="margin-top:8px">Le fichier contient des données personnelles (noms, e-mails, IBAN) : conserve-le en lieu sûr.</p>
     </div>
 
     <!-- rappels démarches externes -->
@@ -5117,6 +5136,32 @@ function renderCompta(){
     if($("#c_budResume")) $("#c_budResume").textContent = (budRec||budDep) ? `prévu : +${euro(budRec)} / −${euro(budDep)}` : "non renseigné";
   }
 
+  // ---- budget vs réalisé (toujours recalculé depuis le budget enregistré + les montants réels) ----
+  if($("#c_budVs")){
+    const bb = budYear(an);
+    const tBudR = RUB_REC.reduce((s,r)=>s+nnum(bb.rec&&bb.rec[r]),0);
+    const tBudD = RUB_DEP.reduce((s,r)=>s+nnum(bb.dep&&bb.dep[r]),0);
+    if(!tBudR && !tBudD){
+      $("#c_budVs").innerHTML = `<div class="cpt-note" style="margin-top:8px">Renseigne un budget ci-dessus pour voir la comparaison avec le réalisé.</div>`;
+    }else{
+      const cell = (v)=>esc(euro(v));
+      const ecartCell = (ec, favorable)=>{ const ok = favorable ? ec>=-0.005 : ec<=0.005;
+        return `<td style="color:${ok?"var(--green)":"var(--red)"}">${(ec>0?"+":"")}${esc(euro(ec))}</td>`; };
+      const ligne = (lbl,bu,re,fav,cls="")=>`<tr class="${cls}"><td>${esc(lbl)}</td><td>${cell(bu)}</td><td>${cell(re)}</td>${ecartCell(re-bu,fav)}</tr>`;
+      let h = `<table class="cmp"><thead><tr><th>Rubrique</th><th>Budget</th><th>Réalisé</th><th>Écart</th></tr></thead><tbody>`;
+      h += `<tr class="grp"><td colspan="4">Recettes</td></tr>`;
+      let rBudR=0,rReR=0; RUB_REC.forEach(r=>{ const bu=nnum(bb.rec&&bb.rec[r]), re=rd.recRub[r]; rBudR+=bu; rReR+=re; h+=ligne(r,bu,re,true); });
+      h += ligne("Total recettes", rBudR, rReR, true, "tot");
+      h += `<tr class="grp"><td colspan="4">Dépenses</td></tr>`;
+      let rBudD=0,rReD=0; RUB_DEP.forEach(r=>{ const bu=nnum(bb.dep&&bb.dep[r]), re=rd.depRub[r]; rBudD+=bu; rReD+=re; h+=ligne(r,bu,re,false); });
+      h += ligne("Total dépenses", rBudD, rReD, false, "tot");
+      h += ligne("Résultat", rBudR-rBudD, rReR-rReD, true, "tot");
+      h += `</tbody></table>`;
+      h += `<p class="hint" style="margin-top:6px">Écart vert = favorable (recettes au-dessus / dépenses en dessous du budget), rouge = défavorable.</p>`;
+      $("#c_budVs").innerHTML = h;
+    }
+  }
+
   // ---- champs texte globaux (règles + identité) : ne pas écraser une saisie en cours ----
   if(yearChanged || !state.comptaEdited){
     if($("#c_regles"))  $("#c_regles").value  = comptaCfg().regles  || "";
@@ -5189,6 +5234,44 @@ td.num,th.num{text-align:right;white-space:nowrap}tr.tot td{font-weight:bold;bor
 <div class="meta" style="margin-top:14px">Livre tenu sans compensation entre recettes et dépenses. Généré le ${esc(new Date().toLocaleDateString("fr-BE"))}.</div></body></html>`;
   const w = window.open("", "_blank"); if(!w){ toast("Autorise les fenêtres pop-up."); return; }
   w.document.open(); w.document.write(html); w.document.close();
+};
+
+// ---- sauvegarde complète (Excel lisible + JSON technique) ----
+function _flatRow(o){ const r={}; for(const k in (o||{})){ const v=o[k]; r[k]=(v && typeof v==="object")?JSON.stringify(v):v; } return r; }
+if($("#c_backupXlsx")) $("#c_backupXlsx").onclick = async () => {
+  const btn=$("#c_backupXlsx"); const t0=btn.textContent; btn.disabled=true; btn.textContent="Préparation…";
+  try{
+    const XLSX = await import("https://esm.sh/xlsx@0.18.5");
+    const wb = XLSX.utils.book_new();
+    const addSheet = (nom, rows) => {
+      const data = (rows && rows.length) ? rows.map(_flatRow) : [{ info:"(aucune donnée)" }];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), nom);
+    };
+    addSheet("Recettes", state.incomes);
+    addSheet("Depenses", state.expenses);
+    addSheet("Demandes", state.items);
+    addSheet("Clotures", state.closures);
+    addSheet("Membres", state.members);
+    addSheet("Messages", state.messages);
+    addSheet("Config", [{ horaires:JSON.stringify(state.horaires||{}), compta:JSON.stringify(state.compta||{}), treso_email:state.tresoEmail||"" }]);
+    XLSX.writeFile(wb, "sauvegarde-caisse-" + dateLocale() + ".xlsx");
+    toast("Sauvegarde Excel générée.");
+  }catch(err){ toast("Sauvegarde impossible : " + (err.message||err)); }
+  finally{ btn.disabled=false; btn.textContent=t0; }
+};
+if($("#c_backupJson")) $("#c_backupJson").onclick = () => {
+  try{
+    const dump = {
+      exporte_le: new Date().toISOString(), app:"caisse", version:1,
+      recettes:state.incomes, depenses:state.expenses, demandes:state.items,
+      clotures:state.closures, membres:state.members, messages:state.messages,
+      config:{ horaires:state.horaires, compta:state.compta, treso_email:state.tresoEmail||null }
+    };
+    const blob = new Blob([JSON.stringify(dump, null, 2)], { type:"application/json" });
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+    a.download="sauvegarde-caisse-" + dateLocale() + ".json"; a.click(); URL.revokeObjectURL(a.href);
+    toast("Sauvegarde JSON générée.");
+  }catch(err){ toast("Sauvegarde impossible : " + (err.message||err)); }
 };
 
 if($("#c_saveBtn")) $("#c_saveBtn").onclick = async () => {
