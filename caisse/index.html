@@ -433,6 +433,12 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
 .tva-box .eyebrow{color:var(--gold-soft)}
 .tva-live{font-variant-numeric:tabular-nums}
 .ubl-drop{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px dashed var(--line);border-radius:12px;padding:12px 14px;background:var(--bg2);margin-bottom:6px}
+.rat-row{padding:10px 12px;border-bottom:1px solid var(--line)}
+.rat-row:last-child{border-bottom:none}
+.rat-info{font-size:13.5px;margin-bottom:6px}
+.rat-ctrl{display:flex;gap:8px;flex-wrap:wrap}
+.rat-ctrl select,.rat-ctrl input{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg2);color:var(--text);font-size:13px}
+.rat-ctrl .rat-vat{flex:1;min-width:150px}
 /* ---------- bilan (PDF / Excel) ---------- */
 .bline{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:620px){.bline{grid-template-columns:1fr}}
@@ -600,7 +606,8 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
           <input type="text" id="f_object" maxlength="90" placeholder="Ex. Boissons pour l'assemblée générale" required></div>
         <div class="grid2">
           <div class="field"><label for="f_cat">Catégorie</label>
-            <select id="f_cat"><option>Fournitures</option><option>Transport</option><option>Repas &amp; réception</option><option>Matériel</option><option>Communication</option><option>Frais bancaires</option><option>Autre</option></select></div>
+            <select id="f_cat"><option>Fournitures</option><option>Transport</option><option>Repas &amp; réception</option><option>Matériel</option><option>Communication</option><option>Frais bancaires</option><option>Autre</option></select>
+            <input type="text" id="f_catNew" maxlength="40" placeholder="Précisez la catégorie" style="display:none;margin-top:8px"></div>
           <div class="field"><label for="f_pay">Comment avez-vous payé ?</label>
             <select id="f_pay"><option>Carte bancaire</option><option>Virement</option><option>Espèces</option><option>Application de paiement</option></select></div>
         </div>
@@ -947,6 +954,12 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
       <p class="hint" style="margin-top:8px">Le dépôt officiel se fait via <b>Intervat</b> (SPF Finances). Le CSV et la version imprimable te servent à encoder le listing dans Intervat ou à le remettre à un comptable.</p>
     </div>
 
+    <!-- rattrapage : recettes non encore qualifiées TVA -->
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">Recettes à qualifier (rattrapage)</div></div>
+      <div id="tva_rattrapage"></div>
+    </div>
+
     <!-- déclaration périodique (activée au dépassement) -->
     <div>
       <div class="section-title" style="margin-top:8px"><div class="eyebrow">Déclaration périodique</div></div>
@@ -1025,7 +1038,8 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
           <div class="field"><label for="e_payee">Bénéficiaire ou fournisseur</label>
             <input type="text" id="e_payee" maxlength="80" placeholder="Ex. Ethias" required></div>
           <div class="field"><label for="e_cat">Catégorie</label>
-            <select id="e_cat"><option>Assurances</option><option>Loyer &amp; charges</option><option>Matériel</option><option>Fournitures</option><option>Prestataires</option><option>Communication</option><option>Frais bancaires</option><option>Taxes &amp; cotisations</option><option>Événements</option><option>Autre</option></select></div>
+            <select id="e_cat"><option>Assurances</option><option>Loyer &amp; charges</option><option>Matériel</option><option>Fournitures</option><option>Prestataires</option><option>Communication</option><option>Frais bancaires</option><option>Taxes &amp; cotisations</option><option>Événements</option><option>Autre</option></select>
+            <input type="text" id="e_catNew" maxlength="40" placeholder="Nom de la nouvelle catégorie" style="display:none;margin-top:8px"></div>
         </div>
         <div class="field"><label for="e_method">Moyen de paiement</label>
           <select id="e_method"><option>Virement</option><option>Carte de l'association</option><option>Domiciliation</option><option>Espèces</option><option>Chèque</option></select></div>
@@ -1201,7 +1215,8 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
           <div class="field"><label for="i_source">Provenance</label>
             <input type="text" id="i_source" maxlength="80" placeholder="Ex. Commune de Schaerbeek" required></div>
           <div class="field"><label for="i_cat">Catégorie</label>
-            <select id="i_cat"><option>Solde d'ouverture</option><option>Cotisations</option><option>Subsides</option><option>Dons</option><option>Sponsoring</option><option>Événements</option><option>Ventes</option><option>Intérêts bancaires</option><option>Remboursement reçu</option><option>Autre</option></select></div>
+            <select id="i_cat"><option>Solde d'ouverture</option><option>Cotisations</option><option>Subsides</option><option>Dons</option><option>Sponsoring</option><option>Événements</option><option>Ventes</option><option>Intérêts bancaires</option><option>Remboursement reçu</option><option>Autre</option></select>
+            <input type="text" id="i_catNew" maxlength="40" placeholder="Nom de la nouvelle catégorie" style="display:none;margin-top:8px"></div>
         </div>
         <div class="tva-box">
           <div class="eyebrow" style="margin-bottom:8px">TVA — vente</div>
@@ -2352,6 +2367,7 @@ async function refresh(){
        if(_tc.data && _tc.data.treso_email) state.tresoEmail = String(_tc.data.treso_email).trim() || null; }catch(_){}
   try{ const _cc = await sb.from("caisse_config").select("compta").eq("id",1).maybeSingle();
        if(_cc.data && _cc.data.compta && typeof _cc.data.compta === "object") state.compta = _cc.data.compta; }catch(_){}
+  try{ injectCustomCats(); }catch(_){}
   state.lastSync = new Date();
   detecterChangements();
   try{
@@ -2421,12 +2437,13 @@ $("#expForm").addEventListener("submit", async e => {
       attachments,
       created_by: state.profile.id, author_name: state.profile.name || "",
       expense_date: $("#e_date").value, amount: parseFloat($("#e_amount").value),
-      object: $("#e_object").value.trim(), category: $("#e_cat").value,
+      object: $("#e_object").value.trim(), category: catFinale("#e_cat","#e_catNew"),
       payee: $("#e_payee").value.trim(), method: $("#e_method").value,
       vat_rate: $("#e_vatRate").value, supplier_vat: $("#e_supplierVat").value.trim(),
       note: $("#e_note").value.trim()
     });
     if(error) throw error;
+    await ajouterCategorie("dep", catFinale("#e_cat","#e_catNew"));
     $("#expForm").reset(); staged.exp = []; renderStaged("exp");
     $("#e_date").value = new Date().toISOString().slice(0,10);
     await refresh(); toast("Dépense enregistrée.");
@@ -3504,7 +3521,15 @@ function blocPieces(o, type){
 
 function blocEditerEcriture(o, type){
   const dep = type === "exp";
-  const cats = dep ? CATS_DEPENSE : CATS_RECETTE;
+  const baseCats = dep ? CATS_DEPENSE : CATS_RECETTE;
+  const custCats = (dep ? comptaCfg().catsDep : comptaCfg().catsRec) || [];
+  const cats = (() => {
+    const noAutre = baseCats.filter(c => c !== "Autre");
+    const merged = [...noAutre, ...custCats.filter(c => c && !noAutre.includes(c))];
+    if(o.category && o.category !== "Autre" && !merged.includes(o.category)) merged.push(o.category);
+    merged.push("Autre");
+    return merged;
+  })();
   const modes = dep ? MODES_DEPENSE : MODES_RECETTE;
   return `<div class="fixbox">
     <b>Corriger cette écriture</b>
@@ -4266,13 +4291,14 @@ $("#incForm").addEventListener("submit", async e => {
       attachments,
       created_by: state.profile.id, author_name: state.profile.name || "",
       income_date: $("#i_date").value, amount: parseFloat($("#i_amount").value),
-      object: $("#i_object").value.trim(), category: $("#i_cat").value,
+      object: $("#i_object").value.trim(), category: catFinale("#i_cat","#i_catNew"),
       source: $("#i_source").value.trim(), method: $("#i_method").value,
       vat_rate: $("#i_vatRate").value, client_type: $("#i_clientType").value,
       client_vat: $("#i_clientVat").value.trim(),
       note: $("#i_note").value.trim()
     });
     if(error) throw error;
+    await ajouterCategorie("rec", catFinale("#i_cat","#i_catNew"));
     $("#incForm").reset(); staged.inc = []; renderStaged("inc");
     $("#i_date").value = new Date().toISOString().slice(0,10);
     await refresh(); toast("Recette enregistrée.");
@@ -4653,7 +4679,7 @@ $("#reqForm").addEventListener("submit", async e => {
       user_id: state.profile.id, requester_name: state.profile.name || "",
       requester_position: state.profile.position || "",
       expense_date: $("#f_date").value, amount: parseFloat($("#f_amount").value),
-      object: $("#f_object").value.trim(), category: $("#f_cat").value,
+      object: $("#f_object").value.trim(), category: catFinale("#f_cat","#f_catNew"),
       iban: state.profile.iban,
       payment_method: $("#f_pay").value, refund_method: "Virement",
       note: $("#f_note").value.trim(),
@@ -5377,6 +5403,8 @@ function renderTva(){
     tbl.innerHTML = h;
   }
 
+  renderRattrapage(an);
+
   // déclaration périodique (activée seulement au dépassement)
   const locked = $("#tva_perLocked"), active = $("#tva_perActive");
   if(!depasse){
@@ -5461,6 +5489,108 @@ if($("#tva_xmlBtn")) $("#tva_xmlBtn").onclick = () => {
   toast(res.skipped ? `XML généré — ${res.skipped} client(s) ignoré(s) faute de n° TVA à 10 chiffres.`
                     : "XML Intervat généré — à vérifier dans Intervat avant envoi.");
 };
+
+// ---- rattrapage : qualifier les recettes existantes pour la TVA ----
+function renderRattrapage(an){
+  const box = $("#tva_rattrapage"); if(!box) return;
+  const yearChanged = (an !== state._ratAn); state._ratAn = an;
+  if(!yearChanged && state._ratEdited) return; // ne pas écraser une saisie en cours
+  const nonVente = new Set(["Cotisations","Subsides","Dons","Intérêts bancaires","Remboursement reçu","Solde d'ouverture"]);
+  const list = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && !estOuverture(i)
+      && (!i.client_type || (i.client_type==="professionnel" && !estBelgeVat(i.client_vat))));
+  if(!list.length){ box.innerHTML = `<div class="cpt-note">Toutes les recettes de ${esc(an)} sont qualifiées pour la TVA — rien à rattraper.</div>`; state._ratEdited=false; return; }
+  let h = `<p class="hint" style="margin:0 0 10px">${list.length} recette(s) sans information TVA. Les cotisations, subsides, dons et intérêts sont pré-classés « non concerné » ; choisis le type pour les vraies ventes, puis enregistre.</p><div class="cpt-tbl">`;
+  list.forEach(i => {
+    const cat = String(i.category||"").trim();
+    const def = i.client_type || (nonVente.has(cat) ? "non" : "");
+    h += `<div class="rat-row" data-id="${esc(i.id)}">
+      <div class="rat-info"><b>${esc(euro(i.amount))}</b> — ${esc(i.object||"")} <span class="hint">(${esc(fdate(i.income_date))} · ${esc(i.source||"")} · ${esc(cat||"—")})</span></div>
+      <div class="rat-ctrl">
+        <select class="rat-type">
+          <option value=""${def===""?" selected":""}>— à qualifier —</option>
+          <option value="non"${def==="non"?" selected":""}>Non concerné</option>
+          <option value="particulier"${def==="particulier"?" selected":""}>Particulier</option>
+          <option value="professionnel"${def==="professionnel"?" selected":""}>Professionnel</option>
+        </select>
+        <select class="rat-rate">${TVA_RATES.map(r=>`<option value="${r.code}"${(i.vat_rate||"NA")===r.code?" selected":""}>${r.label}</option>`).join("")}</select>
+        <input class="rat-vat" placeholder="N° TVA (si pro)" value="${esc(i.client_vat||"")}"${def==="professionnel"?"":" style=\"display:none\""}>
+      </div></div>`;
+  });
+  h += `</div><div style="display:flex;gap:10px;margin-top:10px"><button class="btn ok" id="tva_ratSave">Enregistrer les qualifications</button></div>`;
+  box.innerHTML = h;
+  state._ratEdited = false;
+  if($("#tva_ratSave")) $("#tva_ratSave").onclick = saveRattrapage;
+}
+async function saveRattrapage(){
+  const rows = [...document.querySelectorAll("#tva_rattrapage .rat-row")];
+  const updates = [];
+  rows.forEach(row => {
+    const type = row.querySelector(".rat-type").value; if(!type) return;
+    const rate = row.querySelector(".rat-rate").value || "NA";
+    const vat = row.querySelector(".rat-vat").value.trim();
+    updates.push({ id: row.dataset.id, client_type:type, vat_rate:rate, client_vat: type==="professionnel"?vat:"" });
+  });
+  if(!updates.length){ toast("Choisis au moins un type avant d'enregistrer."); return; }
+  const btn = $("#tva_ratSave"); if(btn){ btn.disabled=true; btn.textContent="Enregistrement…"; }
+  let ok=0, fail=0;
+  for(const u of updates){
+    const { error } = await sb.from("incomes").update({ client_type:u.client_type, vat_rate:u.vat_rate, client_vat:u.client_vat }).eq("id", u.id);
+    if(error) fail++; else ok++;
+  }
+  state._ratEdited = false;
+  toast(fail ? `${ok} enregistrée(s), ${fail} échec(s).` : `${ok} recette(s) qualifiée(s).`);
+  await refresh();
+}
+if($("#tva_rattrapage")){
+  $("#tva_rattrapage").addEventListener("change", e => {
+    state._ratEdited = true;
+    if(e.target.classList && e.target.classList.contains("rat-type")){
+      const row = e.target.closest(".rat-row"); const vat = row && row.querySelector(".rat-vat");
+      if(vat) vat.style.display = (e.target.value==="professionnel") ? "" : "none";
+    }
+  });
+  $("#tva_rattrapage").addEventListener("input", () => { state._ratEdited = true; });
+}
+
+// ---- catégories personnalisées (Autre → nouvelle catégorie) ----
+function catFinale(selId, newId){
+  const sel = $(selId), inp = $(newId);
+  if(sel && sel.value === "Autre" && inp && inp.value.trim()) return inp.value.trim().slice(0,40);
+  return sel ? sel.value : "";
+}
+async function ajouterCategorie(kind, nom){
+  nom = String(nom||"").trim();
+  if(!nom || nom === "Autre") return;
+  if(!isTreso()) return; // seul le trésorier peut écrire caisse_config (RLS) ; la valeur reste sur l'écriture
+  const c = comptaCfg();
+  const key = kind === "dep" ? "catsDep" : "catsRec";
+  c[key] = Array.isArray(c[key]) ? c[key] : [];
+  const base = kind === "dep" ? CATS_DEPENSE : CATS_RECETTE;
+  if(base.includes(nom) || c[key].includes(nom)){ injectCustomCats(); return; }
+  c[key].push(nom);
+  const { error } = await sb.from("caisse_config").upsert({ id:1, compta:c, updated_at:new Date().toISOString() });
+  if(error){ toast("Catégorie non mémorisée : "+error.message); return; }
+  injectCustomCats();
+}
+function injectCustomCats(){
+  const add = (selId, arr) => {
+    const sel = $(selId); if(!sel) return;
+    const autre = [...sel.options].find(o => o.value === "Autre");
+    const have = [...sel.options].map(o => o.value);
+    (arr||[]).forEach(c => { if(c && !have.includes(c)){ const o = document.createElement("option"); o.textContent = c; sel.insertBefore(o, autre || null); } });
+  };
+  add("#i_cat", comptaCfg().catsRec);
+  add("#e_cat", comptaCfg().catsDep);
+}
+// affiche le champ de saisie quand on choisit "Autre"
+[["#i_cat","#i_catNew"],["#e_cat","#e_catNew"],["#f_cat","#f_catNew"]].forEach(([s,n]) => {
+  const sel = $(s), inp = $(n);
+  if(sel && inp) sel.addEventListener("change", () => { const on = sel.value === "Autre"; inp.style.display = on ? "" : "none"; if(!on) inp.value = ""; });
+});
+// après un reset de formulaire, masquer les champs "nouvelle catégorie"
+document.addEventListener("reset", () => setTimeout(() => {
+  ["#i_catNew","#e_catNew","#f_catNew"].forEach(id => { const el = $(id); if(el){ el.style.display = "none"; el.value = ""; } });
+}, 0));
 
 // export CSV du listing clients
 if($("#tva_csvBtn")) $("#tva_csvBtn").onclick = () => {
@@ -6064,7 +6194,11 @@ function stampHTML(it){
 
 function blocEditer(it){
   const direct = it.kind === "direct";
-  const cats = ["Fournitures","Transport","Repas & réception","Matériel","Communication","Frais bancaires","Autre"];
+  const cats = (() => {
+    const base = ["Fournitures","Transport","Repas & réception","Matériel","Communication","Frais bancaires"];
+    if(it.category && it.category !== "Autre" && !base.includes(it.category)) base.push(it.category);
+    base.push("Autre"); return base;
+  })();
   return `<div class="fixbox">
     <b>Modifier ou retirer ma demande</b>
     <p>Tant que la demande n'a pas été validée ou remboursée, vous pouvez corriger les informations ou la supprimer complètement.${(it.status==="Refusée"||it.status==="À corriger")?" Après modification, elle repartira automatiquement en attente de décision du trésorier." : ""}</p>
