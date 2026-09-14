@@ -439,6 +439,12 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
 .rat-ctrl{display:flex;gap:8px;flex-wrap:wrap}
 .rat-ctrl select,.rat-ctrl input{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg2);color:var(--text);font-size:13px}
 .rat-ctrl .rat-vat{flex:1;min-width:150px}
+.jrn{width:100%;border-collapse:collapse;font-size:12.5px}
+.jrn th,.jrn td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.jrn th{color:var(--gold-soft);text-transform:uppercase;font-size:11px;letter-spacing:.03em;background:var(--bg2)}
+.jrn td.num,.jrn th.num{text-align:right;font-variant-numeric:tabular-nums}
+.jrn td.obj,.jrn th.obj{white-space:normal;min-width:150px}
+.jrn tr.tot td{font-weight:800;border-top:2px solid var(--line)}
 /* ---------- bilan (PDF / Excel) ---------- */
 .bline{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:620px){.bline{grid-template-columns:1fr}}
@@ -859,23 +865,34 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
     <!-- indicateur taxe patrimoniale -->
     <div id="c_taxeFlag" class="cpt-flag ok"></div>
 
+    <!-- journal chronologique -->
+    <div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">1 · Journal chronologique</div></div>
+      <p class="hint" style="margin:0 0 10px">Le livre des opérations de l'exercice (1er juillet → 30 juin), triées par date et <b>numérotées en continu</b>, recettes et dépenses en colonnes séparées (jamais compensées). C'est le registre que la loi attend, la source dont l'état ci-dessous est la synthèse.</p>
+      <div class="cpt-tbl" id="c_journal" style="overflow-x:auto"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn ghost sm" id="c_journalCsv">Exporter en CSV</button>
+        <button class="btn ghost sm" id="c_journalPrint">Version à imprimer</button>
+      </div>
+    </div>
+
     <!-- état des recettes et dépenses -->
     <div>
-      <div class="section-title" style="margin-top:8px"><div class="eyebrow">1 · État des recettes et dépenses</div></div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">2 · État des recettes et dépenses</div></div>
       <p class="hint" style="margin:0 0 10px">Schéma minimum normalisé (annexe 8 de l'AR d'exécution du CSA). Tes catégories libres sont regroupées dans les rubriques légales ; le détail par catégorie est affiché en dessous de chaque rubrique pour que tu retrouves tout.</p>
       <div class="cpt-tbl" id="c_rd"></div>
     </div>
 
     <!-- état du patrimoine -->
     <div>
-      <div class="section-title" style="margin-top:8px"><div class="eyebrow">2 · État du patrimoine</div></div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">3 · État du patrimoine</div></div>
       <p class="hint" style="margin:0 0 10px">Photographie de ce que possède et doit l'ASBL à la clôture. Les liquidités, les créances du CA sortant et les dettes envers les membres (demandes validées non encore virées) sont calculées automatiquement. Complète les autres postes à la main s'ils existent (sinon laisse 0).</p>
       <div class="cpt-tbl" id="c_pat"></div>
     </div>
 
     <!-- règles d'évaluation -->
     <div>
-      <div class="section-title" style="margin-top:8px"><div class="eyebrow">3 · Règles d'évaluation (annexe)</div></div>
+      <div class="section-title" style="margin-top:8px"><div class="eyebrow">4 · Règles d'évaluation (annexe)</div></div>
       <details class="pliable" style="margin-bottom:10px">
         <summary><span class="eyebrow">À quoi ça sert ? Comment les rédiger ?</span></summary>
         <div class="cpt-note" style="margin-top:10px">
@@ -894,7 +911,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
     <!-- budget (optionnel) -->
     <div>
       <details class="pliable">
-        <summary><span class="eyebrow">4 · Budget de l'exercice (optionnel)</span><span class="resume" id="c_budResume"></span></summary>
+        <summary><span class="eyebrow">5 · Budget de l'exercice (optionnel)</span><span class="resume" id="c_budResume"></span></summary>
         <div style="margin-top:10px">
           <p class="hint" style="margin:0 0 10px">À présenter à l'AG au même schéma que l'état des recettes et dépenses. Facultatif dans l'app, mais l'AG doit approuver un budget chaque année.</p>
           <div class="cpt-tbl" id="c_bud"></div>
@@ -4905,22 +4922,67 @@ function patYear(an){ const c=comptaCfg(); c.patrimoine=c.patrimoine||{}; const 
 function budYear(an){ const c=comptaCfg(); c.budget=c.budget||{}; const k=comptaKey(an); c.budget[k]=c.budget[k]||{}; return c.budget[k]; }
 
 // solde d'ouverture (report) de l'exercice
+// ---- exercice social décalé : 1er juillet N → 30 juin N+1 (clé = année de début) ----
+function exerciceBornes(ex){ const y=parseInt(ex,10); return { from:`${y}-07-01`, to:`${y+1}-06-30` }; }
+function exerciceLabel(ex){ const y=parseInt(ex,10); return `${y}–${y+1}`; }
+function exerciceDe(dateISO){ const s=String(dateISO||""); const y=parseInt(s.slice(0,4),10); const m=parseInt(s.slice(5,7),10);
+  if(isNaN(y)||isNaN(m)) return null; return (m>=7) ? y : y-1; }
+function dansExercice(dateISO, ex){ if(!ex || ex==="all") return true; const {from,to}=exerciceBornes(ex); const s=String(dateISO||""); return s>=from && s<=to; }
+function exercicesPresents(){
+  const ys = new Set();
+  const push = d => { const e=exerciceDe(d); if(e!=null) ys.add(e); };
+  (state.incomes||[]).forEach(i=>push(i.income_date));
+  (state.expenses||[]).forEach(e=>push(e.expense_date));
+  (state.items||[]).forEach(i=>push(i.expense_date));
+  return [...ys].sort((a,b)=>b-a).map(String);
+}
+function exerciceCourant(){ const e=exerciceDe(new Date().toISOString().slice(0,10)); return String(e); }
+
+// ---- journal chronologique : toutes les opérations de l'exercice, triées et numérotées ----
+function journalEcritures(ex){
+  const arr = [];
+  (state.incomes||[]).filter(i => dansExercice(i.income_date, ex)).forEach(i => arr.push({
+    date:i.income_date, objet:i.object, tiers:i.source, cat:i.category, rec:Number(i.amount||0), dep:0 }));
+  (state.expenses||[]).filter(e => dansExercice(e.expense_date, ex)).forEach(e => arr.push({
+    date:e.expense_date, objet:e.object, tiers:e.payee, cat:e.category, rec:0, dep:Number(e.amount||0) }));
+  (state.items||[]).filter(i => i.status==="Remboursée" && dansExercice(i.expense_date, ex)).forEach(i => arr.push({
+    date:i.expense_date, objet:i.object, tiers:i.beneficiary||i.requester_name||"", cat:i.category||"Remboursement", rec:0, dep:Number(i.amount||0) }));
+  arr.sort((a,b) => String(a.date||"").localeCompare(String(b.date||"")));
+  arr.forEach((e,idx) => e.no = idx+1); // numérotation continue, par exercice
+  return arr;
+}
+function renderJournal(ex){
+  const box = $("#c_journal"); if(!box) return;
+  const ecr = journalEcritures(ex);
+  state._journal = ecr; state._journalEx = ex;
+  if(!ecr.length){ box.innerHTML = `<div class="cpt-note">Aucune opération sur cet exercice.</div>`; return; }
+  let totR=0, totD=0;
+  let h = `<table class="jrn"><thead><tr><th>N°</th><th>Date</th><th class="obj">Objet</th><th>Tiers</th><th>Catégorie</th><th class="num">Recette</th><th class="num">Dépense</th></tr></thead><tbody>`;
+  ecr.forEach(e => { totR+=e.rec; totD+=e.dep;
+    h += `<tr><td>${e.no}</td><td>${esc(fdate(e.date))}</td><td class="obj">${esc(e.objet||"")}</td><td>${esc(e.tiers||"")}</td><td>${esc(e.cat||"")}</td>`
+      + `<td class="num">${e.rec?esc(euro(e.rec)):""}</td><td class="num">${e.dep?esc(euro(e.dep)):""}</td></tr>`;
+  });
+  h += `<tr class="tot"><td colspan="5">Totaux (${ecr.length} opération${ecr.length>1?"s":""})</td><td class="num">${esc(euro(totR))}</td><td class="num">${esc(euro(totD))}</td></tr>`;
+  h += `</tbody></table>`;
+  box.innerHTML = h;
+}
+
 function soldeOuverture(an){
-  return (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && estOuverture(i))
+  return (state.incomes||[]).filter(i => dansExercice(i.income_date, an) && estOuverture(i))
                             .reduce((s,i)=>s+Number(i.amount||0),0);
 }
 
 // ---- calculs de l'état des recettes et dépenses (regroupés au schéma normalisé) ----
 function comptaRD(an){
-  const recs = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && !estOuverture(i));
+  const recs = (state.incomes||[]).filter(i => dansExercice(i.income_date, an) && !estOuverture(i));
   const recRub = {}; RUB_REC.forEach(r=>recRub[r]=0);
   const recDet = {}; RUB_REC.forEach(r=>recDet[r]={});
   recs.forEach(i => { const r=rubRec(i.category); const m=Number(i.amount||0);
     recRub[r]+=m; const c=String(i.category||"Autre").trim()||"Autre"; recDet[r][c]=(recDet[r][c]||0)+m; });
   const totRec = RUB_REC.reduce((s,r)=>s+recRub[r],0);
 
-  const exps = (state.expenses||[]).filter(e => dansAnnee(e.expense_date, an));
-  const rembs = (state.items||[]).filter(i => i.status==="Remboursée" && dansAnnee(i.expense_date, an));
+  const exps = (state.expenses||[]).filter(e => dansExercice(e.expense_date, an));
+  const rembs = (state.items||[]).filter(i => i.status==="Remboursée" && dansExercice(i.expense_date, an));
   const depRub = {}; RUB_DEP.forEach(r=>depRub[r]=0);
   const depDet = {}; RUB_DEP.forEach(r=>depDet[r]={});
   exps.forEach(e => { const r=rubDep(e.category); const m=Number(e.amount||0);
@@ -4934,10 +4996,13 @@ function comptaRD(an){
 
 // ---- calculs de l'état du patrimoine (auto + saisie manuelle) ----
 function comptaPatrimoine(an){
-  const liquidites = totalRecettes(an) - totalSorties(an); // solde de trésorerie à la clôture
-  const creancesAuto = (state.expenses||[]).filter(e => estRepriseDue(e) && dansAnnee(e.expense_date, an))
+  const recEx = (state.incomes||[]).filter(i => dansExercice(i.income_date, an)).reduce((s,i)=>s+Number(i.amount||0),0);
+  const sortEx = (state.expenses||[]).filter(e => dansExercice(e.expense_date, an)).reduce((s,e)=>s+Number(e.amount||0),0)
+               + (state.items||[]).filter(i => i.status==="Remboursée" && dansExercice(i.expense_date, an)).reduce((s,i)=>s+Number(i.amount||0),0);
+  const liquidites = recEx - sortEx; // trésorerie à la clôture de l'exercice
+  const creancesAuto = (state.expenses||[]).filter(e => estRepriseDue(e) && dansExercice(e.expense_date, an))
                           .reduce((s,e)=>s+Number(e.amount||0),0);
-  const dettesMembres = (state.items||[]).filter(i => i.status==="Validée" && dansAnnee(i.expense_date, an))
+  const dettesMembres = (state.items||[]).filter(i => i.status==="Validée" && dansExercice(i.expense_date, an))
                           .reduce((s,i)=>s+Number(i.amount||0),0);
   const p = patYear(an);
   const avoirs = {
@@ -4963,19 +5028,17 @@ function comptaPatrimoine(an){
 function renderCompta(){
   if(!isTreso()) return;
   const sel = $("#c_annee"); if(!sel) return;
-  const annees = [...new Set([
-    ...(state.incomes||[]).map(i=>String(i.income_date).slice(0,4)),
-    ...(state.expenses||[]).map(e=>String(e.expense_date).slice(0,4)),
-    ...(state.items||[]).map(i=>String(i.expense_date).slice(0,4))
-  ].filter(a=>/^\d{4}$/.test(a)))].sort().reverse();
+  const annees = exercicesPresents();
   const choix = sel.value;
-  sel.innerHTML = `<option value="all">Toutes les années</option>` +
-    annees.map(a => `<option${a===choix?" selected":""}>${a}</option>`).join("");
+  sel.innerHTML = `<option value="all">Tout l'historique</option>` +
+    annees.map(a => `<option value="${a}"${a===choix?" selected":""}>Exercice ${exerciceLabel(a)}</option>`).join("");
   if(choix && [...sel.options].some(o=>o.value===choix)) sel.value = choix;
+  else if(annees.length) sel.value = annees.includes(exerciceCourant()) ? exerciceCourant() : annees[0];
   const an = sel.value;
   const yearChanged = (an !== state._comptaAn);
   state._comptaAn = an;
 
+  renderJournal(an);
   const rd  = comptaRD(an);
   const pat = comptaPatrimoine(an);
 
@@ -5092,6 +5155,43 @@ if($("#c_modeleBtn")) $("#c_modeleBtn").onclick = () => {
 };
 
 // enregistrement de toutes les données comptables saisies (règles, identité, patrimoine manuel, budget)
+// changement d'exercice comptable
+if($("#c_annee")) $("#c_annee").onchange = renderCompta;
+
+// export du journal chronologique
+if($("#c_journalCsv")) $("#c_journalCsv").onclick = () => {
+  const ecr = state._journal || [];
+  if(!ecr.length){ toast("Aucune opération à exporter."); return; }
+  const rows = [["No","Date","Objet","Tiers","Categorie","Recette","Depense"]];
+  ecr.forEach(e => rows.push([e.no, fdate(e.date), e.objet||"", e.tiers||"", e.cat||"", e.rec?e.rec.toFixed(2):"", e.dep?e.dep.toFixed(2):""]));
+  const csv = rows.map(r => r.map(x => `"${String(x).replace(/"/g,'""')}"`).join(";")).join("\r\n");
+  const blob = new Blob(["\ufeff"+csv], { type:"text/csv;charset=utf-8" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = `journal-${state._journalEx||""}.csv`; a.click(); URL.revokeObjectURL(a.href);
+};
+if($("#c_journalPrint")) $("#c_journalPrint").onclick = () => {
+  const ecr = state._journal || []; const ex = state._journalEx || "";
+  const nom = comptaCfg().nomAsbl || "ASBL"; const bce = comptaCfg().bce || "";
+  const per = ex==="all" ? "Tout l'historique" : ("Exercice " + exerciceLabel(ex));
+  let totR=0, totD=0;
+  const rows = ecr.map(e => { totR+=e.rec; totD+=e.dep;
+    return `<tr><td>${e.no}</td><td>${esc(fdate(e.date))}</td><td>${esc(e.objet||"")}</td><td>${esc(e.tiers||"")}</td><td>${esc(e.cat||"")}</td><td class="num">${e.rec?esc(euro(e.rec)):""}</td><td class="num">${e.dep?esc(euro(e.dep)):""}</td></tr>`;
+  }).join("") || `<tr><td colspan="7">Aucune opération.</td></tr>`;
+  const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Journal — ${esc(nom)} — ${esc(per)}</title>
+<style>body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:900px;margin:28px auto;padding:0 18px;font-size:12px}
+h1{font-size:17px;margin:0 0 2px}.meta{color:#555;font-size:11px;margin-bottom:10px}
+table{width:100%;border-collapse:collapse}td,th{padding:5px 7px;border-bottom:1px solid #ddd;text-align:left}
+td.num,th.num{text-align:right;white-space:nowrap}tr.tot td{font-weight:bold;border-top:2px solid #333}
+.noprint{margin:14px 0}@media print{.noprint{display:none}body{margin:0}}</style></head><body>
+<div class="noprint"><button onclick="window.print()">Imprimer / enregistrer en PDF</button></div>
+<h1>${esc(nom)}</h1><div class="meta">${bce?("N° d'entreprise : "+esc(bce)+" · "):""}Journal chronologique — ${esc(per)}</div>
+<table><thead><tr><th>N°</th><th>Date</th><th>Objet</th><th>Tiers</th><th>Catégorie</th><th class="num">Recette</th><th class="num">Dépense</th></tr></thead>
+<tbody>${rows}<tr class="tot"><td colspan="5">Totaux (${ecr.length})</td><td class="num">${esc(euro(totR))}</td><td class="num">${esc(euro(totD))}</td></tr></tbody></table>
+<div class="meta" style="margin-top:14px">Livre tenu sans compensation entre recettes et dépenses. Généré le ${esc(new Date().toLocaleDateString("fr-BE"))}.</div></body></html>`;
+  const w = window.open("", "_blank"); if(!w){ toast("Autorise les fenêtres pop-up."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+};
+
 if($("#c_saveBtn")) $("#c_saveBtn").onclick = async () => {
   const an = $("#c_annee") ? $("#c_annee").value : "all";
   const c = comptaCfg();
@@ -5125,7 +5225,7 @@ if($("#c_exportBtn")) $("#c_exportBtn").onclick = () => {
 
   const rd  = comptaRD(an);
   const pat = comptaPatrimoine(an);
-  const per = an==="all" ? "Toutes les années" : ("Exercice " + an);
+  const per = an==="all" ? "Tout l'historique" : ("Exercice " + exerciceLabel(an));
 
   const row = (l,v,cls="") => `<tr class="${cls}"><td>${esc(l)}</td><td class="num">${esc(euro(v))}</td></tr>`;
   const detRows = det => Object.keys(det).sort().map(c =>
