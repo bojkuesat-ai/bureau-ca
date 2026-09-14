@@ -1092,6 +1092,12 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
           <select id="e_method"><option>Virement</option><option>Carte de l'association</option><option>Domiciliation</option><option>Espèces</option><option>Chèque</option></select></div>
         <div class="tva-box">
           <div class="eyebrow" style="margin-bottom:8px">TVA — achat</div>
+          <div class="field"><label for="e_tvaAffect">Affectation de cette dépense</label>
+            <select id="e_tvaAffect">
+              <option value="taxable">Bloc taxable uniquement (ex. achats bar, soirée)</option>
+              <option value="exempt">Bloc exempté/non concerné uniquement</option>
+              <option value="mixte">Commune aux deux (frais généraux, loyer…) — prorata</option>
+            </select></div>
           <div class="grid2">
             <div class="field"><label for="e_supplierVat">N° de TVA du fournisseur</label>
               <input type="text" id="e_supplierVat" placeholder="BE 0xxx.xxx.xxx"></div>
@@ -1267,9 +1273,15 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
         </div>
         <div class="tva-box">
           <div class="eyebrow" style="margin-bottom:8px">TVA — vente</div>
-          <div class="grid2">
+          <div class="field"><label for="i_tvaRegime">Régime TVA de cette recette</label>
+            <select id="i_tvaRegime">
+              <option value="non">Non concerné (subside, don, cotisation non visée)</option>
+              <option value="exempt44">Exempté — article 44 (ex. cotisation statutaire, manifestation visée)</option>
+              <option value="taxable">Taxable (bar, soirée, vente, sponsoring commercial…)</option>
+            </select></div>
+          <div class="grid2" id="i_taxableWrap" style="display:none">
             <div class="field"><label for="i_clientType">Type de client</label>
-              <select id="i_clientType"><option value="non">Non concerné (subside, don, cotisation…)</option><option value="particulier">Particulier</option><option value="professionnel">Professionnel (assujetti)</option></select></div>
+              <select id="i_clientType"><option value="particulier">Particulier</option><option value="professionnel">Professionnel (assujetti)</option></select></div>
             <div class="field"><label for="i_vatRate">Taux de TVA</label><select id="i_vatRate"></select></div>
           </div>
           <div class="field" id="i_clientVatWrap" style="display:none"><label for="i_clientVat">N° de TVA du client</label>
@@ -2489,7 +2501,7 @@ $("#expForm").addEventListener("submit", async e => {
       expense_date: $("#e_date").value, amount: parseFloat($("#e_amount").value),
       object: $("#e_object").value.trim(), category: catFinale("#e_cat","#e_catNew"),
       payee: $("#e_payee").value.trim(), method: $("#e_method").value,
-      vat_rate: $("#e_vatRate").value, supplier_vat: $("#e_supplierVat").value.trim(),
+      vat_rate: $("#e_vatRate").value, supplier_vat: $("#e_supplierVat").value.trim(), tva_affectation: $("#e_tvaAffect").value,
       note: $("#e_note").value.trim()
     });
     if(error) throw error;
@@ -4339,8 +4351,8 @@ $("#incForm").addEventListener("submit", async e => {
       income_date: $("#i_date").value, amount: parseFloat($("#i_amount").value),
       object: $("#i_object").value.trim(), category: catFinale("#i_cat","#i_catNew"),
       source: $("#i_source").value.trim(), method: $("#i_method").value,
-      vat_rate: $("#i_vatRate").value, client_type: $("#i_clientType").value,
-      client_vat: $("#i_clientVat").value.trim(),
+      vat_rate: $("#i_vatRate").value, client_type: $("#i_tvaRegime").value==="taxable" ? $("#i_clientType").value : "non",
+      client_vat: $("#i_clientVat").value.trim(), tva_regime: $("#i_tvaRegime").value,
       note: $("#i_note").value.trim()
     });
     if(error) throw error;
@@ -5542,6 +5554,12 @@ fillRateSelect($("#e_vatRate"), "NA");
 if($("#i_clientType")) $("#i_clientType").addEventListener("change", () => {
   if($("#i_clientVatWrap")) $("#i_clientVatWrap").style.display = ($("#i_clientType").value==="professionnel") ? "" : "none";
 });
+if($("#i_tvaRegime")) $("#i_tvaRegime").addEventListener("change", () => {
+  const taxable = $("#i_tvaRegime").value === "taxable";
+  if($("#i_taxableWrap")) $("#i_taxableWrap").style.display = taxable ? "" : "none";
+  if(!taxable){ if($("#i_clientVatWrap")) $("#i_clientVatWrap").style.display="none"; if($("#i_tvaLive")) $("#i_tvaLive").textContent=""; }
+  else majTvaLive("i");
+});
 // après un reset de formulaire, remettre l'affichage TVA à zéro
 ["incForm","expForm"].forEach(id=>{ const f=$("#"+id); if(f) f.addEventListener("reset", ()=>setTimeout(()=>{
   if($("#i_clientVatWrap")) $("#i_clientVatWrap").style.display="none";
@@ -5602,19 +5620,22 @@ function renderTva(){
   const an = sel.value || annees[0] || String(new Date().getFullYear());
 
   // ventes de l'année (recettes marquées comme opérations client)
-  const ventes = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && (i.client_type==="particulier" || i.client_type==="professionnel"));
+  const ventes = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && i.tva_regime==="taxable");
+  const exemptes = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && i.tva_regime==="exempt44");
   const caHT = ventes.reduce((s,i)=>s+ventile(i.amount, i.vat_rate||"NA").ht, 0);
   const depasse = caHT > SEUIL_FRANCHISE;
 
   const flag = $("#tva_seuilFlag");
+  const exHT = exemptes.reduce((s,i)=>s+Number(i.amount||0),0);
+  const noteExempt = exHT ? ` (dont ${esc(euro(exHT))} exempté art. 44, hors calcul du seuil)` : "";
   if(depasse){
     flag.className = "cpt-flag warn";
-    flag.innerHTML = `⚠ Chiffre d'affaires ${esc(euro(caHT))} pour ${esc(an)} — au-dessus de ${esc(euro(SEUIL_FRANCHISE))}. `
-      + `Le régime de franchise ne s'applique plus : passage au régime normal (formulaire e604B) et déclarations TVA périodiques. La section « Déclaration périodique » ci-dessous est activée.`;
+    flag.innerHTML = `⚠ Chiffre d'affaires taxable ${esc(euro(caHT))} pour ${esc(an)}${noteExempt} — au-dessus de ${esc(euro(SEUIL_FRANCHISE))}. `
+      + `Le régime de franchise ne s'applique plus pour le bloc taxable : passage au régime normal (formulaire e604B) et déclarations TVA périodiques. La section « Déclaration périodique » ci-dessous est activée.`;
   }else{
     flag.className = "cpt-flag ok";
-    flag.innerHTML = `✓ Chiffre d'affaires ${esc(euro(caHT))} pour ${esc(an)} — sous le seuil de ${esc(euro(SEUIL_FRANCHISE))} (marge restante ${esc(euro(SEUIL_FRANCHISE-caHT))}). `
-      + `Régime de franchise : pas de déclaration TVA périodique, seul le listing annuel est dû.`;
+    flag.innerHTML = `✓ Chiffre d'affaires taxable ${esc(euro(caHT))} pour ${esc(an)}${noteExempt} — sous le seuil de ${esc(euro(SEUIL_FRANCHISE))} (marge restante ${esc(euro(SEUIL_FRANCHISE-caHT))}). `
+      + `Régime de franchise sur le bloc taxable : pas de déclaration TVA périodique, seul le listing annuel est dû.`;
   }
 
   // listing clients pros belges > 250 € HT
@@ -5661,13 +5682,26 @@ function periodeBornes(an, type, num){
 function grillesPeriode(an, type, num){
   const {from,to} = periodeBornes(an, type, num);
   const dans = d => { const s=String(d||""); return s>=from && s<=to; };
-  const ventes = (state.incomes||[]).filter(i => dans(i.income_date) && (i.client_type==="particulier"||i.client_type==="professionnel"));
+  const ventes = (state.incomes||[]).filter(i => dans(i.income_date) && i.tva_regime==="taxable");
   let b6=0,b12=0,b21=0,tvaDue=0;
   ventes.forEach(i => { const v=ventile(i.amount, i.vat_rate||"NA"); const r=Math.round(tvaRatePct(i.vat_rate||"NA"));
     if(r===6) b6+=v.ht; else if(r===12) b12+=v.ht; else if(r===21) b21+=v.ht; tvaDue+=v.tva; });
+
+  // prorata général de déduction = taxable / (taxable + exempté art. 44), sur l'exercice civil entier
+  // (le prorata se calcule sur l'année, pas sur la période, pour rester stable d'une déclaration à l'autre)
+  const anTaxable = (state.incomes||[]).filter(i=>dansAnnee(i.income_date,an)&&i.tva_regime==="taxable").reduce((s,i)=>s+ventile(i.amount,i.vat_rate||"NA").ht,0);
+  const anExempt  = (state.incomes||[]).filter(i=>dansAnnee(i.income_date,an)&&i.tva_regime==="exempt44").reduce((s,i)=>s+Number(i.amount||0),0);
+  const base = anTaxable + anExempt;
+  const prorata = base>0 ? Math.min(100, Math.ceil((anTaxable/base)*100)) : 100; // arrondi au % supérieur, comme l'exige la règle du prorata
+
   let achatsHT=0, tvaDeduc=0;
-  (state.expenses||[]).filter(e => dans(e.expense_date)).forEach(e => { const v=ventile(e.amount, e.vat_rate||"NA"); achatsHT+=v.ht; tvaDeduc+=v.tva; });
-  return { b6,b12,b21,tvaDue,achatsHT,tvaDeduc, solde:tvaDue-tvaDeduc };
+  (state.expenses||[]).filter(e => dans(e.expense_date)).forEach(e => {
+    const v=ventile(e.amount, e.vat_rate||"NA"); achatsHT+=v.ht;
+    const aff = e.tva_affectation || "mixte";
+    if(aff==="exempt") return; // dépense propre au bloc exempté : TVA jamais déductible
+    tvaDeduc += (aff==="taxable") ? v.tva : v.tva*(prorata/100); // taxable = 100 %, mixte = prorata
+  });
+  return { b6,b12,b21,tvaDue,achatsHT,tvaDeduc, solde:tvaDue-tvaDeduc, prorata, anTaxable, anExempt };
 }
 function renderPeriodique(an){
   const type = $("#tva_perType") ? $("#tva_perType").value : "Q";
@@ -5693,7 +5727,7 @@ function renderPeriodique(an){
   h += `<div class="cpt-row tot"><span>${esc(soldeGrid)}</span><span class="v">${esc(euro(Math.abs(g.solde)))}</span></div>`;
   if($("#tva_perGrid")) $("#tva_perGrid").innerHTML = h;
   state._tvaPer = { an, type, num, g };
-  if($("#tva_perFoot")) $("#tva_perFoot").innerHTML = `Estimation calculée sur la période choisie à partir des données encodées. Les achats sont regroupés en grille 82 par défaut — à reclasser (81 marchandises / 83 biens d'investissement) et à vérifier par un comptable avant dépôt. Dépôt via <b>Intervat</b>.`;
+  if($("#tva_perFoot")) $("#tva_perFoot").innerHTML = `Prorata général de déduction pour ${esc(an)} : <b>${g.prorata} %</b> (taxable ${esc(euro(g.anTaxable))} / total taxable+exempté ${esc(euro(g.anTaxable+g.anExempt))}, arrondi au % supérieur). Appliqué aux dépenses « communes aux deux blocs » ; les dépenses purement taxables sont déduites à 100 %, les purement exemptées à 0 %.<br><br>Estimation calculée sur la période choisie à partir des données encodées. Les achats sont regroupés en grille 82 par défaut — à reclasser (81 marchandises / 83 biens d'investissement) et à vérifier par un comptable avant dépôt. Dépôt via <b>Intervat</b>.`;
 }
 
 // changement d'année ou de période TVA
@@ -5730,24 +5764,24 @@ function renderRattrapage(an){
   const yearChanged = (an !== state._ratAn); state._ratAn = an;
   if(!yearChanged && state._ratEdited) return; // ne pas écraser une saisie en cours
   const nonVente = new Set(["Cotisations","Subsides","Dons","Intérêts bancaires","Remboursement reçu","Solde d'ouverture"]);
-  const list = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && !estOuverture(i)
-      && (!i.client_type || (i.client_type==="professionnel" && !estBelgeVat(i.client_vat))));
+  const list = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && !estOuverture(i) && !i.tva_regime);
   if(!list.length){ box.innerHTML = `<div class="cpt-note">Toutes les recettes de ${esc(an)} sont qualifiées pour la TVA — rien à rattraper.</div>`; state._ratEdited=false; return; }
-  let h = `<p class="hint" style="margin:0 0 10px">${list.length} recette(s) sans information TVA. Les cotisations, subsides, dons et intérêts sont pré-classés « non concerné » ; choisis le type pour les vraies ventes, puis enregistre.</p><div class="cpt-tbl">`;
+  let h = `<p class="hint" style="margin:0 0 10px">${list.length} recette(s) sans régime TVA. Les cotisations, subsides, dons et intérêts sont pré-classés « non concerné » ; choisis « exempté art. 44 » ou « taxable » pour les vraies recettes d'activité, puis enregistre.</p><div class="cpt-tbl">`;
   list.forEach(i => {
     const cat = String(i.category||"").trim();
-    const def = i.client_type || (nonVente.has(cat) ? "non" : "");
+    const def = nonVente.has(cat) ? "non" : "";
     h += `<div class="rat-row" data-id="${esc(i.id)}">
       <div class="rat-info"><b>${esc(euro(i.amount))}</b> — ${esc(i.object||"")} <span class="hint">(${esc(fdate(i.income_date))} · ${esc(i.source||"")} · ${esc(cat||"—")})</span></div>
       <div class="rat-ctrl">
-        <select class="rat-type">
+        <select class="rat-regime">
           <option value=""${def===""?" selected":""}>— à qualifier —</option>
           <option value="non"${def==="non"?" selected":""}>Non concerné</option>
-          <option value="particulier"${def==="particulier"?" selected":""}>Particulier</option>
-          <option value="professionnel"${def==="professionnel"?" selected":""}>Professionnel</option>
+          <option value="exempt44"${def==="exempt44"?" selected":""}>Exempté — art. 44</option>
+          <option value="taxable"${def==="taxable"?" selected":""}>Taxable</option>
         </select>
-        <select class="rat-rate">${TVA_RATES.map(r=>`<option value="${r.code}"${(i.vat_rate||"NA")===r.code?" selected":""}>${r.label}</option>`).join("")}</select>
-        <input class="rat-vat" placeholder="N° TVA (si pro)" value="${esc(i.client_vat||"")}"${def==="professionnel"?"":" style=\"display:none\""}>
+        <select class="rat-type" style="display:none"><option value="particulier">Particulier</option><option value="professionnel">Professionnel</option></select>
+        <select class="rat-rate" style="display:none">${TVA_RATES.map(r=>`<option value="${r.code}"${(i.vat_rate||"NA")===r.code?" selected":""}>${r.label}</option>`).join("")}</select>
+        <input class="rat-vat" placeholder="N° TVA (si pro)" value="${esc(i.client_vat||"")}" style="display:none">
       </div></div>`;
   });
   h += `</div><div style="display:flex;gap:10px;margin-top:10px"><button class="btn ok" id="tva_ratSave">Enregistrer les qualifications</button></div>`;
@@ -5759,16 +5793,18 @@ async function saveRattrapage(){
   const rows = [...document.querySelectorAll("#tva_rattrapage .rat-row")];
   const updates = [];
   rows.forEach(row => {
-    const type = row.querySelector(".rat-type").value; if(!type) return;
+    const regime = row.querySelector(".rat-regime").value; if(!regime) return;
     const rate = row.querySelector(".rat-rate").value || "NA";
+    const type = row.querySelector(".rat-type").value;
     const vat = row.querySelector(".rat-vat").value.trim();
-    updates.push({ id: row.dataset.id, client_type:type, vat_rate:rate, client_vat: type==="professionnel"?vat:"" });
+    updates.push({ id: row.dataset.id, tva_regime:regime, vat_rate: regime==="taxable"?rate:"NA",
+      client_type: regime==="taxable" ? type : "non", client_vat: (regime==="taxable"&&type==="professionnel") ? vat : "" });
   });
-  if(!updates.length){ toast("Choisis au moins un type avant d'enregistrer."); return; }
+  if(!updates.length){ toast("Choisis au moins un régime avant d'enregistrer."); return; }
   const btn = $("#tva_ratSave"); if(btn){ btn.disabled=true; btn.textContent="Enregistrement…"; }
   let ok=0, fail=0;
   for(const u of updates){
-    const { error } = await sb.from("incomes").update({ client_type:u.client_type, vat_rate:u.vat_rate, client_vat:u.client_vat }).eq("id", u.id);
+    const { error } = await sb.from("incomes").update({ tva_regime:u.tva_regime, vat_rate:u.vat_rate, client_type:u.client_type, client_vat:u.client_vat }).eq("id", u.id);
     if(error) fail++; else ok++;
   }
   state._ratEdited = false;
@@ -5778,8 +5814,16 @@ async function saveRattrapage(){
 if($("#tva_rattrapage")){
   $("#tva_rattrapage").addEventListener("change", e => {
     state._ratEdited = true;
-    if(e.target.classList && e.target.classList.contains("rat-type")){
-      const row = e.target.closest(".rat-row"); const vat = row && row.querySelector(".rat-vat");
+    const row = e.target.closest(".rat-row"); if(!row) return;
+    if(e.target.classList.contains("rat-regime")){
+      const taxable = e.target.value === "taxable";
+      const type = row.querySelector(".rat-type"), rate = row.querySelector(".rat-rate"), vat = row.querySelector(".rat-vat");
+      if(type) type.style.display = taxable ? "" : "none";
+      if(rate) rate.style.display = taxable ? "" : "none";
+      if(vat) vat.style.display = (taxable && type && type.value==="professionnel") ? "" : "none";
+    }
+    if(e.target.classList.contains("rat-type")){
+      const vat = row.querySelector(".rat-vat");
       if(vat) vat.style.display = (e.target.value==="professionnel") ? "" : "none";
     }
   });
