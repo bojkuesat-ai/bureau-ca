@@ -683,6 +683,16 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
       <h2 style="font-size:22px;margin:6px 0 10px">Demander un paiement direct au trésorier</h2>
       <p class="hint" style="margin:0 0 16px">Pour une dépense que tu ne peux pas avancer : c'est le trésorier qui paie directement le bénéficiaire (hôtel, imprimeur, publication des statuts…).</p>
       <form id="directForm" class="stack" style="gap:14px">
+        <div id="fd_pourBox" class="card pad" hidden style="border-left:4px solid var(--gold);gap:12px;display:grid">
+          <div class="field"><label for="fd_pour">Saisir au nom de (trésorier)</label>
+            <select id="fd_pour"><option value="">— Moi-même (demande normale) —</option></select>
+            <span class="hint">Pour un membre qui t'appelle au lieu de remplir le formulaire lui-même.</span></div>
+          <div id="fd_accuseBox" hidden>
+            <label class="check" style="align-items:center"><input type="checkbox" id="fd_accuse" class="tgl">
+              <span>Envoyer l'accusé de réception à ce membre</span></label>
+            <div class="tglstate off" id="fd_accuseState" style="margin-top:6px">Désactivé — aucun mail ne part au membre</div>
+          </div>
+        </div>
         <div class="grid2">
           <div class="field"><label for="fd_amount">Montant (€)</label><input type="number" id="fd_amount" step="0.01" min="0.01" placeholder="0,00" required></div>
           <div class="field"><label for="fd_benef">Bénéficiaire (qui doit être payé)</label><input type="text" id="fd_benef" maxlength="90" placeholder="Ex. Hôtel Ibis, Imprimerie Dupont…" required></div>
@@ -692,8 +702,9 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
         <div class="field"><label for="fd_mode">Mode de paiement</label>
           <select id="fd_mode"><option value="virement">Virement bancaire</option><option value="en_ligne">Paiement en ligne</option></select></div>
         <div id="fd_virementBox" class="stack" style="gap:14px">
-          <div class="field"><label for="fd_iban">IBAN du bénéficiaire</label>
-            <input type="text" id="fd_iban" maxlength="40" placeholder="BE00 0000 0000 0000"></div>
+          <div class="field"><label for="fd_iban">IBAN du bénéficiaire (facultatif)</label>
+            <input type="text" id="fd_iban" maxlength="40" placeholder="BE00 0000 0000 0000">
+            <span class="hint">Pas obligatoire : il peut être ajouté plus tard.</span></div>
           <div class="field"><label for="fd_comm">Communication du virement</label>
             <input type="text" id="fd_comm" maxlength="140" placeholder="Ex. Facture 2026-042 / réservation"></div>
         </div>
@@ -1692,16 +1703,16 @@ async function mailAlerteTreso(it, isDirect){
     <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant</p></div>`;
   return envoyerMail(emailTreso(), "Nouvelle demande de "+quoi+" — "+mailEsc(dem)+" ("+euro(it.amount)+")", html, mailDem || undefined);
 }
-async function mailAccuse(it, isDirect){
-  const to = (state.profile && state.profile.email) || await emailDuDemandeur(it);
-  if(!to) return false;
+async function mailAccuse(it, isDirect, parTreso){
+  const to = parTreso ? await emailDuDemandeur(it) : ((state.profile && state.profile.email) || await emailDuDemandeur(it));
+  if(!to){ dernierEchecMail = "adresse e-mail du membre introuvable"; return false; }
   const quoi = isDirect ? "demande de paiement direct" : "demande de remboursement";
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
     <h2 style="margin:0 0 10px">Demande bien reçue</h2>
     <p>Bonjour ${mailEsc(prenomDe(it))},</p>
     <p>Nous confirmons la bonne réception de votre ${quoi} <b>${mailEsc(it.object)}</b> (${euro(it.amount)}).</p>
     <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
-    <p>Elle a été transmise au trésorier. Vous recevrez un e-mail dès qu'une décision sera prise, et vous pouvez suivre son état dans l'application à tout moment.</p>
+    <p>${parTreso ? "Le trésorier l'a encodée à votre place, à votre demande. " : "Elle a été transmise au trésorier. "}Vous recevrez un e-mail dès qu'une décision sera prise, et vous pouvez suivre son état dans l'application à tout moment.</p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
   return envoyerMail(to, "Demande bien reçue — "+refOf(it), html);
@@ -2440,6 +2451,7 @@ async function refresh(){
   if(isTreso()){
     const m = await chargerTout("profiles", "created_at", true);
     state.members = m.data || [];
+    try{ majPourQui(); }catch(_){}
     const x = await chargerTout("expenses", "expense_date", false);
     state.expenses = x.data || [];
     if(x.tronque) state.tronque = "dépenses";
@@ -3817,7 +3829,7 @@ async function preparerVirements(){
   if(!bons.length){ toast("Aucune ligne avec un IBAN valide."); return null; }
   const dejaExp = bons.filter(i => i.exported_at).length;
   let msg = "";
-  if(sansIban) msg += sansIban + " demande(s) au format d'IBAN incorrect seront IGNORÉES par le fichier :\n"
+  if(sansIban) msg += sansIban + " demande(s) sans IBAN valide seront IGNORÉES par le fichier :\n"
     + mauvais.slice(0,8).map(i => "  · " + payeeName(i) + " — " + (payeeIban(i) || "aucun IBAN")).join("\n")
     + (sansIban > 8 ? "\n  · … et " + (sansIban-8) + " autre(s)" : "") + "\n\n";
   if(dejaExp)  msg += dejaExp + " demande(s) ont déjà été exportées : vous risquez un double paiement si les virements ont déjà été faits.\n";
@@ -3912,7 +3924,7 @@ $("#payDone").onclick = async () => {
   const invalides = l.filter(i => !ibanValide(payeeIban(i)));
   const jamaisExp = l.filter(i => ibanValide(payeeIban(i)) && !i.exported_at);
   let alerte = "";
-  if(invalides.length) alerte += "⚠ " + invalides.length + " demande(s) ont un IBAN invalide et n'ont donc JAMAIS pu figurer dans un fichier de virements :\n"
+  if(invalides.length) alerte += "⚠ " + invalides.length + " demande(s) ont un IBAN manquant ou invalide et n'ont donc JAMAIS pu figurer dans un fichier de virements :\n"
     + invalides.slice(0,8).map(i => "  · " + payeeName(i) + " — " + euro(i.amount)).join("\n")
     + (invalides.length > 8 ? "\n  · …" : "") + "\n\n";
   if(jamaisExp.length) alerte += "⚠ " + jamaisExp.length + " demande(s) n'ont jamais été exportées vers la banque :\n"
@@ -4594,12 +4606,12 @@ function messageIban(v){
 }
 
 /* ---------- doublon : demande similaire ce mois-ci ---------- */
-function chercherDoublon(objet, montant, dateStr, exclureId){
+function chercherDoublon(objet, montant, dateStr, exclureId, userId){
   const mois = String(dateStr||"").slice(0,7);
   const obj = slug(objet||"");
   return (state.items||[]).find(i =>
     i.id !== exclureId &&
-    i.user_id === state.profile.id &&
+    i.user_id === (userId || state.profile.id) &&
     i.status !== "Refusée" &&
     String(i.expense_date||"").slice(0,7) === mois &&
     (slug(i.object||"") === obj || Math.abs(Number(i.amount||0) - Number(montant||0)) < 0.01)
@@ -4778,6 +4790,36 @@ $("#reqForm").addEventListener("submit", async e => {
   finally{ btn.disabled = false; btn.textContent = "Envoyer la demande"; }
 });
 
+/* ---------- paiement direct saisi par le trésorier ---------- */
+function majPourQui(){
+  const box = $("#fd_pourBox"); if(!box) return;
+  box.hidden = !isTreso();
+  if(!isTreso()) return;
+  const sel = $("#fd_pour"); if(!sel) return;
+  const cur = sel.value;
+  const membres = (state.members||[])
+    .filter(m => m.approved !== false && m.id !== (state.profile && state.profile.id))
+    .sort((a,b) => String(a.name||"").localeCompare(String(b.name||""), "fr"));
+  sel.innerHTML = '<option value="">— Moi-même (demande normale) —</option>'
+    + membres.map(m => `<option value="${esc(m.id)}">${esc(m.name || m.email || "Membre")}</option>`).join("");
+  if(cur && membres.some(m => m.id === cur)) sel.value = cur;
+  majAccuseBox();
+}
+function majAccuseBox(){
+  const sel = $("#fd_pour"), ab = $("#fd_accuseBox"), cb = $("#fd_accuse"), st = $("#fd_accuseState");
+  if(!sel || !ab) return;
+  const choisi = !!sel.value;
+  ab.hidden = !choisi;
+  if(!choisi && cb) cb.checked = false;          // repart toujours désactivé
+  if(cb && st){
+    st.textContent = cb.checked ? "Activé — le membre recevra un accusé de réception par mail"
+                                : "Désactivé — aucun mail ne part au membre";
+    st.className = "tglstate " + (cb.checked ? "on" : "off");
+  }
+}
+$("#fd_pour")?.addEventListener("change", () => { const cb = $("#fd_accuse"); if(cb) cb.checked = false; majAccuseBox(); });
+$("#fd_accuse")?.addEventListener("change", majAccuseBox);
+
 $("#directForm")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = $("#directSubmitBtn"); btn.disabled = true; btn.textContent = "Envoi…";
@@ -4786,6 +4828,11 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       majHoraire();
       throw new Error("Le dépôt de demandes est fermé pour le moment. " + texteHoraires());
     }
+    // Saisie par le trésorier au nom d'un membre (sinon : demande normale, pour soi)
+    const pourId = isTreso() ? ($("#fd_pour") ? $("#fd_pour").value : "") : "";
+    const pour   = pourId ? (state.members||[]).find(m => m.id === pourId) : null;
+    if(pourId && !pour) throw new Error("Membre introuvable : rouvrez l'onglet et choisissez-le à nouveau.");
+    const accuse = !!(pour && $("#fd_accuse") && $("#fd_accuse").checked);
     const amount = parseFloat($("#fd_amount").value);
     const benef  = $("#fd_benef").value.trim();
     const object = $("#fd_object").value.trim();
@@ -4795,21 +4842,22 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     if(!(amount>0)) throw new Error("Indiquez un montant valide.");
     if(!benef)  throw new Error("Indiquez le bénéficiaire à payer.");
     if(!object) throw new Error("Indiquez l'objet de la dépense.");
-    if(mode==="virement"){
+    if(mode==="virement" && iban){   // IBAN facultatif : vérifié seulement s'il est rempli
       if(!ibanValide(iban)) throw new Error("IBAN du bénéficiaire : " + messageIban(iban));
     }
-    const _dblD = chercherDoublon(object, amount, dateLocale());
+    const _dblD = chercherDoublon(object, amount, dateLocale(), null, pour ? pour.id : null);
     if(_dblD && !await confirmerDoublon(_dblD)) throw new Error("__annule__");
     rattraperFichier("dir", "#fd_kind", "#fd_proof");
     const { data, error } = await sb.from("requests").insert({
-      user_id: state.profile.id, requester_name: state.profile.name || "",
-      requester_position: state.profile.position || "",
+      user_id: pour ? pour.id : state.profile.id,
+      requester_name: (pour ? pour.name : state.profile.name) || "",
+      requester_position: (pour ? pour.position : state.profile.position) || "",
       expense_date: dateLocale(),
       amount, object, category: "Paiement direct",
       kind: "direct", beneficiary: benef, pay_mode: mode,
-      beneficiary_iban: mode==="virement" ? iban : null,
+      beneficiary_iban: (mode==="virement" && iban) ? iban : null,
       communication:    mode==="virement" ? comm : null,
-      iban:             mode==="virement" ? iban : null,
+      iban:             (mode==="virement" && iban) ? iban : null,
       note: $("#fd_note").value.trim(),
       attachments: [],
       status: "En attente"
@@ -4823,21 +4871,33 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       catch(ep){ dirPiecesOk = false; dirErr = ep.message || String(ep); }
     }
     try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
-      what: dirPiecesOk ? "Demande de paiement direct envoyée" : "Paiement direct envoyé SANS pièce (échec de l'envoi)" }); }catch(_){}
-    mailAccuse(data, true);
-    mailAlerteTreso(data, true);
+      what: pour
+        ? (dirPiecesOk ? "Demande de paiement direct saisie par le trésorier pour " + (pour.name||"le membre")
+                       : "Paiement direct saisi par le trésorier pour " + (pour.name||"le membre") + " SANS pièce (échec de l'envoi)")
+        : (dirPiecesOk ? "Demande de paiement direct envoyée" : "Paiement direct envoyé SANS pièce (échec de l'envoi)") }); }catch(_){}
+    if(pour){
+      // Saisie par le trésorier : jamais d'alerte au trésorier ; accusé au membre uniquement si la bascule est activée
+      if(accuse) avertirMail(mailAccuse(data, true, true), "accusé de réception");
+    } else {
+      mailAccuse(data, true);
+      mailAlerteTreso(data, true);
+    }
     effacerBrouillon("dir");
     $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display=""; staged.dir = []; renderStaged("dir");
+    majPourQui();
     await refresh();
     if(!dirPiecesOk){
       await dire("Pièce jointe non envoyée", "La demande a bien été enregistrée, mais la pièce jointe n'a pas pu être envoyée"
         + (dirErr ? " (" + dirErr + ")" : "") + ".\n\nOuvrez la demande pour la joindre à nouveau.");
       toast("Demande enregistrée sans pièce jointe.");
-    } else toast("Demande de paiement direct envoyée au trésorier.");
+    } else toast(pour ? "Demande enregistrée au nom de " + (pour.name||"ce membre") + (accuse ? " Accusé de réception en cours d'envoi." : "")
+                      : "Demande de paiement direct envoyée au trésorier.");
   }catch(err){
     let m = err.message || String(err);
     if(m === "__annule__"){ btn.disabled=false; btn.textContent="Envoyer au trésorier"; return; }
     if(/doublon|identique/i.test(m)) m = "Demande identique déjà envoyée récemment.";
+    else if(/row-level security|violates|permission/i.test(m) && isTreso() && $("#fd_pour") && $("#fd_pour").value)
+      m = "Supabase refuse d'enregistrer une demande au nom d'un autre membre (règle de sécurité sur la table requests). Dis-le moi : je te donne le SQL à passer.";
     erreurForm("#directErr", m); toast("Envoi impossible.");
   }finally{ btn.disabled=false; btn.textContent="Envoyer au trésorier"; }
 });
@@ -4845,7 +4905,8 @@ $("#directForm")?.addEventListener("submit", async (e) => {
 /* ---------- rendu ---------- */
 function estIncomplet(it){
   if(it.kind==="direct"){
-    if(it.pay_mode==="virement") return (it.status==="En attente"||it.status==="Validée"||it.status==="À corriger") && !ibanValide(it.iban);
+    // IBAN facultatif : absent = pas incomplet ; rempli mais faux = incomplet
+    if(it.pay_mode==="virement") return (it.status==="En attente"||it.status==="Validée"||it.status==="À corriger") && !!String(it.iban||"").trim() && !ibanValide(it.iban);
     return false;
   }
   const sansPiece = piecesDe(it).length === 0;
@@ -4899,6 +4960,7 @@ function setView(v){
   if($("#viewTva")) $("#viewTva").hidden = v!=="tva";
   if(v==="tva") renderTva();
   $("#viewDirect").hidden = v!=="direct";
+  if(v==="direct") majPourQui();
   if(v==="expenses" && !$("#e_date").value) $("#e_date").value = dateLocale();
   if(v==="incomes" && !$("#i_date").value) $("#i_date").value = dateLocale();
   if(v==="reprise" && $("#rp_date") && !$("#rp_date").value) $("#rp_date").value = dateLocale();
@@ -6490,7 +6552,7 @@ function blocEditer(it){
       ${direct ? `
         <div class="field"><label for="ed_benef">Bénéficiaire</label>
           <input type="text" id="ed_benef" maxlength="90" value="${esc(it.beneficiary||"")}"></div>
-        <div class="field"><label for="ed_iban">IBAN du bénéficiaire</label>
+        <div class="field"><label for="ed_iban">IBAN du bénéficiaire (facultatif)</label>
           <input type="text" id="ed_iban" maxlength="40" value="${esc(it.iban||"")}"></div>
         <div class="field"><label for="ed_comm">Communication</label>
           <input type="text" id="ed_comm" maxlength="140" value="${esc(it.communication||"")}"></div>
@@ -6575,6 +6637,14 @@ function renderDrawer(it){
     if(it.status === "Validée" && it.decided_at && joursDepuis(it.decided_at) >= JOURS_AVANT_ALERTE_PAIEMENT){
       actions += `<div class="callout" style="border-color:#c47f17"><b style="color:#c47f17">Validée depuis ${joursDepuis(it.decided_at)} jours</b>
         <p>Cette demande a été validée le ${fdate(String(it.decided_at).slice(0,10))} mais n'a jamais été marquée comme remboursée. Le demandeur attend toujours son argent.</p></div>`;
+    }
+    if(it.kind==="direct" && it.pay_mode==="virement" && ["En attente","À corriger","Validée"].includes(it.status) && !modifiable){
+      const _ib = payeeIban(it);
+      actions += `<div class="fixbox"><b>IBAN du bénéficiaire</b>
+        <p>${_ib ? "Tu peux le corriger si besoin." : "Pas encore d'IBAN : tu peux l'ajouter dès que tu le connais. Sans IBAN, la demande ne peut pas figurer dans le fichier de virements."}</p>
+        <div class="field"><input type="text" id="d_iban" maxlength="40" placeholder="BE00 0000 0000 0000" value="${esc(_ib)}"></div>
+        <div class="err" id="ibanErr" hidden></div>
+        <div class="actions"><button class="btn" data-act="saveIban">Enregistrer l'IBAN</button></div></div>`;
     }
     if(estIncomplet(it)){
       const manque=[];
@@ -6672,6 +6742,28 @@ $("#d_body").addEventListener("click", async e => {
   const noteEl = $("#d_note"); const note = noteEl ? noteEl.value.trim() : "";
   const act = b.dataset.act; let patch, label, motifRejet = "";
 
+  // --- trésorier : ajouter ou corriger l'IBAN d'un paiement direct ---
+  if(act === "saveIban"){
+    if(!isTreso()) return;
+    if(it.kind !== "direct" || !["En attente","À corriger","Validée"].includes(it.status)) return toast("Cette demande n'est plus modifiable.");
+    const v = ibanFormate(($("#d_iban") ? $("#d_iban").value : "").trim());
+    if(!ibanValide(v)) return erreurForm("#ibanErr", messageIban(v));
+    erreurForm("#ibanErr", null);
+    const avantIban = payeeIban(it);
+    b.disabled = true;
+    const r = await majSiInchangee(it, { iban: v, beneficiary_iban: v });
+    b.disabled = false;
+    if(r.conflit){ toast(messageConflit()); await refresh(); return; }
+    if(r.erreur) return toast("Échec : " + r.erreur);
+    try{ await sb.from("events").insert({ request_id: it.id, who: state.profile.name,
+      what: avantIban ? "IBAN du bénéficiaire corrigé par le trésorier" : "IBAN du bénéficiaire ajouté par le trésorier" }); }catch(_){}
+    state.drawerDirty = false;
+    await refresh();
+    const it2 = state.items.find(i => i.id === it.id); if(it2) renderDrawer(it2);
+    toast("IBAN enregistré.");
+    return;
+  }
+
   // --- modifier / supprimer sa propre demande (tant qu'elle est En attente) ---
   if(act === "edit-open"){ $("#editZone").hidden = false; $("#editBtns").hidden = true; return; }
   if(act === "edit-cancel"){ $("#editZone").hidden = true; $("#editBtns").hidden = false; erreurForm("#editErr", null); return; }
@@ -6702,7 +6794,7 @@ $("#d_body").addEventListener("click", async e => {
     if(it.kind === "direct"){
       const ben = $("#ed_benef") ? $("#ed_benef").value.trim() : "";
       if(!ben) return erreurForm("#editErr", "Indiquez le bénéficiaire.");
-      maj.beneficiary = ben; maj.iban = iban;
+      maj.beneficiary = ben; maj.iban = iban || null; maj.beneficiary_iban = iban || null;
       maj.communication = $("#ed_comm") ? $("#ed_comm").value.trim() : "";
     } else {
       maj.category = $("#ed_cat") ? $("#ed_cat").value : it.category;
