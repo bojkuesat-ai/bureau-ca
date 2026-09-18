@@ -708,6 +708,22 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
           <div class="field"><label for="fd_comm">Communication du virement</label>
             <input type="text" id="fd_comm" maxlength="140" placeholder="Ex. Facture 2026-042 / réservation"></div>
         </div>
+        <div class="tva-box">
+          <div class="eyebrow" style="margin-bottom:8px">TVA — achat</div>
+          <div class="field"><label for="fd_tvaAffect">Affectation de cette dépense</label>
+            <select id="fd_tvaAffect">
+              <option value="taxable">Bloc taxable uniquement (ex. achats bar, soirée)</option>
+              <option value="exempt">Bloc exempté/non concerné uniquement</option>
+              <option value="mixte">Commune aux deux (frais généraux, loyer…) — prorata</option>
+            </select></div>
+          <div class="grid2">
+            <div class="field"><label for="fd_supplierVat">N° de TVA du bénéficiaire</label>
+              <input type="text" id="fd_supplierVat" placeholder="BE 0xxx.xxx.xxx"></div>
+            <div class="field"><label for="fd_vatRate">Taux de TVA</label><select id="fd_vatRate"></select></div>
+          </div>
+          <div class="hint tva-live" id="fd_tvaLive" style="margin:2px 0 0"></div>
+          <div class="hint" style="margin:6px 0 0">Si tu ne sais pas quoi mettre, laisse tel quel : le trésorier pourra le compléter en ouvrant la demande.</div>
+        </div>
         <div class="field"><label for="fd_note">Commentaire / lien (facultatif)</label>
           <textarea id="fd_note" maxlength="400" placeholder="Lien de paiement, devis, ou info utile au trésorier"></textarea></div>
         <div class="field">
@@ -2203,9 +2219,12 @@ function _dlgConstruire(){
           <select id="dlgSelect" style="width:100%;background:var(--bg);border:1px solid var(--line);
                   color:var(--text);border-radius:11px;padding:12px 13px;font-size:15px"></select>
         </div>
-        <div id="dlgBasculeBox" hidden style="margin-top:16px">
-          <label class="check" style="align-items:center"><input type="checkbox" id="dlgBascule" class="tgl"><span id="dlgBasculeTxt"></span></label>
-          <div class="tglstate off" id="dlgBasculeState" style="margin-top:6px"></div>
+        <div id="dlgBasculeBox" hidden style="margin-top:16px;background:var(--surface2);
+             border:1px solid var(--line);border-radius:11px;padding:13px 14px">
+          <label class="check" style="align-items:center;gap:11px;cursor:pointer;margin:0">
+            <input type="checkbox" id="dlgBascule" class="tgl">
+            <span id="dlgBasculeTxt" style="font-weight:600"></span></label>
+          <div class="tglstate off" id="dlgBasculeState" style="margin-top:8px"></div>
         </div>
         <div id="dlgErr" class="err" hidden style="margin-top:10px"></div>
         <div style="display:flex;gap:10px;margin-top:20px">
@@ -4920,6 +4939,9 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       communication:    mode==="virement" ? comm : null,
       iban:             (mode==="virement" && iban) ? iban : null,
       note: $("#fd_note").value.trim(),
+      vat_rate: ($("#fd_vatRate") ? $("#fd_vatRate").value : "NA"),
+      supplier_vat: ($("#fd_supplierVat") ? $("#fd_supplierVat").value.trim() : ""),
+      tva_affectation: ($("#fd_tvaAffect") ? $("#fd_tvaAffect").value : "taxable"),
       attachments: [],
       status: "En attente"
     }).select().single();
@@ -5669,7 +5691,8 @@ function majTvaLive(p){
 }
 fillRateSelect($("#i_vatRate"), "NA");
 fillRateSelect($("#e_vatRate"), "NA");
-["i","e"].forEach(p=>{
+fillRateSelect($("#fd_vatRate"), "NA");
+["i","e","fd"].forEach(p=>{
   const amt=$("#"+p+"_amount"), rate=$("#"+p+"_vatRate");
   if(amt) amt.addEventListener("input", ()=>majTvaLive(p));
   if(rate) rate.addEventListener("change", ()=>majTvaLive(p));
@@ -5684,10 +5707,11 @@ if($("#i_tvaRegime")) $("#i_tvaRegime").addEventListener("change", () => {
   else majTvaLive("i");
 });
 // après un reset de formulaire, remettre l'affichage TVA à zéro
-["incForm","expForm"].forEach(id=>{ const f=$("#"+id); if(f) f.addEventListener("reset", ()=>setTimeout(()=>{
+["incForm","expForm","directForm"].forEach(id=>{ const f=$("#"+id); if(f) f.addEventListener("reset", ()=>setTimeout(()=>{
   if($("#i_clientVatWrap")) $("#i_clientVatWrap").style.display="none";
   if($("#i_tvaLive")) $("#i_tvaLive").textContent="";
   if($("#e_tvaLive")) $("#e_tvaLive").textContent="";
+  if($("#fd_tvaLive")) $("#fd_tvaLive").textContent="";
 },0)); });
 
 // ---- import d'une facture électronique PEPPOL / UBL (.xml) ----
@@ -6633,6 +6657,19 @@ function blocEditer(it, sansMail){
           <input type="text" id="ed_iban" maxlength="40" value="${esc(it.iban||"")}"></div>
         <div class="field"><label for="ed_comm">Communication</label>
           <input type="text" id="ed_comm" maxlength="140" value="${esc(it.communication||"")}"></div>
+        <div class="tva-box">
+          <div class="eyebrow" style="margin-bottom:8px">TVA — achat</div>
+          <div class="field"><label for="ed_tvaAffect">Affectation de cette dépense</label>
+            <select id="ed_tvaAffect">
+              <option value="taxable"${(it.tva_affectation||"taxable")==="taxable"?" selected":""}>Bloc taxable uniquement</option>
+              <option value="exempt"${it.tva_affectation==="exempt"?" selected":""}>Bloc exempté/non concerné uniquement</option>
+              <option value="mixte"${it.tva_affectation==="mixte"?" selected":""}>Commune aux deux — prorata</option>
+            </select></div>
+          <div class="field"><label for="ed_supplierVat">N° de TVA du bénéficiaire</label>
+            <input type="text" id="ed_supplierVat" placeholder="BE 0xxx.xxx.xxx" value="${esc(it.supplier_vat||"")}"></div>
+          <div class="field"><label for="ed_vatRate">Taux de TVA</label><select id="ed_vatRate"></select></div>
+          <div class="hint tva-live" id="ed_tvaLive" style="margin:2px 0 0"></div>
+        </div>
       ` : `
         <div class="field"><label for="ed_cat">Catégorie</label>
           <select id="ed_cat">${cats.map(c=>`<option${c===it.category?" selected":""}>${esc(c)}</option>`).join("")}</select></div>
@@ -6769,6 +6806,10 @@ function renderDrawer(it){
       ${it.kind==="direct" ? `<dt>Type</dt><dd><span class="tag" style="background:#3a2d6e;color:#cdbcff">PAIEMENT DIRECT</span></dd>
       <dt>Bénéficiaire</dt><dd><b>${esc(it.beneficiary||"—")}</b></dd>
       <dt>Mode</dt><dd>${libelleModePaiement(it.pay_mode)}</dd>
+      ${it.vat_rate && it.vat_rate !== "NA" ? (()=>{ const v=ventile(Number(it.amount||0), it.vat_rate);
+        return `<dt>TVA</dt><dd>HT ${esc(euro(v.ht))} · TVA ${esc(euro(v.tva))} (${esc(it.vat_rate)} %)</dd>`; })()
+        : `<dt>TVA</dt><dd>Hors TVA (franchise)</dd>`}
+      ${it.supplier_vat?`<dt>N° TVA bénéf.</dt><dd class="mono" style="font-size:13px">${esc(it.supplier_vat)}</dd>`:""}
       ${it.pay_mode==="virement"&&it.communication?`<dt>Communication</dt><dd>${esc(it.communication)}</dd>`:""}` : ""}
       <dt>Demandeur</dt><dd>${esc(it.requester_name)}${it.requester_position?`<br><span class="hint">${esc(it.requester_position)}</span>`:""}</dd>
       <dt>Date dépense</dt><dd>${fdate(it.expense_date)}</dd>
@@ -6845,7 +6886,19 @@ $("#d_body").addEventListener("click", async e => {
   }
 
   // --- modifier / supprimer sa propre demande (tant qu'elle est En attente) ---
-  if(act === "edit-open"){ $("#editZone").hidden = false; $("#editBtns").hidden = true; return; }
+  if(act === "edit-open"){
+    $("#editZone").hidden = false; $("#editBtns").hidden = true;
+    // remplissage du sélecteur de taux TVA (paiement direct) + calcul en direct
+    const rate = $("#ed_vatRate");
+    if(rate){
+      fillRateSelect(rate, it.vat_rate || "NA");
+      const amt = $("#ed_amount");
+      if(amt && !amt.dataset.tvaLie){ amt.dataset.tvaLie = "1"; amt.addEventListener("input", ()=>majTvaLive("ed")); }
+      if(!rate.dataset.tvaLie){ rate.dataset.tvaLie = "1"; rate.addEventListener("change", ()=>majTvaLive("ed")); }
+      majTvaLive("ed");
+    }
+    return;
+  }
   if(act === "edit-cancel"){ $("#editZone").hidden = true; $("#editBtns").hidden = false; erreurForm("#editErr", null); return; }
 
   if(act === "edit-save"){
@@ -6877,6 +6930,9 @@ $("#d_body").addEventListener("click", async e => {
       if(!ben) return erreurForm("#editErr", "Indiquez le bénéficiaire.");
       maj.beneficiary = ben; maj.iban = iban || null; maj.beneficiary_iban = iban || null;
       maj.communication = $("#ed_comm") ? $("#ed_comm").value.trim() : "";
+      if($("#ed_vatRate"))     maj.vat_rate        = $("#ed_vatRate").value;
+      if($("#ed_supplierVat")) maj.supplier_vat    = $("#ed_supplierVat").value.trim();
+      if($("#ed_tvaAffect"))   maj.tva_affectation = $("#ed_tvaAffect").value;
     } else {
       maj.category = $("#ed_cat") ? $("#ed_cat").value : it.category;
       maj.iban = iban;
