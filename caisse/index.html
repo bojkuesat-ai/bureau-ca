@@ -1153,10 +1153,30 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
       </form>
     </div>
 
+    <div class="card pad" id="depImportBox" hidden>
+      <div class="eyebrow">Import d'un extrait bancaire (CSV)</div>
+      <h2 style="font-size:20px;margin:6px 0 14px">Vérifiez avant d'enregistrer</h2>
+      <div class="grid2" style="margin-bottom:14px">
+        <div class="field"><label for="depImportCat">Catégorie à appliquer</label>
+          <select id="depImportCat"></select></div>
+        <div class="field"><label for="depImportMethod">Moyen de paiement</label>
+          <select id="depImportMethod"><option>Virement</option><option>Carte de l'association</option><option>Domiciliation</option><option>Espèces</option><option>Chèque</option></select></div>
+      </div>
+      <p class="hint" style="margin:-6px 0 14px">Tu pourras corriger la catégorie, le montant, l'objet et la TVA de chaque ligne après l'import, en ouvrant la dépense — exactement comme une saisie manuelle.</p>
+      <div id="depImportApercu"></div>
+      <div class="err" id="depImportErr" hidden></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+        <button class="btn" type="button" id="depImportGo">Enregistrer ces dépenses</button>
+        <button class="btn ghost" type="button" id="depImportCancel">Annuler</button>
+      </div>
+    </div>
+
     <div>
       <div class="toolbar">
         <input type="text" id="expSearch" placeholder="Objet, fournisseur, montant, catégorie…">
         <select id="expAnnee" style="margin-left:8px"></select>
+        <button class="btn ghost sm" id="depCsvBtn" style="margin-left:8px">Importer un CSV (ING)</button>
+        <input type="file" id="depCsvFile" accept=".csv,text/csv" hidden>
       </div>
       <div class="card" style="overflow:hidden">
         <div class="head" data-tri-cle="exp"><span data-tri="date">Date</span><span data-tri="objet">Objet / bénéficiaire</span><span data-tri="mode">Paiement</span><span class="r" data-tri="montant">Montant</span><span></span></div>
@@ -3334,12 +3354,14 @@ const montantCSV = v => {
 function colonnesCSV(tete){
   const cle = t => {
     const x = slug(t).replace(/[^a-z0-9]/g," ").trim();
+    // ING : "Date d'exécution", "Date de valeur", "Montant", "Contrepartie",
+    //       "Nom de la contrepartie", "Détail du mouvement", "Communication"
     if(/^date/.test(x)) return "date";
-    if(/^(objet|libelle|description)/.test(x)) return "objet";
-    if(/^(beneficiaire|benef|fournisseur|tiers)/.test(x)) return "benef";
+    if(/^(objet|libelle|description|detail|communication|mouvement)/.test(x)) return "objet";
+    if(/^(beneficiaire|benef|fournisseur|tiers|contrepartie|nom de la contrepartie)/.test(x)) return "benef";
     if(/^montant/.test(x)) return "montant";
     if(/^carte/.test(x)) return "carte";
-    if(/^(reference|ref|extrait|operation)/.test(x)) return "ref";
+    if(/^(reference|ref|extrait|operation|numero de sequence)/.test(x)) return "ref";
     if(/^(commentaire|note|remarque)/.test(x)) return "note";
     return "";
   };
@@ -3424,6 +3446,132 @@ if($("#repCsvFile")) $("#repCsvFile").onchange = async e => {
 };
 
 if($("#repImportCancel")) $("#repImportCancel").onclick = () => { fermeImport(); toast("Import annulé."); };
+
+/* ---------- import d'un CSV bancaire dans l'onglet Dépenses ---------- */
+// Même lecteur de CSV que la reprise, mais les lignes deviennent des dépenses normales,
+// modifiables ensuite une par une comme une saisie manuelle.
+let lotDepenses = null;
+
+// Sur un extrait bancaire, les montants sortants sont négatifs et les entrants positifs :
+// on ne garde que les sorties, sinon une recette serait comptée comme une dépense.
+const signeCSV = v => {
+  const t = String(v||"").replace(/[\s€]/g,"").replace(/\u00a0/g,"").replace(",",".");
+  const n = Number(t);
+  return Number.isFinite(n) ? n : NaN;
+};
+
+function prepareImportDepenses(texte){
+  const lignes = lireCSV(texte);
+  if(lignes.length < 2) return { erreur: "Le fichier ne contient aucune ligne exploitable." };
+  const col = colonnesCSV(lignes[0]);
+  const manque = ["date","montant"].filter(k => col[k] === undefined);
+  if(manque.length) return { erreur: "Colonnes introuvables : " + manque.join(", ")
+    + ". Il faut au minimum une colonne de date et une colonne de montant." };
+
+  const dejaLa = new Set(mesDepenses().map(e =>
+    e.expense_date + "|" + Number(e.amount||0).toFixed(2) + "|" + slug(String(e.object||"").trim())));
+
+  const ok = [], soucis = [], doublons = [], recettes = [];
+  lignes.slice(1).forEach((l, i) => {
+    const g = k => col[k] === undefined ? "" : String(l[col[k]] ?? "").trim();
+    const num = i + 2;
+    const dte = dateCSV(g("date"));
+    const brut = signeCSV(g("montant"));
+    if(!dte)              return soucis.push("Ligne " + num + " : date illisible (" + (g("date")||"vide") + ").");
+    if(!Number.isFinite(brut) || brut === 0) return soucis.push("Ligne " + num + " : montant illisible (" + (g("montant")||"vide") + ").");
+    if(brut > 0)          return recettes.push("Ligne " + num + " : " + euro(brut) + " (entrée d'argent).");
+    const mnt = Math.round(Math.abs(brut)*100)/100;
+    // sur un extrait bancaire, le libellé sert d'objet et la contrepartie de bénéficiaire
+    const objet = (g("objet") || g("benef") || "Opération bancaire").slice(0,90);
+    const benef = (g("benef") || g("objet") || "—").slice(0,80);
+    if(estClos(dte)) return soucis.push("Ligne " + num + " : l'exercice " + exerciceLabel(exerciceDe(dte)) + " est clôturé.");
+    const empreinte = dte + "|" + mnt.toFixed(2) + "|" + slug(objet);
+    if(dejaLa.has(empreinte)) return doublons.push("Ligne " + num + " : " + objet + " (" + euro(mnt) + ") est déjà encodée.");
+    dejaLa.add(empreinte);
+    const ref = g("ref").slice(0,40), note = g("note").slice(0,400);
+    ok.push({
+      expense_date: dte, amount: mnt, object: objet, payee: benef,
+      note: (ref ? "[" + ref + "] " : "") + note,
+      vat_rate: "NA", supplier_vat: "", tva_affectation: "taxable",
+      created_by: state.profile.id, author_name: state.profile.name || "", attachments: []
+    });
+  });
+  return { ok, soucis, doublons, recettes };
+}
+
+function montreApercuDepenses(r){
+  const total = r.ok.reduce((s,x)=>s+x.amount, 0);
+  const bloc = [];
+  bloc.push(`<p style="margin:0 0 10px"><b>${r.ok.length} dépense(s)</b> prête(s) à enregistrer, pour un total de <b>${esc(euro(total))}</b>.</p>`);
+  if(r.ok.length) bloc.push(`<div class="card" style="overflow:auto;max-height:280px">` + r.ok.map(x => `
+      <div class="row" style="cursor:default">
+        <div class="date mono" style="font-size:13px">${fdate(x.expense_date)}</div>
+        <div><div class="obj">${esc(x.object)}</div><div class="meta">${esc(x.payee)}</div></div>
+        <div class="meta" style="margin:0"></div>
+        <div class="amt">−${euro(x.amount)}</div><div class="chev"></div>
+      </div>`).join("") + `</div>`);
+  if(r.recettes.length) bloc.push(`<p class="hint" style="margin:12px 0 0"><b>${r.recettes.length} ligne(s) ignorée(s)</b> — ce sont des entrées d'argent, à encoder dans l'onglet Recettes :<br>${r.recettes.slice(0,8).map(esc).join("<br>")}${r.recettes.length>8?`<br>… et ${r.recettes.length-8} autre(s)`:""}</p>`);
+  if(r.doublons.length) bloc.push(`<p class="hint" style="margin:12px 0 0"><b>${r.doublons.length} ligne(s) ignorée(s)</b> — déjà présentes :<br>${r.doublons.slice(0,8).map(esc).join("<br>")}${r.doublons.length>8?`<br>… et ${r.doublons.length-8} autre(s)`:""}</p>`);
+  if(r.soucis.length)   bloc.push(`<p class="hint" style="margin:12px 0 0;color:#f0b0b0"><b>${r.soucis.length} ligne(s) écartée(s)</b> :<br>${r.soucis.slice(0,8).map(esc).join("<br>")}${r.soucis.length>8?`<br>… et ${r.soucis.length-8} autre(s)`:""}</p>`);
+  $("#depImportApercu").innerHTML = bloc.join("");
+  $("#depImportGo").disabled = !r.ok.length;
+  $("#depImportBox").hidden = false;
+  $("#depImportBox").scrollIntoView({ behavior:"smooth", block:"center" });
+}
+
+function fermeImportDepenses(){
+  lotDepenses = null;
+  if($("#depImportBox")) $("#depImportBox").hidden = true;
+  erreurForm("#depImportErr", "");
+  if($("#depCsvFile")) $("#depCsvFile").value = "";
+}
+
+if($("#depCsvBtn")) $("#depCsvBtn").onclick = () => $("#depCsvFile").click();
+
+if($("#depCsvFile")) $("#depCsvFile").onchange = async e => {
+  const f = e.target.files && e.target.files[0]; if(!f) return;
+  try{
+    const r = prepareImportDepenses(await f.text());
+    if(r.erreur){ fermeImportDepenses(); return toast(r.erreur); }
+    lotDepenses = r.ok;
+    erreurForm("#depImportErr", "");
+    // le sélecteur de catégorie reprend la liste de l'onglet Dépenses
+    const src = $("#e_cat"), dst = $("#depImportCat");
+    if(src && dst) dst.innerHTML = [...src.options]
+      .filter(o => o.value !== "__new__")
+      .map(o => `<option value="${esc(o.value)}">${esc(o.textContent)}</option>`).join("");
+    montreApercuDepenses(r);
+  }catch(err){ fermeImportDepenses(); toast("Lecture impossible : " + (err.message || err)); }
+};
+
+if($("#depImportCancel")) $("#depImportCancel").onclick = () => { fermeImportDepenses(); toast("Import annulé."); };
+
+if($("#depImportGo")) $("#depImportGo").onclick = async () => {
+  if(!lotDepenses || !lotDepenses.length) return;
+  const b = $("#depImportGo"); b.disabled = true; b.textContent = "Enregistrement…";
+  erreurForm("#depImportErr", "");
+  const cat = ($("#depImportCat") && $("#depImportCat").value) || "Autre";
+  const meth = ($("#depImportMethod") && $("#depImportMethod").value) || "Virement";
+  const lot = lotDepenses.map(x => ({ ...x, category: cat, method: meth }));
+  let faits = 0;
+  try{
+    for(let i = 0; i < lot.length; i += 40){
+      const paquet = lot.slice(i, i + 40);
+      const { error } = await sb.from("expenses").insert(paquet);
+      if(error) throw new Error(error.message);
+      faits += paquet.length;
+    }
+  }catch(err){
+    b.disabled = false; b.textContent = "Enregistrer ces dépenses";
+    await refresh();
+    return erreurForm("#depImportErr",
+      (faits ? faits + " dépense(s) enregistrée(s), puis arrêt. " : "") + "Erreur : " + (err.message || err));
+  }
+  b.disabled = false; b.textContent = "Enregistrer ces dépenses";
+  fermeImportDepenses();
+  await refresh();
+  toast(faits + " dépense(s) importée(s). Ouvre-les pour ajuster catégorie, TVA ou justificatif.");
+};
 
 if($("#repImportGo")) $("#repImportGo").onclick = async () => {
   if(!lotImport || !lotImport.length) return;
@@ -3694,6 +3842,19 @@ function blocEditerEcriture(o, type){
         <select id="ec_method">${opts(modes, o.method)}</select></div>
       <div class="field"><label for="ec_note">Commentaire</label>
         <textarea id="ec_note" maxlength="400">${esc(o.note||"")}</textarea></div>
+      ${dep ? `<div class="tva-box">
+        <div class="eyebrow" style="margin-bottom:8px">TVA — achat</div>
+        <div class="field"><label for="ec_tvaAffect">Affectation de cette dépense</label>
+          <select id="ec_tvaAffect">
+            <option value="taxable"${(o.tva_affectation||"taxable")==="taxable"?" selected":""}>Bloc taxable uniquement</option>
+            <option value="exempt"${o.tva_affectation==="exempt"?" selected":""}>Bloc exempté/non concerné uniquement</option>
+            <option value="mixte"${o.tva_affectation==="mixte"?" selected":""}>Commune aux deux — prorata</option>
+          </select></div>
+        <div class="field"><label for="ec_supplierVat">N° de TVA du fournisseur</label>
+          <input type="text" id="ec_supplierVat" placeholder="BE 0xxx.xxx.xxx" value="${esc(o.supplier_vat||"")}"></div>
+        <div class="field"><label for="ec_vatRate">Taux de TVA</label><select id="ec_vatRate"></select></div>
+        <div class="hint tva-live" id="ec_tvaLive" style="margin:2px 0 0"></div>
+      </div>` : ""}
       <div id="ecErr" class="err" hidden></div>
       <div class="actions"><button class="btn ok" data-act="ec-save" data-ec="${o.id}" data-ectype="${type}">Enregistrer les corrections</button>
         <button class="btn ghost" data-act="ec-cancel">Annuler</button></div>
@@ -3705,7 +3866,22 @@ function blocEditerEcriture(o, type){
 $("#d_body").addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if(!b) return;
   const act = b.dataset.act;
-  if(act === "ec-open"){ $("#ecZone").hidden = false; $("#ecOuvrir").hidden = true; $("#ec_object")?.focus(); return; }
+  if(act === "ec-open"){
+    $("#ecZone").hidden = false; $("#ecOuvrir").hidden = true;
+    // dépense : remplir le sélecteur de taux TVA et activer le calcul en direct
+    const rate = $("#ec_vatRate");
+    if(rate){
+      const btnSave = $("[data-act='ec-save']");
+      const idEc = btnSave ? btnSave.dataset.ec : null;
+      const dd = idEc ? (state.expenses||[]).find(x => x.id === idEc) : null;
+      fillRateSelect(rate, (dd && dd.vat_rate) || "NA");
+      const amt = $("#ec_amount");
+      if(amt && !amt.dataset.tvaLie){ amt.dataset.tvaLie = "1"; amt.addEventListener("input", ()=>majTvaLive("ec")); }
+      if(!rate.dataset.tvaLie){ rate.dataset.tvaLie = "1"; rate.addEventListener("change", ()=>majTvaLive("ec")); }
+      majTvaLive("ec");
+    }
+    $("#ec_object")?.focus(); return;
+  }
   if(act === "ec-cancel"){ $("#ecZone").hidden = true; $("#ecOuvrir").hidden = false; return; }
 
   /* --- pièces ajoutées à une écriture déjà enregistrée --- */
@@ -3755,7 +3931,12 @@ $("#d_body").addEventListener("click", async e => {
 
   const patch = { object:objet, amount:montant, category:$("#ec_cat").value,
                   method:$("#ec_method").value, note:$("#ec_note").value.trim() };
-  if(dep){ patch.expense_date = dte; patch.payee = tiers; }
+  if(dep){
+    patch.expense_date = dte; patch.payee = tiers;
+    if($("#ec_vatRate"))     patch.vat_rate        = $("#ec_vatRate").value;
+    if($("#ec_supplierVat")) patch.supplier_vat    = $("#ec_supplierVat").value.trim();
+    if($("#ec_tvaAffect"))   patch.tva_affectation = $("#ec_tvaAffect").value;
+  }
   else   { patch.income_date  = dte; patch.source = tiers; }
 
   b.disabled = true; b.textContent = "Enregistrement…";
