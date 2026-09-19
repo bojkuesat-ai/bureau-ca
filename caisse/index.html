@@ -1176,7 +1176,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
         <input type="text" id="expSearch" placeholder="Objet, fournisseur, montant, catégorie…">
         <select id="expAnnee" style="margin-left:8px"></select>
         <button class="btn ghost sm" id="depCsvBtn" style="margin-left:8px">Importer un CSV (ING)</button>
-        <input type="file" id="depCsvFile" accept=".csv,.txt,text/csv,text/plain,application/csv,application/vnd.ms-excel" hidden>
+        <input type="file" id="depCsvFile" hidden>
       </div>
       <div class="card" style="overflow:hidden">
         <div class="head" data-tri-cle="exp"><span data-tri="date">Date</span><span data-tri="objet">Objet / bénéficiaire</span><span data-tri="mode">Paiement</span><span class="r" data-tri="montant">Montant</span><span></span></div>
@@ -1247,7 +1247,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
         <input type="text" id="repSearch" placeholder="Objet, bénéficiaire, montant, origine…">
         <button class="btn ghost sm" id="repXlsx" style="margin-left:8px">Exporter en Excel</button>
         <button class="btn ghost sm" id="repCsvBtn" style="margin-left:8px">Importer un CSV</button>
-        <input type="file" id="repCsvFile" accept=".csv,.txt,text/csv,text/plain,application/csv,application/vnd.ms-excel" hidden>
+        <input type="file" id="repCsvFile" hidden>
         <button class="btn ghost sm" id="repVoirRemb" style="margin-left:8px" hidden></button>
       </div>
       <div class="card" style="overflow:hidden">
@@ -3610,8 +3610,15 @@ if($("#depCsvBtn")) $("#depCsvBtn").onclick = () => $("#depCsvFile").click();
 
 if($("#depCsvFile")) $("#depCsvFile").onchange = async e => {
   const f = e.target.files && e.target.files[0]; if(!f) return;
+  // le sélecteur n'impose plus de filtre (certains systèmes grisaient les CSV à tort) :
+  // on vérifie donc ici que le fichier est bien du texte exploitable.
+  if(/\.(pdf|xlsx?|docx?|pptx?|zip|png|jpe?g|heic|webp|gif)$/i.test(f.name))
+    return toast("Ce fichier n'est pas un CSV. Depuis ING, choisissez l'export « CSV » et non Excel ou PDF.");
   try{
-    const r = prepareImportDepenses(await f.text());
+    const txt = await f.text();
+    if(!/[;,\t]/.test(txt.slice(0, 2000)))
+      return toast("Ce fichier ne ressemble pas à un CSV : aucune colonne détectée.");
+    const r = prepareImportDepenses(txt);
     if(r.erreur){ fermeImportDepenses(); return toast(r.erreur); }
     lotDepenses = r.ok;
     erreurForm("#depImportErr", "");
