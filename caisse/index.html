@@ -840,6 +840,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
         <select id="o_annee"></select>
         <button class="btn ghost sm" id="reportBtn" style="margin-left:10px">Bilan à imprimer</button>
         <button class="btn ghost sm" id="detailBtn">Détail des comptes</button>
+        <button class="btn ghost sm" id="dossierBtn">Dossier de contrôle</button>
         <div class="spacer"></div>
         <span class="hint" id="o_info"></span>
       </div>
@@ -1445,6 +1446,28 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
   </div>
 </div>
 
+<div class="overlay" id="dossierBox">
+  <div class="sheetd" style="max-width:540px">
+    <div class="sh"><strong>Dossier de contrôle</strong><div class="spacer"></div>
+      <button class="btn ghost sm" id="closeDossier">Fermer</button></div>
+    <div class="sb">
+      <p class="hint" style="margin:0 0 16px">Chaque demande de remboursement, chaque paiement direct et chaque dépense de la période, présenté sur une fiche suivie de ses pièces justificatives. Les recettes n'y figurent pas.</p>
+      <div class="field"><label for="dos_ex">Période</label><select id="dos_ex"></select></div>
+      <div class="bline" id="dos_libre" hidden style="margin-top:10px">
+        <div class="field"><label for="dos_from">Du</label><input type="date" id="dos_from"></div>
+        <div class="field"><label for="dos_to">au</label><input type="date" id="dos_to"></div>
+      </div>
+      <p class="hint" id="dos_resume" style="margin:12px 0 0"></p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+        <button class="btn" id="dosPdfBtn" style="flex:1;min-width:150px">Générer le PDF</button>
+        <button class="btn ghost" id="dosZipBtn" style="flex:1;min-width:150px">Télécharger le ZIP</button>
+      </div>
+      <p class="hint" id="dos_prog" style="margin:10px 0 0"></p>
+      <p class="hint" style="margin:10px 0 0">Le PDF est un document relié, prêt à imprimer ou à remettre tel quel. Le ZIP contient les fichiers d'origine rangés par nature, un récapitulatif CSV et le même PDF.</p>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="detailBox">
   <div class="sheetd" style="max-width:520px">
     <div class="sh"><strong>Détail des comptes</strong><div class="spacer"></div>
@@ -1556,7 +1579,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = s => document.querySelector(s);
 const HORAIRES_DEFAUT = {1:{ouvert:true,limite:null},2:{ouvert:true,limite:null},3:{ouvert:true,limite:null},4:{ouvert:true,limite:null},5:{ouvert:true,limite:null},6:{ouvert:true,limite:null},7:{ouvert:true,limite:null}};
-const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], budgets:[], caMembres:[], caMe:null, budgetFiltre:"tous", horaires:HORAIRES_DEFAUT, horEdited:false, compta:{}, comptaEdited:false, selected:null, view:"mine", proofUrls:{},
+const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], budgets:[], caMembres:[], caMe:null, budgetFiltre:"tous", horaires:HORAIRES_DEFAUT, horEdited:false, compta:{}, comptaEdited:false, selected:null, view:"mine", proofUrls:{}, edDrop:new Set(),
                 channel:null, lastStatus:{}, primed:false, lastSync:null, sel:new Set(),
                 drawerDirty:false, tresoEmail:null, tronque:null };
 
@@ -2659,7 +2682,7 @@ $("#d_body").addEventListener("click", async e => {
 });
 
 /* ---------- pièces jointes multiples ---------- */
-const staged = { exp:[], inc:[], req:[], fix:[], dir:[] , msg: [], pj: [] };
+const staged = { exp:[], inc:[], req:[], fix:[], dir:[] , msg: [], pj: [], ed: [] };
 const PREUVE_ACHAT   = ["Facture","Ticket de caisse","Bon de commande"];
 const PREUVE_PAIEMENT = ["Extrait de compte","Preuve de virement","Reçu de paiement par carte","Reçu signé du commerçant"];
 
@@ -2717,7 +2740,7 @@ function majControle(){
 }
 
 function renderStaged(cle){
-  const el = $({exp:"#e_staged", inc:"#i_staged", req:"#r_staged", fix:"#d_staged", dir:"#fd_staged", pj:"#pj_staged"}[cle]);
+  const el = $({exp:"#e_staged", inc:"#i_staged", req:"#r_staged", fix:"#d_staged", dir:"#fd_staged", pj:"#pj_staged", ed:"#ed_staged"}[cle]);
   if(!el) return;
   el.innerHTML = staged[cle].map((p,n) => `<div class="stitem">
     <span class="k">${esc(p.kind)}</span>
@@ -6899,7 +6922,7 @@ async function openDrawer(id){
   }
   if(isTreso()) loadEvents(id);
 }
-function closeDrawer(){ staged.fix = []; state.selected=null; state.drawerDirty=false; state.tiroirStatut=null; $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); }
+function closeDrawer(){ staged.fix = []; staged.ed = []; state.edDrop = new Set(); state.selected=null; state.drawerDirty=false; state.tiroirStatut=null; $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); }
 $("#d_body").addEventListener("input", () => { state.drawerDirty = true; });
 
 function stampHTML(it){
@@ -6957,6 +6980,20 @@ function blocEditer(it, sansMail){
       `}
       <div class="field"><label for="ed_note">Commentaire</label>
         <textarea id="ed_note" maxlength="400">${esc(it.note||"")}</textarea></div>
+      <div class="field"><label>Pièces justificatives</label>
+        <div id="ed_pieces"></div>
+        <div class="attach" style="margin-top:8px">
+          <select id="ed_kind">
+            <option>Facture</option><option>Ticket de caisse</option><option>Extrait de compte</option>
+            <option>Preuve de virement</option><option>Reçu de paiement par carte</option>
+            <option>Reçu signé du commerçant</option><option>Bon de commande</option><option>Devis</option><option>Autre pièce</option>
+          </select>
+          <input type="file" id="ed_file" accept="image/*,application/pdf,.pdf">
+          <button type="button" class="btn ghost sm" id="ed_add">Ajouter</button>
+        </div>
+        <div id="ed_staged" class="staged"></div>
+        <span class="hint">Retraits et ajouts ne sont appliqués qu'au clic sur « Enregistrer les modifications ». « Annuler » remet tout comme avant.</span>
+      </div>
       <div class="err" id="editErr" hidden></div>
       <div class="actions">
         <button class="btn ok" data-act="edit-save">Enregistrer les modifications</button>
@@ -7125,6 +7162,41 @@ async function loadEvents(id){
   el.innerHTML = (data||[]).map(e=>`<div class="ev"><time>${fstamp(e.at)}</time>${esc(e.what)} — ${esc(e.who)}</div>`).join("") || "—";
 }
 
+/* ---- pièces jointes dans « Modifier la demande » ----
+   Le retrait est différé : la pièce est seulement barrée, rien n'est touché en base
+   ni dans le stockage tant que « Enregistrer les modifications » n'est pas cliqué. */
+function renderEdPieces(it){
+  const el = $("#ed_pieces"); if(!el) return;
+  const list = piecesDe(it);
+  if(!list.length){ el.innerHTML = `<div class="hint">Aucune pièce jointe pour l'instant.</div>`; return; }
+  el.innerHTML = list.map((p, n) => {
+    const off = state.edDrop.has(n);
+    return `<div class="stitem"${off ? ` style="opacity:.55"` : ""}>
+      <span class="k">${esc(p.kind || "Pièce")}</span>
+      <span class="f"${off ? ` style="text-decoration:line-through"` : ""}>${esc(p.name || "document")}${off ? " — sera retirée" : ""}</span>
+      <button type="button" data-edpj="${n}">${off ? "Rétablir" : "Retirer"}</button></div>`;
+  }).join("");
+}
+$("#d_body").addEventListener("click", e => {
+  const bt = e.target.closest("[data-edpj]");
+  if(bt){
+    const cur = state.items.find(i => i.id === state.selected); if(!cur) return;
+    const n = Number(bt.dataset.edpj);
+    if(state.edDrop.has(n)) state.edDrop.delete(n); else state.edDrop.add(n);
+    renderEdPieces(cur);
+    return;
+  }
+  if(!e.target.closest("#ed_add")) return;
+  const it = state.items.find(i => i.id === state.selected); if(!it) return;
+  const f = $("#ed_file")?.files[0];
+  if(!f) return toast("Choisissez d'abord un fichier.");
+  const gardees = piecesDe(it).filter((_, i) => !state.edDrop.has(i)).length;
+  if(gardees + staged.ed.length >= 8) return toast("Huit pièces maximum par demande.");
+  staged.ed.push({ kind: $("#ed_kind").value, file: f });
+  $("#ed_file").value = "";
+  renderStaged("ed");
+});
+
 // bouton « Joindre » du tiroir (les éléments sont recréés à chaque ouverture)
 $("#d_body").addEventListener("click", e => {
   if(!e.target.closest("#d_add")) return;
@@ -7167,6 +7239,8 @@ $("#d_body").addEventListener("click", async e => {
   // --- modifier / supprimer sa propre demande (tant qu'elle est En attente) ---
   if(act === "edit-open"){
     $("#editZone").hidden = false; $("#editBtns").hidden = true;
+    state.edDrop = new Set(); staged.ed = [];
+    renderEdPieces(it); renderStaged("ed");
     // remplissage du sélecteur de taux TVA (paiement direct) + calcul en direct
     const rate = $("#ed_vatRate");
     if(rate){
@@ -7178,7 +7252,11 @@ $("#d_body").addEventListener("click", async e => {
     }
     return;
   }
-  if(act === "edit-cancel"){ $("#editZone").hidden = true; $("#editBtns").hidden = false; erreurForm("#editErr", null); return; }
+  if(act === "edit-cancel"){
+    $("#editZone").hidden = true; $("#editBtns").hidden = false; erreurForm("#editErr", null);
+    state.edDrop = new Set(); staged.ed = []; renderStaged("ed"); renderEdPieces(it);
+    return;
+  }
 
   if(act === "edit-save"){
     const gereParTreso = isTreso() && it.kind === "direct" && it.user_id !== state.profile.id;
@@ -7216,12 +7294,41 @@ $("#d_body").addEventListener("click", async e => {
       maj.category = $("#ed_cat") ? $("#ed_cat").value : it.category;
       maj.iban = iban;
     }
+    // --- pièces jointes : retraits demandés + nouveaux fichiers ---
+    const pjAvant  = piecesDe(it);
+    const pjRetire = [...state.edDrop].map(n => pjAvant[n]).filter(Boolean);
+    let pjAjouts = 0;
+    if(pjRetire.length || staged.ed.length){
+      erreurForm("#editErr", null);
+      b.disabled = true; b.textContent = "Envoi des pièces…";
+      try{
+        const ajouts = staged.ed.length ? await envoyerPieces("ed", "dem", bandeauRef(it)) : [];
+        pjAjouts = ajouts.length;
+        maj.attachments = pjAvant.filter((_, i) => !state.edDrop.has(i)).concat(ajouts);
+      }catch(err){
+        b.disabled = false; b.textContent = "Enregistrer les modifications";
+        return erreurForm("#editErr", "Envoi de la pièce impossible : " + (err.message || err));
+      }
+    }
     const avant = { object: it.object, amount: it.amount, expense_date: it.expense_date };
     b.disabled = true; b.textContent = "Enregistrement…";
     const { error } = await sb.from("requests").update(maj).eq("id", it.id);
     if(error){ b.disabled = false; b.textContent = "Enregistrer les modifications"; return toast("Échec : " + error.message); }
+    // Les fichiers ne sont effacés du stockage qu'une fois la demande enregistrée sans erreur.
+    // Si cet effacement échoue, la demande est déjà à jour : il ne reste qu'un fichier orphelin.
+    if(pjRetire.length){
+      const chemins = pjRetire.map(x => x.path).filter(Boolean);
+      if(chemins.length){ try{ await sb.storage.from("justificatifs").remove(chemins); }catch(_){} }
+    }
+    // ancienne écriture à pièce unique : sans ça, la pièce retirée réapparaîtrait
+    if(maj.attachments && it.proof_path){
+      try{ await sb.from("requests").update({ proof_path:null, proof_type:null }).eq("id", it.id); }catch(_){}
+    }
+    staged.ed = []; state.edDrop = new Set();
+    const pjTxt = [pjAjouts ? pjAjouts + " pièce(s) ajoutée(s)" : "", pjRetire.length ? pjRetire.length + " pièce(s) retirée(s)" : ""].filter(Boolean).join(", ");
     try{ await sb.from("events").insert({ request_id: it.id, who: state.profile.name,
       what: (versReexamen ? "Demande modifiée et envoyée en réexamen" : "Demande modifiée par le demandeur")
+            + (pjTxt ? " — " + pjTxt : "")
             + (gereParTreso ? " (paiement direct géré par le trésorier — sans e-mail)" : "") }); }catch(_){}
     // Paiement direct géré par le trésorier pour un autre membre : jamais de mail automatique.
     if(!gereParTreso){
@@ -7229,8 +7336,9 @@ $("#d_body").addEventListener("click", async e => {
     }
     await refresh();
     const maj2 = state.items.find(i => i.id === it.id);
-    if(maj2) renderDrawer(maj2);
+    if(maj2){ state.proofUrls[it.id] = await afficherPieces(maj2); renderDrawer(maj2); }
     await dire("Demande modifiée", maj.object + " — " + euro(maj.amount)
+      + (pjTxt ? "\n\n" + pjTxt.charAt(0).toUpperCase() + pjTxt.slice(1) + "." : "")
       + (gereParTreso
           ? "\n\nAucun e-mail n'a été envoyé."
           : versReexamen
@@ -7560,6 +7668,364 @@ $("#reportBtn").onclick = () => {
 };
 $("#closeReport").onclick = () => $("#bilanBox").classList.remove("open");
 $("#bilanBox").addEventListener("click", e => { if(e.target.id === "bilanBox") $("#bilanBox").classList.remove("open"); });
+
+/* ---------- dossier de contrôle ----------
+   Un PDF relié : fiche de l'écriture, puis ses pièces justificatives juste en dessous
+   (images intégrées en pleine page, PDF fusionnés page à page). Et un ZIP des fichiers
+   d'origine rangés par nature, avec un récapitulatif CSV et le même PDF.
+   Les recettes sont hors sujet ici : ce dossier justifie des sorties d'argent. */
+const DOS_ASBL = "Le bureau étudiant";
+/* pdf-lib et ses polices standard écrivent du WinAnsi : accents, €, « » et tirets longs
+   passent sans problème ; le reste (emoji, alphabets non latins) devient « ? ». */
+const DOS_SPE = "\u20AC\u201A\u0192\u201E\u2026\u2020\u2021\u02C6\u2030\u0160\u2039\u0152\u017D"
+              + "\u2018\u2019\u201C\u201D\u2022\u2013\u2014\u02DC\u2122\u0161\u203A\u0153\u017E\u0178";
+const dosTxt = v => String(v == null ? "" : v).replace(/\u202F/g, "\u00A0").split("")
+  .map(c => (c.charCodeAt(0) <= 0xFF || DOS_SPE.indexOf(c) >= 0) ? c : "?").join("");
+const dosEur = n => (Number(n) || 0).toFixed(2).replace(".", ",") + " \u20AC";
+const dosNom = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^a-zA-Z0-9 ._-]/g, "-").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 50);
+
+function dosPeriode(){
+  const v = ($("#dos_ex") && $("#dos_ex").value) || exerciceCourant();
+  if(v === "libre"){
+    const f = $("#dos_from").value, t = $("#dos_to").value;
+    return { from: f || "0000-01-01", to: t || "9999-12-31",
+      titre: "Période du " + (f ? fdate(f) : "début") + " au " + (t ? fdate(t) : "aujourd'hui"),
+      nom: "periode-" + (f || "debut") + "_" + (t || "fin") };
+  }
+  const b = exerciceBornes(v);
+  return { from: b.from, to: b.to,
+    titre: "Exercice " + exerciceLabel(v) + "   —   du " + fdate(b.from) + " au " + fdate(b.to),
+    nom: "exercice-" + v + "-" + (Number(v) + 1) };
+}
+
+function dosEcritures(){
+  const p = dosPeriode();
+  const dans = d => { const s = String(d || "").slice(0, 10); return s >= p.from && s <= p.to; };
+  const arr = [];
+  (state.items || []).filter(i => dans(i.expense_date)).forEach(i => {
+    const direct = i.kind === "direct";
+    const infos = [
+      ["Nature", direct ? "Paiement direct à un tiers" : "Remboursement à un membre"],
+      ["Demandeur", (i.requester_name || "-") + (i.requester_position ? " (" + i.requester_position + ")" : "")]
+    ];
+    if(direct) infos.push(["Bénéficiaire", i.beneficiary || "-"]);
+    infos.push(["Date de la dépense", fdate(i.expense_date)]);
+    infos.push(["Catégorie", i.category || "-"]);
+    infos.push(["Mode de paiement", direct ? libelleModePaiement(i.pay_mode) : (i.payment_method || "-")]);
+    if(i.vat_rate && i.vat_rate !== "NA"){
+      const v = ventile(Number(i.amount || 0), i.vat_rate);
+      infos.push(["TVA", "HT " + dosEur(v.ht) + "   —   TVA " + dosEur(v.tva) + "  (" + i.vat_rate + " %)"]);
+    } else infos.push(["TVA", "Hors TVA (franchise)"]);
+    if(i.supplier_vat) infos.push(["N° TVA du bénéficiaire", i.supplier_vat]);
+    infos.push(["Statut", i.status + (i.paid_at ? " — payé le " + fdate(String(i.paid_at).slice(0, 10)) : "")]);
+    if(i.decision_note) infos.push(["Message du trésorier", i.decision_note]);
+    if(i.note) infos.push(["Commentaire", i.note]);
+    arr.push({ nature: direct ? "Paiement direct" : "Remboursement",
+      dossier: direct ? "Paiements-directs" : "Remboursements",
+      ref: refOf(i), date: String(i.expense_date || "").slice(0, 10),
+      tiers: direct ? (i.beneficiary || i.requester_name || "-") : (i.requester_name || "-"),
+      objet: i.object || "", categorie: i.category || "", montant: Number(i.amount || 0),
+      statut: i.status || "", pieces: piecesDe(i), infos });
+  });
+  (state.expenses || []).filter(e => dans(e.expense_date)).forEach(e => {
+    const infos = [
+      ["Nature", "Dépense payée directement par l'association"],
+      ["Bénéficiaire", e.payee || "-"],
+      ["Date de la dépense", fdate(e.expense_date)],
+      ["Catégorie", e.category || "-"],
+      ["Mode de paiement", e.method || "-"]
+    ];
+    if(e.vat_rate && e.vat_rate !== "NA"){
+      const v = ventile(Number(e.amount || 0), e.vat_rate);
+      infos.push(["TVA", "HT " + dosEur(v.ht) + "   —   TVA " + dosEur(v.tva) + "  (" + e.vat_rate + " %)"]);
+    } else infos.push(["TVA", "Hors TVA (franchise)"]);
+    if(e.supplier_vat) infos.push(["N° TVA du fournisseur", e.supplier_vat]);
+    if(e.author_name) infos.push(["Enregistrée par", e.author_name]);
+    if(e.note) infos.push(["Commentaire", e.note]);
+    arr.push({ nature: "Dépense directe", dossier: "Depenses", ref: "",
+      date: String(e.expense_date || "").slice(0, 10), tiers: e.payee || "-",
+      objet: e.object || "", categorie: e.category || "", montant: Number(e.amount || 0),
+      statut: "Payée", pieces: piecesDe(e), infos });
+  });
+  arr.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.ref).localeCompare(String(b.ref)));
+  arr.forEach((e, n) => { e.no = n + 1; if(!e.ref) e.ref = "DEP-" + String(n + 1).padStart(3, "0"); });
+  return { per: p, ecr: arr };
+}
+
+function dosMajResume(){
+  const el = $("#dos_resume"); if(!el) return;
+  const { ecr } = dosEcritures();
+  const tot = ecr.reduce((s, e) => s + e.montant, 0);
+  const pj  = ecr.reduce((s, e) => s + e.pieces.length, 0);
+  const sans = ecr.filter(e => !e.pieces.length).length;
+  el.textContent = ecr.length
+    ? `${ecr.length} écriture(s) · ${euro(tot)} · ${pj} pièce(s) jointe(s)` + (sans ? ` · ${sans} sans pièce` : "")
+    : "Aucune écriture sur cette période.";
+}
+
+/* Les fichiers sont téléchargés une seule fois et partagés par le PDF et le ZIP. */
+async function dosCharger(ecr, prog){
+  const cache = new Map();
+  const chemins = [...new Set(ecr.flatMap(e => e.pieces.map(p => p.path)).filter(Boolean))];
+  let n = 0;
+  for(const path of chemins){
+    n++; prog("Téléchargement des pièces " + n + "/" + chemins.length + "…");
+    try{
+      const { data } = await sb.storage.from("justificatifs").createSignedUrl(path, 3600);
+      if(!data || !data.signedUrl){ cache.set(path, null); continue; }
+      const rep = await fetch(data.signedUrl);
+      if(!rep.ok){ cache.set(path, null); continue; }
+      cache.set(path, new Uint8Array(await rep.arrayBuffer()));
+    }catch(_){ cache.set(path, null); }
+  }
+  return cache;
+}
+
+async function dosPDF(ecr, per, cache, prog){
+  const { PDFDocument, StandardFonts, rgb } = await import("https://esm.sh/pdf-lib@1.17.1");
+  const pdf = await PDFDocument.create();
+  const F  = await pdf.embedFont(StandardFonts.Helvetica);
+  const FB = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const W = 595.28, H = 841.89, M = 45, LARG = W - M * 2;
+  const GRIS = rgb(0.42, 0.42, 0.42), NOIR = rgb(0.1, 0.1, 0.1), TRAIT = rgb(0.78, 0.78, 0.78);
+  let page = null, y = 0;
+  const nouvelle = () => { page = pdf.addPage([W, H]); y = H - M; return page; };
+  const coupe = (t, f, s, max) => {
+    const out = []; let cur = "";
+    for(const mot of dosTxt(t).split(/\s+/)){
+      const essai = cur ? cur + " " + mot : mot;
+      if(cur && f.widthOfTextAtSize(essai, s) > max){ out.push(cur); cur = mot; } else cur = essai;
+    }
+    if(cur) out.push(cur);
+    return out.length ? out : [""];
+  };
+  const ecrire = (t, o) => {
+    o = o || {};
+    const s = o.size || 10, f = o.gras ? FB : F, x = o.x == null ? M : o.x;
+    for(const l of coupe(t, f, s, o.max || LARG)){
+      if(y - s < M + 14) nouvelle();
+      page.drawText(l, { x, y: y - s, size: s, font: f, color: o.couleur || NOIR });
+      y -= s + (o.saut == null ? 4 : o.saut);
+    }
+  };
+  const droite = (t, xFin, s, f, couleur) => page.drawText(dosTxt(t),
+    { x: xFin - f.widthOfTextAtSize(dosTxt(t), s), y: y - s, size: s, font: f, color: couleur || NOIR });
+  const trait = () => { page.drawLine({ start:{x:M, y}, end:{x:W-M, y}, thickness:0.6, color:TRAIT }); y -= 10; };
+
+  const total = ecr.reduce((s, e) => s + e.montant, 0);
+  const nbPJ  = ecr.reduce((s, e) => s + e.pieces.length, 0);
+  const sansPJ = ecr.filter(e => !e.pieces.length).length;
+
+  // ---- page de garde ----
+  nouvelle();
+  y -= 40;
+  ecrire(DOS_ASBL, { size: 11, gras: true, couleur: GRIS, saut: 2 });
+  ecrire("Caisse — dossier justificatif", { size: 9, couleur: GRIS, saut: 26 });
+  ecrire("DOSSIER DE CONTRÔLE", { size: 26, gras: true, saut: 12 });
+  ecrire(per.titre, { size: 12, couleur: GRIS, saut: 24 });
+  trait();
+  const kv = (a, b) => { ecrire(a, { size: 9, gras: true, couleur: GRIS, saut: 1 }); ecrire(b, { size: 12, saut: 12 }); };
+  kv("Écritures présentées", ecr.length + " (remboursements, paiements directs et dépenses)");
+  kv("Montant total", dosEur(total));
+  kv("Pièces justificatives jointes", nbPJ + " pièce(s)" + (sansPJ ? "   —   " + sansPJ + " écriture(s) sans aucune pièce" : ""));
+  kv("Document édité le", fdate(dateLocale()) + (state.profile && state.profile.name ? "   —   par " + state.profile.name : ""));
+  y -= 6; trait();
+  ecrire("Chaque écriture est présentée sur une fiche, suivie immédiatement de ses pièces justificatives "
+       + "(photos et documents scannés). Les recettes ne figurent pas dans ce dossier : il justifie les sorties d'argent. "
+       + "Les montants sont ceux enregistrés dans la caisse au jour de l'édition.",
+       { size: 9.5, couleur: GRIS, saut: 5 });
+
+  // ---- récapitulatif ----
+  nouvelle();
+  ecrire("Récapitulatif", { size: 15, gras: true, saut: 10 });
+  const COL = [M, M + 58, M + 132, M + 232, M + 372, M + 445];
+  const enTete = () => {
+    page.drawText("Date", { x: COL[0], y: y - 8, size: 8, font: FB, color: GRIS });
+    page.drawText("Référence", { x: COL[1], y: y - 8, size: 8, font: FB, color: GRIS });
+    page.drawText("Tiers", { x: COL[2], y: y - 8, size: 8, font: FB, color: GRIS });
+    page.drawText("Objet", { x: COL[3], y: y - 8, size: 8, font: FB, color: GRIS });
+    page.drawText("Montant", { x: COL[4], y: y - 8, size: 8, font: FB, color: GRIS });
+    page.drawText("Pièces", { x: COL[5], y: y - 8, size: 8, font: FB, color: GRIS });
+    y -= 14; trait();
+  };
+  const tronque = (t, f, s, max) => {
+    let v = dosTxt(t);
+    while(v.length > 1 && f.widthOfTextAtSize(v, s) > max) v = v.slice(0, -1);
+    return v.length < dosTxt(t).length ? v.slice(0, -1) + "." : v;
+  };
+  enTete();
+  for(const e of ecr){
+    if(y - 12 < M + 20){ nouvelle(); enTete(); }
+    page.drawText(dosTxt(fdate(e.date)), { x: COL[0], y: y - 9, size: 8.5, font: F, color: NOIR });
+    page.drawText(tronque(e.ref, F, 8.5, 70), { x: COL[1], y: y - 9, size: 8.5, font: F, color: NOIR });
+    page.drawText(tronque(e.tiers, F, 8.5, 96), { x: COL[2], y: y - 9, size: 8.5, font: F, color: NOIR });
+    page.drawText(tronque(e.objet, F, 8.5, 136), { x: COL[3], y: y - 9, size: 8.5, font: F, color: NOIR });
+    y -= 0; droite(dosEur(e.montant), COL[5] - 10, 8.5, F);
+    page.drawText(e.pieces.length ? String(e.pieces.length) : "-",
+      { x: COL[5] + 12, y: y - 9, size: 8.5, font: F, color: e.pieces.length ? NOIR : rgb(0.75, 0.3, 0.3) });
+    y -= 13;
+  }
+  y -= 4; trait();
+  droite("Total : " + dosEur(total), W - M, 10, FB);
+  y -= 16;
+
+  // ---- une fiche par écriture, puis ses pièces ----
+  const soucis = [];
+  for(let n = 0; n < ecr.length; n++){
+    const e = ecr[n];
+    prog("Assemblage " + (n + 1) + "/" + ecr.length + "…");
+    nouvelle();
+    page.drawRectangle({ x: M, y: y - 26, width: LARG, height: 26, color: rgb(0.94, 0.94, 0.94) });
+    page.drawText(dosTxt("Écriture " + e.no + " / " + ecr.length + "   —   " + e.nature + "   —   " + e.ref),
+      { x: M + 8, y: y - 17, size: 10, font: FB, color: NOIR });
+    const mt = dosEur(e.montant);
+    page.drawText(mt, { x: W - M - 8 - FB.widthOfTextAtSize(mt, 11), y: y - 18, size: 11, font: FB, color: NOIR });
+    y -= 40;
+    ecrire(e.objet || "(sans objet)", { size: 16, gras: true, saut: 14 });
+    for(const [lib, val] of e.infos){
+      ecrire(lib, { size: 8.5, gras: true, couleur: GRIS, saut: 1 });
+      ecrire(val, { size: 10.5, saut: 9 });
+    }
+    y -= 6; trait();
+    ecrire(e.pieces.length
+      ? "Pièces justificatives : " + e.pieces.length + " — page(s) suivante(s)"
+      : "AUCUNE PIÈCE JUSTIFICATIVE JOINTE À CETTE ÉCRITURE",
+      { size: 10, gras: true, couleur: e.pieces.length ? GRIS : rgb(0.75, 0.25, 0.25), saut: 6 });
+    if(!e.pieces.length) soucis.push(e.ref + " — aucune pièce jointe");
+
+    for(let k = 0; k < e.pieces.length; k++){
+      const pc = e.pieces[k];
+      const bytes = pc.path ? cache.get(pc.path) : null;
+      const etiquette = e.ref + "   —   pièce " + (k + 1) + "/" + e.pieces.length + "   —   " + (pc.kind || "Pièce") + (pc.name ? "   —   " + pc.name : "");
+      if(!bytes){
+        nouvelle();
+        ecrire(etiquette, { size: 8, couleur: GRIS, saut: 16 });
+        ecrire("Fichier introuvable dans le stockage.", { size: 12, gras: true, couleur: rgb(0.75, 0.25, 0.25) });
+        soucis.push(e.ref + " — pièce " + (k + 1) + " introuvable");
+        continue;
+      }
+      const estPdf = bytes[0] === 0x25 && bytes[1] === 0x50;
+      try{
+        if(estPdf){
+          const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+          const pages = await pdf.copyPages(src, src.getPageIndices());
+          pages.forEach(pg => {
+            const ajoutee = pdf.addPage(pg);
+            ajoutee.drawText(dosTxt(etiquette), { x: 14, y: ajoutee.getHeight() - 12, size: 6.5, font: F, color: GRIS });
+          });
+        }else{
+          const img = (bytes[0] === 0x89) ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
+          const pg = pdf.addPage([W, H]);
+          const maxW = LARG, maxH = H - M * 2 - 18;
+          const r = Math.min(maxW / img.width, maxH / img.height);
+          pg.drawText(dosTxt(etiquette), { x: M, y: H - M + 6, size: 7.5, font: F, color: GRIS });
+          pg.drawImage(img, { x: M + (maxW - img.width * r) / 2, y: M + (maxH - img.height * r) / 2,
+            width: img.width * r, height: img.height * r });
+        }
+      }catch(err){
+        nouvelle();
+        ecrire(etiquette, { size: 8, couleur: GRIS, saut: 16 });
+        ecrire("Pièce non intégrable dans le PDF (fichier protégé ou illisible). Elle se trouve dans le ZIP.",
+          { size: 11, gras: true, couleur: rgb(0.75, 0.25, 0.25) });
+        soucis.push(e.ref + " — pièce " + (k + 1) + " non intégrable");
+      }
+    }
+  }
+
+  // ---- page de contrôle : ce qui manque ----
+  if(soucis.length){
+    nouvelle();
+    ecrire("Points à signaler", { size: 15, gras: true, saut: 10 });
+    ecrire("Ces écritures figurent bien dans le dossier, mais leur justificatif manque ou n'a pas pu être intégré au PDF.",
+      { size: 9.5, couleur: GRIS, saut: 12 });
+    soucis.forEach(t => ecrire("- " + t, { size: 10, saut: 4 }));
+  }
+
+  // ---- pagination ----
+  const pages = pdf.getPages();
+  pages.forEach((pg, i) => {
+    const t = dosTxt("Page " + (i + 1) + " / " + pages.length + "   ·   " + DOS_ASBL + "   ·   " + per.titre);
+    pg.drawText(t, { x: M, y: 20, size: 7, font: F, color: GRIS });
+  });
+  return await pdf.save();
+}
+
+async function dosZip(ecr, per, cache, pdfBytes, prog){
+  prog("Préparation du ZIP…");
+  const { default: JSZip } = await import("https://esm.sh/jszip@3.10.1");
+  const zip = new JSZip();
+  const lignes = [["Nature", "Reference", "Date", "Tiers", "Objet", "Categorie", "Montant", "Statut", "Pieces", "Fichiers"]];
+  for(const e of ecr){
+    const noms = [];
+    e.pieces.forEach((pc, k) => {
+      const bytes = pc.path ? cache.get(pc.path) : null;
+      if(!bytes) return;
+      const ext = (bytes[0] === 0x25) ? "pdf" : (bytes[0] === 0x89 ? "png" : "jpg");
+      const nom = `${e.date}_${dosNom(e.ref)}_${dosNom(e.tiers)}_${dosNom(e.objet)}_${k + 1}-${dosNom(pc.kind || "piece")}.${ext}`;
+      zip.file(e.dossier + "/" + nom, bytes);
+      noms.push(nom);
+    });
+    lignes.push([e.nature, e.ref, e.date, e.tiers, e.objet, e.categorie,
+      String(e.montant.toFixed(2)).replace(".", ","), e.statut, String(e.pieces.length), noms.join(" | ")]);
+  }
+  zip.file("recapitulatif.csv", "\uFEFF" + lignes.map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n"));
+  if(pdfBytes) zip.file("dossier-de-controle.pdf", pdfBytes);
+  return await zip.generateAsync({ type: "blob" });
+}
+
+function dosTelecharger(blob, nom){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = nom; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+async function dosLancer(avecZip){
+  if(!isTreso()) return toast("Réservé au trésorier.");
+  const { per, ecr } = dosEcritures();
+  if(!ecr.length) return toast("Aucune écriture sur cette période.");
+  const btns = [$("#dosPdfBtn"), $("#dosZipBtn")];
+  const prog = t => { const el = $("#dos_prog"); if(el) el.textContent = t; };
+  btns.forEach(b => b && (b.disabled = true));
+  try{
+    const cache = await dosCharger(ecr, prog);
+    prog("Assemblage du PDF…");
+    const pdfBytes = await dosPDF(ecr, per, cache, prog);
+    if(avecZip){
+      const blob = await dosZip(ecr, per, cache, pdfBytes, prog);
+      dosTelecharger(blob, "dossier-controle-" + per.nom + ".zip");
+    }else{
+      dosTelecharger(new Blob([pdfBytes], { type: "application/pdf" }), "dossier-controle-" + per.nom + ".pdf");
+    }
+    prog("");
+    toast(ecr.length + " écriture(s) exportée(s).");
+  }catch(err){
+    prog("");
+    toast("Export impossible : " + (err.message || err));
+  }finally{
+    btns.forEach(b => b && (b.disabled = false));
+  }
+}
+
+$("#dossierBtn").onclick = () => {
+  const sel = $("#dos_ex");
+  const liste = exercicesPresents(); const cur = exerciceCourant();
+  const choix = liste.length ? liste : [cur];
+  sel.innerHTML = choix.map(e => `<option value="${e}"${e === cur ? " selected" : ""}>Exercice ${exerciceLabel(e)}</option>`).join("")
+    + `<option value="libre">Période libre…</option>`;
+  if(!$("#dos_from").value){ $("#dos_from").value = exerciceBornes(cur).from; $("#dos_to").value = dateLocale(); }
+  $("#dos_libre").hidden = true; $("#dos_prog").textContent = "";
+  dosMajResume();
+  $("#dossierBox").classList.add("open");
+};
+$("#dos_ex").onchange = () => { $("#dos_libre").hidden = $("#dos_ex").value !== "libre"; dosMajResume(); };
+$("#dos_from").onchange = dosMajResume;
+$("#dos_to").onchange   = dosMajResume;
+$("#dosPdfBtn").onclick = () => dosLancer(false);
+$("#dosZipBtn").onclick = () => dosLancer(true);
+$("#closeDossier").onclick = () => $("#dossierBox").classList.remove("open");
+$("#dossierBox").addEventListener("click", e => { if(e.target.id === "dossierBox") $("#dossierBox").classList.remove("open"); });
+
 
 /* montant lisible partout (jsPDF ne rend pas l'espace insécable étroit) */
 const eu = n => {
