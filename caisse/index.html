@@ -687,6 +687,9 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
           <div class="field"><label for="fd_pour">Saisir au nom de (trésorier)</label>
             <select id="fd_pour"><option value="">— Moi-même (demande normale) —</option></select>
             <span class="hint">Pour un membre qui t'appelle au lieu de remplir le formulaire lui-même.</span></div>
+          <div class="field"><label for="fd_dateDem">Date de la demande</label>
+            <input type="date" id="fd_dateDem">
+            <span class="hint">Laisse vide pour aujourd'hui. Utile quand le membre t'a sollicité il y a quelques jours.</span></div>
           <div id="fd_accuseBox" hidden>
             <label class="check" style="align-items:center"><input type="checkbox" id="fd_accuse" class="tgl">
               <span>Envoyer l'accusé de réception à ce membre</span></label>
@@ -5143,6 +5146,7 @@ function majPourQui(){
   const box = $("#fd_pourBox"); if(!box) return;
   box.hidden = !isTreso();
   if(!isTreso()) return;
+  const d = $("#fd_dateDem"); if(d) d.max = dateLocale();   // pas de demande datée dans le futur
   const sel = $("#fd_pour"); if(!sel) return;
   const cur = sel.value;
   const membres = (state.members||[])
@@ -5193,14 +5197,21 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     if(mode==="virement" && iban){   // IBAN facultatif : vérifié seulement s'il est rempli
       if(!ibanValide(iban)) throw new Error("IBAN du bénéficiaire : " + messageIban(iban));
     }
-    const _dblD = chercherDoublon(object, amount, dateLocale(), null, pour ? pour.id : null);
+    // Date de la demande : seul le trésorier peut l'antidater (le membre reste au jour du jour).
+    let dateDem = dateLocale();
+    if(isTreso() && $("#fd_dateDem") && $("#fd_dateDem").value){
+      dateDem = $("#fd_dateDem").value;
+      if(dateDem > dateLocale()) throw new Error("La date de la demande ne peut pas être dans le futur.");
+      if(estClos(dateDem)) throw new Error("L'exercice " + exerciceLabel(exerciceDe(dateDem)) + " est clôturé : cette date n'est plus acceptée.");
+    }
+    const _dblD = chercherDoublon(object, amount, dateDem, null, pour ? pour.id : null);
     if(_dblD && !await confirmerDoublon(_dblD)) throw new Error("__annule__");
     rattraperFichier("dir", "#fd_kind", "#fd_proof");
     const { data, error } = await sb.from("requests").insert({
       user_id: pour ? pour.id : state.profile.id,
       requester_name: (pour ? pour.name : state.profile.name) || "",
       requester_position: (pour ? pour.position : state.profile.position) || "",
-      expense_date: dateLocale(),
+      expense_date: dateDem,
       amount, object, category: "Paiement direct",
       kind: "direct", beneficiary: benef, pay_mode: mode,
       beneficiary_iban: (mode==="virement" && iban) ? iban : null,
