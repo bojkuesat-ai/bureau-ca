@@ -1176,7 +1176,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
         <input type="text" id="expSearch" placeholder="Objet, fournisseur, montant, catégorie…">
         <select id="expAnnee" style="margin-left:8px"></select>
         <button class="btn ghost sm" id="depCsvBtn" style="margin-left:8px">Importer un CSV (ING)</button>
-        <input type="file" id="depCsvFile" accept=".csv,text/csv" hidden>
+        <input type="file" id="depCsvFile" accept=".csv,.txt,text/csv,text/plain,application/csv,application/vnd.ms-excel" hidden>
       </div>
       <div class="card" style="overflow:hidden">
         <div class="head" data-tri-cle="exp"><span data-tri="date">Date</span><span data-tri="objet">Objet / bénéficiaire</span><span data-tri="mode">Paiement</span><span class="r" data-tri="montant">Montant</span><span></span></div>
@@ -1247,7 +1247,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
         <input type="text" id="repSearch" placeholder="Objet, bénéficiaire, montant, origine…">
         <button class="btn ghost sm" id="repXlsx" style="margin-left:8px">Exporter en Excel</button>
         <button class="btn ghost sm" id="repCsvBtn" style="margin-left:8px">Importer un CSV</button>
-        <input type="file" id="repCsvFile" accept=".csv,text/csv" hidden>
+        <input type="file" id="repCsvFile" accept=".csv,.txt,text/csv,text/plain,application/csv,application/vnd.ms-excel" hidden>
         <button class="btn ghost sm" id="repVoirRemb" style="margin-left:8px" hidden></button>
       </div>
       <div class="card" style="overflow:hidden">
@@ -3353,16 +3353,19 @@ const montantCSV = v => {
 // repère les colonnes quel que soit leur ordre ou leur habillage
 function colonnesCSV(tete){
   const cle = t => {
-    const x = slug(t).replace(/[^a-z0-9]/g," ").trim();
-    // ING : "Date d'exécution", "Date de valeur", "Montant", "Contrepartie",
-    //       "Nom de la contrepartie", "Détail du mouvement", "Communication"
+    const x = slug(t).replace(/[^a-z0-9]/g," ").replace(/\s+/g," ").trim();
+    // En-têtes réels de l'export ING : "Numéro de compte", "Nom du compte",
+    // "Compte contrepartie", "Numéro de mouvement", "Date comptable", "Date valeur",
+    // "Montant", "Devise", "Libellés", "Détails du mouvement", "Message".
+    if(/^(numero de compte|nom du compte|devise)$/.test(x)) return "";   // colonnes inutiles ici
     if(/^date/.test(x)) return "date";
-    if(/^(objet|libelle|description|detail|communication|mouvement)/.test(x)) return "objet";
-    if(/^(beneficiaire|benef|fournisseur|tiers|contrepartie|nom de la contrepartie)/.test(x)) return "benef";
     if(/^montant/.test(x)) return "montant";
+    if(/contrepartie/.test(x)) return "benef";
+    if(/^(beneficiaire|benef|fournisseur|tiers)/.test(x)) return "benef";
+    if(/^(objet|libelle|description|detail|communication|mouvement)/.test(x)) return "objet";
     if(/^carte/.test(x)) return "carte";
-    if(/^(reference|ref|extrait|operation|numero de sequence)/.test(x)) return "ref";
-    if(/^(commentaire|note|remarque)/.test(x)) return "note";
+    if(/^(numero de mouvement|reference|ref|extrait|operation|numero de sequence)/.test(x)) return "ref";
+    if(/^(commentaire|note|remarque|message)/.test(x)) return "note";
     return "";
   };
   const map = {};
@@ -3452,6 +3455,48 @@ if($("#repImportCancel")) $("#repImportCancel").onclick = () => { fermeImport();
 // modifiables ensuite une par une comme une saisie manuelle.
 let lotDepenses = null;
 
+// Les libellés ING tiennent sur une seule ligne très longue qui mélange tout
+// (type d'opération, bénéficiaire, communication, n° de carte, référence interne).
+// On en tire un objet lisible et un bénéficiaire plutôt que de tronquer brutalement.
+function lireLibelleING(txt){
+  const t = String(txt||"").replace(/\s+/g," ").trim();
+  if(!t) return { objet:"", benef:"", carte:"" };
+  let benef = "", objet = "", carte = "";
+
+  const mCarte = t.match(/Num[ée]ro de carte\s+([\dX\s]{8,25})/i);
+  if(mCarte) carte = mCarte[1].replace(/\s+/g," ").trim();
+
+  // Paiement par carte : "… - NOM DU COMMERÇANT - VILLE - BEL Numéro de carte …"
+  const mCom = t.match(/(?:\d{1,2}h\d{2}|\d{2}:\d{2}(?::\d{2})?)\s*-\s*(.+?)\s*-\s*[^-]{2,30}\s*-\s*[A-Z]{3}\b/);
+  if(mCom){
+    benef = mCom[1].trim();
+    objet = benef;
+  }
+
+  // Virement : "… Vers: NOM - IBAN …" et "Communication: …"
+  const mVers = t.match(/\bVers\s*:\s*(.+?)\s*(?:-\s*[A-Z]{2}\d{2}[A-Z0-9]+|\bInstantan|\bCommunication\s*:|$)/i);
+  if(mVers) benef = mVers[1].trim();
+  const mDe = t.match(/\bDe\s*:\s*(.+?)\s*(?:-\s*[A-Z]{2}\d{2}[A-Z0-9]+|\bCommunication\s*:|$)/i);
+  if(!benef && mDe) benef = mDe[1].trim();
+
+  const mComm = t.match(/\bCommunication\s*:\s*(.+?)\s*(?:Info personnelle\s*:|R[ée]f[ée]rence ING\s*:|Num[ée]ro de carte|$)/i);
+  if(mComm) objet = mComm[1].trim();
+
+  // Domiciliation / ordre permanent : le nom du créancier suit le type d'opération
+  if(!benef){
+    const mDom = t.match(/^(?:Domiciliation|Ordre permanent)[^:]*:\s*(.+?)\s*(?:-|Communication|$)/i);
+    if(mDom) benef = mDom[1].trim();
+  }
+
+  if(!objet) objet = t;
+  // on écarte les bruits techniques qui n'apportent rien au registre
+  objet = objet.replace(/\bInfo personnelle\s*:\s*[0-9a-f]{16,}/gi, "")
+               .replace(/\bR[ée]f[ée]rence ING\s*:\s*\S+/gi, "")
+               .replace(/\bNum[ée]ro de carte\s+[\dX\s]{8,25}/gi, "")
+               .replace(/\s+/g," ").trim();
+  return { objet: objet.slice(0,90), benef: benef.slice(0,80), carte };
+}
+
 // Sur un extrait bancaire, les montants sortants sont négatifs et les entrants positifs :
 // on ne garde que les sorties, sinon une recette serait comptée comme une dépense.
 const signeCSV = v => {
@@ -3470,6 +3515,24 @@ function prepareImportDepenses(texte){
 
   const dejaLa = new Set(mesDepenses().map(e =>
     e.expense_date + "|" + Number(e.amount||0).toFixed(2) + "|" + slug(String(e.object||"").trim())));
+  // Le numéro de mouvement ING est unique : il permet de repérer une ligne déjà importée sans
+  // confondre deux opérations réellement distinctes (même commerçant, même montant, même jour).
+  const refsConnues = new Set((state.expenses||[])
+    .map(e => (String(e.note||"").match(/\[mouvement ([^\]]+)\]/) || [])[1])
+    .filter(Boolean));
+  // Une dépense déjà saisie à la main n'a pas de numéro de mouvement : on la reconnaît au montant
+  // et à une date voisine (la banque peut dater à quelques jours de la saisie). Chaque écriture
+  // existante ne neutralise qu'une seule ligne du fichier, pour ne pas écarter de vrais doublons légitimes.
+  const dejaSaisies = (state.expenses||[])
+    .filter(e => !/\[mouvement /.test(String(e.note||"")))
+    .map(e => ({ j: Date.parse(e.expense_date + "T00:00:00Z"),
+                 m: Number(e.amount||0).toFixed(2), objet: String(e.object||""), pris: false }));
+  const dejaSaisie = (dte, mnt) => {
+    const j = Date.parse(dte + "T00:00:00Z"), m = mnt.toFixed(2);
+    const t = dejaSaisies.find(x => !x.pris && x.m === m && Math.abs(x.j - j) <= 5*86400000);
+    if(t){ t.pris = true; return t.objet; }
+    return null;
+  };
 
   const ok = [], soucis = [], doublons = [], recettes = [];
   lignes.slice(1).forEach((l, i) => {
@@ -3478,20 +3541,37 @@ function prepareImportDepenses(texte){
     const dte = dateCSV(g("date"));
     const brut = signeCSV(g("montant"));
     if(!dte)              return soucis.push("Ligne " + num + " : date illisible (" + (g("date")||"vide") + ").");
-    if(!Number.isFinite(brut) || brut === 0) return soucis.push("Ligne " + num + " : montant illisible (" + (g("montant")||"vide") + ").");
+    if(!Number.isFinite(brut)) return soucis.push("Ligne " + num + " : montant illisible (" + (g("montant")||"vide") + ").");
+    if(brut === 0)        return soucis.push("Ligne " + num + " : montant nul, rien à enregistrer.");
     if(brut > 0)          return recettes.push("Ligne " + num + " : " + euro(brut) + " (entrée d'argent).");
     const mnt = Math.round(Math.abs(brut)*100)/100;
-    // sur un extrait bancaire, le libellé sert d'objet et la contrepartie de bénéficiaire
-    const objet = (g("objet") || g("benef") || "Opération bancaire").slice(0,90);
-    const benef = (g("benef") || g("objet") || "—").slice(0,80);
+    // le libellé bancaire est décodé pour en tirer un objet et un bénéficiaire lisibles
+    const lu = lireLibelleING(g("objet"));
+    const ibanCp = g("benef");
+    const objet = (lu.objet || g("objet") || "Opération bancaire").slice(0,90);
+    const benef = (lu.benef || ibanCp || "—").slice(0,80);
     if(estClos(dte)) return soucis.push("Ligne " + num + " : l'exercice " + exerciceLabel(exerciceDe(dte)) + " est clôturé.");
-    const empreinte = dte + "|" + mnt.toFixed(2) + "|" + slug(objet);
-    if(dejaLa.has(empreinte)) return doublons.push("Ligne " + num + " : " + objet + " (" + euro(mnt) + ") est déjà encodée.");
-    dejaLa.add(empreinte);
     const ref = g("ref").slice(0,40), note = g("note").slice(0,400);
+    // déjà encodée à la main (virement remboursé, avance saisie manuellement…) : on n'importe pas
+    const deja = dejaSaisie(dte, mnt);
+    if(deja) return doublons.push("Ligne " + num + " : " + objet + " (" + euro(mnt)
+      + ") correspond à « " + deja + " », déjà encodée manuellement.");
+    // Avec un numéro de mouvement on s'y fie seul : deux achats identiques le même jour
+    // sont alors correctement conservés tous les deux. Sinon, repli sur date + montant + objet.
+    if(ref){
+      if(refsConnues.has(ref)) return doublons.push("Ligne " + num + " : " + objet + " (" + euro(mnt) + ") est déjà encodée.");
+      refsConnues.add(ref);
+    } else {
+      const empreinte = dte + "|" + mnt.toFixed(2) + "|" + slug(objet);
+      if(dejaLa.has(empreinte)) return doublons.push("Ligne " + num + " : " + objet + " (" + euro(mnt) + ") est déjà encodée.");
+      dejaLa.add(empreinte);
+    }
+    // la note garde la trace intégrale de l'opération : rien n'est perdu
+    const brutLib = String(g("objet")||"").replace(/\s+/g," ").trim();
     ok.push({
       expense_date: dte, amount: mnt, object: objet, payee: benef,
-      note: (ref ? "[" + ref + "] " : "") + note,
+      note: [ref ? "[mouvement " + ref + "]" : "", note, lu.carte ? "Carte " + lu.carte : "",
+             ibanCp ? "Contrepartie " + ibanCp : "", brutLib].filter(Boolean).join(" · ").slice(0,400),
       vat_rate: "NA", supplier_vat: "", tva_affectation: "taxable",
       created_by: state.profile.id, author_name: state.profile.name || "", attachments: []
     });
