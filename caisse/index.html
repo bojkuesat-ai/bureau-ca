@@ -3045,7 +3045,7 @@ function piecesDe(o){
 async function afficherPieces(o, retirable){
   const list = piecesDe(o);
   if(!list.length) return `<div class="noproof">Aucune pièce justificative jointe.</div>`;
-  const peutRetirer = !!retirable && isTreso() && Array.isArray(o.attachments);
+  const peutRetirer = !!retirable && isTreso() && list.length > 0;
   const blocs = await Promise.all(list.map(async (p, n) => {
     const btnDel = peutRetirer
       ? ` <button type="button" class="btn no sm" data-pjdel="${retirable.id}" data-pjdeltype="${retirable.type}" data-pjdeln="${n}">Retirer</button>`
@@ -3955,10 +3955,11 @@ const PIECES_RECETTE = ["Extrait de compte","Convention de subside","Facture ém
 
 function blocPieces(o, type){
   if(!isTreso()) return "";
-  const liste = type === "exp" ? PIECES_DEPENSE : PIECES_RECETTE;
+  const liste = type === "inc" ? PIECES_RECETTE : PIECES_DEPENSE;
   return `<div class="fixbox">
     <b>Ajouter une pièce justificative</b>
-    <p>L'extrait de compte, une facture reçue plus tard, un justificatif plus lisible. Les pièces déjà présentes sont conservées.</p>
+    <p>L'extrait de compte, une facture reçue plus tard, un justificatif plus lisible. Les pièces déjà présentes sont conservées.${
+      type === "req" ? " En tant que trésorier vous pouvez le faire à tout moment, même sur une demande déjà remboursée." : ""}</p>
     <div class="attach">
       <select id="pj_kind">${liste.map(k => `<option>${esc(k)}</option>`).join("")}</select>
       <input type="file" id="pj_file" accept="image/*,application/pdf,.pdf">
@@ -4054,19 +4055,33 @@ $("#d_body").addEventListener("click", async e => {
   }
   if(act === "pj-send"){
     if(!staged.pj.length) return erreurForm("#pjErr", "Joignez au moins une pièce.");
-    const dep = b.dataset.pjtype === "exp";
-    const table = dep ? "expenses" : "incomes";
-    const o = (dep ? state.expenses : state.incomes).find(x => x.id === b.dataset.pj);
+    const quoi = b.dataset.pjtype;                       // "exp" | "inc" | "req"
+    const table = quoi === "exp" ? "expenses" : quoi === "inc" ? "incomes" : "requests";
+    const source = quoi === "exp" ? state.expenses : quoi === "inc" ? state.incomes : state.items;
+    const o = source.find(x => x.id === b.dataset.pj);
     if(!o) return erreurForm("#pjErr", "Écriture introuvable : rouvrez la fiche.");
     b.disabled = true; b.textContent = "Envoi…";
     try{
-      const ajouts = await envoyerPieces("pj", dep ? "dep" : "rec");
-      const avant = Array.isArray(o.attachments) ? o.attachments : [];
-      const { error } = await sb.from(table)
-        .update({ attachments: avant.concat(ajouts) }).eq("id", o.id);
+      // sur une demande, la pièce reçoit le même bandeau « Réf. » que les autres
+      const ajouts = await envoyerPieces("pj", quoi === "exp" ? "dep" : quoi === "inc" ? "rec" : "dem",
+        quoi === "req" ? bandeauRef(o) : undefined);
+      const avant = piecesDe(o);
+      const { data:maj0, error } = await sb.from(table)
+        .update({ attachments: avant.concat(ajouts) }).eq("id", o.id).select("id");
       if(error) throw error;
+      if(!maj0 || !maj0.length) throw new Error("la base a refusé la mise à jour (aucune ligne modifiée)");
+      if(quoi === "req" && o.proof_path){                // ancienne pièce unique désormais reprise dans la liste
+        try{ await sb.from("requests").update({ proof_path:null, proof_type:null }).eq("id", o.id); }catch(_){}
+      }
       staged.pj = [];
-      closeDrawer(); await refresh();
+      if(quoi === "req"){
+        // pas de ligne d'historique : c'est le trésorier qui classe les pièces reçues par mail
+        await refresh();
+        const maj = state.items.find(x => x.id === o.id);
+        if(maj){ state.proofUrls[maj.id] = await afficherPieces(maj, isTreso() ? { id:maj.id, type:"req" } : null); renderDrawer(maj); }
+      }else{
+        closeDrawer(); await refresh();
+      }
       toast(ajouts.length + " pièce(s) ajoutée(s).");
     }catch(err){
       erreurForm("#pjErr", "Envoi impossible : " + (err && err.message ? err.message : String(err)));
@@ -4843,12 +4858,13 @@ $("#viewIncomes").addEventListener("click", async e => {
 $("#d_body").addEventListener("click", async e => {
   const b = e.target.closest("[data-pjdel]"); if(!b) return;
   if(!isTreso()) return toast("Seul le trésorier peut retirer une pièce.");
-  const dep = b.dataset.pjdeltype === "exp";
-  const table = dep ? "expenses" : "incomes";
-  const o = (dep ? state.expenses : state.incomes).find(x => x.id === b.dataset.pjdel);
+  const quoi = b.dataset.pjdeltype;                      // "exp" | "inc" | "req"
+  const table = quoi === "exp" ? "expenses" : quoi === "inc" ? "incomes" : "requests";
+  const source = quoi === "exp" ? state.expenses : quoi === "inc" ? state.incomes : state.items;
+  const o = source.find(x => x.id === b.dataset.pjdel);
   if(!o) return toast("Écriture introuvable : rouvrez la fiche.");
   const n = Number(b.dataset.pjdeln);
-  const liste = Array.isArray(o.attachments) ? o.attachments : [];
+  const liste = piecesDe(o);
   const cible = liste[n];
   if(!cible) return toast("Pièce introuvable : rouvrez la fiche.");
   if(!await demander("Retirer cette pièce",
@@ -4857,9 +4873,21 @@ $("#d_body").addEventListener("click", async e => {
       { bouton:"Retirer", danger:true })) return;
   b.disabled = true;
   const reste = liste.filter((_, i) => i !== n);
-  const { error } = await sb.from(table).update({ attachments: reste }).eq("id", o.id);
+  /* Supabase ne renvoie pas d'erreur quand une règle de sécurité bloque la mise à jour :
+     la requête « réussit » en ne touchant aucune ligne. On demande donc la ligne en retour. */
+  const { data:maj0, error } = await sb.from(table).update({ attachments: reste }).eq("id", o.id).select("id");
   if(error){ b.disabled = false; return toast("Retrait impossible : " + error.message); }
+  if(!maj0 || !maj0.length){ b.disabled = false; return toast("Retrait refusé par la base : la pièce est toujours là."); }
   if(cible.path){ try{ await sb.storage.from("justificatifs").remove([cible.path]); }catch(_){} }
+  // ancienne écriture à pièce unique : sans ça, la pièce retirée réapparaîtrait
+  if(o.proof_path){ try{ await sb.from(table).update({ proof_path:null, proof_type:null }).eq("id", o.id); }catch(_){} }
+  if(quoi === "req"){
+    // pas de ligne d'historique : le trésorier gère les pièces sans laisser de trace
+    await refresh();
+    const maj = state.items.find(x => x.id === o.id);
+    if(maj){ state.proofUrls[maj.id] = await afficherPieces(maj, { id:maj.id, type:"req" }); renderDrawer(maj); }
+    return toast("Pièce retirée.");
+  }
   closeDrawer(); await refresh(); toast("Pièce retirée.");
 });
 
@@ -6808,6 +6836,10 @@ function tiroirOccupe(){
   const body = $("#d_body"); if(!body) return false;
   if(state.drawerDirty) return true;
   if(staged.fix && staged.fix.length) return true;
+  // une pièce préparée mais pas encore envoyée ne doit pas disparaître sur une synchro
+  if(staged.pj && staged.pj.length) return true;
+  if(staged.ed && staged.ed.length) return true;
+  if(state.edDrop && state.edDrop.size) return true;
   const ez = $("#editZone"); if(ez && !ez.hidden) return true;
   if(document.activeElement && body.contains(document.activeElement)) return true;
   return false;
@@ -7000,13 +7032,14 @@ async function openDrawer(id){
   const it = state.items.find(i=>i.id===id); if(!it) return;
   state.selected = id; renderDrawer(it);
   $("#drawer").classList.add("open"); $("#scrim").classList.add("open"); $("#closeDrawer").focus();
+  staged.pj = [];                                        // file d'ajout repartie à zéro
   if(!state.proofUrls[id]){
-    state.proofUrls[id] = await afficherPieces(it);
+    state.proofUrls[id] = await afficherPieces(it, isTreso() ? { id, type:"req" } : null);
     if(state.selected === id) renderDrawer(it);
   }
   if(isTreso()) loadEvents(id);
 }
-function closeDrawer(){ staged.fix = []; staged.ed = []; state.edDrop = new Set(); state.selected=null; state.drawerDirty=false; state.tiroirStatut=null; $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); }
+function closeDrawer(){ staged.fix = []; staged.ed = []; staged.pj = []; state.edDrop = new Set(); state.selected=null; state.drawerDirty=false; state.tiroirStatut=null; $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); }
 $("#d_body").addEventListener("input", () => { state.drawerDirty = true; });
 
 function stampHTML(it){
@@ -7064,7 +7097,7 @@ function blocEditer(it, sansMail){
       `}
       <div class="field"><label for="ed_note">Commentaire</label>
         <textarea id="ed_note" maxlength="400">${esc(it.note||"")}</textarea></div>
-      <div class="field"><label>Pièces justificatives</label>
+      ${isTreso() ? "" : `<div class="field"><label>Pièces justificatives</label>
         <div id="ed_pieces"></div>
         <div class="attach" style="margin-top:8px">
           <select id="ed_kind">
@@ -7077,7 +7110,7 @@ function blocEditer(it, sansMail){
         </div>
         <div id="ed_staged" class="staged"></div>
         <span class="hint">Retraits et ajouts ne sont appliqués qu'au clic sur « Enregistrer les modifications ». « Annuler » remet tout comme avant.</span>
-      </div>
+      </div>`}
       <div class="err" id="editErr" hidden></div>
       <div class="actions">
         <button class="btn ok" data-act="edit-save">Enregistrer les modifications</button>
@@ -7138,6 +7171,9 @@ function renderDrawer(it){
   const modifiable = (sienne || gereParTreso) && (it.status === "En attente" || it.status === "Refusée" || it.status === "À corriger");
   if(modifiable && !isTreso()) actions += blocComplement(it);
   if(modifiable) actions += blocEditer(it, gereParTreso && !sienne);   // propriétaire (membre OU trésorier) : modifier/supprimer sa demande tant qu'elle n'est ni validée ni remboursée
+  // Le trésorier gère les pièces de n'importe quelle demande, y compris celles d'un membre
+  // et celles déjà validées ou remboursées : un contrôle réclame souvent une pièce manquante.
+  if(isTreso()) actions += blocPieces(it, "req");
   if(sienne && !isTreso() && !modifiable) actions += blocContact(it);
   if(isTreso() && sienne && it.status === "En attente"){
     actions += `<div class="callout"><b>Votre propre demande</b>
@@ -7420,7 +7456,7 @@ $("#d_body").addEventListener("click", async e => {
     }
     await refresh();
     const maj2 = state.items.find(i => i.id === it.id);
-    if(maj2){ state.proofUrls[it.id] = await afficherPieces(maj2); renderDrawer(maj2); }
+    if(maj2){ state.proofUrls[it.id] = await afficherPieces(maj2, isTreso() ? { id:it.id, type:"req" } : null); renderDrawer(maj2); }
     await dire("Demande modifiée", maj.object + " — " + euro(maj.amount)
       + (pjTxt ? "\n\n" + pjTxt.charAt(0).toUpperCase() + pjTxt.slice(1) + "." : "")
       + (gereParTreso
@@ -7491,7 +7527,7 @@ $("#d_body").addEventListener("click", async e => {
       staged.fix = [];
       await refresh();
       const maj2 = state.items.find(x => x.id === it.id);
-      if(maj2){ state.proofUrls[it.id] = await afficherPieces(maj2); renderDrawer(maj2); }
+      if(maj2){ state.proofUrls[it.id] = await afficherPieces(maj2, isTreso() ? { id:it.id, type:"req" } : null); renderDrawer(maj2); }
       await loadEvents(it.id);
       mailComplementRecu(it, it.status === "Refusée" || it.status === "À corriger");
       mailContactTreso(it, mot, ajouts.length, state.profile.email);
