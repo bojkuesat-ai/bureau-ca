@@ -882,6 +882,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
       <div class="card" style="padding:14px 16px">
         <p class="hint" style="margin:0 0 10px">Pour chaque jour : ouvert ou non, et l'heure limite (heure belge). « Sans limite » = ouvert toute la journée. En tant que trésorier, vous n'êtes jamais bloqué par ces horaires.</p>
         <div id="horBox"></div>
+        <p class="hint" id="horNow" style="margin:12px 0 0"></p>
         <div style="display:flex;gap:10px;margin-top:12px"><button class="btn ok" id="horSave">Enregistrer les horaires</button><button class="btn ghost" id="horReset">Tout ouvrir (défaut)</button></div>
       </div>
     </div>
@@ -1587,7 +1588,50 @@ const euro = n => (Number(n)||0).toLocaleString("fr-BE",{minimumFractionDigits:2
 const fdate = iso => iso ? iso.split("-").reverse().join("/") : "—";
 // date du jour en heure LOCALE (et non UTC) : évite un décalage d'un jour près de minuit,
 // critique depuis que les exercices basculent au 1er juillet / 30 juin.
-const dateLocale = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+/* Un téléphone dont l'horloge est fausse fausserait l'ouverture du dépôt et la date
+   des demandes. On mesure une fois l'écart avec l'heure du serveur Supabase et on
+   l'applique partout via maintenant(). Si le serveur ne répond pas, on garde
+   l'horloge de l'appareil : on n'empire jamais la situation. */
+let ecartHorloge = 0;                 // millisecondes à ajouter à l'horloge locale
+let sourceHorloge = "appareil";       // "serveur" | "jeton" | "appareil"
+const maintenant = () => new Date(Date.now() + ecartHorloge);
+async function synchroniserHorloge(){
+  try{
+    const t0 = Date.now();
+    const rep = await fetch(SUPABASE_URL + "/rest/v1/", { method:"HEAD", cache:"no-store",
+      headers:{ apikey: SUPABASE_ANON_KEY } });
+    const t1 = Date.now();
+    const brut = rep.headers.get("date");
+    const serveur = brut ? Date.parse(brut) : NaN;
+    if(!isNaN(serveur)){
+      // l'en-tête date l'instant du serveur : on compense la moitié de l'aller-retour
+      const ecart = serveur + Math.round((t1 - t0) / 2) - t1;
+      ecartHorloge = Math.abs(ecart) < 5000 ? 0 : ecart;   // moins de 5 s : sans objet
+      sourceHorloge = "serveur";
+      return;
+    }
+  }catch(_){}
+  /* Second recours quand l'en-tête n'est pas exposé : le jeton de session est signé
+     par le serveur et porte son heure d'émission. Il a moins d'une heure, donc une
+     horloge locale antérieure à cette émission est forcément fausse. */
+  try{
+    const { data } = await sb.auth.getSession();
+    const tok = data && data.session && data.session.access_token;
+    if(tok){
+      const c = JSON.parse(atob(tok.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));
+      const emis = Number(c && c.iat) * 1000;
+      if(emis && Date.now() < emis - 60000){ ecartHorloge = emis - Date.now(); sourceHorloge = "jeton"; }
+      else if(emis) sourceHorloge = "jeton";
+    }
+  }catch(_){}
+}
+function ecartHorlogeTxt(){
+  const m = Math.abs(ecartHorloge);
+  if(m < 5000) return "";
+  const j = Math.floor(m / 86400000), hh = Math.floor(m / 3600000) % 24, mm = Math.round(m / 60000) % 60;
+  return (j ? j + " j " : "") + (hh ? hh + " h " : "") + (j ? "" : mm + " min");
+}
+const dateLocale = () => { const d = maintenant(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 
 /* ===== E-mails (Amazon SES via Edge Function) + reçu par lien ===== */
 const SEND_FN = SUPABASE_URL + "/functions/v1/send-email";
@@ -2520,6 +2564,7 @@ async function loadProfile(user){
   if($("#tabTva")) $("#tabTva").hidden = !isTreso();
   if($("#btnMsg")) $("#btnMsg").style.display = isTreso() ? "none" : "inline-flex";
   try{ brancherBrouillon("req"); brancherBrouillon("dir"); restaurerBrouillon("req"); restaurerBrouillon("dir"); }catch(_){}
+  try{ await synchroniserHorloge(); }catch(_){}
   if(!$("#f_date").value) $("#f_date").value = dateLocale();
   majFormulaire();
   majHoraire();
@@ -2552,7 +2597,7 @@ async function refresh(){
   if(r.error) return toast("Chargement impossible : "+r.error.message);
   state.items = r.data || [];
   if(r.tronque) state.tronque = "demandes";
-  try{ const _hc = await sb.from("caisse_config").select("horaires").eq("id",1).maybeSingle(); if(_hc.data && _hc.data.horaires) state.horaires = _hc.data.horaires; }catch(_){}
+  try{ const _hc = await sb.from("caisse_config").select("horaires").eq("id",1).maybeSingle(); if(_hc.data && _hc.data.horaires) state.horaires = normHoraires(_hc.data.horaires); }catch(_){}
   try{ const _tc = await sb.from("caisse_config").select("treso_email").eq("id",1).maybeSingle();
        if(_tc.data && _tc.data.treso_email) state.tresoEmail = String(_tc.data.treso_email).trim() || null; }catch(_){}
   try{ const _cc = await sb.from("caisse_config").select("compta").eq("id",1).maybeSingle();
@@ -4351,6 +4396,17 @@ function renderHoraires(){
       <select data-hj="${j}" data-hf="limite" ${c.ouvert?"":"disabled"}>${opts}</select>
     </div>`;
   }).join("");
+  const now = heureBruxelles();
+  const c = H[now.j] || H[String(now.j)];
+  const ouvert = fenetreOuverte();
+  const el = $("#horNow");
+  const dec = ecartHorlogeTxt();
+  if(el) el.innerHTML = `Nous sommes <b>${now.jour} ${now.dateTxt}, ${now.heureTxt}</b> (heure belge). `
+    + (ouvert ? `Le dépôt est <b>ouvert</b> pour les membres` : `Le dépôt est <b>fermé</b> pour les membres`)
+    + (c && c.ouvert && c.limite != null ? ` — ${now.jour} est ouvert jusqu'à ${c.limite}h.` : ".")
+    + (sourceHorloge === "serveur" ? ` Heure vérifiée auprès du serveur${dec ? ` (horloge de cet appareil décalée de ${dec}, corrigée)` : ""}.`
+       : sourceHorloge === "jeton" ? ` Heure recoupée avec la session${dec ? ` (horloge de cet appareil décalée de ${dec}, corrigée)` : ""}.`
+       : ` Heure lue sur cet appareil (serveur injoignable).`);
 }
 function lireHorairesUI(){
   const H = {};
@@ -4539,7 +4595,7 @@ if($("#viderBrouillonDir")) $("#viderBrouillonDir").onclick = () => {
   effacerBrouillon("dir"); $("#directForm").reset(); staged.dir = []; renderStaged("dir"); toast("Formulaire réinitialisé.");
 };
 if($("#horSave")) $("#horSave").onclick = saveHoraires;
-if($("#horReset")) $("#horReset").onclick = () => { state.horaires = JSON.parse(JSON.stringify(HORAIRES_DEFAUT)); state.horEdited = false; renderHoraires(); toast("Réglages par défaut restaurés (pense à Enregistrer)."); };
+if($("#horReset")) $("#horReset").onclick = () => { state.horaires = normHoraires(HORAIRES_DEFAUT); state.horEdited = false; renderHoraires(); toast("Réglages par défaut restaurés (pense à Enregistrer)."); };
 document.addEventListener("change", e => {
   const c = e.target.closest('[data-hf="ouvert"]'); if(!c) return;
   const j = c.dataset.hj;
@@ -4859,6 +4915,7 @@ async function resynchroniser(){
 }
 setInterval(() => { if(!document.hidden) resynchroniser(); }, 30000);
 setInterval(() => { if(state.view === "mine") majHoraire(); }, 60000);
+setInterval(() => { synchroniserHorloge().then(() => { try{ majHoraire(); }catch(_){} }); }, 1800000);
 document.addEventListener("visibilitychange", () => { if(!document.hidden) resynchroniser(); });
 window.addEventListener("online", resynchroniser);
 
@@ -4880,22 +4937,49 @@ $("#pieceInfoOk").onclick = () => $("#pieceInfo").classList.remove("open");
 $("#pieceInfo").addEventListener("click", e => { if(e.target.id === "pieceInfo") $("#pieceInfo").classList.remove("open"); });
 
 /* ---------- fenêtre de dépôt (admins seulement) ---------- */
+const NOMS_JOURS = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"];
+/* Le jour était déduit du NOM abrégé du jour rendu par le navigateur (« sam. », « dim. »).
+   Sur un appareil dont la langue système n'est pas le français, ce nom arrive en anglais
+   ou en néerlandais (« Sat », « za »), aucune correspondance n'est trouvée et le code
+   retombait sur lundi : les demandes du week-end étaient alors refusées. On calcule
+   désormais la date belge et on en déduit le jour par le calendrier, sans aucun texte. */
 function heureBruxelles(){
-  const p = new Intl.DateTimeFormat("fr-FR", { timeZone:"Europe/Brussels",
-    weekday:"short", hour:"2-digit", hour12:false, minute:"2-digit" }).formatToParts(new Date());
-  const h = +p.find(x=>x.type==="hour").value;
-  const min = +p.find(x=>x.type==="minute").value;
-  const jourTxt = p.find(x=>x.type==="weekday").value.toLowerCase();
-  const map = { lun:1, mar:2, mer:3, jeu:4, ven:5, sam:6, dim:7 };
-  const j = Object.entries(map).find(([k]) => jourTxt.startsWith(k))?.[1] || 1;
-  return { j, h, min };
+  const p = new Intl.DateTimeFormat("en-GB", { timeZone:"Europe/Brussels",
+    year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false }).formatToParts(maintenant());
+  const g = t => { const x = p.find(v => v.type === t); return x ? Number(x.value) : NaN; };
+  const h = (g("hour") % 24) || 0, min = g("minute") || 0;
+  const d = new Date(Date.UTC(g("year"), g("month") - 1, g("day")));
+  const dow = d.getUTCDay();                       // 0 = dimanche … 6 = samedi
+  const j = isNaN(dow) ? 1 : (dow === 0 ? 7 : dow); // 1 = lundi … 7 = dimanche
+  return { j, h, min, jour: NOMS_JOURS[j-1],
+    dateTxt: String(g("day")).padStart(2,"0") + "/" + String(g("month")).padStart(2,"0") + "/" + g("year"),
+    heureTxt: String(h).padStart(2,"0") + "h" + String(min).padStart(2,"0") };
+}
+
+/* Les horaires viennent de la base : un enregistrement ancien ou partiel ne doit pas
+   fermer un jour par accident. Un jour absent est considéré comme ouvert, pas fermé. */
+function normHoraires(src){
+  const vrai = v => v === true || v === "true" || v === 1 || v === "1" || v === "on";
+  const lim  = v => (v === null || v === undefined || v === "" || v === "null" || isNaN(Number(v))) ? null : Number(v);
+  const brut = (src && typeof src === "object") ? src : {};
+  const cles = Object.keys(brut);
+  // très ancien format à index 0–6 (0 = dimanche) : on le ramène sur 1–7 (1 = lundi)
+  const ancien = cles.length > 0 && cles.includes("0") && cles.every(k => /^[0-6]$/.test(k));
+  const H = {};
+  for(let j = 1; j <= 7; j++){
+    const c = ancien ? brut[String(j % 7)] : (brut[j] !== undefined ? brut[j] : brut[String(j)]);
+    H[j] = (c && typeof c === "object") ? { ouvert: vrai(c.ouvert), limite: lim(c.limite) }
+                                        : { ouvert: true, limite: null };
+  }
+  return H;
 }
 
 function fenetreOuverte(){
   const { j, h } = heureBruxelles();
   const H = state.horaires || HORAIRES_DEFAUT;
   const c = H[j] || H[String(j)];
-  if(!c || !c.ouvert) return false;                       // jour fermé
+  if(!c) return true;                                     // jour inconnu du réglage : ouvert
+  if(!c.ouvert) return false;                             // jour explicitement fermé
   if(c.limite === null || c.limite === undefined || c.limite === "") return true;  // ouvert toute la journée
   return h < Number(c.limite);                            // avant l'heure limite (ex. 16 → fermé dès 16h00)
 }
@@ -4947,7 +5031,7 @@ function majHoraire(){
     box.className = "horaire " + (ouvert ? "ouvert" : "ferme");
     box.innerHTML = ouvert
       ? `<span class="hic">🟢</span><div><b>Dépôt ouvert</b><span>Vous pouvez introduire une demande.</span></div>`
-      : `<span class="hic">🔒</span><div><b>Dépôt fermé</b><span>L'introduction de demandes est momentanément fermée. ${esc(texteHoraires())}</span></div>`;
+      : `<span class="hic">🔒</span><div><b>Dépôt fermé</b><span>L'introduction de demandes est momentanément fermée. ${esc(texteHoraires())} (nous sommes ${esc(heureBruxelles().jour)} ${esc(heureBruxelles().heureTxt)}, heure belge.)</span></div>`;
   }
   const form = $("#reqForm");
   if(form) [...form.querySelectorAll("input,select,textarea,button")].forEach(el => {
