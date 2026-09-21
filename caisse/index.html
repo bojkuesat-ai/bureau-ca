@@ -1585,7 +1585,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = s => document.querySelector(s);
 const HORAIRES_DEFAUT = {1:{ouvert:true,limite:null},2:{ouvert:true,limite:null},3:{ouvert:true,limite:null},4:{ouvert:true,limite:null},5:{ouvert:true,limite:null},6:{ouvert:true,limite:null},7:{ouvert:true,limite:null}};
-const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], budgets:[], caMembres:[], caMe:null, budgetFiltre:"tous", horaires:HORAIRES_DEFAUT, horEdited:false, compta:{}, comptaEdited:false, selected:null, view:"mine", proofUrls:{}, edDrop:new Set(),
+const state = { profile:null, items:[], members:[], expenses:[], incomes:[], closures:[], messages:[], budgets:[], caMembres:[], caMe:null, budgetFiltre:"tous", horaires:HORAIRES_DEFAUT, horEdited:false, compta:{}, comptaEdited:false, selected:null, view:"mine", proofUrls:{}, eventsHTML:{}, edDrop:new Set(),
                 channel:null, lastStatus:{}, primed:false, lastSync:null, sel:new Set(),
                 drawerDirty:false, tresoEmail:null, tronque:null };
 
@@ -7340,9 +7340,13 @@ function renderDrawer(it){
       <b style="color:#c47f17">Demande de réexamen du demandeur · ${fstamp(it.reexamen_at)}</b><p>${esc(it.reexamen_msg||"")}</p></div>` : ""}
     <div><div class="eyebrow" style="margin-bottom:7px">Pièces justificatives</div>${proofHTML}</div>
     ${actions}
-    <div><div class="eyebrow" style="margin-bottom:9px">Historique</div><div class="timeline" id="d_events">${isTreso()?"…":timelineMembre(it)}</div></div>`;
+    <div><div class="eyebrow" style="margin-bottom:9px">Historique</div><div class="timeline" id="d_events">${isTreso()?(state.eventsHTML[it.id]||"…"):timelineMembre(it)}</div></div>`;
   state.drawerDirty = false;
   state.tiroirStatut = it.status;
+  /* Le panneau est redessiné à chaque synchronisation (30 s, ou dès qu'une demande change).
+     L'historique était remplacé par « … » et jamais rechargé : il disparaissait après
+     quelques secondes. On affiche la dernière version connue et on la rafraîchit. */
+  if(isTreso()) loadEvents(it.id);
 }
 
 function timelineMembre(it){
@@ -7357,9 +7361,12 @@ function timelineMembre(it){
   return evs.map(e=>`<div class="ev"><time>${fstamp(e.at)}</time>${esc(e.txt)}</div>`).join("");
 }
 async function loadEvents(id){
-  const { data } = await sb.from("events").select("*").eq("request_id", id).order("at",{ascending:true});
+  const { data, error } = await sb.from("events").select("*").eq("request_id", id).order("at",{ascending:true});
+  if(error) return;                       // échec réseau passager : on garde ce qui est affiché
+  const html = (data||[]).map(e=>`<div class="ev"><time>${fstamp(e.at)}</time>${esc(e.what)} — ${esc(e.who)}</div>`).join("") || "—";
+  state.eventsHTML[id] = html;
   const el = $("#d_events"); if(!el || state.selected!==id) return;
-  el.innerHTML = (data||[]).map(e=>`<div class="ev"><time>${fstamp(e.at)}</time>${esc(e.what)} — ${esc(e.who)}</div>`).join("") || "—";
+  if(el.innerHTML !== html) el.innerHTML = html;
 }
 
 /* ---- pièces jointes dans « Modifier la demande » ----
