@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="app-build" content="21.09.2026 · 2">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -572,12 +573,13 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" style="opacity:.55;font-size:11px">version 21.09 · montant</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 21.09.2026 · 2</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
     <button id="tabMine" aria-pressed="true">Mes demandes</button>
     <button id="tabDirect" aria-pressed="false">Paiement direct</button>
+    <button id="tabPres" aria-pressed="false" hidden>Dépenses présidente</button>
     <button id="tabTreso" aria-pressed="false" hidden>À traiter<span class="pill" id="pillReq" hidden>0</span></button>
     <button id="tabReexam" aria-pressed="false" hidden>Réexamens<span class="pill" id="pillReexam" hidden>0</span></button>
     <button id="tabExpenses" aria-pressed="false" hidden>Dépenses</button>
@@ -1185,6 +1187,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
       <div class="toolbar">
         <input type="text" id="expSearch" placeholder="Objet, fournisseur, montant, catégorie…">
         <select id="expAnnee" style="margin-left:8px"></select>
+        <select id="expOrigine" style="margin-left:8px"><option value="">Toutes les dépenses</option><option value="presidente">Introduites par la présidente</option></select>
         <button class="btn ghost sm" id="depCsvBtn" style="margin-left:8px">Importer un CSV (ING)</button>
         <input type="file" id="depCsvFile" hidden>
       </div>
@@ -1423,6 +1426,48 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
     </div>
   </section>
 
+  <section id="viewPres" class="stack" hidden>
+    <div class="card pad">
+      <div class="eyebrow">Carte et compte de l'ASBL</div>
+      <h2 style="font-size:22px;margin:6px 0 6px">Enregistrer une dépense payée par l'ASBL</h2>
+      <p class="hint" style="margin:0 0 12px">Chaque achat réglé avec la carte ou le compte de l'association. La dépense entre directement dans la comptabilité, à votre nom.</p>
+      <div class="callout" style="margin:0 0 16px"><b>À savoir avant d'enregistrer</b>
+        <p>Au moins une pièce justificative est obligatoire (ticket, facture…). Une fois enregistrée, la dépense ne peut plus être modifiée ni supprimée de votre côté : seul le trésorier peut la corriger. Elle porte votre nom, avec la date et l'heure de saisie.</p></div>
+      <form id="presForm" class="stack" style="gap:14px">
+        <div class="grid2">
+          <div class="field"><label for="p_date">Date de la dépense</label><input type="date" id="p_date" required></div>
+          <div class="field"><label for="p_amount">Montant TTC (€)</label><input type="number" id="p_amount" step="0.01" min="0.01" placeholder="0,00" required></div>
+        </div>
+        <div class="field"><label for="p_object">Objet de la dépense</label>
+          <input type="text" id="p_object" maxlength="90" placeholder="Ex. Courses pour la journée d'accueil" required></div>
+        <div class="grid2">
+          <div class="field"><label for="p_payee">Commerçant ou bénéficiaire</label>
+            <input type="text" id="p_payee" maxlength="80" placeholder="Ex. Colruyt Laeken" required></div>
+          <div class="field"><label for="p_cat">Catégorie</label>
+            <select id="p_cat"><option>Fournitures</option><option>Matériel</option><option>Événements</option><option>Prestataires</option><option>Communication</option><option>Loyer &amp; charges</option><option>Assurances</option><option>Taxes &amp; cotisations</option><option>Autre</option></select></div>
+        </div>
+        <div class="field"><label for="p_method">Moyen de paiement</label>
+          <select id="p_method"><option>Carte de l'association</option><option>Virement</option><option>Domiciliation</option><option>Espèces</option></select></div>
+        <div class="field">
+          <label>Pièces justificatives <span style="color:var(--red)">(obligatoire)</span></label>
+          <div class="attach">
+            <select id="p_kind"><option>Ticket de caisse</option><option>Facture</option><option>Reçu de paiement par carte</option><option>Preuve de virement</option><option>Bon de commande</option><option>Autre pièce</option></select>
+            <input type="file" id="p_proof" accept="image/*,application/pdf">
+            <button type="button" class="btn ghost sm" id="p_add">Joindre</button>
+          </div>
+          <div id="p_staged" class="staged"></div>
+        </div>
+        <div class="field"><label for="p_note">Commentaire (facultatif)</label>
+          <textarea id="p_note" maxlength="400" placeholder="Contexte : pour quelle activité, avec qui…"></textarea></div>
+        <div class="err" id="presErr" hidden></div>
+        <div><button class="btn" type="submit" id="presBtn">Enregistrer la dépense</button></div>
+      </form>
+    </div>
+    <div>
+      <div class="eyebrow" style="margin:6px 0 10px">Mes dépenses enregistrées</div>
+      <div class="card" style="overflow:hidden"><div id="presList"></div></div>
+    </div>
+  </section>
 </main>
 
 <footer style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -2567,6 +2612,11 @@ async function loadProfile(user){
   if($("#tabBudget")) $("#tabBudget").hidden = !isTreso();
   if($("#tabCompta")) $("#tabCompta").hidden = !isTreso();
   if($("#tabTva")) $("#tabTva").hidden = !isTreso();
+  // accès « dépenses ASBL » : décidé en base (table depensiers), jamais par le poste affiché
+  state.depensier = null;
+  try{ const dp = await sb.from("depensiers").select("user_id,titre").eq("user_id", prof.id).maybeSingle();
+       if(dp && dp.data) state.depensier = dp.data; }catch(_){}
+  if($("#tabPres")) $("#tabPres").hidden = !state.depensier || isTreso();
   if($("#btnMsg")) $("#btnMsg").style.display = isTreso() ? "none" : "inline-flex";
   try{ brancherBrouillon("req"); brancherBrouillon("dir"); restaurerBrouillon("req"); restaurerBrouillon("dir"); }catch(_){}
   try{ await synchroniserHorloge(); }catch(_){}
@@ -2655,16 +2705,18 @@ function renderExpenses(){
   const anE = majSelectAnnees("#expAnnee", state.expenses, "expense_date");
   const list = trier(ouvert(mesDepenses())
     .filter(e => dansAnnee(e.expense_date, anE))
-    .filter(e => !q || champsEcriture(e, e.payee).includes(q)), "exp");
+    .filter(e => !q || champsEcriture(e, e.payee).includes(q))
+    .filter(e => !$("#expOrigine") || !$("#expOrigine").value || e.origine === $("#expOrigine").value), "exp");
   $("#expList").innerHTML = list.length ? list.map(e => `<div class="row" data-exp="${e.id}" tabindex="0" role="button">
       <div class="date mono" style="font-size:13px">${fdate(e.expense_date)}</div>
-      <div><div class="obj">${esc(e.object)}</div><div class="meta">${esc(e.payee)} · ${esc(e.category)}${piecesDe(e).length?` · ${piecesDe(e).length} pièce(s)`:" · sans pièce"}</div></div>
+      <div><div class="obj">${esc(e.object)}</div><div class="meta">${estPresidente(e)?`<b style="color:var(--gold)">Par ${esc(e.author_name||"la présidente")} (présidente)</b> · `:""}${esc(e.payee)} · ${esc(e.category)}${piecesDe(e).length?` · ${piecesDe(e).length} pièce(s)`:" · sans pièce"}</div></div>
       <div><span class="tag t-valide">${esc(e.method)}</span></div>
       <div class="amt">${euro(e.amount)}</div><div class="chev">›</div></div>`).join("")
     : emptyHTML("Aucune dépense directe","Enregistrez ci-dessus les achats que vous réglez depuis le compte de l'association.");
 }
 $("#expSearch").oninput = render;
 if($("#expAnnee")) $("#expAnnee").onchange = render;
+if($("#expOrigine")) $("#expOrigine").onchange = render;
 
 $("#expForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -2710,6 +2762,8 @@ async function ouvrirDepense(id){
   $("#d_object").textContent = dep.object;
   $("#d_body").innerHTML = `
     <div class="stampwrap"><div class="eyebrow">Montant payé</div><div class="bigamt">${euro(dep.amount)}</div></div>
+    ${estPresidente(dep) ? `<div class="callout"><b>Introduite par ${esc(dep.author_name||"la présidente")} (présidente)</b>
+      <p>Enregistrée le ${fstamp(dep.created_at)} depuis son propre accès, avec la carte ou le compte de l'ASBL. Elle ne peut plus la modifier : vous seul le pouvez.</p></div>` : ""}
     <dl class="facts">
       <dt>Bénéficiaire</dt><dd>${esc(dep.payee)}</dd>
       <dt>Date</dt><dd>${fdate(dep.expense_date)}</dd>
@@ -2881,7 +2935,7 @@ $("#d_body").addEventListener("click", async e => {
 });
 
 /* ---------- pièces jointes multiples ---------- */
-const staged = { exp:[], inc:[], req:[], fix:[], dir:[] , msg: [], pj: [], ed: [] };
+const staged = { exp:[], inc:[], req:[], fix:[], dir:[] , msg: [], pj: [], ed: [], pres: [] };
 const PREUVE_ACHAT   = ["Facture","Ticket de caisse","Bon de commande"];
 const PREUVE_PAIEMENT = ["Extrait de compte","Preuve de virement","Reçu de paiement par carte","Reçu signé du commerçant"];
 
@@ -2939,7 +2993,7 @@ function majControle(){
 }
 
 function renderStaged(cle){
-  const el = $({exp:"#e_staged", inc:"#i_staged", req:"#r_staged", fix:"#d_staged", dir:"#fd_staged", pj:"#pj_staged", ed:"#ed_staged"}[cle]);
+  const el = $({exp:"#e_staged", inc:"#i_staged", req:"#r_staged", fix:"#d_staged", dir:"#fd_staged", pj:"#pj_staged", ed:"#ed_staged", pres:"#p_staged"}[cle]);
   if(!el) return;
   el.innerHTML = staged[cle].map((p,n) => `<div class="stitem">
     <span class="k">${esc(p.kind)}</span>
@@ -3125,13 +3179,14 @@ function brancherAttache(cle, selKind, selFile, selBtn){
     $(selFile).value = "";
     renderStaged(cle);
     majControle();
-    if(cle!=="fix") erreurForm({exp:"#expErr", inc:"#incErr", req:"#reqErr", dir:"#directErr"}[cle], null);
+    if(cle!=="fix") erreurForm({exp:"#expErr", inc:"#incErr", req:"#reqErr", dir:"#directErr", pres:"#presErr"}[cle], null);
   };
 }
 brancherAttache("exp", "#e_kind", "#e_proof", "#e_add");
 brancherAttache("inc", "#i_kind", "#i_proof", "#i_add");
 brancherAttache("req", "#r_kind", "#f_proof", "#r_add");
 brancherAttache("dir", "#fd_kind", "#fd_proof", "#fd_add");
+brancherAttache("pres", "#p_kind", "#p_proof", "#p_add");
 
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-drop]"); if(!b) return;
@@ -5667,6 +5722,9 @@ function setView(v){
   if($("#tabCompta")) $("#tabCompta").setAttribute("aria-pressed", v==="compta");
   if($("#tabTva")) $("#tabTva").setAttribute("aria-pressed", v==="tva");
   $("#tabDirect").setAttribute("aria-pressed", v==="direct");
+  if($("#tabPres")) $("#tabPres").setAttribute("aria-pressed", v==="pres");
+  if($("#viewPres")) $("#viewPres").hidden = v!=="pres";
+  if(v==="pres"){ if(!$("#p_date").value) $("#p_date").value = dateLocale(); $("#p_date").max = dateLocale(); renderPres(); }
   $("#viewMine").hidden = v!=="mine";
   $("#viewTreso").hidden = v!=="treso";
   $("#viewReexam").hidden = v!=="reexam";
@@ -5706,6 +5764,7 @@ if($("#alerteDormBtn")) $("#alerteDormBtn").onclick = () => alerterDormantes(fal
 if($("#ann_send")) $("#ann_send").onclick = envoyerAnnonceMembres;
 $("#tabOverview").onclick = () => choisirVue("overview");
 $("#tabExpenses").onclick = () => choisirVue("expenses");
+if($("#tabPres")) $("#tabPres").onclick = () => choisirVue("pres");
 $("#tabIncomes").onclick = () => choisirVue("incomes");
 if($("#tabReprise")) $("#tabReprise").onclick = () => choisirVue("reprise");
 if($("#tabExtraits")) $("#tabExtraits").onclick = () => choisirVue("extraits");
@@ -7415,7 +7474,7 @@ function renderDrawer(it){
   </div>`;
   if(isTreso() && it.origin_expense && !estClos(it.expense_date)) actions += `<div class="fixbox">
     <b>Dépense attribuée</b>
-    <p>Ce paiement direct vient de l'onglet Dépenses. Erreur de membre ou de ligne ? Remettez-le en dépense : il quitte cette fiche et retourne dans Dépenses.</p>
+    <p>Ce paiement direct vient de l'onglet Dépenses${estPresidente(it.origin_expense) ? ` (dépense introduite par ${esc(it.origin_expense.author_name||"la présidente")}, présidente, le ${fstamp(it.origin_expense.created_at)})` : ""}. Erreur de membre ou de ligne ? Remettez-le en dépense : il quitte cette fiche et retourne dans Dépenses.</p>
     <button type="button" class="btn ghost sm" data-desattrib="${esc(it.id)}">Remettre en dépense</button></div>`;
   if(sienne && !isTreso() && !modifiable) actions += blocContact(it);
   if(isTreso() && sienne && it.status === "En attente"){
@@ -8133,7 +8192,8 @@ function dosEcritures(){
       infos.push(["TVA", "HT " + dosEur(v.ht) + "   —   TVA " + dosEur(v.tva) + "  (" + e.vat_rate + " %)"]);
     } else infos.push(["TVA", "Hors TVA (franchise)"]);
     if(e.supplier_vat) infos.push(["N° TVA du fournisseur", e.supplier_vat]);
-    if(e.author_name) infos.push(["Enregistrée par", e.author_name]);
+    if(e.origine === "presidente") infos.push(["Introduite par", (e.author_name || "") + " (présidente), le " + fstamp(e.created_at)]);
+    else if(e.author_name) infos.push(["Enregistrée par", e.author_name]);
     if(e.note) infos.push(["Commentaire", e.note]);
     arr.push({ nature: "Dépense directe", dossier: "Depenses", ref: "",
       date: String(e.expense_date || "").slice(0, 10), tiers: e.payee || "-",
@@ -8866,6 +8926,136 @@ $("#notifBtn").onclick = async () => {
     }, 2500);
   }
 })();
+
+/* ---------- dépenses de la présidente ----------
+   La présidente a accès à la carte et au compte de l'ASBL. Elle enregistre elle-même
+   ses dépenses, qui comptent tout de suite (pas de validation), mais :
+   – au moins une pièce justificative est obligatoire (vérifié ici ET par la base) ;
+   – la dépense porte son nom et l'heure de saisie (origine = "presidente") ;
+   – elle ne peut ni la modifier ni la supprimer ensuite : seul le trésorier le peut. */
+const estPresidente = e => e && e.origine === "presidente";
+
+async function renderPres(){
+  const box = $("#presList"); if(!box || !state.depensier) return;
+  const { data, error } = await sb.from("expenses").select("*")
+    .eq("created_by", state.profile.id).eq("origine", "presidente")
+    .order("expense_date", { ascending:false });
+  if(error){ box.innerHTML = `<div class="hint" style="padding:14px 16px">Liste indisponible : ${esc(error.message)}</div>`; return; }
+  const list = data || [];
+  box.innerHTML = list.length ? list.map(e => `<div class="row" style="cursor:default">
+      <div class="date mono" style="font-size:13px">${fdate(e.expense_date)}</div>
+      <div><div class="obj">${esc(e.object)}</div><div class="meta">${esc(e.payee)} · ${esc(e.category)} · ${piecesDe(e).length} pièce(s) · enregistrée le ${fstamp(e.created_at)}</div></div>
+      <div><span class="tag t-valide">${esc(e.method)}</span></div>
+      <div class="amt">${euro(e.amount)}</div><div></div></div>`).join("")
+    : `<div class="hint" style="padding:14px 16px">Aucune dépense enregistrée pour l'instant.</div>`;
+}
+
+$("#presForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  if(!state.depensier) return;
+  const btn = $("#presBtn"); if(btn.disabled) return;
+  erreurForm("#presErr", null);
+  rattraperFichier("pres", "#p_kind", "#p_proof");          // fichier choisi sans cliquer « Joindre »
+  const date = $("#p_date").value, montant = Math.round(parseFloat(String($("#p_amount").value).replace(",", ".")) * 100) / 100;
+  const objet = $("#p_object").value.trim(), benef = $("#p_payee").value.trim();
+  if(!date) return erreurForm("#presErr", "Indiquez la date de la dépense.");
+  if(date > dateLocale()) return erreurForm("#presErr", "La date ne peut pas être dans le futur.");
+  if(estClos(date)) return erreurForm("#presErr", "Cet exercice est clôturé : la date n'est plus acceptée.");
+  if(!(montant > 0)) return erreurForm("#presErr", "Indiquez un montant supérieur à 0.");
+  if(!objet) return erreurForm("#presErr", "Indiquez l'objet de la dépense.");
+  if(!benef) return erreurForm("#presErr", "Indiquez le commerçant ou le bénéficiaire.");
+  if(!staged.pres.length) return erreurForm("#presErr", "Joignez au moins une pièce justificative (ticket, facture…) : c'est obligatoire.");
+  if(!await demander("Enregistrer cette dépense",
+      "« " + objet + " » — " + euro(montant) + " le " + fdate(date) + "\n" + benef + " · " + $("#p_method").value
+      + "\n\n" + staged.pres.length + " pièce(s) jointe(s). Une fois enregistrée, vous ne pourrez plus la modifier ni la supprimer : seul le trésorier le peut.",
+      { bouton:"Enregistrer" })) return;
+  btn.disabled = true; btn.textContent = "Envoi…";
+  try{
+    const attachments = await envoyerPieces("pres", "dep");
+    if(!attachments.length) throw new Error("la pièce justificative n'a pas pu être envoyée. Réessayez.");
+    const { error } = await sb.from("expenses").insert({
+      attachments, origine: "presidente",
+      created_by: state.profile.id, author_name: state.profile.name || "",
+      expense_date: date, amount: montant, object: objet, payee: benef,
+      category: $("#p_cat").value, method: $("#p_method").value,
+      vat_rate: "NA", supplier_vat: "", tva_affectation: "taxable",
+      note: $("#p_note").value.trim()
+    });
+    if(error) throw error;
+    $("#presForm").reset(); staged.pres = []; renderStaged("pres");
+    $("#p_date").value = dateLocale();
+    await renderPres();
+    toast("Dépense enregistrée.");
+  }catch(err){
+    erreurForm("#presErr", "Enregistrement impossible : " + (err.message || err));
+  }finally{ btn.disabled = false; btn.textContent = "Enregistrer la dépense"; }
+});
+
+/* ---------- mise à jour automatique de l'appli ----------
+   Chaque version publiée porte un identifiant dans <meta name="app-build">. L'appli
+   relit régulièrement la page sur GitHub (sans cache) et compare. Si une nouvelle version
+   est en ligne, elle se recharge toute seule — mais seulement quand personne n'est en
+   train de saisir quelque chose : panneau ouvert, fenêtre de confirmation, fichier joint
+   pas encore envoyé, champ en cours de frappe ou formulaire commencé. Sinon elle attend
+   le prochain moment calme. Indispensable sur iPhone, où l'appli installée sur l'écran
+   d'accueil n'a pas de bouton « recharger ». */
+const BUILD_ACTUEL = (document.querySelector('meta[name="app-build"]') || {}).content || "";
+let majEnAttente = "";
+let derniereSaisie = 0;
+const formulairesEntames = new Set();
+document.addEventListener("input", e => {
+  derniereSaisie = Date.now();
+  const f = e.target && e.target.closest && e.target.closest("form");
+  if(f && f.id) formulairesEntames.add(f.id);
+}, true);
+// un formulaire vidé (après enregistrement ou « repartir de zéro ») n'est plus entamé
+document.addEventListener("reset", e => { if(e.target && e.target.id) formulairesEntames.delete(e.target.id); }, true);
+
+function saisieEnCours(){
+  if(Date.now() - derniereSaisie < 3 * 60000) return true;                  // frappe récente
+  const a = document.activeElement;
+  if(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== "button") return true;
+  if($("#drawer") && $("#drawer").classList.contains("open")) return true;  // panneau ouvert
+  if(document.querySelector(".overlay.open, #modal.open, #dlgOverlay.open, #confirmOverlay.open")) return true;
+  if(Object.values(staged).some(l => Array.isArray(l) && l.length)) return true;   // pièce pas encore envoyée
+  // formulaires sans brouillon automatique (les demandes des membres en ont un)
+  if([...formulairesEntames].some(id => id !== "reqForm" && id !== "directForm")) return true;
+  if([...document.querySelectorAll("textarea")].some(t => t.value.trim() && !t.closest("#reqForm, #directForm"))) return true;
+  return false;
+}
+
+function appliquerMaj(){
+  if(!majEnAttente || saisieEnCours()) return false;
+  // garde-fou : jamais deux rechargements pour la même version dans la même session
+  try{
+    if(sessionStorage.getItem("caisse.majTentee") === majEnAttente) return false;
+    sessionStorage.setItem("caisse.majTentee", majEnAttente);
+    sessionStorage.setItem("caisse.majFaite", "1");
+  }catch(_){}
+  // une adresse propre à la version évite de recharger une copie gardée en cache
+  location.replace(location.pathname + "?v=" + encodeURIComponent(majEnAttente) + location.hash);
+  return true;
+}
+
+async function verifierMaj(){
+  if(!BUILD_ACTUEL) return;
+  try{
+    const rep = await fetch(location.pathname + "?verif=" + Date.now(), { cache:"no-store" });
+    if(!rep.ok) return;
+    const txt = await rep.text();
+    const m = txt.match(/<meta name="app-build" content="([^"]+)"/);
+    if(m && m[1] && m[1] !== BUILD_ACTUEL) majEnAttente = m[1];
+  }catch(_){ return; }                       // hors ligne : on réessaiera
+  appliquerMaj();
+}
+setInterval(verifierMaj, 2 * 60000);                                  // toutes les 2 minutes
+setInterval(appliquerMaj, 30000);                                     // mise à jour en attente : on guette le moment calme
+document.addEventListener("visibilitychange", () => { if(!document.hidden) verifierMaj(); });
+window.addEventListener("focus", verifierMaj);
+setTimeout(verifierMaj, 15000);                                       // premier contrôle peu après l'ouverture
+// après un rechargement automatique : on le signale discrètement
+try{ if(sessionStorage.getItem("caisse.majFaite")){ sessionStorage.removeItem("caisse.majFaite"); setTimeout(() => toast("Appli mise à jour."), 1500); } }catch(_){}
+if($("#appVersion") && BUILD_ACTUEL) $("#appVersion").textContent = "version " + BUILD_ACTUEL;
 
 /* ---------- démarrage ---------- */
 setMode("signin");
