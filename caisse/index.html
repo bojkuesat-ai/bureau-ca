@@ -572,7 +572,7 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" style="opacity:.55;font-size:11px">version 21.09 · montant</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -2803,6 +2803,36 @@ $("#d_body").addEventListener("click", async e => {
   }catch(_){}
   closeDrawer(); await refresh();
   toast("Dépense attribuée à " + nom + ".");
+});
+
+/* ---------- corriger le montant d'une demande validée ou payée ---------- */
+$("#d_body").addEventListener("click", async e => {
+  const b = e.target.closest("[data-cmsave]"); if(!b) return;
+  if(!isTreso()) return;
+  const it = state.items.find(x => x.id === b.dataset.cmsave);
+  if(!it) return toast("Demande introuvable : rouvrez la fiche.");
+  if(estClos(it.expense_date)) return toast("Exercice clôturé : le montant ne peut plus changer.");
+  const brut = String($("#cm_amount") ? $("#cm_amount").value : "").replace(",", ".");
+  const nouveau = Math.round(Number(brut) * 100) / 100;
+  if(!(nouveau > 0)) return toast("Indiquez un montant supérieur à 0.");
+  const ancien = Math.round(Number(it.amount || 0) * 100) / 100;
+  if(nouveau === ancien) return toast("Le montant est déjà de " + euro(ancien) + ".");
+  if(!await demander("Corriger le montant",
+      "« " + (it.object || "") + " » — " + (it.requester_name || "")
+      + "\n\n" + euro(ancien) + "  →  " + euro(nouveau)
+      + "\n\nLe bilan, les comptes et le dossier de contrôle seront recalculés. Aucun e-mail n'est envoyé.",
+      { bouton:"Corriger" })) return;
+  b.disabled = true;
+  const { data, error } = await sb.from("requests").update({ amount: nouveau }).eq("id", it.id).select("id");
+  b.disabled = false;
+  if(error) return toast("Correction impossible : " + error.message);
+  if(!data || !data.length) return toast("Correction refusée par la base : le montant n'a pas changé.");
+  state.drawerDirty = false;
+  if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  await refresh();
+  const apres = state.items.find(x => x.id === it.id);
+  if(apres && state.selected === it.id) renderDrawer(apres);
+  toast("Montant corrigé : " + euro(nouveau) + ".");
 });
 
 /* ---------- annuler une attribution ---------- */
@@ -7373,6 +7403,16 @@ function renderDrawer(it){
   // Le trésorier gère les pièces de n'importe quelle demande, y compris celles d'un membre
   // et celles déjà validées ou remboursées : un contrôle réclame souvent une pièce manquante.
   if(isTreso()) actions += blocPieces(it, "req");
+  // Montant d'une demande déjà validée ou payée : seul le trésorier peut l'aligner sur la banque
+  if(isTreso() && (it.status === "Validée" || it.status === "Remboursée") && !estClos(it.expense_date)) actions += `<div class="fixbox">
+    <b>Corriger le montant</b>
+    <p>Pour aligner le montant sur ce qui a réellement été viré ou payé (par exemple un centime d'écart avec l'extrait bancaire). Aucun e-mail, aucune ligne d'historique.</p>
+    <div class="attach">
+      <input type="number" id="cm_amount" step="0.01" min="0.01" inputmode="decimal" style="max-width:160px"
+        value="${(Math.round(Number(it.amount||0)*100)/100).toFixed(2)}">
+      <button type="button" class="btn sm" data-cmsave="${esc(it.id)}">Enregistrer le montant</button>
+    </div>
+  </div>`;
   if(isTreso() && it.origin_expense && !estClos(it.expense_date)) actions += `<div class="fixbox">
     <b>Dépense attribuée</b>
     <p>Ce paiement direct vient de l'onglet Dépenses. Erreur de membre ou de ligne ? Remettez-le en dépense : il quitte cette fiche et retourne dans Dépenses.</p>
