@@ -2721,10 +2721,126 @@ async function ouvrirDepense(id){
     <div><div class="eyebrow" style="margin-bottom:7px">Pièces justificatives</div>${proofHTML}</div>
     <div class="actions"><button class="btn ghost" data-dupexp="${dep.id}">Dupliquer</button>
       <button class="btn no" data-delexp="${dep.id}">Supprimer</button></div>
+    ${blocAttribuer(dep)}
     ${blocPieces(dep, "exp")}
     ${blocEditerEcriture(dep, "exp")}`;
   $("#drawer").classList.add("open"); $("#scrim").classList.add("open"); $("#closeDrawer").focus();
 }
+
+/* ---------- attribuer une dépense à un membre ----------
+   Une dépense payée par l'ASBL mais engagée pour un membre (carburant, hôtel…) quitte
+   l'onglet Dépenses et devient un paiement direct déjà payé, au nom du membre. Elle est
+   DÉPLACÉE, jamais copiée : sinon le même montant compterait deux fois dans les sorties.
+   La dépense d'origine est gardée dans origin_expense pour pouvoir annuler l'opération
+   et pour que l'import ING continue de reconnaître la ligne bancaire. */
+const modeDepuisMethode = m => /esp/i.test(m || "") ? "especes" : /carte/i.test(m || "") ? "carte_asbl" : "virement";
+const sansMarqueurBanque = t => String(t || "").replace(/\[mouvement [^\]]+\]\s*/g, "").trim();
+function blocAttribuer(dep){
+  if(!isTreso() || estClos(dep.expense_date) || estReprise(dep)) return "";
+  const membres = (state.members || []).filter(m => m.approved !== false)
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "fr"));
+  if(!membres.length) return "";
+  return `<div class="fixbox">
+    <b>Attribuer à un membre</b>
+    <p>Pour une dépense engagée par ou pour un membre (carburant, hôtel, matériel…). Elle quitte l'onglet Dépenses et devient un paiement direct déjà payé, à son nom. Montant, date, TVA et pièces suivent. Aucun e-mail n'est envoyé.</p>
+    <div class="attach">
+      <select id="attribMembre"><option value="">— Choisir le membre —</option>${
+        membres.map(m => `<option value="${esc(m.id)}">${esc(m.name || m.email || "Membre")}</option>`).join("")}</select>
+      <button type="button" class="btn sm" data-attrib="${esc(dep.id)}">Attribuer</button>
+    </div>
+  </div>`;
+}
+$("#d_body").addEventListener("click", async e => {
+  const b = e.target.closest("[data-attrib]"); if(!b) return;
+  if(!isTreso()) return;
+  const dep = state.expenses.find(x => x.id === b.dataset.attrib);
+  if(!dep) return toast("Dépense introuvable : rouvrez la fiche.");
+  const m = (state.members || []).find(x => x.id === ($("#attribMembre") ? $("#attribMembre").value : ""));
+  if(!m) return toast("Choisissez d'abord le membre.");
+  if(estClos(dep.expense_date)) return toast("Exercice clôturé : attribution impossible.");
+  if(estReprise(dep)) return toast("Une dépense du CA sortant ne s'attribue pas à un membre.");
+  const nom = m.name || "ce membre";
+  if(!await demander("Attribuer à " + nom,
+      "« " + (dep.object || "") + " » — " + euro(dep.amount) + " du " + fdate(dep.expense_date)
+      + "\n\nLa dépense quitte l'onglet Dépenses et devient un paiement direct payé au nom de " + nom
+      + ". Aucun e-mail n'est envoyé. En cas d'erreur, « Remettre en dépense » annule tout.",
+      { bouton:"Attribuer" })) return;
+  b.disabled = true;
+  const midi = new Date(dep.expense_date + "T12:00:00").toISOString();
+  const ligne = {
+    user_id: m.id, requester_name: m.name || "", requester_position: m.position || "",
+    expense_date: dep.expense_date, amount: dep.amount, object: dep.object, category: dep.category || "Paiement direct",
+    kind: "direct", beneficiary: dep.payee || "", pay_mode: modeDepuisMethode(dep.method),
+    note: sansMarqueurBanque(dep.note),
+    vat_rate: dep.vat_rate || "NA", supplier_vat: dep.supplier_vat || "", tva_affectation: dep.tva_affectation || "taxable",
+    attachments: piecesDe(dep), status: "Remboursée", decided_at: midi, paid_at: midi,
+    origin_expense: dep
+  };
+  // la demande est datée du jour de la dépense ; si la base refuse de fixer created_at, on s'en passe
+  let r = await sb.from("requests").insert({ ...ligne, created_at: midi }).select().single();
+  if(r.error && /created_at/i.test(r.error.message || "")) r = await sb.from("requests").insert(ligne).select().single();
+  if(r.error){
+    b.disabled = false;
+    return toast(/origin_expense/i.test(r.error.message || "")
+      ? "Il manque une colonne en base : passez d'abord le SQL de l'attribution."
+      : "Attribution impossible : " + r.error.message);
+  }
+  const nouv = r.data;
+  const d = await sb.from("expenses").delete().eq("id", dep.id).select("id");
+  if(d.error || !d.data || !d.data.length){
+    // retour arrière : la dépense est restée, le paiement direct ne doit pas exister en plus
+    await sb.from("requests").delete().eq("id", nouv.id);
+    b.disabled = false;
+    return toast("Attribution annulée : la dépense n'a pas pu quitter l'onglet Dépenses"
+      + (d.error ? " (" + d.error.message + ")." : "."));
+  }
+  // historique : la demande apparaît comme celle du membre, à la date de la dépense
+  const evs = [{ request_id: nouv.id, who: m.name || "", what: "Demande de paiement direct envoyée", at: midi },
+               { request_id: nouv.id, who: state.profile.name, what: "Paiement effectué", at: midi }];
+  try{
+    const x = await sb.from("events").insert(evs);
+    if(x && x.error) await sb.from("events").insert(evs.map(({ at, ...reste }) => reste));
+  }catch(_){}
+  closeDrawer(); await refresh();
+  toast("Dépense attribuée à " + nom + ".");
+});
+
+/* ---------- annuler une attribution ---------- */
+$("#d_body").addEventListener("click", async e => {
+  const b = e.target.closest("[data-desattrib]"); if(!b) return;
+  if(!isTreso()) return;
+  const it = state.items.find(x => x.id === b.dataset.desattrib);
+  if(!it || !it.origin_expense) return toast("Ce paiement direct ne vient pas de l'onglet Dépenses.");
+  if(estClos(it.expense_date)) return toast("Exercice clôturé : opération impossible.");
+  if(!await demander("Remettre en dépense",
+      "« " + (it.object || "") + " » — " + euro(it.amount)
+      + "\n\nLe paiement direct quitte la fiche de " + (it.requester_name || "ce membre")
+      + " et retourne dans l'onglet Dépenses, avec ses pièces jointes.",
+      { bouton:"Remettre en dépense" })) return;
+  b.disabled = true;
+  const o = { ...it.origin_expense };
+  delete o.id; delete o.created_at;
+  // les corrections faites entre-temps sur le paiement direct sont conservées
+  Object.assign(o, { expense_date: it.expense_date, amount: it.amount, object: it.object,
+    payee: it.beneficiary || o.payee, attachments: piecesDe(it),
+    vat_rate: it.vat_rate, supplier_vat: it.supplier_vat, tva_affectation: it.tva_affectation });
+  const ins = await sb.from("expenses").insert(o).select("id").single();
+  if(ins.error){ b.disabled = false; return toast("Remise en dépense impossible : " + ins.error.message); }
+  // l'historique est mis de côté : si le retrait échoue, on le remet tel quel
+  let evGardes = [];
+  try{ const g = await sb.from("events").select("*").eq("request_id", it.id); evGardes = (g && g.data) || []; }catch(_){}
+  try{ await sb.from("events").delete().eq("request_id", it.id); }catch(_){}
+  const del = await sb.from("requests").delete().eq("id", it.id).select("id");
+  if(del.error || !del.data || !del.data.length){
+    await sb.from("expenses").delete().eq("id", ins.data.id);   // pas de double comptage
+    if(evGardes.length){ try{ await sb.from("events").insert(evGardes.map(({ id, ...reste }) => reste)); }catch(_){} }
+    b.disabled = false;
+    return toast("Opération annulée : le paiement direct n'a pas pu être retiré"
+      + (del.error ? " (" + del.error.message + ")." : "."));
+  }
+  closeDrawer(); await refresh();
+  toast("Remis dans l'onglet Dépenses.");
+});
 
 $("#d_body").addEventListener("click", async e => {
   const b = e.target.closest("[data-delexp]"); if(!b) return;
@@ -3596,13 +3712,16 @@ function prepareImportDepenses(texte){
     e.expense_date + "|" + Number(e.amount||0).toFixed(2) + "|" + slug(String(e.object||"").trim())));
   // Le numéro de mouvement ING est unique : il permet de repérer une ligne déjà importée sans
   // confondre deux opérations réellement distinctes (même commerçant, même montant, même jour).
-  const refsConnues = new Set((state.expenses||[])
+  // les dépenses attribuées à un membre ont quitté l'onglet : on les reprend via origin_expense
+  const attribuees = (state.items||[]).filter(i => i.origin_expense).map(i => ({
+    expense_date: i.expense_date, amount: i.amount, object: i.object, note: i.origin_expense.note }));
+  const refsConnues = new Set([...(state.expenses||[]), ...attribuees]
     .map(e => (String(e.note||"").match(/\[mouvement ([^\]]+)\]/) || [])[1])
     .filter(Boolean));
   // Une dépense déjà saisie à la main n'a pas de numéro de mouvement : on la reconnaît au montant
   // et à une date voisine (la banque peut dater à quelques jours de la saisie). Chaque écriture
   // existante ne neutralise qu'une seule ligne du fichier, pour ne pas écarter de vrais doublons légitimes.
-  const dejaSaisies = (state.expenses||[])
+  const dejaSaisies = [...(state.expenses||[]), ...attribuees]
     .filter(e => !/\[mouvement /.test(String(e.note||"")))
     .map(e => ({ j: Date.parse(e.expense_date + "T00:00:00Z"),
                  m: Number(e.amount||0).toFixed(2), objet: String(e.object||""), pris: false }));
@@ -7254,6 +7373,10 @@ function renderDrawer(it){
   // Le trésorier gère les pièces de n'importe quelle demande, y compris celles d'un membre
   // et celles déjà validées ou remboursées : un contrôle réclame souvent une pièce manquante.
   if(isTreso()) actions += blocPieces(it, "req");
+  if(isTreso() && it.origin_expense && !estClos(it.expense_date)) actions += `<div class="fixbox">
+    <b>Dépense attribuée</b>
+    <p>Ce paiement direct vient de l'onglet Dépenses. Erreur de membre ou de ligne ? Remettez-le en dépense : il quitte cette fiche et retourne dans Dépenses.</p>
+    <button type="button" class="btn ghost sm" data-desattrib="${esc(it.id)}">Remettre en dépense</button></div>`;
   if(sienne && !isTreso() && !modifiable) actions += blocContact(it);
   if(isTreso() && sienne && it.status === "En attente"){
     actions += `<div class="callout"><b>Votre propre demande</b>
@@ -7649,6 +7772,9 @@ $("#d_body").addEventListener("click", async e => {
      une nouvelle ligne d'historique et réécrivait la date de décision. Cela arrivait
      quand le panneau affichait encore l'ancien état : on le remet à jour à la place. */
   const CIBLE = { valider:"Validée", refuser:"Refusée", corriger:"À corriger", payer:"Remboursée", rouvrir:"En attente" };
+  if(act === "rouvrir" && it.origin_expense){
+    return toast("Ce paiement a déjà été débité du compte de l'ASBL. Pour corriger, utilisez « Remettre en dépense ».");
+  }
   if(CIBLE[act] && it.status === CIBLE[act]){
     if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
     state.drawerDirty = false;
