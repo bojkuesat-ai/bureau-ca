@@ -844,6 +844,11 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
         <div class="spacer"></div>
         <span class="hint" id="o_info"></span>
       </div>
+      <div style="margin:0 0 16px">
+        <input type="text" id="gSearch" inputmode="search" autocomplete="off" style="width:100%"
+          placeholder="Rechercher partout : nom, montant, objet, référence, bénéficiaire, date…">
+        <div class="card" id="gResults" hidden style="margin-top:8px;overflow:hidden"></div>
+      </div>
       <div class="card" style="overflow:hidden">
         <div class="ohead"><span>Membre</span><span class="r">Demandes</span><span class="r">Remboursé</span>
           <span class="r">À virer</span><span class="r">En attente</span><span class="r">Refusé</span></div>
@@ -2691,9 +2696,12 @@ $("#expForm").addEventListener("submit", async e => {
 });
 
 // Détail d'une dépense directe
-$("#viewExpenses").addEventListener("click", async e => {
+$("#viewExpenses").addEventListener("click", e => {
   const r = e.target.closest("[data-exp]"); if(!r) return;
-  const dep = state.expenses.find(x => x.id === r.dataset.exp); if(!dep) return;
+  ouvrirDepense(r.dataset.exp);
+});
+async function ouvrirDepense(id){
+  const dep = state.expenses.find(x => x.id === id); if(!dep) return;
   staged.pj = [];                                   // repartir d'une file vide
   const proofHTML = await afficherPieces(dep, { id: dep.id, type: "exp" });
 
@@ -2716,7 +2724,7 @@ $("#viewExpenses").addEventListener("click", async e => {
     ${blocPieces(dep, "exp")}
     ${blocEditerEcriture(dep, "exp")}`;
   $("#drawer").classList.add("open"); $("#scrim").classList.add("open"); $("#closeDrawer").focus();
-});
+}
 
 $("#d_body").addEventListener("click", async e => {
   const b = e.target.closest("[data-delexp]"); if(!b) return;
@@ -4600,6 +4608,68 @@ function renderOverview(){
 }
 
 $("#o_annee").onchange = renderOverview;
+/* ---------- recherche globale (onglet Aperçu) ----------
+   Fouille en une fois les demandes (remboursements et paiements directs), les dépenses
+   et les recettes des exercices ouverts. Tous les mots tapés doivent être trouvés,
+   dans n'importe quel ordre, sans tenir compte des accents ni des majuscules :
+   « kelly 42,80 », « najwa hotel », « DEM-2026 », « 15/03 ». */
+function rechercheGlobale(){
+  const inp = $("#gSearch"), box = $("#gResults"); if(!inp || !box) return;
+  const brut = inp.value.trim();
+  if(brut.length < 2){ box.hidden = true; box.innerHTML = ""; return; }
+  const mots = slug(brut).replace(/€/g, " ").split(/\s+/).filter(Boolean);
+  if(!mots.length){ box.hidden = true; box.innerHTML = ""; return; }
+  const trouve = t => mots.every(m => t.includes(m));
+  const res = [];
+  ouvert(state.items).forEach(i => {
+    const direct = i.kind === "direct";
+    const t = champsCherchables(i) + " " + slug([fdate(i.expense_date), i.status, i.note,
+      direct ? "paiement direct" : "remboursement"].filter(Boolean).join(" "));
+    if(trouve(t)) res.push({ type:"req", id:i.id, date:i.expense_date, titre:i.object,
+      meta:[direct ? "Paiement direct" : "Remboursement", refOf(i), i.requester_name,
+            i.beneficiary ? "→ " + i.beneficiary : ""].filter(Boolean).join(" · "),
+      tag:i.status, tagc:tagClass(i.status), montant:i.amount });
+  });
+  ouvert(state.expenses).forEach(e => {
+    const t = champsEcriture(e, e.payee) + " " + slug([fdate(e.expense_date), e.author_name, "depense"].filter(Boolean).join(" "));
+    if(trouve(t)) res.push({ type:"exp", id:e.id, date:e.expense_date, titre:e.object,
+      meta:["Dépense", e.payee, e.category].filter(Boolean).join(" · "),
+      tag:"Dépense", tagc:"t-valide", montant:e.amount });
+  });
+  ouvert(state.incomes).forEach(r => {
+    const t = champsEcriture(r, r.source) + " " + slug([fdate(r.income_date), "recette"].join(" "));
+    if(trouve(t)) res.push({ type:"inc", id:r.id, date:r.income_date, titre:r.object,
+      meta:["Recette", r.source, r.category].filter(Boolean).join(" · "),
+      tag:"Recette", tagc:"t-paye", montant:r.amount });
+  });
+  res.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  const MAX = 50;
+  box.hidden = false;
+  box.innerHTML = res.length
+    ? `<div class="hint" style="padding:10px 16px;border-bottom:1px solid var(--line)">${res.length} résultat(s)`
+        + (res.length > MAX ? ` — les ${MAX} plus récents sont affichés, précisez la recherche` : "") + `</div>`
+      + res.slice(0, MAX).map(x => `<div class="row" data-gtype="${x.type}" data-gid="${esc(x.id)}" tabindex="0" role="button">
+          <div class="date mono" style="font-size:13px">${fdate(x.date)}</div>
+          <div><div class="obj">${esc(x.titre || "(sans objet)")}</div><div class="meta">${esc(x.meta)}</div></div>
+          <div><span class="tag ${x.tagc}">${esc(x.tag)}</span></div>
+          <div class="amt">${euro(x.montant)}</div><div class="chev">›</div></div>`).join("")
+    : `<div class="hint" style="padding:14px 16px">Aucun résultat pour « ${esc(brut)} » dans les exercices ouverts.</div>`;
+}
+$("#gSearch").addEventListener("input", rechercheGlobale);
+$("#gSearch").addEventListener("keydown", e => {
+  if(e.key === "Escape"){ e.target.value = ""; rechercheGlobale(); }
+});
+$("#gResults").addEventListener("click", e => {
+  const r = e.target.closest("[data-gtype]"); if(!r) return;
+  const id = r.dataset.gid, t = r.dataset.gtype;
+  if(t === "req") openDrawer(id);
+  else if(t === "exp") ouvrirDepense(id);
+  else if(t === "inc") ouvrirRecette(id);
+});
+$("#gResults").addEventListener("keydown", e => {
+  if(e.key !== "Enter") return;
+  const r = e.target.closest("[data-gtype]"); if(r) r.click();
+});
 
 // brouillons : restauration + sauvegarde auto
 if($("#viderBrouillonReq")) $("#viderBrouillonReq").onclick = () => {
@@ -4824,9 +4894,12 @@ $("#incForm").addEventListener("submit", async e => {
   finally{ btn.disabled = false; btn.textContent = "Enregistrer la recette"; }
 });
 
-$("#viewIncomes").addEventListener("click", async e => {
+$("#viewIncomes").addEventListener("click", e => {
   const r = e.target.closest("[data-inc]"); if(!r) return;
-  const rec = state.incomes.find(x => x.id === r.dataset.inc); if(!rec) return;
+  ouvrirRecette(r.dataset.inc);
+});
+async function ouvrirRecette(id){
+  const rec = state.incomes.find(x => x.id === id); if(!rec) return;
   staged.pj = [];                                   // repartir d'une file vide
   const proofHTML = await afficherPieces(rec, { id: rec.id, type: "inc" });
 
@@ -4850,7 +4923,7 @@ $("#viewIncomes").addEventListener("click", async e => {
     ${blocPieces(rec, "inc")}
     ${blocEditerEcriture(rec, "inc")}`;
   $("#drawer").classList.add("open"); $("#scrim").classList.add("open"); $("#closeDrawer").focus();
-});
+}
 
 /* Retrait d'une pièce déjà envoyée. Réservé au trésorier : la ligne sort de la
    liste des pièces, puis le fichier est effacé du stockage. Si l'effacement du
@@ -5367,11 +5440,17 @@ $("#directForm")?.addEventListener("submit", async (e) => {
            else dirPiecesOk = false; }
       catch(ep){ dirPiecesOk = false; dirErr = ep.message || String(ep); }
     }
-    try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
-      what: pour
-        ? (dirPiecesOk ? "Demande de paiement direct saisie par le trésorier pour " + (pour.name||"le membre")
-                       : "Paiement direct saisi par le trésorier pour " + (pour.name||"le membre") + " SANS pièce (échec de l'envoi)")
-        : (dirPiecesOk ? "Demande de paiement direct envoyée" : "Paiement direct envoyé SANS pièce (échec de l'envoi)") }); }catch(_){}
+    /* Saisie pour un membre : l'historique présente la demande comme la sienne,
+       exactement comme s'il l'avait introduite lui-même — son nom, et la date de la
+       demande quand elle a été antidatée. */
+    const evDir = { request_id:data.id,
+      who: pour ? (pour.name || state.profile.name) : state.profile.name,
+      what: dirPiecesOk ? "Demande de paiement direct envoyée" : "Paiement direct envoyé SANS pièce (échec de l'envoi)" };
+    if(pour && dateDem !== dateLocale()) evDir.at = new Date(dateDem + "T12:00:00").toISOString();
+    try{
+      const r = await sb.from("events").insert(evDir);
+      if(r && r.error && evDir.at){ delete evDir.at; await sb.from("events").insert(evDir); }  // colonne non modifiable : on garde l'heure réelle
+    }catch(_){}
     if(pour){
       // Saisie par le trésorier : jamais d'alerte au trésorier ; accusé au membre uniquement si la bascule est activée
       if(accuse) avertirMail(mailAccuse(data, true, true), "accusé de réception");
@@ -6827,6 +6906,7 @@ function render(){
   }
   renderReprise();
   majEntetesTri();
+  try{ rechercheGlobale(); }catch(_){}   // résultats de la recherche Aperçu tenus à jour
 }
 
 /* Le panneau est réécrit à chaque synchronisation (toutes les 30 s, et à chaque
@@ -7446,10 +7526,13 @@ $("#d_body").addEventListener("click", async e => {
     }
     staged.ed = []; state.edDrop = new Set();
     const pjTxt = [pjAjouts ? pjAjouts + " pièce(s) ajoutée(s)" : "", pjRetire.length ? pjRetire.length + " pièce(s) retirée(s)" : ""].filter(Boolean).join(", ");
-    try{ await sb.from("events").insert({ request_id: it.id, who: state.profile.name,
-      what: (versReexamen ? "Demande modifiée et envoyée en réexamen" : "Demande modifiée par le demandeur")
-            + (pjTxt ? " — " + pjTxt : "")
-            + (gereParTreso ? " (paiement direct géré par le trésorier — sans e-mail)" : "") }); }catch(_){}
+    // Le trésorier qui corrige un paiement direct saisi pour un membre ne laisse pas de trace :
+    // la demande reste présentée comme celle du membre.
+    if(!gereParTreso){
+      try{ await sb.from("events").insert({ request_id: it.id, who: state.profile.name,
+        what: (versReexamen ? "Demande modifiée et envoyée en réexamen" : "Demande modifiée par le demandeur")
+              + (pjTxt ? " — " + pjTxt : "") }); }catch(_){}
+    }
     // Paiement direct géré par le trésorier pour un autre membre : jamais de mail automatique.
     if(!gereParTreso){
       try{ if(versReexamen) mailReexamenTreso({ ...it, ...maj }, "Demande modifiée par le demandeur après refus."); else mailModifiee({ ...it, ...maj }, avant); }catch(_){}
@@ -7555,6 +7638,16 @@ $("#d_body").addEventListener("click", async e => {
   }
 
   const sienne = it.user_id === state.profile.id;
+  /* Valider une demande déjà validée (ou payer une demande déjà remboursée…) écrivait
+     une nouvelle ligne d'historique et réécrivait la date de décision. Cela arrivait
+     quand le panneau affichait encore l'ancien état : on le remet à jour à la place. */
+  const CIBLE = { valider:"Validée", refuser:"Refusée", corriger:"À corriger", payer:"Remboursée", rouvrir:"En attente" };
+  if(CIBLE[act] && it.status === CIBLE[act]){
+    if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    state.drawerDirty = false;
+    renderDrawer(it); loadEvents(it.id);
+    return toast("Cette demande est déjà « " + it.status + " ». Le panneau vient d'être mis à jour.");
+  }
   if(act==="relance"){
     const { msg } = construireRelance(it);
     try{ await navigator.clipboard.writeText(msg); toast("Message de relance copié."); }
@@ -7670,7 +7763,13 @@ $("#d_body").addEventListener("click", async e => {
     + ". Votre demande a été remise en attente de paiement et sera incluse dans le prochain lot de virements. "
     + "Vérifiez votre IBAN dans votre profil et corrigez-le si nécessaire."), "virement rejeté"); }
   if(mailMembre && act==="message"){ await avertirMail(mailMessage(it, note), "message au demandeur"); }
-  await refresh(); await loadEvents(it.id);
+  // Le bouton cliqué gardait le focus : la synchro croyait à une saisie en cours et ne
+  // redessinait pas le panneau, qui continuait d'afficher « Valider ».
+  if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  await refresh();
+  const apres = state.items.find(x => x.id === it.id);
+  if(apres && state.selected === it.id){ state.drawerDirty = false; renderDrawer(apres); }
+  await loadEvents(it.id);
   toast(label + ".");
 });
 
