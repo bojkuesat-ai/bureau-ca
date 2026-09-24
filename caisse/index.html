@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="21.09.2026 · 2">
+<meta name="app-build" content="24.09.2026 · 2">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -457,6 +457,68 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
 @media(max-width:620px){.bline{grid-template-columns:1fr}}
 @media print{ @page{size:A4;margin:14mm} }
 
+/* ---------- factures à échéance ---------- */
+.t-neutre{color:var(--muted);border-color:var(--line);background:var(--surface2)}
+.fe-card{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
+  background:linear-gradient(180deg,var(--surface) 0%,var(--bg2) 100%)}
+.fe-card.retard{border-left:4px solid var(--red)}
+.fe-card.bientot{border-left:4px solid var(--amber)}
+.fe-card.aenvoyer{border-left:4px solid var(--gold-dim)}
+.fe-top{display:grid;grid-template-columns:92px 1fr auto 132px 24px;gap:14px;align-items:center;
+  padding:14px 16px;cursor:pointer;transition:.15s}
+.fe-top:hover{background:var(--surface2)}
+.fe-top .obj{font-weight:600}
+.fe-top .meta{font-size:12px;color:var(--muted2);margin-top:2px}
+.fe-top .amt{text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:600;font-variant-numeric:tabular-nums}
+.fe-top .amt small{display:block;font-size:11px;color:var(--muted2);font-weight:400}
+.fe-top .chev{color:var(--muted2);text-align:right;font-size:17px;transition:.15s}
+.fe-card.open .fe-top .chev{transform:rotate(90deg)}
+.fe-jour{text-align:center;border:1px solid var(--line);border-radius:12px;padding:7px 4px;background:var(--bg)}
+.fe-jour .d{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.fe-jour .c{font-size:11px;color:var(--muted2);margin-top:1px}
+.fe-jour.retard{border-color:#7a2531;background:var(--red-bg)} .fe-jour.retard .c,.fe-jour.retard .d{color:var(--red)}
+.fe-jour.bientot{border-color:#7a561b;background:var(--amber-bg)} .fe-jour.bientot .c,.fe-jour.bientot .d{color:var(--amber)}
+.fe-jour.payee{border-color:#1f6b4f;background:var(--green-bg)} .fe-jour.payee .c,.fe-jour.payee .d{color:var(--green)}
+.fe-body{border-top:1px solid var(--line);padding:14px 16px 16px;display:grid;gap:14px}
+.fe-prog{height:8px;border-radius:99px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+.fe-prog>i{display:block;height:100%;background:var(--green)}
+.fe-progtxt{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+.fe-echs{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.fe-ech{display:grid;grid-template-columns:30px 150px 130px 1fr auto;gap:10px;align-items:center;
+  padding:10px 12px;border-bottom:1px solid var(--line);font-size:14px}
+.fe-ech:last-child{border-bottom:0}
+.fe-ech .n{color:var(--muted2);font-family:'IBM Plex Mono',monospace;font-size:12px}
+.fe-ech .mt{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+.fe-ech input{padding:8px 10px;font-size:14px}
+.fe-ech .pay{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.fe-ech .pay input[type=date]{width:auto}
+.fe-ech .quand{font-size:12px;color:var(--muted2)}
+.fe-info{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 18px;font-size:13px}
+.fe-info span{display:block;font-size:11px;color:var(--muted2);text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+.fe-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.fe-filtres{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.fe-filtres select,.fe-filtres input{width:auto;min-width:180px;padding:10px 12px;font-size:14px}
+.fe-filtres select{padding-right:34px}
+.fe-lignes{display:grid;gap:8px}
+.fe-ligne{display:grid;grid-template-columns:34px 1fr 1fr 40px;gap:10px;align-items:center}
+.fe-ligne .n{color:var(--muted2);font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:center}
+.fe-somme{font-size:13px;color:var(--muted)}
+.fe-somme.ko{color:var(--amber)}
+.fe-gen{display:grid;grid-template-columns:repeat(4,1fr) auto;gap:10px;align-items:end}
+.fe-depot{border:1px dashed var(--gold-dim);border-radius:12px;padding:12px 14px;background:rgba(232,176,75,.04)}
+.fe-lu{margin-top:8px;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.55;border:1px solid #1f6b4f;background:var(--green-bg);color:var(--text)}
+.fe-lu.ko{border-color:#7a561b;background:var(--amber-bg)}
+.fe-lu b{color:var(--green)} .fe-lu.ko b{color:var(--amber)}
+.fe-lu .manque{color:var(--amber)}
+input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,176,75,.07)}
+@media (max-width:820px){
+  .fe-top{grid-template-columns:76px 1fr 100px}
+  .fe-top .tagc,.fe-top .chev{display:none}
+  .fe-ech{grid-template-columns:26px 1fr 1fr}
+  .fe-ech .etat{grid-column:2/4}
+  .fe-ech .pay{grid-column:1/4;justify-content:flex-start}
+  .fe-gen{grid-template-columns:1fr 1fr}
+}
 @media (max-width:820px){
   header.top{padding:16px}
   main{padding:6px 16px 100px}
@@ -573,12 +635,13 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 21.09.2026 · 2</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 24.09.2026 · 2</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
     <button id="tabMine" aria-pressed="true">Mes demandes</button>
     <button id="tabDirect" aria-pressed="false">Paiement direct</button>
+    <button id="tabFactures" aria-pressed="false">Factures à échéance<span class="pill" id="pillFact" hidden>0</span></button>
     <button id="tabPres" aria-pressed="false" hidden>Dépenses présidente</button>
     <button id="tabTreso" aria-pressed="false" hidden>À traiter<span class="pill" id="pillReq" hidden>0</span></button>
     <button id="tabReexam" aria-pressed="false" hidden>Réexamens<span class="pill" id="pillReexam" hidden>0</span></button>
@@ -754,6 +817,130 @@ footer{max-width:1140px;margin:0 auto;padding:0 20px 40px}
       <div class="card" style="overflow:hidden">
         <div class="head"><span>Date</span><span>Objet</span><span>Statut</span><span class="r">Montant</span><span></span></div>
         <div id="myDirectList"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- factures à échéance -->
+  <section id="viewFactures" class="stack" hidden>
+    <div class="kpis">
+      <div class="kpi wait"><div class="eyebrow">Reste à payer</div><div class="n" id="fe_k_reste">0 €</div></div>
+      <div class="kpi" id="fe_k_retardCard"><div class="eyebrow">Échéances en retard</div><div class="n" id="fe_k_retard">0</div></div>
+      <div class="kpi wait"><div class="eyebrow">Dues dans les 7 jours</div><div class="n" id="fe_k_bientot">0</div></div>
+      <div class="kpi done"><div class="eyebrow">Déjà payé</div><div class="n" id="fe_k_paye">0 €</div></div>
+    </div>
+
+    <div class="callout" id="fe_sqlErr" hidden style="border-left:4px solid var(--red)">
+      <b>La table des factures n'existe pas encore</b>
+      <p id="fe_sqlErrTxt">Passez d'abord le script SQL « factures à échéance » dans Supabase (SQL Editor), puis rechargez la page.</p>
+    </div>
+
+    <div id="fe_tresoZone" class="stack" hidden>
+      <details class="pliable" id="fe_factBox">
+        <summary><div><b style="font-family:'Fraunces',serif;font-size:17px">Nouvelle facture à échéance</b>
+          <div class="resume">Une facture à payer en une fois avant une date (ex. Kluwer, pour le 23 octobre)</div></div></summary>
+        <form id="fe_factForm" class="stack" style="gap:14px;margin-top:16px">
+          <div class="field fe-depot"><label for="fe_f_pdf">PDF de la facture</label>
+            <input type="file" id="fe_f_pdf" accept="application/pdf,.pdf,image/*">
+            <span class="hint">Joins-le en premier : le fournisseur, le montant, l'échéance et le n° de facture se remplissent seuls. Vérifie toujours avant d'enregistrer. 5 Mo maximum.</span>
+            <div class="fe-lu" id="fe_f_lu" hidden></div></div>
+          <div class="grid2">
+            <div class="field"><label for="fe_f_membre">Membre concerné</label>
+              <select id="fe_f_membre" required><option value="">— Choisir le membre —</option></select></div>
+            <div class="field"><label for="fe_f_fourn">Fournisseur</label>
+              <input type="text" id="fe_f_fourn" maxlength="80" placeholder="Ex. Kluwer" required></div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label for="fe_f_objet">Objet</label>
+              <input type="text" id="fe_f_objet" maxlength="80" placeholder="Ex. Codes 2026-2027"></div>
+            <div class="field"><label for="fe_f_ref">N° de facture</label>
+              <input type="text" id="fe_f_ref" maxlength="60" placeholder="Ex. F-2026-10452"></div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label for="fe_f_montant">Montant (€)</label>
+              <input type="number" id="fe_f_montant" step="0.01" min="0.01" placeholder="0,00" required></div>
+            <div class="field"><label for="fe_f_date">À payer avant le</label>
+              <input type="date" id="fe_f_date" required></div>
+          </div>
+          <div class="field"><label for="fe_f_note">Message au membre (facultatif)</label>
+            <textarea id="fe_f_note" maxlength="400" placeholder="Repris dans l'e-mail envoyé au membre"></textarea></div>
+          <label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text)">
+            <input type="checkbox" id="fe_f_envoyer" class="tgl" checked>
+            <span>Envoyer tout de suite l'e-mail au membre</span></label>
+          <div class="err" id="fe_f_err" hidden></div>
+          <div><button class="btn" type="submit" id="fe_f_btn">Enregistrer la facture</button></div>
+        </form>
+      </details>
+
+      <details class="pliable" id="fe_planBox">
+        <summary><div><b style="font-family:'Fraunces',serif;font-size:17px">Nouveau plan de paiement</b>
+          <div class="resume">Une facture étalée en plusieurs échéances (ex. Larcier en 6 mensualités)</div></div></summary>
+        <form id="fe_planForm" class="stack" style="gap:14px;margin-top:16px">
+          <div class="field fe-depot"><label for="fe_p_pdf">PDF du plan de paiement</label>
+            <input type="file" id="fe_p_pdf" accept="application/pdf,.pdf,image/*">
+            <span class="hint">Joins-le en premier : le fournisseur, la référence, le total et l'échéancier se remplissent seuls. Vérifie toujours avant d'enregistrer. 5 Mo maximum.</span>
+            <div class="fe-lu" id="fe_p_lu" hidden></div></div>
+          <div class="grid2">
+            <div class="field"><label for="fe_p_membre">Membre concerné</label>
+              <select id="fe_p_membre" required><option value="">— Choisir le membre —</option></select></div>
+            <div class="field"><label for="fe_p_fourn">Fournisseur</label>
+              <input type="text" id="fe_p_fourn" maxlength="80" placeholder="Ex. Larcier" required></div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label for="fe_p_objet">Objet</label>
+              <input type="text" id="fe_p_objet" maxlength="80" placeholder="Ex. Codes Larcier 2026-2027"></div>
+            <div class="field"><label for="fe_p_ref">Référence du plan / de la facture</label>
+              <input type="text" id="fe_p_ref" maxlength="60" placeholder="Ex. PP-88213"></div>
+          </div>
+          <div class="fixbox">
+            <b>Calculer les échéances</b>
+            <p>Indiquez le total, le nombre d'échéances et la première date : les lignes ci-dessous se remplissent. Vous pouvez ensuite corriger chaque ligne pour recopier exactement le plan reçu.</p>
+            <div class="fe-gen">
+              <div class="field"><label for="fe_p_total">Total (€)</label><input type="number" id="fe_p_total" step="0.01" min="0.01" placeholder="0,00"></div>
+              <div class="field"><label for="fe_p_nb">Échéances</label><input type="number" id="fe_p_nb" min="2" max="60" step="1" value="3"></div>
+              <div class="field"><label for="fe_p_premiere">Première le</label><input type="date" id="fe_p_premiere"></div>
+              <div class="field"><label for="fe_p_freq">Rythme</label>
+                <select id="fe_p_freq"><option value="1">Mensuel</option><option value="2">Tous les 2 mois</option><option value="3">Trimestriel</option><option value="6">Semestriel</option></select></div>
+              <button type="button" class="btn ghost sm" id="fe_p_gen">Calculer</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Échéancier</label>
+            <div class="fe-lignes" id="fe_p_lignes"></div>
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px">
+              <button type="button" class="btn ghost sm" id="fe_p_add">Ajouter une échéance</button>
+              <span class="fe-somme" id="fe_p_somme"></span>
+            </div>
+          </div>
+          <div class="field"><label for="fe_p_note">Message au membre (facultatif)</label>
+            <textarea id="fe_p_note" maxlength="400" placeholder="Repris dans l'e-mail envoyé au membre"></textarea></div>
+          <label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text)">
+            <input type="checkbox" id="fe_p_envoyer" class="tgl" checked>
+            <span>Envoyer tout de suite l'e-mail au membre</span></label>
+          <div class="err" id="fe_p_err" hidden></div>
+          <div><button class="btn" type="submit" id="fe_p_btn">Enregistrer le plan</button></div>
+        </form>
+      </details>
+    </div>
+
+    <div class="fe-filtres">
+      <select id="fe_filtre" aria-label="Afficher">
+        <option value="encours">À payer</option>
+        <option value="retard">En retard ou dues sous 7 jours</option>
+        <option value="payees">Payées / soldés</option>
+        <option value="toutes">Tout</option>
+      </select>
+      <input type="text" id="fe_q" placeholder="Rechercher un fournisseur, un membre…" aria-label="Rechercher">
+    </div>
+
+    <div id="fe_lists" class="stack">
+      <div>
+        <div class="section-title"><h2 style="font-size:19px">Factures</h2><span class="hint" id="fe_nbFact"></span></div>
+        <div id="fe_listFact" class="stack" style="gap:10px"></div>
+      </div>
+      <div>
+        <div class="section-title"><h2 style="font-size:19px">Plans de paiement</h2><span class="hint" id="fe_nbPlans"></span></div>
+        <div id="fe_listPlans" class="stack" style="gap:10px"></div>
       </div>
     </div>
   </section>
@@ -2580,6 +2767,7 @@ async function start(){
       .on("postgres_changes",{event:"*",schema:"public",table:"requests"}, refresh)
       .on("postgres_changes",{event:"*",schema:"public",table:"expenses"}, refresh)
       .on("postgres_changes",{event:"*",schema:"public",table:"incomes"}, refresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"factures_echeance"}, refresh)
       .on("postgres_changes",{event:"*",schema:"public",table:"profiles"}, async () => { await loadProfile(user); await refresh(); })
       .on("postgres_changes",{event:"*",schema:"public",table:"ca_budgets"}, async () => { try{ await loadBudgetsCaisse(); if(state.view==="budget") renderBudget(); }catch(_){} })
       .on("postgres_changes",{event:"*",schema:"public",table:"ca_budget_votes"}, async () => { try{ await loadBudgetsCaisse(); if(state.view==="budget") renderBudget(); }catch(_){} })
@@ -2680,10 +2868,12 @@ async function refresh(){
     try{ await loadBudgetsCaisse(); }catch(_){}   // budgets de l'app CA (même base)
     if(!state.relanceAutoFaite){ state.relanceAutoFaite = true; relancerIncompletes(true); alerterDormantes(true); }
   }
+  try{ await chargerFactures(); }catch(eF){ state.feErr = eF.message || String(eF); }
   render();
   renderMessagesUI();
   verifierLienRecu();
   verifierLienReexamen();
+  try{ feVerifierLien(); }catch(_){}
   try{ majHoraire(); }catch(_){}   // horaires chargés depuis la base : on réévalue l'ouverture
   if(state.view==="budget"){ try{ renderBudget(); }catch(_){} }
 }
@@ -5722,6 +5912,8 @@ function setView(v){
   if($("#tabCompta")) $("#tabCompta").setAttribute("aria-pressed", v==="compta");
   if($("#tabTva")) $("#tabTva").setAttribute("aria-pressed", v==="tva");
   $("#tabDirect").setAttribute("aria-pressed", v==="direct");
+  if($("#tabFactures")) $("#tabFactures").setAttribute("aria-pressed", v==="factures");
+  if($("#viewFactures")) $("#viewFactures").hidden = v!=="factures";
   if($("#tabPres")) $("#tabPres").setAttribute("aria-pressed", v==="pres");
   if($("#viewPres")) $("#viewPres").hidden = v!=="pres";
   if(v==="pres"){ if(!$("#p_date").value) $("#p_date").value = dateLocale(); $("#p_date").max = dateLocale(); renderPres(); }
@@ -5755,6 +5947,7 @@ function setView(v){
 const choisirVue = v => { state.vueChoisie = true; setView(v); };
 $("#tabMine").onclick = () => choisirVue("mine");
 $("#tabDirect").onclick = () => choisirVue("direct");
+if($("#tabFactures")) $("#tabFactures").onclick = () => choisirVue("factures");
 $("#fd_mode")?.addEventListener("change", () => { const b=$("#fd_virementBox"); if(b) b.style.display = $("#fd_mode").value==="virement" ? "" : "none"; });
 $("#tabTreso").onclick = () => choisirVue("treso");
 $("#tabReexam").onclick = () => choisirVue("reexam");
@@ -5773,6 +5966,943 @@ $("#tabMessages").onclick = () => choisirVue("messages");
 if($("#tabBudget")) $("#tabBudget").onclick = () => choisirVue("budget");
 if($("#tabCompta")) $("#tabCompta").onclick = () => choisirVue("compta");
 if($("#tabTva")) $("#tabTva").onclick = () => choisirVue("tva");
+
+/* ============================================================
+   Onglet FACTURES À ÉCHÉANCE
+   Table factures_echeance (script SQL fourni à part). Une facture simple a une seule
+   échéance, un plan de paiement en a plusieurs : le même code gère les deux.
+   Chaque échéance marquée payée devient un paiement direct « Remboursée » au nom du
+   membre (table requests). L'Aperçu, la comptabilité et la TVA la comptent donc
+   automatiquement ; tant qu'elle n'est pas payée, elle ne compte nulle part.
+   ============================================================ */
+const FE_TABLE = "factures_echeance";
+const fePending = (function(){ const m=(window.location.hash||"").match(/facture=([A-Za-z0-9-]+)/); return m?m[1]:null; })();
+let _fePending = fePending;
+state.factures = []; state.feOuvert = new Set(); state.feLignes = []; state.feErr = null;
+
+const feRond = n => Math.round(Number(n || 0) * 100) / 100;
+const feEchs = f => Array.isArray(f && f.echeances) ? f.echeances : [];
+const feJours = iso => Math.round((new Date(iso + "T12:00:00") - new Date(dateLocale() + "T12:00:00")) / 86400000);
+function feEtatEch(e){
+  if(e.paid_at) return "payee";
+  const j = feJours(e.date);
+  return j < 0 ? "retard" : j <= 7 ? "bientot" : "avenir";
+}
+const feImpayees = f => feEchs(f).filter(e => !e.paid_at).sort((a,b) => String(a.date).localeCompare(String(b.date)));
+const feProchaine = f => feImpayees(f)[0] || null;
+const feTotal = f => feRond(feEchs(f).reduce((s,e) => s + Number(e.montant || 0), 0));
+const fePaye  = f => feRond(feEchs(f).filter(e => e.paid_at).reduce((s,e) => s + Number(e.montant || 0), 0));
+function feEtat(f){
+  const ech = feEchs(f);
+  if(ech.length && ech.every(e => e.paid_at)) return "payee";
+  const imp = feImpayees(f);
+  if(imp.some(e => feEtatEch(e) === "retard")) return "retard";
+  if(!f.sent_at) return "aenvoyer";
+  if(imp.some(e => feEtatEch(e) === "bientot")) return "bientot";
+  return "envoyee";
+}
+function feLabel(etat, plan){
+  switch(etat){
+    case "payee":    return [plan ? "Soldé" : "Payée", "t-paye"];
+    case "retard":   return ["En retard", "t-refuse"];
+    case "bientot":  return ["Bientôt due", "t-attente"];
+    case "aenvoyer": return ["À envoyer", "t-neutre"];
+    default:         return [isTreso() ? "Envoyée" : "À payer", "t-valide"];
+  }
+}
+function feCompte(j){
+  if(j === 0) return "aujourd'hui";
+  if(j === 1) return "demain";
+  if(j > 0)  return "dans " + j + " j";
+  return (-j) + " j de retard";
+}
+// factures visibles : tout pour le trésorier, seulement les siennes (déjà envoyées) pour un membre
+function feVisibles(){
+  const me = state.profile && state.profile.id;
+  return (state.factures || []).filter(f => isTreso() || (f.member_id === me && f.sent_at));
+}
+const feNomMembre = f => {
+  const m = (state.members || []).find(x => x.id === f.member_id);
+  return (m && m.name) || f.member_name || "Membre";
+};
+const fePrenom = f => {
+  const m = (state.members || []).find(x => x.id === f.member_id);
+  return (m && m.first_name) || String((m && m.name) || f.member_name || "").split(" ")[0] || "";
+};
+const feLibelle = f => [f.fournisseur, f.objet].filter(Boolean).join(" — ");
+const feLien = f => window.location.origin + window.location.pathname + "#facture=" + f.id;
+
+async function chargerFactures(){
+  const r = await chargerTout(FE_TABLE, "created_at", false);
+  if(r.error){
+    state.factures = [];
+    state.feErr = r.error.message || String(r.error);
+    return;
+  }
+  state.feErr = null;
+  state.factures = r.data || [];
+}
+
+/* ---------- affichage ---------- */
+function feMajMembres(){
+  const membres = (state.members || []).filter(m => m.approved !== false)
+    .sort((a,b) => String(a.name || "").localeCompare(String(b.name || ""), "fr"));
+  for(const id of ["#fe_f_membre", "#fe_p_membre"]){
+    const sel = $(id); if(!sel) continue;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— Choisir le membre —</option>'
+      + membres.map(m => `<option value="${esc(m.id)}">${esc(m.name || m.email || "Membre")}</option>`).join("");
+    if(cur && membres.some(m => m.id === cur)) sel.value = cur;
+  }
+}
+
+function feCarte(f){
+  const plan = f.type === "plan";
+  const ech = feEchs(f);
+  const etat = feEtat(f);
+  const [lbl, cls] = feLabel(etat, plan);
+  const pro = feProchaine(f);
+  const total = feTotal(f), paye = fePaye(f), reste = feRond(total - paye);
+  const ouvert = state.feOuvert.has(f.id);
+  const nbPayees = ech.filter(e => e.paid_at).length;
+
+  // pastille de date : prochaine échéance, ou date du dernier paiement si tout est réglé
+  let jourCls = "", jourD = "—", jourC = "";
+  if(pro){
+    const j = feJours(pro.date);
+    jourCls = j < 0 ? "retard" : j <= 7 ? "bientot" : "";
+    jourD = fdate(pro.date).slice(0,5);
+    jourC = feCompte(j);
+  } else if(ech.length){
+    const der = ech.map(e => e.paid_at).filter(Boolean).sort().pop();
+    jourCls = "payee"; jourD = der ? fdate(der).slice(0,5) : "✓"; jourC = plan ? "soldé" : "payée";
+  }
+  const meta = [
+    isTreso() ? esc(feNomMembre(f)) : "",
+    f.reference ? "N° " + esc(f.reference) : "",
+    plan ? `${nbPayees}/${ech.length} échéances payées` : (pro ? "À payer avant le " + fdate(pro.date) : ""),
+    isTreso() && f.sent_at ? "envoyée le " + fdate(String(f.sent_at).slice(0,10)) : ""
+  ].filter(Boolean).join(" · ");
+
+  const montant = plan
+    ? `${euro(reste)}<small>reste sur ${euro(total)}</small>`
+    : euro(total);
+
+  return `<div class="fe-card ${etat}${ouvert ? " open" : ""}" data-fe-id="${esc(f.id)}">
+    <div class="fe-top" data-fe-toggle="${esc(f.id)}" tabindex="0" role="button" aria-expanded="${ouvert}">
+      <div class="fe-jour ${jourCls}"><div class="d">${jourD}</div><div class="c">${esc(jourC)}</div></div>
+      <div><div class="obj">${esc(feLibelle(f) || "Facture")}</div><div class="meta">${meta}</div></div>
+      <div class="tagc"><span class="tag ${cls}">${lbl}</span></div>
+      <div class="amt">${montant}</div>
+      <div class="chev">›</div>
+    </div>
+    ${ouvert ? feCorps(f) : ""}
+  </div>`;
+}
+
+function feCorps(f){
+  const plan = f.type === "plan";
+  const ech = feEchs(f);
+  const total = feTotal(f), paye = fePaye(f);
+  const pct = total > 0 ? Math.min(100, Math.round(paye / total * 100)) : 0;
+  const clos = d => { try{ return estClos(d); }catch(_){ return false; } };
+  const auj = dateLocale();
+  const T = isTreso();
+  let modifiable = false;
+
+  const lignes = ech.map((e, n) => {
+    const et = feEtatEch(e);
+    const tag = et === "payee" ? `<span class="tag t-paye">Payée</span>`
+      : et === "retard" ? `<span class="tag t-refuse">En retard</span>`
+      : et === "bientot" ? `<span class="tag t-attente">${esc(feCompte(feJours(e.date)))}</span>`
+      : `<span class="tag t-neutre">${esc(feCompte(feJours(e.date)))}</span>`;
+    let dateCell = `<span class="mono">${fdate(e.date)}</span>`;
+    let mtCell = `<span class="mt">${euro(e.montant)}</span>`;
+    let pay = "";
+    if(e.paid_at){
+      const perdu = T && e.request_id && !(state.items || []).some(i => i.id === e.request_id);
+      pay = `<span class="quand">payée le ${fdate(e.paid_at)}${perdu ? ` · <b style="color:var(--amber)">paiement direct introuvable</b>` : ""}</span>`
+        + (T && !clos(e.paid_at) ? ` <button type="button" class="btn ghost sm" data-fe-annul="${n}">Annuler le paiement</button>` : "");
+    } else if(T){
+      modifiable = true;
+      dateCell = `<input type="date" data-fe-edate="${n}" value="${esc(e.date)}" aria-label="Date de l'échéance ${n+1}">`;
+      mtCell = `<input type="number" step="0.01" min="0.01" data-fe-emt="${n}" value="${esc(feRond(e.montant).toFixed(2))}" aria-label="Montant de l'échéance ${n+1}">`;
+      pay = `<span class="quand">payée le</span><input type="date" data-fe-pdate="${n}" value="${auj}" max="${auj}" aria-label="Date du paiement" title="Date du paiement">
+        <button type="button" class="btn ok sm" data-fe-payer="${n}">${plan ? "Échéance payée" : "Facture payée"}</button>`;
+    }
+    return `<div class="fe-ech">
+      <span class="n">${plan ? (n+1) : ""}</span>${dateCell}${mtCell}<span class="etat">${tag}</span><span class="pay">${pay}</span></div>`;
+  }).join("");
+
+  const infos = `<div class="fe-info">
+    ${T ? `<div><span>Membre</span>${esc(feNomMembre(f))}</div>` : ""}
+    <div><span>Fournisseur</span>${esc(f.fournisseur || "—")}</div>
+    ${f.reference ? `<div><span>N° / référence</span>${esc(f.reference)}</div>` : ""}
+    <div><span>Montant total</span>${euro(total)}</div>
+    ${T ? `<div><span>E-mail au membre</span>${f.sent_at ? "envoyé le " + fdate(String(f.sent_at).slice(0,10)) + (f.reminded_at ? " · rappel le " + fdate(String(f.reminded_at).slice(0,10)) : "") : "pas encore envoyé"}</div>` : ""}
+  </div>`;
+
+  const note = f.note ? `<div class="hint" style="font-size:13px;margin:0"><b>Message :</b> ${esc(f.note)}</div>` : "";
+  const aPdf = (Array.isArray(f.attachments) && f.attachments.length);
+  const restent = feImpayees(f).length > 0;
+  const aucunPaye = !feEchs(f).some(e => e.paid_at);
+
+  const actions = [];
+  if(aPdf) actions.push(`<button type="button" class="btn ghost sm" data-fe-pdf="0">Ouvrir le PDF</button>`);
+  if(T){
+    if(modifiable) actions.push(`<button type="button" class="btn ghost sm" data-fe-save>Enregistrer les dates et montants</button>`);
+    if(restent) actions.push(`<button type="button" class="btn sm" data-fe-send>${f.sent_at ? "Renvoyer l'e-mail" : "Envoyer au membre"}</button>`);
+    if(restent && f.sent_at) actions.push(`<button type="button" class="btn ghost sm" data-fe-rappel>Envoyer un rappel</button>`);
+    actions.push(`<label class="btn ghost sm" style="text-transform:none;letter-spacing:0;color:var(--text)">${aPdf ? "Remplacer le PDF" : "Joindre le PDF"}<input type="file" data-fe-joindre accept="application/pdf,.pdf,image/*" hidden></label>`);
+    if(aucunPaye) actions.push(`<button type="button" class="btn no sm" data-fe-del>Supprimer</button>`);
+  } else if(!aPdf){
+    actions.push(`<span class="hint" style="margin:0">Le PDF n'a pas encore été joint.</span>`);
+  }
+
+  return `<div class="fe-body">
+    ${plan ? `<div><div class="fe-prog"><i style="width:${pct}%"></i></div>
+      <div class="fe-progtxt"><span>${euro(paye)} payés sur ${euro(total)}</span><span>${euro(feRond(total - paye))} restants</span></div></div>` : ""}
+    ${infos}
+    <div class="fe-echs">${lignes || `<div class="fe-ech"><span></span><span class="hint">Aucune échéance.</span></div>`}</div>
+    ${note}
+    <div class="fe-actions">${actions.join("")}</div>
+  </div>`;
+}
+
+function renderFactures(){
+  const tab = $("#tabFactures");
+  if(!tab || !state.profile) return;
+  const liste = feVisibles();
+
+  // pastille : échéances en retard ou dues sous 7 jours
+  let urgent = 0;
+  for(const f of liste) for(const e of feImpayees(f)) if(feEtatEch(e) !== "avenir") urgent++;
+  const pill = $("#pillFact");
+  if(pill){ pill.textContent = urgent; pill.hidden = !urgent; }
+
+  if(state.view !== "factures") return;
+  $("#fe_tresoZone").hidden = !isTreso();
+  $("#fe_sqlErr").hidden = !state.feErr;
+  if(state.feErr) $("#fe_sqlErrTxt").textContent = isTreso()
+    ? "Passez d'abord le script SQL « factures à échéance » dans Supabase (SQL Editor), puis rechargez la page. Détail : " + state.feErr
+    : "Les factures ne sont pas disponibles pour le moment.";
+  if(isTreso()) feMajMembres();
+
+  // chiffres clés
+  let reste = 0, paye = 0, retard = 0, bientot = 0;
+  for(const f of liste){
+    for(const e of feEchs(f)){
+      if(e.paid_at){ paye += Number(e.montant || 0); continue; }
+      reste += Number(e.montant || 0);
+      const et = feEtatEch(e);
+      if(et === "retard") retard++; else if(et === "bientot") bientot++;
+    }
+  }
+  $("#fe_k_reste").textContent = euro(reste);
+  $("#fe_k_paye").textContent = euro(paye);
+  $("#fe_k_retard").textContent = retard;
+  $("#fe_k_bientot").textContent = bientot;
+  const rc = $("#fe_k_retardCard");
+  if(rc){ rc.style.borderColor = retard ? "#7a2531" : ""; rc.style.background = retard ? "var(--red-bg)" : "";
+          $("#fe_k_retard").style.color = retard ? "var(--red)" : ""; }
+
+  // pendant une saisie dans une fiche ouverte, on ne réécrit pas la liste
+  const act = document.activeElement;
+  if(act && $("#fe_lists").contains(act) && /INPUT|SELECT|TEXTAREA/.test(act.tagName)) return;
+
+  const filtre = $("#fe_filtre").value;
+  const q = slug($("#fe_q").value.trim());
+  const garde = liste.filter(f => {
+    const et = feEtat(f);
+    if(filtre === "encours" && et === "payee") return false;
+    if(filtre === "payees" && et !== "payee") return false;
+    if(filtre === "retard" && !feImpayees(f).some(e => feEtatEch(e) !== "avenir")) return false;
+    if(q && !slug([f.fournisseur, f.objet, f.reference, feNomMembre(f), f.member_name].filter(Boolean).join(" ")).includes(q)) return false;
+    return true;
+  });
+  // tri : la prochaine échéance la plus proche d'abord, les dossiers réglés à la fin
+  const cle = f => { const p = feProchaine(f); return p ? "0" + p.date : "1" + (9999 - Number(String(f.created_at || "").slice(0,4) || 0)); };
+  garde.sort((a,b) => cle(a).localeCompare(cle(b)));
+
+  const fact = garde.filter(f => f.type !== "plan"), plans = garde.filter(f => f.type === "plan");
+  const vide = (t, m) => `<div class="card">${emptyHTML(t, m)}</div>`;
+  $("#fe_listFact").innerHTML = fact.length ? fact.map(feCarte).join("")
+    : vide("Aucune facture ici", isTreso() ? "Encodez une facture avec le formulaire ci-dessus." : "Aucune facture à payer ne vous a été envoyée.");
+  $("#fe_listPlans").innerHTML = plans.length ? plans.map(feCarte).join("")
+    : vide("Aucun plan de paiement ici", isTreso() ? "Encodez un plan avec le formulaire ci-dessus." : "Aucun plan de paiement ne vous a été envoyé.");
+  $("#fe_nbFact").textContent = fact.length ? fact.length + " affichée(s)" : "";
+  $("#fe_nbPlans").textContent = plans.length ? plans.length + " affiché(s)" : "";
+}
+$("#fe_filtre").onchange = renderFactures;
+$("#fe_q").oninput = renderFactures;
+
+// lien reçu par e-mail : #facture=<id>
+function feVerifierLien(){
+  if(!_fePending) return;
+  const f = feVisibles().find(x => x.id === _fePending);
+  if(!f) return;
+  _fePending = null;
+  state.feOuvert.add(f.id);
+  if($("#fe_filtre")) $("#fe_filtre").value = feEtat(f) === "payee" ? "toutes" : "encours";
+  choisirVue("factures");
+  setTimeout(() => { const el = document.querySelector(`[data-fe-id="${f.id}"]`); if(el) el.scrollIntoView({ block:"center", behavior:"smooth" }); }, 250);
+}
+
+/* ---------- e-mails au membre ---------- */
+function feMailHtml(f, rappel){
+  const plan = f.type === "plan";
+  const pro = feProchaine(f);
+  const lien = feLien(f);
+  const ligne = (a, b) => `<tr><td style="padding:6px 0;color:#666">${a}</td><td style="padding:6px 0"><b>${b}</b></td></tr>`;
+  let corps;
+  if(plan){
+    const lignes = feEchs(f).map((e, n) => `<tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;color:#666">${n+1}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee">${fdate(e.date)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${euro(e.montant)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;color:${e.paid_at ? "#2d6a4f" : (feJours(e.date) < 0 ? "#b3261e" : "#1a1a1a")}">${e.paid_at ? "payée" : (feJours(e.date) < 0 ? "en retard" : "à payer")}</td></tr>`).join("");
+    corps = `<p>${rappel
+        ? `Petit rappel : une échéance du plan de paiement <b>${mailEsc(f.fournisseur)}</b> arrive${pro ? ` le <b>${fdate(pro.date)}</b> (${euro(pro.montant)})` : ""}.`
+        : `Un plan de paiement de <b>${mailEsc(f.fournisseur)}</b> est disponible dans l'application. Chaque échéance doit être payée avant sa date.`}</p>
+      <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:14px">
+        ${ligne("Fournisseur", mailEsc(f.fournisseur))}
+        ${f.objet ? ligne("Objet", mailEsc(f.objet)) : ""}
+        ${f.reference ? ligne("Référence", mailEsc(f.reference)) : ""}
+        ${ligne("Montant total", euro(feTotal(f)))}
+        ${pro ? ligne("Prochaine échéance", fdate(pro.date) + " — " + euro(pro.montant)) : ""}
+      </table>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0 14px;font-size:13px">
+        <tr style="background:#f4f6f8"><th style="padding:6px 8px;text-align:left">N°</th><th style="padding:6px 8px;text-align:left">Échéance</th><th style="padding:6px 8px;text-align:right">Montant</th><th style="padding:6px 8px;text-align:left">État</th></tr>
+        ${lignes}
+      </table>`;
+  } else {
+    corps = `<p>${rappel
+        ? `Petit rappel : la facture <b>${mailEsc(f.fournisseur)}</b> doit être payée <b>avant le ${pro ? fdate(pro.date) : "—"}</b>.`
+        : `Une facture de <b>${mailEsc(f.fournisseur)}</b> est disponible. Elle doit être payée <b>avant le ${pro ? fdate(pro.date) : "—"}</b>.`}</p>
+      <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:14px">
+        ${ligne("Fournisseur", mailEsc(f.fournisseur))}
+        ${f.objet ? ligne("Objet", mailEsc(f.objet)) : ""}
+        ${f.reference ? ligne("N° de facture", mailEsc(f.reference)) : ""}
+        ${ligne("Montant", euro(feTotal(f)))}
+        ${pro ? ligne("À payer avant le", fdate(pro.date)) : ""}
+      </table>`;
+  }
+  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">${rappel ? "Rappel d'échéance" : (plan ? "Plan de paiement disponible" : "Facture disponible")}</h2>
+    <p>Bonjour ${mailEsc(fePrenom(f))},</p>
+    ${corps}
+    ${blocNote(f.note)}
+    <p style="text-align:center;margin:24px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">${plan ? "Voir le plan de paiement" : "Voir la facture"}</a></p>
+    <p style="color:#666;font-size:13px">Le PDF et l'état du paiement sont consultables à tout moment dans l'application, onglet « Factures à échéance ».</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+}
+function feMailSujet(f, rappel){
+  const pro = feProchaine(f);
+  const av = pro ? " avant le " + fdate(pro.date) : "";
+  if(f.type === "plan") return rappel ? "Rappel — échéance " + f.fournisseur + (pro ? " du " + fdate(pro.date) : "")
+                                      : "Plan de paiement " + f.fournisseur + " — " + feEchs(f).length + " échéances";
+  return (rappel ? "Rappel — facture " : "Facture ") + f.fournisseur + " à payer" + av;
+}
+async function feEnvoyer(f, rappel){
+  const to = await emailDuDemandeur({ user_id: f.member_id });
+  if(!to){ toast("Adresse e-mail du membre introuvable : rien n'est parti."); return false; }
+  const ok = await envoyerMail(to, feMailSujet(f, rappel), feMailHtml(f, rappel), emailTreso());
+  if(!ok){ toast("L'e-mail n'est pas parti : " + (dernierEchecMail || "raison inconnue")); return false; }
+  const maj = rappel ? { reminded_at: new Date().toISOString() } : { sent_at: new Date().toISOString() };
+  if(rappel && !f.sent_at) maj.sent_at = maj.reminded_at;
+  const { error } = await sb.from(FE_TABLE).update(maj).eq("id", f.id);
+  if(error) toast("E-mail envoyé, mais la date d'envoi n'a pas été enregistrée : " + error.message);
+  return true;
+}
+async function feMailPaye(f, e){
+  const to = await emailDuDemandeur({ user_id: f.member_id }); if(!to) return false;
+  const plan = f.type === "plan";
+  const restent = feImpayees(f);
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">${plan ? "Échéance payée" : "Facture payée"}</h2>
+    <p>Bonjour ${mailEsc(fePrenom(f))},</p>
+    <p>${plan ? `L'échéance du ${fdate(e.date)} (${euro(e.montant)}) du plan <b>${mailEsc(f.fournisseur)}</b>` : `La facture <b>${mailEsc(f.fournisseur)}</b> (${euro(e.montant)})`} a été <b>payée</b> le ${fdate(e.paid_at)}.</p>
+    ${plan ? `<p>${restent.length ? `Il reste ${restent.length} échéance(s), pour ${euro(restent.reduce((s,x)=>s+Number(x.montant||0),0))}. Prochaine : ${fdate(restent[0].date)}.` : "Le plan de paiement est entièrement soldé."}</p>` : ""}
+    <p style="text-align:center;margin:24px 0"><a href="${feLien(f)}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir le détail</a></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
+  return envoyerMail(to, (plan ? "Échéance payée — " : "Facture payée — ") + f.fournisseur, html);
+}
+
+/* ---------- PDF ---------- */
+async function feTeleverser(file, kind){
+  if(!file) return [];
+  const hash = await empreinte(file);
+  const prep = await prepareProof(file, null);
+  const path = `${state.profile.id}/facture-${Date.now()}.${prep.ext}`;
+  const up = await sb.storage.from("justificatifs").upload(path, prep.blob, { contentType: prep.type });
+  if(up.error) throw up.error;
+  return [{ path, type: prep.type, kind, name: file.name, hash }];
+}
+
+/* ---------- saisie : facture simple ---------- */
+$("#fe_factForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  if(!isTreso()) return;
+  const btn = $("#fe_f_btn");
+  erreurForm("#fe_f_err", "");
+  const m = (state.members || []).find(x => x.id === $("#fe_f_membre").value);
+  const fourn = $("#fe_f_fourn").value.trim();
+  const montant = feRond(String($("#fe_f_montant").value).replace(",", "."));
+  const date = $("#fe_f_date").value;
+  if(!m) return erreurForm("#fe_f_err", "Choisissez le membre concerné.");
+  if(!fourn) return erreurForm("#fe_f_err", "Indiquez le fournisseur.");
+  if(!(montant > 0)) return erreurForm("#fe_f_err", "Indiquez un montant supérieur à 0.");
+  if(!date) return erreurForm("#fe_f_err", "Indiquez la date limite de paiement.");
+  await feCreer({
+    type: "facture", membre: m, fournisseur: fourn,
+    objet: $("#fe_f_objet").value.trim(), reference: $("#fe_f_ref").value.trim(),
+    note: $("#fe_f_note").value.trim(), echeances: [{ date, montant }],
+    fichier: $("#fe_f_pdf").files[0], envoyer: $("#fe_f_envoyer").checked,
+    btn, errSel: "#fe_f_err", form: $("#fe_factForm"), boite: $("#fe_factBox")
+  });
+});
+
+/* ---------- saisie : plan de paiement ---------- */
+function feAjouterMois(iso, mois){
+  const [a, m, j] = iso.split("-").map(Number);
+  const cible = new Date(a, m - 1 + mois, 1);
+  const der = new Date(cible.getFullYear(), cible.getMonth() + 1, 0).getDate();
+  cible.setDate(Math.min(j, der));
+  return `${cible.getFullYear()}-${String(cible.getMonth()+1).padStart(2,"0")}-${String(cible.getDate()).padStart(2,"0")}`;
+}
+function feRenderLignes(){
+  const box = $("#fe_p_lignes"); if(!box) return;
+  if(!state.feLignes.length) state.feLignes = [{ date:"", montant:"" }, { date:"", montant:"" }];
+  box.innerHTML = state.feLignes.map((l, n) => `<div class="fe-ligne">
+    <span class="n">${n+1}</span>
+    <input type="date" data-fe-l="${n}" data-fe-lf="date" value="${esc(l.date)}" aria-label="Date de l'échéance ${n+1}">
+    <input type="number" step="0.01" min="0.01" placeholder="Montant (€)" data-fe-l="${n}" data-fe-lf="montant" value="${esc(l.montant)}" aria-label="Montant de l'échéance ${n+1}">
+    <button type="button" class="btn no sm" data-fe-lsup="${n}" aria-label="Retirer l'échéance ${n+1}" ${state.feLignes.length <= 2 ? "disabled" : ""}>×</button>
+  </div>`).join("");
+  feMajSomme();
+}
+function feMajSomme(){
+  const s = feRond(state.feLignes.reduce((t, l) => t + (Number(String(l.montant).replace(",", ".")) || 0), 0));
+  const tot = feRond(String($("#fe_p_total").value).replace(",", "."));
+  const el = $("#fe_p_somme");
+  const ecart = tot > 0 && Math.abs(s - tot) >= 0.01;
+  el.textContent = `Total des échéances : ${euro(s)}` + (ecart ? ` — différent du total indiqué (${euro(tot)})` : "");
+  el.classList.toggle("ko", ecart);
+}
+$("#fe_p_lignes").addEventListener("input", e => {
+  const t = e.target.closest("[data-fe-l]"); if(!t) return;
+  const l = state.feLignes[Number(t.dataset.feL)]; if(!l) return;
+  l[t.dataset.feLf] = t.value;
+  feMajSomme();
+});
+$("#fe_p_lignes").addEventListener("click", e => {
+  const b = e.target.closest("[data-fe-lsup]"); if(!b) return;
+  state.feLignes.splice(Number(b.dataset.feLsup), 1);
+  feRenderLignes();
+});
+$("#fe_p_add").onclick = () => {
+  const der = state.feLignes[state.feLignes.length - 1];
+  const freq = Number($("#fe_p_freq").value) || 1;
+  state.feLignes.push({ date: der && der.date ? feAjouterMois(der.date, freq) : "", montant: der ? der.montant : "" });
+  feRenderLignes();
+};
+$("#fe_p_total").addEventListener("input", feMajSomme);
+$("#fe_p_gen").onclick = () => {
+  const tot = feRond(String($("#fe_p_total").value).replace(",", "."));
+  const nb = Math.round(Number($("#fe_p_nb").value));
+  const d0 = $("#fe_p_premiere").value;
+  const freq = Number($("#fe_p_freq").value) || 1;
+  if(!(tot > 0)) return toast("Indiquez le total du plan.");
+  if(!(nb >= 2 && nb <= 60)) return toast("Indiquez entre 2 et 60 échéances.");
+  if(!d0) return toast("Indiquez la date de la première échéance.");
+  // répartition au centime : la dernière échéance absorbe l'arrondi
+  const base = Math.floor(tot * 100 / nb) / 100;
+  state.feLignes = Array.from({ length: nb }, (_, n) => ({
+    date: feAjouterMois(d0, n * freq),
+    montant: (n === nb - 1 ? feRond(tot - base * (nb - 1)) : base).toFixed(2)
+  }));
+  feRenderLignes();
+};
+feRenderLignes();
+
+$("#fe_planForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  if(!isTreso()) return;
+  const btn = $("#fe_p_btn");
+  erreurForm("#fe_p_err", "");
+  const m = (state.members || []).find(x => x.id === $("#fe_p_membre").value);
+  const fourn = $("#fe_p_fourn").value.trim();
+  if(!m) return erreurForm("#fe_p_err", "Choisissez le membre concerné.");
+  if(!fourn) return erreurForm("#fe_p_err", "Indiquez le fournisseur.");
+  const ech = state.feLignes.map(l => ({ date: l.date, montant: feRond(String(l.montant).replace(",", ".")) }));
+  if(ech.length < 2) return erreurForm("#fe_p_err", "Un plan de paiement compte au moins deux échéances.");
+  const n = ech.findIndex(l => !l.date || !(l.montant > 0));
+  if(n >= 0) return erreurForm("#fe_p_err", `Échéance ${n+1} : indiquez une date et un montant supérieur à 0.`);
+  ech.sort((a,b) => a.date.localeCompare(b.date));
+  const ok = await feCreer({
+    type: "plan", membre: m, fournisseur: fourn,
+    objet: $("#fe_p_objet").value.trim(), reference: $("#fe_p_ref").value.trim(),
+    note: $("#fe_p_note").value.trim(), echeances: ech,
+    fichier: $("#fe_p_pdf").files[0], envoyer: $("#fe_p_envoyer").checked,
+    btn, errSel: "#fe_p_err", form: $("#fe_planForm"), boite: $("#fe_planBox")
+  });
+  if(ok){ state.feLignes = []; feRenderLignes(); }
+});
+
+async function feCreer(o){
+  if(state.feErr) return erreurForm(o.errSel, "La table des factures n'existe pas encore : passez d'abord le script SQL."), false;
+  const libelle = o.btn.textContent;
+  o.btn.disabled = true; o.btn.textContent = "Enregistrement…";
+  let pieces = [];
+  try{
+    pieces = await feTeleverser(o.fichier, o.type === "plan" ? "Plan de paiement" : "Facture");
+    const ligne = {
+      type: o.type, member_id: o.membre.id, member_name: o.membre.name || "",
+      fournisseur: o.fournisseur, objet: o.objet || null, reference: o.reference || null,
+      montant: feRond(o.echeances.reduce((s,x) => s + x.montant, 0)),
+      echeances: o.echeances.map(x => ({ date: x.date, montant: feRond(x.montant), paid_at: null, request_id: null })),
+      attachments: pieces, note: o.note || null, created_by: state.profile.id
+    };
+    const { data, error } = await sb.from(FE_TABLE).insert(ligne).select().single();
+    if(error) throw error;
+    let envoye = false;
+    if(o.envoyer) envoye = await feEnvoyer(data, false);
+    o.form.reset();
+    feNettoyerLecture();
+    if(o.type === "plan") $("#fe_p_nb").value = 3;
+    else $("#fe_f_envoyer").checked = true;
+    if(o.type === "plan") $("#fe_p_envoyer").checked = true;
+    if(o.boite) o.boite.open = false;
+    state.feOuvert.add(data.id);
+    await refresh();
+    toast((o.type === "plan" ? "Plan enregistré" : "Facture enregistrée")
+      + (o.envoyer ? (envoye ? " et envoyée à " + (o.membre.name || "au membre") + "." : ", mais l'e-mail n'est pas parti.") : ". Pensez à l'envoyer au membre."));
+    return true;
+  }catch(err){
+    if(pieces.length){ try{ await sb.storage.from("justificatifs").remove(pieces.map(p => p.path)); }catch(_){} }
+    erreurForm(o.errSel, "Enregistrement impossible : " + (err.message || err));
+    return false;
+  }finally{
+    o.btn.disabled = false; o.btn.textContent = libelle;
+  }
+}
+
+/* ---------- lecture automatique du PDF (texte seulement, rien n'est envoyé ailleurs) ----------
+   Le PDF est lu dans le navigateur avec pdf.js ; on reconstitue les lignes puis on y cherche
+   le fournisseur, le montant à payer, l'échéance, le n° de facture et la communication
+   structurée. Un scan (image sans texte) ne donne rien : les champs restent à remplir. */
+const FE_FOURN_CONNUS = [
+  ["Kluwer", /wolters\s*kluwer|\bkluwer\b/i], ["Larcier", /\blarcier\b/i], ["Intersentia", /\bintersentia\b/i],
+  ["Anthemis", /\banthemis\b/i], ["Bruylant", /\bbruylant\b/i], ["die Keure", /\bdie\s*keure\b/i],
+  ["Lefebvre Dalloz", /\blefebvre\b/i], ["LexisNexis", /lexis\s*nexis/i], ["Jurisquare", /\bjurisquare\b/i],
+  ["Politeia", /\bpoliteia\b/i], ["Dalloz", /\bdalloz\b/i], ["Story Publishers", /\bstory\s*publishers\b/i]
+];
+const FE_MOIS = { janvier:1, "février":2, fevrier:2, mars:3, avril:4, mai:5, juin:6, juillet:7, "août":8, aout:8,
+  septembre:9, octobre:10, novembre:11, "décembre":12, decembre:12, januari:1, februari:2, maart:3, april:4, mei:5,
+  juni:6, juli:7, augustus:8, september:9, oktober:10, november:11, december:12, january:1, february:2, march:3,
+  may:5, june:6, july:7, august:8, october:10 };
+const feIso = (j, m, a) => {
+  a = Number(a); if(a < 100) a += 2000; j = Number(j); m = Number(m);
+  if(!(m >= 1 && m <= 12 && j >= 1 && j <= 31 && a >= 2000 && a <= 2100)) return null;
+  const d = new Date(a, m - 1, j); if(d.getMonth() !== m - 1) return null;
+  return `${a}-${String(m).padStart(2,"0")}-${String(j).padStart(2,"0")}`;
+};
+function feDates(txt){
+  const out = [];
+  const re1 = /(?<!\d)(\d{1,2})\s?[\/.\-]\s?(\d{1,2})\s?[\/.\-]\s?(\d{4}|\d{2})(?!\d)/g;
+  const re2 = new RegExp("(?<!\\d)(\\d{1,2})(?:er|e)?\\s+(" + Object.keys(FE_MOIS).join("|") + ")\\.?\\s+(\\d{4})", "gi");
+  let m;
+  while((m = re1.exec(txt))){ const d = feIso(m[1], m[2], m[3]); if(d) out.push({ d, i: m.index, l: m[0].length }); }
+  while((m = re2.exec(txt))){ const d = feIso(m[1], FE_MOIS[m[2].toLowerCase()], m[3]); if(d) out.push({ d, i: m.index, l: m[0].length }); }
+  return out.sort((a,b) => a.i - b.i);
+}
+function feMontants(txt){
+  // on neutralise d'abord les dates, pour que « 23.10.2026 » ne devienne pas 23,10 €
+  let t = txt;
+  for(const x of feDates(txt)) t = t.slice(0, x.i) + " ".repeat(x.l) + t.slice(x.i + x.l);
+  const re = /(?<![\d.,])(?:\d{1,3}(?:[ .,\u00a0\u202f]\d{3})+|\d+)[.,]\d{2}(?![\d%])(?!\s*%)/g;
+  const out = []; let m;
+  while((m = re.exec(t))){
+    const s = m[0];
+    const v = Number(s.slice(0, -3).replace(/\D/g, "") + "." + s.slice(-2));
+    if(v > 0) out.push({ v, i: m.index });
+  }
+  return out;
+}
+function feAnalyser(lignes, connus){
+  const res = { texte: lignes.join(" ").replace(/\s/g, "").length > 30 };
+  const txt = lignes.join("\n");
+  // fournisseur : celui qui apparaît le plus haut dans le document
+  let best = null;
+  const liste = FE_FOURN_CONNUS.concat((connus || []).filter(Boolean).map(n =>
+    [n, new RegExp("\\b" + n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i")]));
+  for(const [nom, re] of liste){ const m = re.exec(txt); if(m && (!best || m.index < best.i)) best = { nom, i: m.index }; }
+  if(best) res.fournisseur = best.nom;
+
+  // montant à payer : mot-clé le plus précis d'abord, puis le plus grand montant trouvé à ce niveau
+  const NIV = [
+    /total\s*(?:général\s*)?(?:à|a)\s*payer|montant\s*(?:total\s*)?(?:à|a|restant\s*(?:à|a))\s*payer|net\s*(?:à|a)\s*payer|solde\s*(?:à|a|dû|du)|reste\s*(?:à|a)\s*payer|te\s*betalen|amount\s*due|total\s*due|balance\s*due/i,
+    /total\s*(?:ttc|tvac|t\.v\.a\.c|tva\s*compr|tva\s*incl|incl|général|general|eur\b|€)|totaal|grand\s*total/i,
+    /\btotal\b|\bmontant\b/i
+  ];
+  const valeurLigne = (n, re) => {
+    const l = lignes[n]; const m = re.exec(l);
+    let a = feMontants(l.slice(m.index + m[0].length));
+    if(!a.length && lignes[n+1] && !/[a-z]{4,}/i.test(lignes[n+1].replace(/eur|€/gi, ""))) a = feMontants(lignes[n+1]);
+    return a.length ? a[a.length - 1].v : null;
+  };
+  for(const re of NIV){
+    const vals = [];
+    lignes.forEach((l, n) => { if(re.test(l)){ const v = valeurLigne(n, re); if(v) vals.push(v); } });
+    if(vals.length){ res.montant = Math.max(...vals); break; }
+  }
+  if(!res.montant){
+    const euros = lignes.filter(l => /€|eur\b/i.test(l)).flatMap(l => feMontants(l).map(x => x.v));
+    if(euros.length) res.montant = Math.max(...euros);
+  }
+
+  // date de facture (sert au calcul « payable à 30 jours »)
+  const RE_DFACT = /date\s*(?:de\s*(?:la\s*)?)?facture|date\s*d['’]\s*[ée]mission|factuurdatum|invoice\s*date|date\s*de\s*facturation/i;
+  let dFact = null;
+  lignes.forEach((l, n) => { if(!dFact && RE_DFACT.test(l)){
+    const m = RE_DFACT.exec(l); const d = feDates(l.slice(m.index)); const d2 = d.length ? d : feDates(lignes[n+1] || "");
+    if(d2.length) dFact = d2[0].d; } });
+  if(dFact) res.dateFacture = dFact;
+
+  // échéance
+  const RE_ECH = /[ée]ch[ée]ance|(?:à|a)\s*payer\s*(?:avant|pour|au\s*plus\s*tard)|payable\s*(?:avant|le|pour|jusqu|au\s*plus)|au\s*plus\s*tard|vervaldatum|vervaldag|uiterlijk|due\s*date|payment\s*due|date\s*limite/i;
+  for(let n = 0; n < lignes.length && !res.echeance; n++){
+    const l = lignes[n]; const m = RE_ECH.exec(l); if(!m) continue;
+    const d = feDates(l.slice(m.index)); const d2 = d.length ? d : feDates(lignes[n+1] || "");
+    if(d2.length) res.echeance = d2[0].d;
+  }
+  if(!res.echeance && dFact){
+    const m = /(\d{1,3})\s*(?:jours|jrs|j\.|dagen|days)/i.exec(txt);
+    if(m && Number(m[1]) <= 120){ const d = new Date(dFact + "T12:00:00"); d.setDate(d.getDate() + Number(m[1]));
+      res.echeance = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+  }
+
+  // n° de facture
+  const TOK = "([A-Z0-9][A-Z0-9\\-\\/._]*\\d[A-Z0-9\\-\\/._]*)";
+  const REFS = [
+    new RegExp("n[°ºo]\\.?\\s*(?:de\\s+)?(?:la\\s+)?facture\\s*[:.]?\\s*" + TOK, "i"),
+    new RegExp("(?:facture|invoice|factuur)\\s*(?:n[°ºo]\\.?|num[ée]ro|nummer|nr\\.?|number|no\\.?|#)?\\s*[:.]?\\s*" + TOK, "i"),
+    new RegExp("r[ée]f[ée]rence\\s*(?:de\\s*(?:la\\s*)?facture)?\\s*[:.]?\\s*" + TOK, "i")
+  ];
+  for(const re of REFS){
+    for(const l of lignes){
+      const m = re.exec(l);
+      if(m && !feDates(m[1]).length){ res.reference = m[1].replace(/[._\-\/]+$/, ""); break; }
+    }
+    if(res.reference) break;
+  }
+  const cs = /(?:\+{3}|\*{3})\s*(\d{3})\s*\/\s*(\d{4})\s*\/\s*(\d{5})\s*(?:\+{3}|\*{3})/.exec(txt);
+  if(cs) res.communication = `+++${cs[1]}/${cs[2]}/${cs[3]}+++`;
+
+  // plan de paiement : lignes portant une date et un montant (hors date de facture)
+  const vues = new Map();
+  for(const l of lignes){
+    if(RE_DFACT.test(l)) continue;
+    const d = feDates(l), a = feMontants(l);
+    if(d.length && a.length && !vues.has(d[0].d)) vues.set(d[0].d, a[a.length - 1].v);
+  }
+  if(vues.size >= 2) res.echeances = [...vues].map(([date, montant]) => ({ date, montant })).sort((a,b) => a.date.localeCompare(b.date));
+  return res;
+}
+
+async function feLignesDepuis(lib, data){
+  const doc = await lib.getDocument({ data, isEvalSupported:false }).promise;
+  const out = [];
+  try{
+    for(let p = 1; p <= Math.min(doc.numPages, 6); p++){
+      const page = await doc.getPage(p);
+      const tc = await page.getTextContent();
+      const rows = [];
+      for(const it of tc.items){
+        if(!it.str || !it.str.trim()) continue;
+        const x = it.transform[4], y = it.transform[5];
+        let r = rows.find(r => Math.abs(r.y - y) <= 2.5);
+        if(!r){ r = { y, parts:[] }; rows.push(r); }
+        r.parts.push({ x, s: it.str, w: it.width || 0 });
+      }
+      rows.sort((a,b) => b.y - a.y);
+      for(const r of rows){
+        r.parts.sort((a,b) => a.x - b.x);
+        let s = "", fin = null;
+        for(const q of r.parts){
+          if(fin !== null) s += q.x - fin > 12 ? "   " : q.x - fin > 1 ? " " : "";
+          s += q.s; fin = q.x + q.w;
+        }
+        if(s.trim()) out.push(s.trim());
+      }
+    }
+  } finally { try{ await doc.destroy(); }catch(_){} }
+  return out;
+}
+
+let _fePdfLib = null;
+async function fePdfLib(){
+  if(_fePdfLib) return _fePdfLib;
+  const base = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/";
+  const lib = await import(base + "pdf.min.mjs");
+  lib.GlobalWorkerOptions.workerSrc = base + "pdf.worker.min.mjs";
+  return (_fePdfLib = lib);
+}
+// remplit un champ vide (ou déjà rempli par une lecture précédente), jamais une saisie à la main
+function feRemplir(sel, val){
+  const el = $(sel);
+  if(!el || val == null || val === "") return false;
+  if(el.value && !el.classList.contains("fe-auto")) return false;
+  el.value = val; el.classList.add("fe-auto");
+  return true;
+}
+["#fe_factForm", "#fe_planForm"].forEach(id => $(id).addEventListener("input", e => {
+  if(e.target.classList) e.target.classList.remove("fe-auto");
+  if(e.target.closest && e.target.closest("#fe_p_lignes")) state.feLignesAuto = false;
+}));
+function feNettoyerLecture(){
+  document.querySelectorAll("#viewFactures .fe-auto").forEach(el => el.classList.remove("fe-auto"));
+  ["#fe_f_lu", "#fe_p_lu"].forEach(id => { const b = $(id); if(b){ b.hidden = true; b.innerHTML = ""; } });
+  state.feLignesAuto = false;
+}
+async function feLirePdf(plan){
+  const P = plan ? "#fe_p_" : "#fe_f_";
+  const file = $(P + "pdf").files[0];
+  const box = $(P + "lu");
+  if(!file){ box.hidden = true; return; }
+  const montrer = (html, ok) => { box.innerHTML = html; box.classList.toggle("ko", !ok); box.hidden = false; };
+  if(!(file.type === "application/pdf" || /\.pdf$/i.test(file.name)))
+    return montrer("Lecture automatique possible uniquement pour un PDF : remplis les champs à la main.", false);
+  montrer("Lecture du PDF…", true);
+  let r;
+  try{
+    const lib = await fePdfLib();
+    const lignes = await feLignesDepuis(lib, new Uint8Array(await file.arrayBuffer()));
+    const connus = [...new Set((state.factures || []).map(f => String(f.fournisseur || "").trim()).filter(x => x.length >= 3))];
+    r = feAnalyser(lignes, connus);
+  }catch(err){
+    console.error("lecture PDF", err);
+    return montrer("Le PDF n'a pas pu être lu automatiquement (" + esc(err.message || err) + ") : remplis les champs à la main.", false);
+  }
+  if(!r.texte) return montrer("Ce PDF ne contient pas de texte lisible (probablement un scan) : remplis les champs à la main.", false);
+
+  const ref = [r.reference, r.communication].filter(Boolean).join(" · ").slice(0, 60);
+  const trouve = [], manque = [];
+  const note = (ok, lib, val, nom) => ok ? trouve.push(lib + " <b>" + esc(val) + "</b>") : manque.push(nom);
+  if(r.fournisseur) feRemplir(P + "fourn", r.fournisseur);
+  note(!!r.fournisseur, "Fournisseur", r.fournisseur, "fournisseur");
+  if(ref) feRemplir(P + "ref", ref);
+  note(!!r.reference, "N°", r.reference, "n° de facture");
+  if(r.communication) trouve.push("communication <b>" + esc(r.communication) + "</b>");
+
+  if(plan){
+    const ech = r.echeances && r.echeances.length >= 2 ? r.echeances : null;
+    const total = r.montant || (ech ? feRond(ech.reduce((s,x) => s + x.montant, 0)) : null);
+    if(total) feRemplir("#fe_p_total", total.toFixed(2));
+    note(!!total, "Total", total ? euro(total) : "", "total");
+    const vides = state.feLignes.every(l => !l.date && !l.montant);
+    if(ech && (vides || state.feLignesAuto)){
+      state.feLignes = ech.map(x => ({ date: x.date, montant: x.montant.toFixed(2) }));
+      state.feLignesAuto = true;
+      $("#fe_p_nb").value = ech.length;
+      $("#fe_p_premiere").value = ech[0].date;
+      feRenderLignes();
+    } else if(r.echeance) feRemplir("#fe_p_premiere", r.echeance);
+    if(ech) trouve.push("<b>" + ech.length + " échéances</b> (du " + fdate(ech[0].date) + " au " + fdate(ech[ech.length-1].date) + ")");
+    else manque.push("l'échéancier (utilise « Calculer »)");
+    feMajSomme();
+  } else {
+    if(r.montant) feRemplir("#fe_f_montant", r.montant.toFixed(2));
+    note(!!r.montant, "Montant", r.montant ? euro(r.montant) : "", "montant");
+    if(r.echeance) feRemplir("#fe_f_date", r.echeance);
+    note(!!r.echeance, "à payer avant le", r.echeance ? fdate(r.echeance) : "", "date d'échéance");
+  }
+  const ok = trouve.length > 0;
+  montrer((ok ? "Lu dans le PDF : " + trouve.join(" · ") + "." : "Rien de reconnu dans ce PDF.")
+    + (manque.length ? ` <span class="manque">À compléter : ${esc(manque.join(", "))}.</span>` : "")
+    + " Vérifie, puis choisis le membre.", ok && !manque.length);
+}
+$("#fe_f_pdf").addEventListener("change", () => feLirePdf(false));
+$("#fe_p_pdf").addEventListener("change", () => feLirePdf(true));
+
+/* ---------- actions sur une fiche ---------- */
+const feDe = el => { const c = el.closest("[data-fe-id]"); return c ? (state.factures || []).find(f => f.id === c.dataset.feId) : null; };
+
+$("#fe_lists").addEventListener("keydown", e => {
+  if((e.key === "Enter" || e.key === " ") && e.target.matches("[data-fe-toggle]")){ e.preventDefault(); e.target.click(); }
+});
+$("#fe_lists").addEventListener("change", async e => {
+  const inp = e.target.closest("[data-fe-joindre]"); if(!inp || !isTreso()) return;
+  const f = feDe(inp); const file = inp.files[0]; if(!f || !file) return;
+  try{
+    const pieces = await feTeleverser(file, f.type === "plan" ? "Plan de paiement" : "Facture");
+    const anciens = (f.attachments || []).map(p => p.path);
+    const { error } = await sb.from(FE_TABLE).update({ attachments: pieces }).eq("id", f.id);
+    if(error){ try{ await sb.storage.from("justificatifs").remove(pieces.map(p => p.path)); }catch(_){} throw error; }
+    // l'ancien fichier n'est retiré que s'il n'est pas repris dans un paiement direct déjà créé
+    const utilises = new Set((state.items || []).flatMap(i => piecesDe(i).map(p => p.path)));
+    const aRetirer = anciens.filter(p => !utilises.has(p));
+    if(aRetirer.length){ try{ await sb.storage.from("justificatifs").remove(aRetirer); }catch(_){} }
+    await refresh(); toast("PDF joint.");
+  }catch(err){ toast("PDF non joint : " + (err.message || err)); }
+});
+
+$("#fe_lists").addEventListener("click", async e => {
+  const tg = e.target.closest("[data-fe-toggle]");
+  if(tg){
+    const id = tg.dataset.feToggle;
+    if(state.feOuvert.has(id)) state.feOuvert.delete(id); else state.feOuvert.add(id);
+    return renderFactures();
+  }
+  const f = feDe(e.target); if(!f) return;
+  const b = e.target.closest("button"); if(!b) return;
+
+  if(b.hasAttribute("data-fe-pdf")){
+    const p = (f.attachments || [])[0]; if(!p) return;
+    const w = window.open("", "_blank");
+    const { data } = await sb.storage.from("justificatifs").createSignedUrl(p.path, 3600);
+    if(!data || !data.signedUrl){ if(w) w.close(); return toast("PDF introuvable."); }
+    if(w) w.location = data.signedUrl; else window.location.href = data.signedUrl;
+    return;
+  }
+  if(!isTreso()) return;
+  const carte = b.closest("[data-fe-id]");
+
+  if(b.hasAttribute("data-fe-send") || b.hasAttribute("data-fe-rappel")){
+    const rappel = b.hasAttribute("data-fe-rappel");
+    const pro = feProchaine(f);
+    const nom = feNomMembre(f);
+    if(!await demander(rappel ? "Envoyer un rappel à " + nom : "Envoyer à " + nom,
+        nom + " va recevoir un e-mail : « " + feMailSujet(f, rappel) + " »."
+        + (pro ? "\n\nProchaine échéance : " + fdate(pro.date) + " — " + euro(pro.montant) + "." : ""),
+        { bouton: rappel ? "Envoyer le rappel" : "Envoyer" })) return;
+    b.disabled = true;
+    const ok = await feEnvoyer(f, rappel);
+    b.disabled = false;
+    if(ok){ await refresh(); toast(rappel ? "Rappel envoyé à " + nom + "." : "E-mail envoyé à " + nom + "."); }
+    return;
+  }
+
+  if(b.hasAttribute("data-fe-save")){
+    const ech = feEchs(f).map(x => ({ ...x }));
+    for(let n = 0; n < ech.length; n++){
+      if(ech[n].paid_at) continue;
+      const d = carte.querySelector(`[data-fe-edate="${n}"]`), mt = carte.querySelector(`[data-fe-emt="${n}"]`);
+      const v = feRond(String(mt ? mt.value : ech[n].montant).replace(",", "."));
+      if(!d || !d.value) return toast(`Échéance ${n+1} : date manquante.`);
+      if(!(v > 0)) return toast(`Échéance ${n+1} : montant invalide.`);
+      ech[n].date = d.value; ech[n].montant = v;
+    }
+    ech.sort((a,x) => String(a.date).localeCompare(String(x.date)));
+    b.disabled = true;
+    const { error } = await sb.from(FE_TABLE).update({ echeances: ech, montant: feRond(ech.reduce((s,x) => s + Number(x.montant||0), 0)) }).eq("id", f.id);
+    b.disabled = false;
+    if(error) return toast("Modification impossible : " + error.message);
+    b.blur(); await refresh(); toast("Échéances mises à jour.");
+    return;
+  }
+
+  if(b.hasAttribute("data-fe-del")){
+    if(feEchs(f).some(x => x.paid_at)) return toast("Une échéance est déjà payée : annulez d'abord ce paiement.");
+    if(!await demander("Supprimer « " + feLibelle(f) + " »",
+        "La fiche et son PDF sont supprimés définitivement. Le membre ne la verra plus. Aucun e-mail n'est envoyé.",
+        { bouton: "Supprimer", danger: true })) return;
+    const { error } = await sb.from(FE_TABLE).delete().eq("id", f.id);
+    if(error) return toast("Suppression impossible : " + error.message);
+    const chemins = (f.attachments || []).map(p => p.path);
+    if(chemins.length){ try{ await sb.storage.from("justificatifs").remove(chemins); }catch(_){} }
+    state.feOuvert.delete(f.id);
+    await refresh(); toast("Supprimée.");
+    return;
+  }
+
+  if(b.hasAttribute("data-fe-payer")) return fePayer(f, Number(b.dataset.fePayer), carte, b);
+  if(b.hasAttribute("data-fe-annul")) return feAnnulerPaiement(f, Number(b.dataset.feAnnul), b);
+});
+
+/* Payer une échéance : elle devient un paiement direct payé au nom du membre.
+   Si l'enregistrement sur la fiche échoue, le paiement direct est retiré aussitôt :
+   jamais de montant compté sans que la fiche le sache, ni l'inverse. */
+async function fePayer(f, n, carte, b){
+  const ech = feEchs(f).map(x => ({ ...x }));
+  const e = ech[n];
+  if(!e || e.paid_at) return toast("Cette échéance est déjà payée.");
+  const inp = carte.querySelector(`[data-fe-pdate="${n}"]`);
+  const datePaie = (inp && inp.value) || dateLocale();
+  if(datePaie > dateLocale()) return toast("La date du paiement ne peut pas être dans le futur.");
+  if(estClos(datePaie)) return toast("L'exercice " + exerciceLabel(exerciceDe(datePaie)) + " est clôturé : choisissez une autre date.");
+  const plan = f.type === "plan";
+  const m = (state.members || []).find(x => x.id === f.member_id) || {};
+  const nom = feNomMembre(f);
+  const objet = (feLibelle(f) + (plan ? ` (échéance ${n+1}/${ech.length})` : "")).slice(0, 90);
+  const c = await confirmerAvecMail(plan ? "Échéance payée" : "Facture payée",
+    "« " + objet + " » — " + euro(e.montant) + "\nPayée le " + fdate(datePaie)
+    + "\n\nUn paiement direct payé est créé au nom de " + nom
+    + ". Il apparaît dans l'Aperçu, la comptabilité et chez le membre.",
+    plan ? "Confirmer le paiement" : "Confirmer le paiement",
+    { select: { label: "Mode de paiement", valeur: "virement", options: [
+        { value:"virement", label:"Virement bancaire" },
+        { value:"carte_asbl", label:"Carte bancaire de l'ASBL" },
+        { value:"especes", label:"Espèces" } ] },
+      basculeTexte: "Prévenir " + nom + " par e-mail" });
+  if(!c.ok) return;
+  b.disabled = true;
+  const midi = new Date(datePaie + "T12:00:00").toISOString();
+  const noteRef = ["Facture à échéance du " + fdate(e.date), f.reference ? "réf. " + f.reference : ""].filter(Boolean).join(" · ");
+  const ligne = {
+    user_id: f.member_id, requester_name: m.name || f.member_name || "", requester_position: m.position || "",
+    expense_date: datePaie, amount: feRond(e.montant), object: objet, category: "Paiement direct",
+    kind: "direct", beneficiary: f.fournisseur || "", pay_mode: c.mode || "virement",
+    communication: f.reference || null, note: noteRef,
+    vat_rate: "NA", supplier_vat: "", tva_affectation: "taxable",
+    attachments: Array.isArray(f.attachments) ? f.attachments : [],
+    status: "Remboursée", decided_at: midi, paid_at: midi
+  };
+  let r = await sb.from("requests").insert({ ...ligne, created_at: midi }).select().single();
+  if(r.error && /created_at/i.test(r.error.message || "")) r = await sb.from("requests").insert(ligne).select().single();
+  if(r.error){ b.disabled = false; return toast("Paiement non enregistré : " + r.error.message); }
+  const req = r.data;
+  e.paid_at = datePaie; e.request_id = req.id; e.pay_mode = c.mode || "virement";
+  const u = await sb.from(FE_TABLE).update({ echeances: ech }).eq("id", f.id).select("id");
+  if(u.error || !u.data || !u.data.length){
+    await sb.from("requests").delete().eq("id", req.id);   // pas de paiement orphelin
+    b.disabled = false;
+    return toast("Paiement annulé : la fiche n'a pas pu être mise à jour" + (u.error ? " (" + u.error.message + ")." : "."));
+  }
+  const evs = [{ request_id: req.id, who: state.profile.name, what: "Paiement effectué (" + (plan ? "plan de paiement " : "facture ") + (f.fournisseur || "") + ")", at: midi }];
+  try{ const x = await sb.from("events").insert(evs); if(x && x.error) await sb.from("events").insert(evs.map(({ at, ...reste }) => reste)); }catch(_){}
+  if(c.mail) avertirMail(feMailPaye({ ...f, echeances: ech }, e), plan ? "échéance payée" : "facture payée");
+  await refresh();
+  const reste = ech.filter(x => !x.paid_at).length;
+  toast(plan ? (reste ? `Échéance payée. Il en reste ${reste}.` : "Dernière échéance payée : plan soldé.") : "Facture payée et comptabilisée.");
+}
+
+async function feAnnulerPaiement(f, n, b){
+  const ech = feEchs(f).map(x => ({ ...x }));
+  const e = ech[n]; if(!e || !e.paid_at) return;
+  if(estClos(e.paid_at)) return toast("Exercice clôturé : ce paiement ne peut plus être annulé.");
+  if(!await demander("Annuler le paiement",
+      "Échéance du " + fdate(e.date) + " — " + euro(e.montant) + ", payée le " + fdate(e.paid_at)
+      + "\n\nLe paiement direct correspondant est supprimé (il sort de l'Aperçu et de la comptabilité) et l'échéance redevient à payer.",
+      { bouton: "Annuler le paiement", danger: true })) return;
+  b.disabled = true;
+  if(e.request_id && (state.items || []).some(i => i.id === e.request_id)){
+    try{ await sb.from("events").delete().eq("request_id", e.request_id); }catch(_){}
+    const d = await sb.from("requests").delete().eq("id", e.request_id).select("id");
+    if(d.error || !d.data || !d.data.length){
+      b.disabled = false;
+      return toast("Annulation impossible : le paiement direct n'a pas pu être retiré" + (d.error ? " (" + d.error.message + ")." : "."));
+    }
+  }
+  e.paid_at = null; e.request_id = null; delete e.pay_mode;
+  const { error } = await sb.from(FE_TABLE).update({ echeances: ech }).eq("id", f.id);
+  b.disabled = false;
+  if(error) toast("Paiement direct retiré, mais la fiche n'a pas été mise à jour : " + error.message);
+  await refresh();
+  if(!error) toast("Paiement annulé : l'échéance est de nouveau à payer.");
+}
 
 /* ============================================================
    Onglet COMPTABILITÉ — comptes annuels d'une petite ASBL en
@@ -7012,6 +8142,7 @@ if($("#btnMsg")) $("#btnMsg").onclick = () => { if(state.profile) ouvrirMessager
 
 function render(){
   if(!state.profile?.approved) return;
+  try{ renderFactures(); }catch(eF){ console.error("factures", eF); }
   try{ majHoraire(); }catch(_){}   // banderole ouvert/fermé et verrou du formulaire toujours à jour
   const mineAll = ouvert(state.items).filter(i => i.user_id === state.profile.id);
   const mine = mineAll.filter(i => i.kind !== "direct");
