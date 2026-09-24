@@ -5,7 +5,7 @@
    Le changement de nom déclenche la purge de l'ancien cache dans "activate",
    donc plus aucune vieille version ne peut rester coincée. */
 
-const CACHE = "ca-v20";
+const CACHE = "ca-v22";
 
 self.addEventListener("install", () => self.skipWaiting());
 

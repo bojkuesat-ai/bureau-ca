@@ -956,7 +956,7 @@ async function loadBilans(){
   try{ const f=await sb.from("ca_bilan_faits").select("membre_id"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){ S.meta.bilanSubmitters=[]; }
   try{ const c=await sb.rpc("ca_bilans_nb_deposes"); S.meta.bilanNbDeposes=(c&&typeof c.data==="number")?c.data:(S.meta.bilanSubmitters||[]).length; }catch(e){ S.meta.bilanNbDeposes=(S.meta.bilanSubmitters||[]).length; } }
 async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").select("*").order("created_at",{ascending:false}); S.journal=(data||[]).map(j=>({ts:j.created_at,who:j.who,txt:j.txt})); }catch(e){} }
-async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id}))})); }catch(e){ S.budgets=[]; } }
+async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,pdfPath:b.pdf_path||"",votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id}))})); }catch(e){ S.budgets=[]; } }
 async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,rappelLe:v.rappel_le,rappelProg:v.rappel_prog_at,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
 async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
 async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,lieu:m.lieu||"",ordre:m.ordre||[],presences:m.presences||{},pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } }
@@ -1658,6 +1658,7 @@ function tabPlanning(){
 /* ---- onglet BUDGETS ---- */
 /* Qui a voté quoi. Prénoms seuls, dans l'app comme dans le PDF. */
 function detailVoixBudget(b){
+  if(budgetPresentiel(b)) return "";   // voté en séance à la majorité simple : pas de liste de votants
   const pour=prenomsParChoix(b,"pour"), contre=prenomsParChoix(b,"contre"), abst=prenomsParChoix(b,"abst");
   const sans=prenomsNonVotants(b);
   if(!pour.length && !contre.length && !abst.length && !sans.length) return "";
@@ -1672,7 +1673,7 @@ function tabBudgets(){
   const effectif = effectifCA(), seuil = seuilMajorite();
   const totalApp=S.budgets.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(b.cout||0),0);
   const enVote=S.budgets.filter(b=>b.statut==="vote").length;
-  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v20 — « Voté en CA physique » : PDF + mail au CA</p><div class="stat-row">
+  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v22 — badge en ligne / en séance + PDF de la décision</p><div class="stat-row">
     <div class="stat"><p class="k">Demandes en vote</p><p class="v">${enVote}</p></div>
     <div class="stat"><p class="k">Budget approuvé</p><p class="v" style="color:var(--green)">${eur(totalApp)}</p></div>
     <div class="stat"><p class="k">Total demandes</p><p class="v">${S.budgets.length}</p></div></div>`;
@@ -1690,9 +1691,10 @@ function tabBudgets(){
     const [cls,label]=badge[b.statut]; const mien=monVoteBudget(b);
     return `<div class="vote"><div class="vote-h"><div><h4 class="serif">${esc(b.titre)}</h4>
       <p class="b-meta"><span class="b-type">${esc(b.type)}</span>${b.cout>0?`<span class="b-cost">${eur(b.cout)}</span>`:""}${b.demandeur?`<span class="by" style="margin:0">par ${esc(b.demandeur)}</span>`:""}</p></div>
-      <span class="badge ${cls}">${label}</span></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span class="badge ${cls}">${label}</span>${b.statut!=="vote"?`<span class="badge" style="background:transparent;border:1px solid ${budgetPresentiel(b)?"var(--green)":"var(--slate)"};color:${budgetPresentiel(b)?"var(--green)":"var(--slate)"};white-space:nowrap">${budgetPresentiel(b)?"🏛 Voté en séance présentielle":"💻 Voté en ligne"}</span>`:""}</div></div>
       ${(b.statut!=="vote" && b.decidePar)?`<p class="by" style="margin:8px 0 0">${String(b.decidePar).indexOf("CA physique")===0?`<b style="color:var(--green)">✓ Approuvé à la majorité simple en CA physique</b> — enregistré par ${esc(String(b.decidePar).replace(/^CA physique · /,""))} — séance`:`${b.statut==="approuve"?"✓ Approuvé":"✕ Refusé"} par ${esc(b.decidePar)}`}${b.decideLe?" le "+dateFR(b.decideLe):""}</p>`:""}
       ${b.desc?`<p class="b-desc">${esc(b.desc)}</p>`:""}
+      ${b.statut!=="vote"?`<div style="margin:8px 0 0"><button class="chip" data-action="budget-pdf-decision" data-id="${b.id}">📄 PDF de la décision</button></div>`:""}
       ${String(b.decidePar||"").indexOf("CA physique")===0?"":`<div class="tallies">${CHOIX.map(ch=>`<span class="tally"><span class="sq" style="background:var(${ch.v})"></span><b>${count(ch.id)}</b> ${ch.label}</span>`).join("")}</div>`}
       ${open?`<div class="foot-line" style="border-top:none;padding-top:0"><div class="mini">${CHOIX.map(ch=>`<button aria-pressed="${mien&&mien.choix===ch.id}" data-action="bvote" data-id="${b.id}" data-choix="${ch.id}">${ch.label}</button>`).join("")}</div></div>`:""}
       ${detailVoixBudget(b)}
@@ -2637,7 +2639,7 @@ function genererBudgetsPDF(){
   const stLabel={vote:"En vote",approuve:"Approuv\u00e9",refuse:"Refus\u00e9"};
   const total=B.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(parseFloat(b.cout)||0),0);
   const rows=B.map(b=>{ const pour=(b.votes||[]).filter(v=>v.choix==="pour").length; const contre=(b.votes||[]).filter(v=>v.choix==="contre").length; const abst=(b.votes||[]).filter(v=>v.choix==="abst").length;
-    return `<tr><td><b>${esc(b.titre||"\u2014")}</b>${b.desc?`<br><span style="color:#6a7182">${esc(b.desc)}</span>`:""}</td><td>${esc(b.type||"\u2014")}</td><td>${euro(b.cout)}</td><td>${esc(stLabel[b.statut]||b.statut||"\u2014")}</td><td>${esc(b.demandeur||"\u2014")}</td><td>${pour} / ${contre} / ${abst}</td></tr>`; }).join("");
+    return `<tr><td><b>${esc(b.titre||"\u2014")}</b>${b.desc?`<br><span style="color:#6a7182">${esc(b.desc)}</span>`:""}</td><td>${esc(b.type||"\u2014")}</td><td>${euro(b.cout)}</td><td>${esc(stLabel[b.statut]||b.statut||"\u2014")}</td><td>${esc(b.demandeur||"\u2014")}</td><td>${budgetPresentiel(b)?"En s\u00e9ance":pour+" / "+contre+" / "+abst}</td></tr>`; }).join("");
   const corps=`<h1>Budgets &amp; projets</h1><p class="d">R\u00e9capitulatif au ${new Date().toLocaleDateString("fr-BE")}</p>
     <table><thead><tr><th>Intitul\u00e9</th><th>Type</th><th>Co\u00fbt</th><th>Statut</th><th>Demandeur</th><th>Pour/Contre/Abst.</th></tr></thead><tbody>${rows||`<tr><td colspan="6">Aucun budget.</td></tr>`}</tbody></table>
     <p><b>Total approuv\u00e9 :</b> ${euro(total)}</p>`;
@@ -2706,7 +2708,7 @@ function corpsPDFBudget(b){
         : "Approuv\u00e9 \u2014 "+pour.length+" voix pour sur "+n+" membres (majorit\u00e9 simple : "+seuil+")." )
     : "Refus\u00e9 \u2014 "+pour.length+" voix pour sur "+n+" membres, il en fallait "+seuil+".";
   return `<h1>${esc(b.titre||"Budget")}</h1>
-    <p class="d">D\u00e9cision du ${new Date().toLocaleDateString("fr-BE")} \u2014 Bureau \u00e9tudiant, conseil d'administration</p>
+    <p class="d">D\u00e9cision du ${new Date(b.decideLe||Date.now()).toLocaleDateString("fr-BE")} \u2014 Bureau \u00e9tudiant, conseil d'administration</p>
     <h2>La demande</h2>
     <table><tbody>
       <tr><th style="width:150px">Intitul\u00e9</th><td>${esc(b.titre||"\u2014")}</td></tr>
@@ -2830,6 +2832,19 @@ async function voteCAPhysique(id){
     {statut:"approuve",decidePar:decidePar,decideLe:decideLe});
   await diffuserDecisionBudget(bf,"approuve",false,sig,effectifCA(),seuilMajorite());
 }
+/* Ouvre le PDF de décision envoyé ; à défaut (anciens budgets), le régénère. */
+async function ouvrirPDFDecision(id){
+  const b=(S.budgets||[]).find(x=>x.id===id); if(!b||!sb) return;
+  const nom=nomPDF("budget-"+(b.titre||""));
+  if(b.pdfPath){
+    try{
+      const su=await sb.storage.from("ca-documents").createSignedUrl(b.pdfPath, 600, {download:nom});
+      if(su&&su.data&&su.data.signedUrl){ window.open(su.data.signedUrl,"_blank"); return; }
+    }catch(_){ }
+  }
+  try{ await telechargerPDF(nom, cssDocImprimable(), corpsPDFBudget(b)); }
+  catch(e){ modaleInfo("Le PDF n'a pas pu \u00eatre g\u00e9n\u00e9r\u00e9."); }
+}
 /* PDF de la décision + dépôt + mail à tout le CA. Commun au vote en ligne et au vote en présentiel. */
 async function diffuserDecisionBudget(bf, st, force, sig, n, seuil){
   const presentiel=budgetPresentiel(bf);
@@ -2844,6 +2859,8 @@ async function diffuserDecisionBudget(bf, st, force, sig, n, seuil){
     const up=await sb.storage.from("ca-documents").upload(chemin, blob, {contentType:"application/pdf", upsert:false});
     if(up&&up.error){ ennuiDepot="d\u00e9p\u00f4t refus\u00e9 \u2014 "+up.error.message; }
     else{
+      /* Trace du PDF envoyé. Si la colonne pdf_path n'existe pas encore, l'erreur est ignorée. */
+      if(bf.id){ try{ const pm=await sb.from("ca_budgets").update({pdf_path:chemin}).eq("id",bf.id); if(!(pm&&pm.error)){ const loc=(S.budgets||[]).find(x=>x.id===bf.id); if(loc){ loc.pdfPath=chemin; render(); } } }catch(_){ } }
       const su=await sb.storage.from("ca-documents").createSignedUrl(chemin, CA_LIEN_DUREE, {download:nomFichier});
       if(su&&su.error) ennuiDepot="lien refus\u00e9 \u2014 "+su.error.message;
       else if(su&&su.data&&su.data.signedUrl) lien=su.data.signedUrl;
@@ -3789,6 +3806,7 @@ ${sections||"<p>Aucun retour.</p>"}
       break; }
     case "add-budget-ca": { await voteCAPhysique(null); break; }
     case "bca-physique": { await voteCAPhysique(id); break; }
+    case "budget-pdf-decision": { await ouvrirPDFDecision(id); break; }
     case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; const r=await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix},{onConflict:"budget_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadBudgets(); render(); break; }
     case "bdecide": { if(!(S.session&&S.session.role==="owner")||!sb) break; const st=el.dataset.st; const md=await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id).select(); if(md&&md.error){ modaleInfo("Enregistrement impossible : "+md.error.message); break; } if(!md||!md.data||!md.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 la modification (aucune ligne chang\u00e9e) \u2014 il s'agit d'une r\u00e8gle de droits (RLS) sur ca_budgets.","Action non enregistr\u00e9e"); break; } await loadBudgets(); render(); break; }
     case "bcloture": { await cloturerBudget(id, el.dataset.force==="1"); break; }
