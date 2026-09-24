@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="24.09.2026 · 2">
+<meta name="app-build" content="24.09.2026 · 3">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -635,7 +635,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 24.09.2026 · 2</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 24.09.2026 · 3</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -10081,6 +10081,30 @@ async function renderPres(){
     : `<div class="hint" style="padding:14px 16px">Aucune dépense enregistrée pour l'instant.</div>`;
 }
 
+/* Prévient le trésorier dès que la présidente enregistre une dépense. */
+async function mailDepensePres(d){
+  const qui = d.author_name || "La présidente";
+  const ligne = (a, b) => `<tr><td style="padding:6px 0;color:#666;width:40%">${a}</td><td style="padding:6px 0"><b>${b}</b></td></tr>`;
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Nouvelle dépense de la présidente</h2>
+    <p><b>${mailEsc(qui)}</b> vient d'enregistrer une dépense. Elle est déjà comptée dans la caisse.</p>
+    <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:14px">
+      ${ligne("Date de la dépense", fdate(d.expense_date))}
+      ${ligne("Montant", euro(d.amount))}
+      ${ligne("Objet", mailEsc(d.object))}
+      ${ligne("Bénéficiaire", mailEsc(d.payee))}
+      ${ligne("Catégorie", mailEsc(d.category || "—"))}
+      ${ligne("Paiement", mailEsc(d.method || "—"))}
+      ${ligne("Pièces jointes", (d.attachments || []).length + " pièce(s)")}
+    </table>
+    ${d.note ? `<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px"><b>Commentaire :</b><br>${mailEsc(d.note).replace(/\n/g, "<br>")}</p>` : ""}
+    <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir dans la caisse (onglet Dépenses)</a></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant. Répondre à ce mail écrit directement à ${mailEsc(qui)}.</p></div>`;
+  return envoyerMail(emailTreso(), "Dépense de la présidente — " + qui + " (" + euro(d.amount) + ")", html,
+    (state.profile && state.profile.email) || undefined);
+}
+
 $("#presForm").addEventListener("submit", async e => {
   e.preventDefault();
   if(!state.depensier) return;
@@ -10104,19 +10128,24 @@ $("#presForm").addEventListener("submit", async e => {
   try{
     const attachments = await envoyerPieces("pres", "dep");
     if(!attachments.length) throw new Error("la pièce justificative n'a pas pu être envoyée. Réessayez.");
-    const { error } = await sb.from("expenses").insert({
+    const dep = {
       attachments, origine: "presidente",
       created_by: state.profile.id, author_name: state.profile.name || "",
       expense_date: date, amount: montant, object: objet, payee: benef,
       category: $("#p_cat").value, method: $("#p_method").value,
       vat_rate: "NA", supplier_vat: "", tva_affectation: "taxable",
       note: $("#p_note").value.trim()
-    });
+    };
+    const { error } = await sb.from("expenses").insert(dep);
     if(error) throw error;
+    // la dépense est enregistrée : un échec d'envoi ne doit pas la faire paraître perdue
+    let prevenu = false;
+    try{ prevenu = await mailDepensePres(dep); }catch(_){}
     $("#presForm").reset(); staged.pres = []; renderStaged("pres");
     $("#p_date").value = dateLocale();
     await renderPres();
-    toast("Dépense enregistrée.");
+    toast(prevenu ? "Dépense enregistrée. Le trésorier a été prévenu par e-mail."
+                  : "Dépense enregistrée, mais l'e-mail au trésorier n'est pas parti : prévenez-le directement.");
   }catch(err){
     erreurForm("#presErr", "Enregistrement impossible : " + (err.message || err));
   }finally{ btn.disabled = false; btn.textContent = "Enregistrer la dépense"; }
