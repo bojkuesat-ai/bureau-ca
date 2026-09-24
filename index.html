@@ -546,6 +546,35 @@ function modaleSaisie(texte, titre, placeholder){
     try{ if(champ) champ.focus(); }catch(_){ }
   });
 }
+/* Choix d'une date dans une fenetre maison. Renvoie "AAAA-MM-JJ", ou null si annule. */
+function modaleDate(texte, titre){
+  return new Promise(resolve=>{
+    const anc=document.getElementById("ca_modal_date"); if(anc) anc.remove();
+    const d=document.createElement("div");
+    d.id="ca_modal_date"; d.className="ca-mod";
+    const auj=new Date(); const iso=auj.getFullYear()+"-"+String(auj.getMonth()+1).padStart(2,"0")+"-"+String(auj.getDate()).padStart(2,"0");
+    d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true">'
+      +'<h3>'+esc(titre||"Date")+'</h3>'
+      +'<p style="color:var(--ink);font-size:14px;white-space:pre-wrap">'+esc(texte)+'</p>'
+      +'<input type="date" class="f" id="ca_date_val" value="'+iso+'" max="'+iso+'" style="width:100%;margin:0 0 12px">'
+      +'<div class="ca-mod-btns">'
+      +'<button class="btn ghost sm" id="ca_date_no">Annuler</button>'
+      +'<button class="btn sm" id="ca_date_ok">Confirmer</button>'
+      +'</div></div>';
+    document.body.appendChild(d);
+    let fini=false;
+    const rep=v=>{ if(fini) return; fini=true; d.remove(); document.removeEventListener("keydown",k); resolve(v); };
+    const champ=d.querySelector("#ca_date_val");
+    const valider=()=>{ const v=champ?String(champ.value||""):""; if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){ try{ champ.focus(); }catch(_){ } return; } rep(v); };
+    function k(e){ if(e.key==="Escape") rep(null); if(e.key==="Enter") valider(); }
+    document.addEventListener("keydown",k);
+    d.addEventListener("click",e=>{ if(e.target===d) rep(null); });
+    const ok=d.querySelector("#ca_date_ok"), non=d.querySelector("#ca_date_no");
+    if(ok) ok.addEventListener("click",valider);
+    if(non) non.addEventListener("click",()=>rep(null));
+    try{ if(champ) champ.focus(); }catch(_){ }
+  });
+}
 function modaleConfirm(texte, titre){
   return new Promise(resolve=>{
     const anc=document.getElementById("ca_modal_ask"); if(anc) anc.remove();
@@ -1643,7 +1672,7 @@ function tabBudgets(){
   const effectif = effectifCA(), seuil = seuilMajorite();
   const totalApp=S.budgets.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(b.cout||0),0);
   const enVote=S.budgets.filter(b=>b.statut==="vote").length;
-  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v17 — bouton « Modifier le montant » actif</p><div class="stat-row">
+  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v20 — « Voté en CA physique » : PDF + mail au CA</p><div class="stat-row">
     <div class="stat"><p class="k">Demandes en vote</p><p class="v">${enVote}</p></div>
     <div class="stat"><p class="k">Budget approuvé</p><p class="v" style="color:var(--green)">${eur(totalApp)}</p></div>
     <div class="stat"><p class="k">Total demandes</p><p class="v">${S.budgets.length}</p></div></div>`;
@@ -1653,7 +1682,7 @@ function tabBudgets(){
       <input class="f" id="b_cout" inputmode="decimal" placeholder="Coût estimé (€)"></div>
     <textarea id="b_desc" placeholder="Description : à quoi sert ce budget, ce que ça finance…"></textarea>
     <p class="du" style="margin:6px 0 0">Un budget soumis au vote est toujours notifié par e-mail — ${destinatairesCA().length} destinataire(s) actuellement.</p>
-    <div class="row-btn"><button class="btn" data-action="add-budget">Soumettre au vote</button><button class="btn ghost" data-action="budgets-pdf">⬇ Export PDF</button></div></div>`;
+    <div class="row-btn"><button class="btn" data-action="add-budget">Soumettre au vote</button>${owner?`<button class="btn ghost" data-action="add-budget-ca" style="border-color:var(--green);color:var(--green)">✓ Voté en CA physique</button>`:""}<button class="btn ghost" data-action="budgets-pdf">⬇ Export PDF</button></div></div>`;
   const badge={vote:["open","En vote"],approuve:["ok","Approuvé"],refuse:["no","Refusé"]};
   if(S.budgets.length===0) return stats+compose+`<div class="empty">Aucune demande. Soumettez un budget ou un projet au vote.</div>`;
   const list=S.budgets.map(b=>{
@@ -1662,15 +1691,16 @@ function tabBudgets(){
     return `<div class="vote"><div class="vote-h"><div><h4 class="serif">${esc(b.titre)}</h4>
       <p class="b-meta"><span class="b-type">${esc(b.type)}</span>${b.cout>0?`<span class="b-cost">${eur(b.cout)}</span>`:""}${b.demandeur?`<span class="by" style="margin:0">par ${esc(b.demandeur)}</span>`:""}</p></div>
       <span class="badge ${cls}">${label}</span></div>
-      ${(b.statut!=="vote" && b.decidePar)?`<p class="by" style="margin:8px 0 0">${b.statut==="approuve"?"✓ Approuvé":"✕ Refusé"} par ${esc(b.decidePar)}${b.decideLe?" le "+dateFR(b.decideLe):""}</p>`:""}
+      ${(b.statut!=="vote" && b.decidePar)?`<p class="by" style="margin:8px 0 0">${String(b.decidePar).indexOf("CA physique")===0?`<b style="color:var(--green)">✓ Approuvé à la majorité simple en CA physique</b> — enregistré par ${esc(String(b.decidePar).replace(/^CA physique · /,""))} — séance`:`${b.statut==="approuve"?"✓ Approuvé":"✕ Refusé"} par ${esc(b.decidePar)}`}${b.decideLe?" le "+dateFR(b.decideLe):""}</p>`:""}
       ${b.desc?`<p class="b-desc">${esc(b.desc)}</p>`:""}
-      <div class="tallies">${CHOIX.map(ch=>`<span class="tally"><span class="sq" style="background:var(${ch.v})"></span><b>${count(ch.id)}</b> ${ch.label}</span>`).join("")}</div>
+      ${String(b.decidePar||"").indexOf("CA physique")===0?"":`<div class="tallies">${CHOIX.map(ch=>`<span class="tally"><span class="sq" style="background:var(${ch.v})"></span><b>${count(ch.id)}</b> ${ch.label}</span>`).join("")}</div>`}
       ${open?`<div class="foot-line" style="border-top:none;padding-top:0"><div class="mini">${CHOIX.map(ch=>`<button aria-pressed="${mien&&mien.choix===ch.id}" data-action="bvote" data-id="${b.id}" data-choix="${ch.id}">${ch.label}</button>`).join("")}</div></div>`:""}
       ${detailVoixBudget(b)}
       ${(open&&effectif)?`<p class="du" style="margin:8px 0 0">${count("pour")>=seuil?`✓ Majorité atteinte : ${count("pour")} voix pour sur ${effectif} membres (il en faut ${seuil}).`:`Majorité simple requise : ${seuil} voix pour sur ${effectif} membres — il en manque ${seuil-count("pour")}.`}</p>`:""}
       ${open?blocRappel("budget",b):""}
       ${(open&&peutCloturer&&effectif)?`<div class="foot-line"><button class="btn sm" data-action="bcloture" data-id="${b.id}">🔒 Clôturer le vote</button>
         ${(owner&&count("pour")<seuil)?`<button class="link" data-action="bcloture" data-id="${b.id}" data-force="1" style="color:var(--stamp)">⚠ Forcer l'approbation</button>`:""}</div>`:""}
+      ${(open&&owner)?`<div class="foot-line"><button class="btn sm ghost" data-action="bca-physique" data-id="${b.id}" style="border-color:var(--green);color:var(--green)">✓ Voté en CA physique</button></div>`:""}
       ${owner?`<div class="foot-line"><button class="link" data-action="edit-cout" data-id="${b.id}">✏ Modifier le montant (propriétaire)</button></div>`:""}
       ${peutDecider?`<div class="foot-line">${open?`${(effectif&&count("pour")>=seuil)?`<button class="chip" data-action="bdecide" data-id="${b.id}" data-st="approuve">✓ Approuver</button>`:""}<button class="chip" data-action="bdecide" data-id="${b.id}" data-st="refuse">✕ Refuser</button>`:`<button class="link" data-action="bdecide" data-id="${b.id}" data-st="vote">Rouvrir le vote</button>`}
         <button class="link" data-action="del-budget" data-id="${b.id}" style="margin-left:auto">Supprimer</button></div>`:""}</div>`;
@@ -2647,10 +2677,25 @@ function prenomsNonVotants(b){
   const sansCompte = nonInscrits().map(e => nomDepuisEmail(e) + " (pas encore inscrit·e)");
   return inscrits.concat(sansCompte);
 }
+function budgetPresentiel(b){ return String((b&&b.decidePar)||"").indexOf("CA physique")===0; }
+function mentionPresentiel(b){ return "Approuv\u00e9 \u00e0 la majorit\u00e9 simple par le Conseil d'administration r\u00e9uni en pr\u00e9sentiel le "+new Date(b.decideLe||Date.now()).toLocaleDateString("fr-BE",{day:"numeric",month:"long",year:"numeric"})+"."; }
 function budgetForce(b){ return /hors seuil/i.test(String(b.decidePar||"")); }
 function listePrenoms(l){ return l.length?l.join(", "):"\u2014"; }
 /* Corps du PDF d'un budget clôturé. */
 function corpsPDFBudget(b){
+  if(budgetPresentiel(b)) return `<h1>${esc(b.titre||"Budget")}</h1>
+    <p class="d">D\u00e9cision du ${new Date(b.decideLe||Date.now()).toLocaleDateString("fr-BE")} \u2014 Bureau \u00e9tudiant, conseil d'administration</p>
+    <h2>La demande</h2>
+    <table><tbody>
+      <tr><th style="width:150px">Intitul\u00e9</th><td>${esc(b.titre||"\u2014")}</td></tr>
+      <tr><th>Type</th><td>${esc(b.type||"\u2014")}</td></tr>
+      <tr><th>Co\u00fbt estim\u00e9</th><td>${b.cout>0?esc(eur(b.cout)):"\u2014"}</td></tr>
+      <tr><th>Demandeur</th><td>${esc(b.demandeur||"\u2014")}</td></tr>
+      ${b.desc?`<tr><th>Description</th><td>${esc(b.desc)}</td></tr>`:""}
+    </tbody></table>
+    <h2>R\u00e9sultat</h2>
+    <p style="font-size:15px"><b>${esc(mentionPresentiel(b))}</b></p>
+    <p>D\u00e9cision prise en s\u00e9ance, sans vote en ligne. Enregistr\u00e9e dans l'espace CA par ${esc(String(b.decidePar||"").replace(/^CA physique \u00b7 /,""))}.</p>`;
   const n=effectifCA(), seuil=seuilMajorite();
   const pour=prenomsParChoix(b,"pour"), contre=prenomsParChoix(b,"contre"), abst=prenomsParChoix(b,"abst");
   const sans=prenomsNonVotants(b);
@@ -2755,11 +2800,44 @@ async function cloturerBudget(id, force){
   const bf=Object.assign({}, (S.budgets||[]).find(x=>x.id===id)||b,
     {statut:st, decidePar:sig+(force?" (hors seuil)":""), decideLe:new Date().toISOString()});
 
+  await diffuserDecisionBudget(bf, st, force, sig, n, seuil);
+}
+/* Budget voté en CA physique : popup date, statut approuvé, puis PDF + mail à tout le CA.
+   id = null → nouveau budget (formulaire) ; id = budget en vote → clôture en présentiel. */
+async function voteCAPhysique(id){
+  if(!sb) return;
+  if(!(S.session && S.session.role==="owner")){ modaleInfo("Seul le propri\u00e9taire peut enregistrer une d\u00e9cision du CA."); return; }
+  let b=null, donnees=null;
+  if(id){ b=(S.budgets||[]).find(x=>x.id===id); if(!b || b.statut!=="vote") return; }
+  else{
+    const t=val("b_titre").trim(); if(!t){ modaleInfo("Indiquez au moins un titre."); return; }
+    donnees={titre:t,type:val("b_type"),cout:parseFloat(String(val("b_cout")).replace(",","."))||0,description:val("b_desc").trim()};
+  }
+  const titre=id?b.titre:donnees.titre;
+  const jour=await modaleDate("Date de la s\u00e9ance du CA qui a approuv\u00e9 « "+(titre||"")+" » \u00e0 la majorit\u00e9 simple.\n\n"+(id?"Le vote en ligne sera cl\u00f4tur\u00e9. ":"Aucun vote en ligne ne sera ouvert. ")+"Le PDF de la d\u00e9cision sera envoy\u00e9 \u00e0 tous les membres du CA.","Vot\u00e9 en CA physique");
+  if(!jour) return;
+  const sig=(S.session&&S.session.sig)||"\u2014";
+  const decidePar="CA physique \u00b7 "+sig, decideLe=new Date(jour+"T12:00:00").toISOString();
+  let r;
+  if(id) r=await sb.from("ca_budgets").update({statut:"approuve",decide_par:decidePar,decide_le:decideLe}).eq("id",id).select();
+  else r=await sb.from("ca_budgets").insert(Object.assign({},donnees,{demandeur:sig,statut:"approuve",cree_par:S.session.id,decide_par:decidePar,decide_le:decideLe})).select();
+  if(r&&r.error){ modaleInfo("Enregistrement impossible : "+r.error.message); return; }
+  if(!r||!r.data||!r.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 l'enregistrement (aucune ligne modifi\u00e9e) \u2014 r\u00e8gle de droits (RLS) sur ca_budgets. Aucun PDF ni mail n'a \u00e9t\u00e9 envoy\u00e9.","D\u00e9cision non enregistr\u00e9e"); return; }
+  const ligne=r.data[0];
+  logAct("Budget vot\u00e9 en CA physique : "+(titre||""));
+  await loadBudgets(); render();
+  const bf=Object.assign({}, (S.budgets||[]).find(x=>x.id===ligne.id)||(b||{titre:ligne.titre,type:ligne.type,cout:ligne.cout,desc:ligne.description,demandeur:ligne.demandeur,votes:[]}),
+    {statut:"approuve",decidePar:decidePar,decideLe:decideLe});
+  await diffuserDecisionBudget(bf,"approuve",false,sig,effectifCA(),seuilMajorite());
+}
+/* PDF de la décision + dépôt + mail à tout le CA. Commun au vote en ligne et au vote en présentiel. */
+async function diffuserDecisionBudget(bf, st, force, sig, n, seuil){
+  const presentiel=budgetPresentiel(bf);
   /* PDF fabriqué dans le navigateur, puis déposé dans ca-documents pour le lien. */
   const nomFichier=nomPDF("budget-"+(bf.titre||""));
   let blob=null;
   try{ blob=await telechargerPDF(nomFichier, cssDocImprimable(), corpsPDFBudget(bf), null, "blob"); }catch(e){ blob=null; }
-  if(!blob){ modaleInfo("Vote cl\u00f4tur\u00e9 : "+(st==="approuve"?"approuv\u00e9":"refus\u00e9")+".\nLe PDF n'a pas pu \u00eatre g\u00e9n\u00e9r\u00e9, aucun mail n'a \u00e9t\u00e9 envoy\u00e9.","Cl\u00f4ture enregistr\u00e9e"); return; }
+  if(!blob){ modaleInfo((presentiel?"Budget enregistr\u00e9 comme vot\u00e9 en CA physique.":"Vote cl\u00f4tur\u00e9 : "+(st==="approuve"?"approuv\u00e9":"refus\u00e9")+".")+"\nLe PDF n'a pas pu \u00eatre g\u00e9n\u00e9r\u00e9, aucun mail n'a \u00e9t\u00e9 envoy\u00e9.","Cl\u00f4ture enregistr\u00e9e"); return; }
   let lien="", ennuiDepot="";
   try{
     const chemin=uid()+"-"+nomFichier;
@@ -2784,15 +2862,15 @@ async function cloturerBudget(id, force){
   const titreMail=(st==="approuve"?"Budget approuv\u00e9 \u2014 ":"Budget refus\u00e9 \u2014 ")+(bf.titre||"");
   const corps=`<h2 style="margin:0 0 10px">${st==="approuve"?"Budget approuv\u00e9":"Budget refus\u00e9"}</h2>`
     +`<p style="font-size:16px"><b>${caMailEsc(bf.titre||"")}</b>${bf.cout>0?" \u2014 "+caMailEsc(eur(bf.cout)):""}</p>`
-    +`<p>${caMailEsc(pourL.length+" voix pour sur "+n+" membres (majorit\u00e9 simple : "+seuil+").")}</p>`
+    +(presentiel?`<p><b>${caMailEsc(mentionPresentiel(bf))}</b></p>`:`<p>${caMailEsc(pourL.length+" voix pour sur "+n+" membres (majorit\u00e9 simple : "+seuil+").")}</p>`)
     +(force?`<p style="background:#fff4f4;border:1px solid #e8c4c4;border-radius:8px;padding:10px;color:#8a2b2b"><b>Approbation hors seuil</b> \u2014 la majorit\u00e9 simple n'\u00e9tait pas atteinte. D\u00e9cision prise par ${caMailEsc(sig)}.</p>`:"")
-    +`<p><b>Pour (${pourL.length}) :</b> ${caMailEsc(listePrenoms(pourL))}<br>`
+    +(presentiel?"":`<p><b>Pour (${pourL.length}) :</b> ${caMailEsc(listePrenoms(pourL))}<br>`
     +`<b>Contre (${contreL.length}) :</b> ${caMailEsc(listePrenoms(contreL))}<br>`
-    +`<b>Abstention (${abstL.length}) :</b> ${caMailEsc(listePrenoms(abstL))}</p>`
+    +`<b>Abstention (${abstL.length}) :</b> ${caMailEsc(listePrenoms(abstL))}</p>`)
     +(lien?`<p><a href="${lien}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">T\u00e9l\u00e9charger le PDF de la d\u00e9cision</a></p>`:"")
-    +`<p>Le d\u00e9tail complet, non-votants compris, figure dans le PDF de la d\u00e9cision.</p>`;
+    +(presentiel?`<p>Le PDF de la d\u00e9cision est joint \u00e0 ce message.</p>`:`<p>Le d\u00e9tail complet, non-votants compris, figure dans le PDF de la d\u00e9cision.</p>`);
   const res=await envoyerAvecPiece(destinatairesDecision(), titreMail, corps, piece);
-  const tete="Vote cl\u00f4tur\u00e9 \u2014 "+(st==="approuve"?"approuv\u00e9":"refus\u00e9");
+  const tete=presentiel?"Vot\u00e9 en CA physique \u2014 approuv\u00e9":"Vote cl\u00f4tur\u00e9 \u2014 "+(st==="approuve"?"approuv\u00e9":"refus\u00e9");
   if(!res.total) modaleInfo("D\u00e9cision enregistr\u00e9e, mais aucun destinataire disponible.",tete);
   else modaleInfo("\u2713 "+res.ok+" membre(s) pr\u00e9venu(s)"+(res.err?", "+res.err+" \u00e9chec(s)":"")+"."
     +((res.sansPiece&&res.ok)?"\n\u26a0 Le serveur a refus\u00e9 la pi\u00e8ce jointe : le mail contient le lien de t\u00e9l\u00e9chargement.":"")
@@ -3709,6 +3787,8 @@ ${sections||"<p>Aucun retour.</p>"}
       else if(res.err){ modaleInfo(res.ok+" membre(s) prévenu(s), "+res.err+" échec(s)."+exclus, "Budget soumis au vote"); }
       else { modaleInfo("✓ "+res.total+" membre(s) prévenu(s) par e-mail."+exclus, "Budget soumis au vote"); }
       break; }
+    case "add-budget-ca": { await voteCAPhysique(null); break; }
+    case "bca-physique": { await voteCAPhysique(id); break; }
     case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; const r=await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix},{onConflict:"budget_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadBudgets(); render(); break; }
     case "bdecide": { if(!(S.session&&S.session.role==="owner")||!sb) break; const st=el.dataset.st; const md=await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id).select(); if(md&&md.error){ modaleInfo("Enregistrement impossible : "+md.error.message); break; } if(!md||!md.data||!md.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 la modification (aucune ligne chang\u00e9e) \u2014 il s'agit d'une r\u00e8gle de droits (RLS) sur ca_budgets.","Action non enregistr\u00e9e"); break; } await loadBudgets(); render(); break; }
     case "bcloture": { await cloturerBudget(id, el.dataset.force==="1"); break; }
