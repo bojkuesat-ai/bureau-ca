@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="24.09.2026 · 3">
+<meta name="app-build" content="25.09.2026 · 2">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -519,6 +519,51 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
   .fe-ech .pay{grid-column:1/4;justify-content:flex-start}
   .fe-gen{grid-template-columns:1fr 1fr}
 }
+/* ---------- Novelles ---------- */
+.nv-hero{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;padding:22px 22px;
+  border:1px solid var(--line);border-radius:var(--r);border-left:4px solid var(--gold);
+  background:linear-gradient(180deg,var(--surface) 0%,var(--bg2) 100%)}
+.nv-solde{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-size:38px;font-weight:600;
+  color:var(--gold-soft);margin:4px 0 6px;line-height:1.1}
+.nv-solde.neg{color:var(--red)}
+.nv-calc{font-size:13px;color:var(--muted);line-height:1.55}
+.nv-mini{display:grid;gap:10px;min-width:210px}
+.nv-mini>div{border:1px solid var(--line);border-radius:12px;padding:10px 13px;background:var(--bg)}
+.nv-mini span{display:block;font-size:11px;color:var(--muted2);text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+.nv-mini b{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-size:17px}
+.nv-mini small{display:block;font-size:11px;color:var(--muted2)}
+.plus{color:var(--green)} .moins{color:var(--red)}
+.nv-head,.nv-row{display:grid;grid-template-columns:96px 1fr 130px 130px 150px;gap:12px;align-items:center}
+.nv-head{padding:11px 16px;background:var(--bg2);border-bottom:1px solid var(--line)}
+.nv-head span{font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--muted2)}
+.nv-head .r,.nv-row .r{text-align:right}
+.nv-row{padding:12px 16px;border-bottom:1px solid var(--line);font-size:14px}
+.nv-row:last-child{border-bottom:0}
+.nv-row .date{color:var(--muted);font-size:13px}
+.nv-row .obj{font-weight:600}
+.nv-row .meta{font-size:12px;color:var(--muted2);margin-top:2px}
+.nv-row .mt{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-weight:600}
+.nv-row .sa{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;color:var(--muted)}
+.nv-row.releve{background:rgba(232,176,75,.06)}
+.nv-row.releve .mt{color:var(--gold-soft)}
+.nv-row .acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.o-banque{border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;
+  background:linear-gradient(180deg,var(--surface) 0%,var(--bg2) 100%)}
+.o-banque .eq{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 14px;margin-top:8px}
+.o-banque .eq b{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-size:22px}
+.o-banque .eq span{color:var(--muted2);font-size:13px}
+.o-banque .eq .op{font-size:20px;color:var(--muted2)}
+.o-banque .barre{display:flex;height:10px;border-radius:99px;overflow:hidden;margin-top:12px;background:var(--bg);border:1px solid var(--line)}
+.o-banque .barre i{display:block;height:100%}
+@media (max-width:820px){
+  .nv-hero{grid-template-columns:1fr}
+  .nv-solde{font-size:32px}
+  .nv-head{display:none}
+  .nv-row{grid-template-columns:1fr auto;gap:4px 12px}
+  .nv-row .date{grid-column:1/3}
+  .nv-row .sa{grid-column:1/2;text-align:left;font-size:12px}
+  .nv-row .acts{grid-column:2/3}
+}
 @media (max-width:820px){
   header.top{padding:16px}
   main{padding:6px 16px 100px}
@@ -635,13 +680,14 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 24.09.2026 · 3</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 25.09.2026 · 2</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
     <button id="tabMine" aria-pressed="true">Mes demandes</button>
     <button id="tabDirect" aria-pressed="false">Paiement direct</button>
     <button id="tabFactures" aria-pressed="false">Factures à échéance<span class="pill" id="pillFact" hidden>0</span></button>
+    <button id="tabNovelles" aria-pressed="false" hidden>Novelles</button>
     <button id="tabPres" aria-pressed="false" hidden>Dépenses présidente</button>
     <button id="tabTreso" aria-pressed="false" hidden>À traiter<span class="pill" id="pillReq" hidden>0</span></button>
     <button id="tabReexam" aria-pressed="false" hidden>Réexamens<span class="pill" id="pillReexam" hidden>0</span></button>
@@ -817,6 +863,94 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
       <div class="card" style="overflow:hidden">
         <div class="head"><span>Date</span><span>Objet</span><span>Statut</span><span class="r">Montant</span><span></span></div>
         <div id="myDirectList"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Novelles : caisse séparée sur le compte bancaire commun -->
+  <section id="viewNovelles" class="stack" hidden>
+    <div class="callout" id="nv_sqlErr" hidden style="border-left:4px solid var(--red)">
+      <b>Les tables des Novelles n'existent pas encore</b>
+      <p id="nv_sqlErrTxt">Passez d'abord le script SQL « Novelles » dans Supabase, puis rechargez la page.</p>
+    </div>
+
+    <div class="nv-hero">
+      <div>
+        <div class="eyebrow">Solde disponible des Novelles</div>
+        <div class="nv-solde" id="nv_solde">0,00 €</div>
+        <div class="nv-calc" id="nv_calc">Aucun solde noté pour l'instant.</div>
+      </div>
+      <div class="nv-mini">
+        <div><span>Sponsors</span><b class="plus" id="nv_kSpons">0,00 €</b><small>depuis le dernier relevé</small></div>
+        <div><span>Dépenses</span><b class="moins" id="nv_kDep">0,00 €</b><small>depuis le dernier relevé</small></div>
+      </div>
+    </div>
+    <p class="hint" style="margin:-6px 2px 0">Caisse séparée : rien de cet onglet ne compte dans la comptabilité ni dans la TVA de l'ASBL. Seuls le trésorier et les responsables des Novelles la voient.</p>
+
+    <div id="nv_tresoZone" class="stack" hidden>
+      <details class="pliable" id="nv_soldeBox">
+        <summary><div><b style="font-family:'Fraunces',serif;font-size:17px">Noter le solde bancaire</b>
+          <div class="resume">Le montant réellement disponible pour les Novelles sur le compte, à une date</div></div></summary>
+        <form id="nv_soldeForm" class="stack" style="gap:14px;margin-top:16px">
+          <div class="grid2">
+            <div class="field"><label for="nv_s_date">Solde au</label><input type="date" id="nv_s_date" required></div>
+            <div class="field"><label for="nv_s_montant">Solde (€)</label><input type="number" id="nv_s_montant" step="0.01" placeholder="0,00" required></div>
+          </div>
+          <div class="field"><label for="nv_s_note">Remarque (facultatif)</label>
+            <input type="text" id="nv_s_note" maxlength="140" placeholder="Ex. vérifié sur l'extrait ING n° 38"></div>
+          <span class="hint">Ce montant remplace le calcul : les sponsors et dépenses datés d'avant ce relevé sont considérés comme déjà dedans.</span>
+          <div class="err" id="nv_s_err" hidden></div>
+          <div><button class="btn" type="submit" id="nv_s_btn">Enregistrer le solde</button></div>
+        </form>
+      </details>
+
+      <details class="pliable" id="nv_sponsBox">
+        <summary><div><b style="font-family:'Fraunces',serif;font-size:17px">Ajouter un sponsor</b>
+          <div class="resume">Un versement de sponsor arrivé sur le compte</div></div></summary>
+        <form id="nv_sponsForm" class="stack" style="gap:14px;margin-top:16px">
+          <div class="grid2">
+            <div class="field"><label for="nv_p_nom">Sponsor</label><input type="text" id="nv_p_nom" maxlength="80" placeholder="Ex. Cabinet Dupont" required></div>
+            <div class="field"><label for="nv_p_montant">Montant reçu (€)</label><input type="number" id="nv_p_montant" step="0.01" min="0.01" placeholder="0,00" required></div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label for="nv_p_date">Reçu le</label><input type="date" id="nv_p_date" required></div>
+            <div class="field"><label for="nv_p_note">Remarque (facultatif)</label><input type="text" id="nv_p_note" maxlength="140" placeholder="Ex. pack Or 2026-2027"></div>
+          </div>
+          <div class="field"><label for="nv_p_pdf">Pièce (facultatif)</label>
+            <input type="file" id="nv_p_pdf" accept="application/pdf,.pdf,image/*"></div>
+          <div class="err" id="nv_p_err" hidden></div>
+          <div><button class="btn" type="submit" id="nv_p_btn">Ajouter le sponsor</button></div>
+        </form>
+      </details>
+    </div>
+
+    <details class="pliable" id="nv_depBox">
+      <summary><div><b style="font-family:'Fraunces',serif;font-size:17px">Nouvelle dépense Novelles</b>
+        <div class="resume" id="nv_depResume">Enregistrée tout de suite, sans validation</div></div></summary>
+      <form id="nv_depForm" class="stack" style="gap:14px;margin-top:16px">
+        <div class="grid2">
+          <div class="field"><label for="nv_d_date">Date de la dépense</label><input type="date" id="nv_d_date" required></div>
+          <div class="field"><label for="nv_d_montant">Montant (€)</label><input type="number" id="nv_d_montant" step="0.01" min="0.01" placeholder="0,00" required></div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label for="nv_d_objet">Objet</label><input type="text" id="nv_d_objet" maxlength="90" placeholder="Ex. Impression du numéro d'octobre" required></div>
+          <div class="field"><label for="nv_d_benef">Payé à</label><input type="text" id="nv_d_benef" maxlength="90" placeholder="Ex. Imprimerie Dupont" required></div>
+        </div>
+        <div class="field"><label for="nv_d_pdf">Ticket ou facture</label>
+          <input type="file" id="nv_d_pdf" accept="application/pdf,.pdf,image/*" multiple>
+          <span class="hint">Photo ou PDF, 5 Mo maximum par fichier. Vivement conseillé pour garder une trace.</span></div>
+        <div class="field"><label for="nv_d_note">Commentaire (facultatif)</label>
+          <textarea id="nv_d_note" maxlength="400" placeholder="Info utile au trésorier"></textarea></div>
+        <div class="err" id="nv_d_err" hidden></div>
+        <div><button class="btn" type="submit" id="nv_d_btn">Enregistrer la dépense</button></div>
+      </form>
+    </details>
+
+    <div>
+      <div class="section-title"><h2 style="font-size:19px">Historique</h2><span class="hint" id="nv_nb"></span></div>
+      <div class="card" style="overflow:hidden">
+        <div class="nv-head"><span>Date</span><span>Mouvement</span><span class="r">Montant</span><span class="r">Solde après</span><span></span></div>
+        <div id="nv_list"></div>
       </div>
     </div>
   </section>
@@ -1021,6 +1155,16 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
       <div class="kpi wait"><div class="eyebrow">Validé, à virer</div><div class="n" id="o_valide">0 €</div></div>
       <div class="kpi wait"><div class="eyebrow">En attente de décision</div><div class="n" id="o_attente">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Refusé</div><div class="n" id="o_refuse">0 €</div></div>
+    </div>
+    <div class="o-banque" id="o_banque" hidden>
+      <div class="eyebrow">Compte bancaire commun — répartition</div>
+      <div class="eq">
+        <span>Compte</span><b id="o_bTotal">0 €</b><span class="op">=</span>
+        <span>ASBL</span><b id="o_bAsbl" style="color:var(--green)">0 €</b><span class="op">+</span>
+        <span>Novelles</span><b id="o_bNov" style="color:var(--gold-soft)">0 €</b>
+      </div>
+      <div class="barre" id="o_bBarre"></div>
+      <div class="hint" style="margin-top:8px">ASBL = solde de la caisse (toutes années). Novelles = solde disponible de l'onglet Novelles, qui ne compte pas dans la comptabilité de l'ASBL.</div>
     </div>
 
     <div>
@@ -2768,6 +2912,7 @@ async function start(){
       .on("postgres_changes",{event:"*",schema:"public",table:"expenses"}, refresh)
       .on("postgres_changes",{event:"*",schema:"public",table:"incomes"}, refresh)
       .on("postgres_changes",{event:"*",schema:"public",table:"factures_echeance"}, refresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"novelles_mouvements"}, refresh)
       .on("postgres_changes",{event:"*",schema:"public",table:"profiles"}, async () => { await loadProfile(user); await refresh(); })
       .on("postgres_changes",{event:"*",schema:"public",table:"ca_budgets"}, async () => { try{ await loadBudgetsCaisse(); if(state.view==="budget") renderBudget(); }catch(_){} })
       .on("postgres_changes",{event:"*",schema:"public",table:"ca_budget_votes"}, async () => { try{ await loadBudgetsCaisse(); if(state.view==="budget") renderBudget(); }catch(_){} })
@@ -2805,6 +2950,7 @@ async function loadProfile(user){
   try{ const dp = await sb.from("depensiers").select("user_id,titre").eq("user_id", prof.id).maybeSingle();
        if(dp && dp.data) state.depensier = dp.data; }catch(_){}
   if($("#tabPres")) $("#tabPres").hidden = !state.depensier || isTreso();
+  await nvChargerAcces();
   if($("#btnMsg")) $("#btnMsg").style.display = isTreso() ? "none" : "inline-flex";
   try{ brancherBrouillon("req"); brancherBrouillon("dir"); restaurerBrouillon("req"); restaurerBrouillon("dir"); }catch(_){}
   try{ await synchroniserHorloge(); }catch(_){}
@@ -2869,6 +3015,7 @@ async function refresh(){
     if(!state.relanceAutoFaite){ state.relanceAutoFaite = true; relancerIncompletes(true); alerterDormantes(true); }
   }
   try{ await chargerFactures(); }catch(eF){ state.feErr = eF.message || String(eF); }
+  try{ await chargerNovelles(); }catch(eN){ state.nvErr = eN.message || String(eN); }
   render();
   renderMessagesUI();
   verifierLienRecu();
@@ -5913,6 +6060,9 @@ function setView(v){
   if($("#tabTva")) $("#tabTva").setAttribute("aria-pressed", v==="tva");
   $("#tabDirect").setAttribute("aria-pressed", v==="direct");
   if($("#tabFactures")) $("#tabFactures").setAttribute("aria-pressed", v==="factures");
+  if($("#tabNovelles")) $("#tabNovelles").setAttribute("aria-pressed", v==="novelles");
+  if($("#viewNovelles")) $("#viewNovelles").hidden = v!=="novelles";
+  if(v==="novelles") ["#nv_s_date","#nv_p_date","#nv_d_date"].forEach(id => { const el=$(id); if(el){ el.max = dateLocale(); if(!el.value) el.value = dateLocale(); } });
   if($("#viewFactures")) $("#viewFactures").hidden = v!=="factures";
   if($("#tabPres")) $("#tabPres").setAttribute("aria-pressed", v==="pres");
   if($("#viewPres")) $("#viewPres").hidden = v!=="pres";
@@ -5948,6 +6098,7 @@ const choisirVue = v => { state.vueChoisie = true; setView(v); };
 $("#tabMine").onclick = () => choisirVue("mine");
 $("#tabDirect").onclick = () => choisirVue("direct");
 if($("#tabFactures")) $("#tabFactures").onclick = () => choisirVue("factures");
+if($("#tabNovelles")) $("#tabNovelles").onclick = () => choisirVue("novelles");
 $("#fd_mode")?.addEventListener("change", () => { const b=$("#fd_virementBox"); if(b) b.style.display = $("#fd_mode").value==="virement" ? "" : "none"; });
 $("#tabTreso").onclick = () => choisirVue("treso");
 $("#tabReexam").onclick = () => choisirVue("reexam");
@@ -6903,6 +7054,309 @@ async function feAnnulerPaiement(f, n, b){
   await refresh();
   if(!error) toast("Paiement annulé : l'échéance est de nouveau à payer.");
 }
+
+/* ============================================================
+   Onglet NOVELLES — caisse séparée logée sur le compte bancaire commun.
+   Trois sortes de mouvements (table novelles_mouvements) :
+     solde   : relevé noté par le trésorier (remet le compteur à ce montant) ;
+     sponsor : versement reçu, encodé par le trésorier ;
+     depense : encodée par un responsable Novelles (ou le trésorier), sans validation.
+   Le solde disponible = dernier relevé + sponsors − dépenses postérieurs.
+   Rien ici n'entre dans la comptabilité, la TVA ni les totaux de l'ASBL.
+   Accès : trésorier + personnes listées dans novelles_acces (vérifié par la base).
+   ============================================================ */
+const NV_TABLE = "novelles_mouvements";
+state.novelles = []; state.nvAcces = false; state.nvErr = null;
+const nvVoit = () => isTreso() || state.nvAcces;
+
+async function nvChargerAcces(){
+  state.nvAcces = false;
+  if(!state.profile) return;
+  try{
+    const r = await sb.from("novelles_acces").select("user_id").eq("user_id", state.profile.id).maybeSingle();
+    state.nvAcces = !!(r && r.data);
+  }catch(_){}
+  if($("#tabNovelles")) $("#tabNovelles").hidden = !nvVoit();
+}
+async function chargerNovelles(){
+  if(!nvVoit()){ state.novelles = []; return; }
+  const r = await chargerTout(NV_TABLE, "date", true);
+  if(r.error){ state.novelles = []; state.nvErr = r.error.message || String(r.error); return; }
+  state.nvErr = null;
+  state.novelles = r.data || [];
+}
+
+// ordre chronologique : date, puis heure d'encodage (un relevé du jour couvre ce qui a été encodé avant lui)
+const nvOrdre = (a, b) => String(a.date).localeCompare(String(b.date)) || String(a.created_at).localeCompare(String(b.created_at));
+function nvCalcul(){
+  const liste = (state.novelles || []).slice().sort(nvOrdre);
+  let solde = 0, releve = null, spons = 0, dep = 0;
+  const apres = new Map();
+  for(const m of liste){
+    const v = Number(m.montant || 0);
+    if(m.type === "solde"){ solde = v; releve = m; spons = 0; dep = 0; }
+    else if(m.type === "sponsor"){ solde += v; spons += v; }
+    else { solde -= v; dep += v; }
+    solde = Math.round(solde * 100) / 100;
+    apres.set(m.id, solde);
+  }
+  return { solde, releve, spons, dep, liste, apres };
+}
+
+function renderNovelles(){
+  const tab = $("#tabNovelles");
+  if(tab) tab.hidden = !nvVoit();
+  renderNovellesApercu();
+  if(state.view !== "novelles" || !nvVoit()) return;
+  $("#nv_tresoZone").hidden = !isTreso();
+  $("#nv_sqlErr").hidden = !state.nvErr;
+  if(state.nvErr) $("#nv_sqlErrTxt").textContent = isTreso()
+    ? "Passez d'abord le script SQL « Novelles » dans Supabase, puis rechargez la page. Détail : " + state.nvErr
+    : "Les Novelles ne sont pas disponibles pour le moment.";
+  const c = nvCalcul();
+  const el = $("#nv_solde");
+  el.textContent = euro(c.solde);
+  el.classList.toggle("neg", c.solde < 0);
+  $("#nv_kSpons").textContent = "+ " + euro(c.spons);
+  $("#nv_kDep").textContent = "− " + euro(c.dep);
+  $("#nv_calc").innerHTML = c.releve
+    ? `${euro(c.releve.montant)} au ${fdate(c.releve.date)} (dernier solde noté par le trésorier)`
+      + (c.spons ? ` + ${euro(c.spons)} de sponsors` : "") + (c.dep ? ` − ${euro(c.dep)} de dépenses` : "")
+      + (c.spons || c.dep ? ` = <b>${euro(c.solde)}</b>` : "") + "."
+    : (c.liste.length ? "Aucun solde bancaire noté : le calcul part de 0 €." : "Aucun mouvement pour l'instant.");
+
+  // pendant une saisie, on ne réécrit pas les listes
+  const act = document.activeElement;
+  if(act && $("#nv_list").contains(act)) return;
+
+  const lignes = c.liste.slice().reverse();
+  $("#nv_nb").textContent = lignes.length ? lignes.length + " mouvement(s)" : "";
+  $("#nv_list").innerHTML = lignes.length ? lignes.map(m => {
+    const v = Number(m.montant || 0);
+    const nbP = (Array.isArray(m.attachments) ? m.attachments : []).length;
+    let titre, meta, mt, cls = "";
+    if(m.type === "solde"){
+      cls = "releve"; titre = "Solde bancaire noté"; mt = `<span class="mt">= ${euro(v)}</span>`;
+      meta = ["par " + esc(m.author_name || "le trésorier"), m.note ? esc(m.note) : ""].filter(Boolean).join(" · ");
+    } else if(m.type === "sponsor"){
+      titre = "Sponsor — " + esc(m.libelle || ""); mt = `<span class="mt plus">+ ${euro(v)}</span>`;
+      meta = [m.note ? esc(m.note) : "", "encodé par " + esc(m.author_name || "le trésorier")].filter(Boolean).join(" · ");
+    } else {
+      titre = esc(m.libelle || "Dépense"); mt = `<span class="mt moins">− ${euro(v)}</span>`;
+      meta = [m.beneficiaire ? esc(m.beneficiaire) : "", "par " + esc(m.author_name || ""),
+              nbP ? nbP + " pièce(s)" : `<span style="color:var(--amber)">sans pièce</span>`,
+              m.note ? esc(m.note) : ""].filter(Boolean).join(" · ");
+    }
+    const acts = [];
+    if(nbP) acts.push(`<button type="button" class="btn ghost sm" data-nv-piece="${esc(m.id)}">Pièce</button>`);
+    if(isTreso()) acts.push(`<button type="button" class="btn no sm" data-nv-del="${esc(m.id)}" aria-label="Supprimer">Supprimer</button>`);
+    return `<div class="nv-row ${cls}">
+      <div class="date mono">${fdate(m.date)}</div>
+      <div><div class="obj">${titre}</div><div class="meta">${meta}</div></div>
+      <div class="r">${mt}</div>
+      <div class="r sa">${euro(c.apres.get(m.id))}</div>
+      <div class="acts">${acts.join("")}</div>
+    </div>`;
+  }).join("") : emptyHTML("Aucun mouvement", isTreso() ? "Commencez par noter le solde bancaire des Novelles." : "Le trésorier n'a encore rien noté.");
+}
+
+/* Aperçu du trésorier : répartition du compte bancaire commun */
+function renderNovellesApercu(){
+  const box = $("#o_banque"); if(!box) return;
+  if(!isTreso() || state.nvErr || !(state.novelles || []).length){ box.hidden = true; return; }
+  const nv = nvCalcul().solde;
+  const rec = totalRecettes("all");
+  const sorties = (state.items || []).filter(i => i.status === "Remboursée").reduce((s,i) => s + Number(i.amount || 0), 0)
+                + (state.expenses || []).reduce((s,e) => s + Number(e.amount || 0), 0);
+  const asbl = Math.round((rec - sorties) * 100) / 100;
+  const total = Math.round((asbl + nv) * 100) / 100;
+  $("#o_bAsbl").textContent = euro(asbl);
+  $("#o_bNov").textContent = euro(nv);
+  $("#o_bTotal").textContent = euro(total);
+  const pA = total > 0 ? Math.max(0, Math.min(100, asbl / total * 100)) : 0;
+  const pN = total > 0 ? Math.max(0, Math.min(100 - pA, nv / total * 100)) : 0;
+  $("#o_bBarre").innerHTML = `<i style="width:${pA}%;background:var(--green)"></i><i style="width:${pN}%;background:var(--gold)"></i>`;
+  box.hidden = false;
+}
+
+async function nvTeleverser(files){
+  const out = [];
+  for(const f of files){
+    const hash = await empreinte(f);
+    const prep = await prepareProof(f, null);
+    const path = `${state.profile.id}/novelles-${Date.now()}-${out.length}.${prep.ext}`;
+    const up = await sb.storage.from("justificatifs").upload(path, prep.blob, { contentType: prep.type });
+    if(up.error){ if(out.length){ try{ await sb.storage.from("justificatifs").remove(out.map(p => p.path)); }catch(_){} } throw up.error; }
+    out.push({ path, type: prep.type, kind: "Justificatif", name: f.name, hash });
+  }
+  return out;
+}
+async function nvEnregistrer(ligne, files, errSel, btn){
+  if(state.nvErr){ erreurForm(errSel, "Les tables des Novelles n'existent pas encore : passez d'abord le script SQL."); return null; }
+  const lib = btn.textContent; btn.disabled = true; btn.textContent = "Enregistrement…";
+  let pieces = [];
+  try{
+    pieces = files && files.length ? await nvTeleverser(files) : [];
+    const { data, error } = await sb.from(NV_TABLE).insert({ ...ligne, attachments: pieces,
+      created_by: state.profile.id, author_name: state.profile.name || "" }).select().single();
+    if(error) throw error;
+    return data;
+  }catch(err){
+    if(pieces.length){ try{ await sb.storage.from("justificatifs").remove(pieces.map(p => p.path)); }catch(_){} }
+    erreurForm(errSel, "Enregistrement impossible : " + (err.message || err));
+    return null;
+  }finally{ btn.disabled = false; btn.textContent = lib; }
+}
+const nvMontant = sel => Math.round(Number(String($(sel).value).replace(",", ".")) * 100) / 100;
+
+/* Prévient les responsables Novelles quand le trésorier note un solde ou ajoute un sponsor. */
+async function nvMailResponsables(sujet, titre, corpsHtml){
+  let ids = [];
+  try{ const r = await sb.from("novelles_acces").select("user_id"); ids = ((r && r.data) || []).map(x => x.user_id); }catch(_){}
+  const dest = (state.members || []).filter(m => ids.includes(m.id) && m.email && m.id !== state.profile.id);
+  if(!dest.length){ dernierEchecMail = "aucun responsable Novelles avec une adresse e-mail"; return false; }
+  let ok = true;
+  for(const m of dest){
+    const prenom = m.first_name || String(m.name || "").split(" ")[0] || "";
+    const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+      <h2 style="margin:0 0 10px">${titre}</h2>
+      <p>Bonjour ${mailEsc(prenom)},</p>
+      ${corpsHtml}
+      <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir l'onglet Novelles</a></p>
+      <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+      <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+    if(!await envoyerMail(m.email, sujet, html, emailTreso())) ok = false;
+  }
+  return ok;
+}
+const nvLigneMail = (a, b) => `<tr><td style="padding:6px 0;color:#666;width:45%">${a}</td><td style="padding:6px 0"><b>${b}</b></td></tr>`;
+
+$("#nv_soldeForm").addEventListener("submit", async e => {
+  e.preventDefault(); if(!isTreso()) return;
+  erreurForm("#nv_s_err", null);
+  const date = $("#nv_s_date").value, montant = nvMontant("#nv_s_montant");
+  if(!date) return erreurForm("#nv_s_err", "Indiquez la date du solde.");
+  if(date > dateLocale()) return erreurForm("#nv_s_err", "La date ne peut pas être dans le futur.");
+  if(!isFinite(montant) || $("#nv_s_montant").value === "") return erreurForm("#nv_s_err", "Indiquez le solde.");
+  const avant = nvCalcul().solde;
+  if(!await demander("Noter le solde des Novelles",
+      euro(montant) + " au " + fdate(date) + "\n\nSolde calculé jusqu'ici : " + euro(avant)
+      + (Math.abs(avant - montant) >= 0.01 ? " (écart de " + euro(montant - avant) + ")" : "") + ".",
+      { bouton:"Enregistrer" })) return;
+  const r = await nvEnregistrer({ type:"solde", date, montant, note: $("#nv_s_note").value.trim() || null }, [], "#nv_s_err", $("#nv_s_btn"));
+  if(!r) return;
+  $("#nv_soldeForm").reset(); $("#nv_s_date").value = dateLocale(); $("#nv_soldeBox").open = false;
+  await refresh();
+  const dispoS = nvCalcul().solde;
+  const okS = await nvMailResponsables("Novelles — solde mis à jour : " + euro(dispoS), "Solde des Novelles mis à jour",
+    `<p>Le trésorier a mis à jour le solde bancaire des Novelles.</p>
+     <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:14px">
+       ${nvLigneMail("Solde noté", euro(montant) + " au " + fdate(date))}
+       ${nvLigneMail("Solde disponible aujourd'hui", euro(dispoS))}
+     </table>${blocNote(r.note)}`);
+  toast("Solde des Novelles noté : " + euro(montant) + "." + (okS ? " Les responsables ont été prévenus." : " E-mail non envoyé : " + (dernierEchecMail || "raison inconnue") + "."));
+});
+
+$("#nv_sponsForm").addEventListener("submit", async e => {
+  e.preventDefault(); if(!isTreso()) return;
+  erreurForm("#nv_p_err", null);
+  const date = $("#nv_p_date").value, montant = nvMontant("#nv_p_montant"), nom = $("#nv_p_nom").value.trim();
+  if(!nom) return erreurForm("#nv_p_err", "Indiquez le sponsor.");
+  if(!(montant > 0)) return erreurForm("#nv_p_err", "Indiquez un montant supérieur à 0.");
+  if(!date) return erreurForm("#nv_p_err", "Indiquez la date de réception.");
+  if(date > dateLocale()) return erreurForm("#nv_p_err", "La date ne peut pas être dans le futur.");
+  const r = await nvEnregistrer({ type:"sponsor", date, montant, libelle: nom, note: $("#nv_p_note").value.trim() || null },
+    [...$("#nv_p_pdf").files], "#nv_p_err", $("#nv_p_btn"));
+  if(!r) return;
+  $("#nv_sponsForm").reset(); $("#nv_p_date").value = dateLocale(); $("#nv_sponsBox").open = false;
+  await refresh();
+  const dispoP = nvCalcul().solde;
+  const okP = await nvMailResponsables("Novelles — sponsor reçu : " + nom + " (+ " + euro(montant) + ")", "Nouveau sponsor reçu",
+    `<p>Un versement de sponsor est arrivé sur le compte des Novelles.</p>
+     <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:14px">
+       ${nvLigneMail("Sponsor", mailEsc(nom))}
+       ${nvLigneMail("Montant reçu", "+ " + euro(montant))}
+       ${nvLigneMail("Reçu le", fdate(date))}
+       ${nvLigneMail("Nouveau solde disponible", euro(dispoP))}
+     </table>${blocNote(r.note)}`);
+  toast("Sponsor ajouté : + " + euro(montant) + "." + (okP ? " Les responsables ont été prévenus." : " E-mail non envoyé : " + (dernierEchecMail || "raison inconnue") + "."));
+});
+
+async function nvMailDepense(d){
+  const qui = d.author_name || "Un responsable des Novelles";
+  const solde = nvCalcul().solde;
+  const ligne = (a, b) => `<tr><td style="padding:6px 0;color:#666;width:40%">${a}</td><td style="padding:6px 0"><b>${b}</b></td></tr>`;
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Nouvelle dépense des Novelles</h2>
+    <p><b>${mailEsc(qui)}</b> vient d'enregistrer une dépense dans l'onglet Novelles.</p>
+    <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:14px">
+      ${ligne("Date", fdate(d.date))}
+      ${ligne("Montant", euro(d.montant))}
+      ${ligne("Objet", mailEsc(d.libelle))}
+      ${ligne("Payé à", mailEsc(d.beneficiaire || "—"))}
+      ${ligne("Pièces jointes", (d.attachments || []).length + " pièce(s)")}
+      ${ligne("Solde Novelles après", euro(solde))}
+    </table>
+    ${d.note ? `<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px"><b>Commentaire :</b><br>${mailEsc(d.note).replace(/\n/g, "<br>")}</p>` : ""}
+    <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir l'onglet Novelles</a></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant. Répondre à ce mail écrit directement à ${mailEsc(qui)}.</p></div>`;
+  return envoyerMail(emailTreso(), "Dépense Novelles — " + qui + " (" + euro(d.montant) + ")", html,
+    (state.profile && state.profile.email) || undefined);
+}
+
+$("#nv_depForm").addEventListener("submit", async e => {
+  e.preventDefault(); if(!nvVoit()) return;
+  erreurForm("#nv_d_err", null);
+  const date = $("#nv_d_date").value, montant = nvMontant("#nv_d_montant");
+  const objet = $("#nv_d_objet").value.trim(), benef = $("#nv_d_benef").value.trim();
+  if(!date) return erreurForm("#nv_d_err", "Indiquez la date de la dépense.");
+  if(date > dateLocale()) return erreurForm("#nv_d_err", "La date ne peut pas être dans le futur.");
+  if(!(montant > 0)) return erreurForm("#nv_d_err", "Indiquez un montant supérieur à 0.");
+  if(!objet) return erreurForm("#nv_d_err", "Indiquez l'objet de la dépense.");
+  if(!benef) return erreurForm("#nv_d_err", "Indiquez à qui elle a été payée.");
+  const files = [...$("#nv_d_pdf").files];
+  const reste = Math.round((nvCalcul().solde - montant) * 100) / 100;
+  if(!await demander("Enregistrer cette dépense",
+      "« " + objet + " » — " + euro(montant) + " le " + fdate(date) + "\n" + benef
+      + "\n\nSolde Novelles après : " + euro(reste) + (reste < 0 ? "  ⚠ le solde passe en négatif." : ".")
+      + (files.length ? "" : "\nAucune pièce jointe.")
+      + (isTreso() ? "" : "\n\nElle est enregistrée tout de suite et le trésorier est prévenu. Seul le trésorier peut ensuite la supprimer."),
+      { bouton:"Enregistrer", danger: reste < 0 })) return;
+  const d = await nvEnregistrer({ type:"depense", date, montant, libelle: objet, beneficiaire: benef,
+    note: $("#nv_d_note").value.trim() || null }, files, "#nv_d_err", $("#nv_d_btn"));
+  if(!d) return;
+  $("#nv_depForm").reset(); $("#nv_d_date").value = dateLocale(); $("#nv_depBox").open = false;
+  await refresh();
+  let prevenu = true;
+  if(!isTreso()){ prevenu = false; try{ prevenu = await nvMailDepense(d); }catch(_){} }
+  toast("Dépense enregistrée. Solde Novelles : " + euro(nvCalcul().solde) + "."
+    + (isTreso() ? "" : prevenu ? " Le trésorier a été prévenu." : " L'e-mail au trésorier n'est pas parti : prévenez-le directement."));
+});
+
+$("#nv_list").addEventListener("click", async e => {
+  const bp = e.target.closest("[data-nv-piece]");
+  if(bp){
+    const m = (state.novelles || []).find(x => x.id === bp.dataset.nvPiece); if(!m) return;
+    const w = window.open("", "_blank");
+    for(const p of (m.attachments || [])){
+      const { data } = await sb.storage.from("justificatifs").createSignedUrl(p.path, 3600);
+      if(data && data.signedUrl){ if(w) w.location = data.signedUrl; else window.location.href = data.signedUrl; return; }
+    }
+    if(w) w.close(); return toast("Pièce introuvable.");
+  }
+  const bd = e.target.closest("[data-nv-del]");
+  if(bd && isTreso()){
+    const m = (state.novelles || []).find(x => x.id === bd.dataset.nvDel); if(!m) return;
+    const quoi = m.type === "solde" ? "le solde noté du " + fdate(m.date) : m.type === "sponsor" ? "le sponsor « " + (m.libelle || "") + " »" : "la dépense « " + (m.libelle || "") + " »";
+    if(!await demander("Supprimer " + quoi, euro(m.montant) + " — le solde des Novelles sera recalculé.", { bouton:"Supprimer", danger:true })) return;
+    const { error } = await sb.from(NV_TABLE).delete().eq("id", m.id);
+    if(error) return toast("Suppression impossible : " + error.message);
+    const ch = (m.attachments || []).map(p => p.path);
+    if(ch.length){ try{ await sb.storage.from("justificatifs").remove(ch); }catch(_){} }
+    await refresh(); toast("Supprimé. Solde Novelles : " + euro(nvCalcul().solde) + ".");
+  }
+});
 
 /* ============================================================
    Onglet COMPTABILITÉ — comptes annuels d'une petite ASBL en
@@ -8143,6 +8597,7 @@ if($("#btnMsg")) $("#btnMsg").onclick = () => { if(state.profile) ouvrirMessager
 function render(){
   if(!state.profile?.approved) return;
   try{ renderFactures(); }catch(eF){ console.error("factures", eF); }
+  try{ renderNovelles(); }catch(eN){ console.error("novelles", eN); }
   try{ majHoraire(); }catch(_){}   // banderole ouvert/fermé et verrou du formulaire toujours à jour
   const mineAll = ouvert(state.items).filter(i => i.user_id === state.profile.id);
   const mine = mineAll.filter(i => i.kind !== "direct");
