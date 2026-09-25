@@ -575,6 +575,40 @@ function modaleDate(texte, titre){
     try{ if(champ) champ.focus(); }catch(_){ }
   });
 }
+/* Avis du trésorier au moment de la décision.
+   Renvoie "aucune", "reserve|<texte>" (texte facultatif), ou null si annulé. */
+function modaleReserve(titre){
+  return new Promise(resolve=>{
+    const anc=document.getElementById("ca_modal_res"); if(anc) anc.remove();
+    const d=document.createElement("div");
+    d.id="ca_modal_res"; d.className="ca-mod";
+    d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true">'
+      +'<h3>Avis du trésorier</h3>'
+      +'<p style="color:var(--ink);font-size:14px">'+esc(titre?("« "+titre+" »"):"")+'</p>'
+      +'<div style="display:flex;flex-direction:column;gap:8px;margin:4px 0 12px">'
+      +'<button class="btn sm" id="ca_res_aucune" style="background:var(--green);border-color:var(--green)">✓ Aucune réserve du trésorier</button>'
+      +'<button class="btn ghost sm" id="ca_res_oui" style="border-color:var(--stamp);color:var(--stamp)">⚠ Réserve du trésorier</button>'
+      +'</div>'
+      +'<div id="ca_res_zone" style="display:none">'
+      +'<textarea class="f" id="ca_res_txt" rows="4" placeholder="Texte de la réserve (facultatif)" style="width:100%;margin:0 0 12px"></textarea>'
+      +'</div>'
+      +'<div class="ca-mod-btns">'
+      +'<button class="btn ghost sm" id="ca_res_no">Annuler</button>'
+      +'<button class="btn sm" id="ca_res_ok" style="display:none">Confirmer la réserve</button>'
+      +'</div></div>';
+    document.body.appendChild(d);
+    let fini=false;
+    const rep=v=>{ if(fini) return; fini=true; d.remove(); document.removeEventListener("keydown",k); resolve(v); };
+    function k(e){ if(e.key==="Escape") rep(null); }
+    document.addEventListener("keydown",k);
+    d.addEventListener("click",e=>{ if(e.target===d) rep(null); });
+    const zone=d.querySelector("#ca_res_zone"), champ=d.querySelector("#ca_res_txt"), ok=d.querySelector("#ca_res_ok");
+    d.querySelector("#ca_res_aucune").addEventListener("click",()=>rep("aucune"));
+    d.querySelector("#ca_res_oui").addEventListener("click",()=>{ zone.style.display="block"; ok.style.display=""; try{ champ.focus(); }catch(_){ } });
+    ok.addEventListener("click",()=>rep("reserve|"+String(champ.value||"").trim()));
+    d.querySelector("#ca_res_no").addEventListener("click",()=>rep(null));
+  });
+}
 function modaleConfirm(texte, titre){
   return new Promise(resolve=>{
     const anc=document.getElementById("ca_modal_ask"); if(anc) anc.remove();
@@ -956,7 +990,7 @@ async function loadBilans(){
   try{ const f=await sb.from("ca_bilan_faits").select("membre_id"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){ S.meta.bilanSubmitters=[]; }
   try{ const c=await sb.rpc("ca_bilans_nb_deposes"); S.meta.bilanNbDeposes=(c&&typeof c.data==="number")?c.data:(S.meta.bilanSubmitters||[]).length; }catch(e){ S.meta.bilanNbDeposes=(S.meta.bilanSubmitters||[]).length; } }
 async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").select("*").order("created_at",{ascending:false}); S.journal=(data||[]).map(j=>({ts:j.created_at,who:j.who,txt:j.txt})); }catch(e){} }
-async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,pdfPath:b.pdf_path||"",votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id}))})); }catch(e){ S.budgets=[]; } }
+async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,pdfPath:b.pdf_path||"",reserve:(b.reserve_tresorier==null?null:String(b.reserve_tresorier)),votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id}))})); }catch(e){ S.budgets=[]; } }
 async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,rappelLe:v.rappel_le,rappelProg:v.rappel_prog_at,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
 async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
 async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,lieu:m.lieu||"",ordre:m.ordre||[],presences:m.presences||{},pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } }
@@ -1673,7 +1707,7 @@ function tabBudgets(){
   const effectif = effectifCA(), seuil = seuilMajorite();
   const totalApp=S.budgets.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(b.cout||0),0);
   const enVote=S.budgets.filter(b=>b.statut==="vote").length;
-  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v22 — badge en ligne / en séance + PDF de la décision</p><div class="stat-row">
+  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v23 — avis du trésorier (réserve) à la clôture</p><div class="stat-row">
     <div class="stat"><p class="k">Demandes en vote</p><p class="v">${enVote}</p></div>
     <div class="stat"><p class="k">Budget approuvé</p><p class="v" style="color:var(--green)">${eur(totalApp)}</p></div>
     <div class="stat"><p class="k">Total demandes</p><p class="v">${S.budgets.length}</p></div></div>`;
@@ -1693,6 +1727,7 @@ function tabBudgets(){
       <p class="b-meta"><span class="b-type">${esc(b.type)}</span>${b.cout>0?`<span class="b-cost">${eur(b.cout)}</span>`:""}${b.demandeur?`<span class="by" style="margin:0">par ${esc(b.demandeur)}</span>`:""}</p></div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span class="badge ${cls}">${label}</span>${b.statut!=="vote"?`<span class="badge" style="background:transparent;border:1px solid ${budgetPresentiel(b)?"var(--green)":"var(--slate)"};color:${budgetPresentiel(b)?"var(--green)":"var(--slate)"};white-space:nowrap">${budgetPresentiel(b)?"🏛 Voté en séance présentielle":"💻 Voté en ligne"}</span>`:""}</div></div>
       ${(b.statut!=="vote" && b.decidePar)?`<p class="by" style="margin:8px 0 0">${String(b.decidePar).indexOf("CA physique")===0?`<b style="color:var(--green)">✓ Approuvé à la majorité simple en CA physique</b> — enregistré par ${esc(String(b.decidePar).replace(/^CA physique · /,""))} — séance`:`${b.statut==="approuve"?"✓ Approuvé":"✕ Refusé"} par ${esc(b.decidePar)}`}${b.decideLe?" le "+dateFR(b.decideLe):""}</p>`:""}
+      ${reserveInfo(b)?`<p class="by" style="margin:6px 0 0;${reserveInfo(b).reserve?"color:var(--stamp)":"color:var(--green)"}">${reserveInfo(b).reserve?"⚠":"✓"} ${esc(reserveLibelle(b))}</p>`:""}
       ${b.desc?`<p class="b-desc">${esc(b.desc)}</p>`:""}
       ${b.statut!=="vote"?`<div style="margin:8px 0 0"><button class="chip" data-action="budget-pdf-decision" data-id="${b.id}">📄 PDF de la décision</button></div>`:""}
       ${String(b.decidePar||"").indexOf("CA physique")===0?"":`<div class="tallies">${CHOIX.map(ch=>`<span class="tally"><span class="sq" style="background:var(${ch.v})"></span><b>${count(ch.id)}</b> ${ch.label}</span>`).join("")}</div>`}
@@ -2681,6 +2716,18 @@ function prenomsNonVotants(b){
 }
 function budgetPresentiel(b){ return String((b&&b.decidePar)||"").indexOf("CA physique")===0; }
 function mentionPresentiel(b){ return "Approuv\u00e9 \u00e0 la majorit\u00e9 simple par le Conseil d'administration r\u00e9uni en pr\u00e9sentiel le "+new Date(b.decideLe||Date.now()).toLocaleDateString("fr-BE",{day:"numeric",month:"long",year:"numeric"})+"."; }
+function reserveInfo(b){
+  const r=b&&b.reserve; if(r==null||r==="") return null;
+  if(r==="aucune") return {reserve:false,texte:""};
+  return {reserve:true,texte:String(r).replace(/^reserve\|/,"").trim()};
+}
+function reserveLibelle(b){ const i=reserveInfo(b); if(!i) return ""; return i.reserve?("R\u00e9serve du tr\u00e9sorier"+(i.texte?" : "+i.texte:"")):"Aucune r\u00e9serve du tr\u00e9sorier"; }
+function reservePDF(b){ const i=reserveInfo(b); if(!i) return "";
+  return i.reserve
+    ? `<h2>Avis du tr\u00e9sorier</h2><p style="color:#8a2b2b"><b>\u26a0 R\u00e9serve du tr\u00e9sorier</b>${i.texte?` : ${esc(i.texte)}`:""}</p>`
+    : `<h2>Avis du tr\u00e9sorier</h2><p><b>\u2713 Aucune r\u00e9serve du tr\u00e9sorier.</b></p>`; }
+/* Enregistre la réserve. Si la colonne reserve_tresorier n'existe pas encore, on continue sans bloquer. */
+async function enregistrerReserve(id, valeur){ try{ const r=await sb.from("ca_budgets").update({reserve_tresorier:valeur}).eq("id",id); return !(r&&r.error); }catch(_){ return false; } }
 function budgetForce(b){ return /hors seuil/i.test(String(b.decidePar||"")); }
 function listePrenoms(l){ return l.length?l.join(", "):"\u2014"; }
 /* Corps du PDF d'un budget clôturé. */
@@ -2697,7 +2744,8 @@ function corpsPDFBudget(b){
     </tbody></table>
     <h2>R\u00e9sultat</h2>
     <p style="font-size:15px"><b>${esc(mentionPresentiel(b))}</b></p>
-    <p>D\u00e9cision prise en s\u00e9ance, sans vote en ligne. Enregistr\u00e9e dans l'espace CA par ${esc(String(b.decidePar||"").replace(/^CA physique \u00b7 /,""))}.</p>`;
+    <p>D\u00e9cision prise en s\u00e9ance, sans vote en ligne. Enregistr\u00e9e dans l'espace CA par ${esc(String(b.decidePar||"").replace(/^CA physique \u00b7 /,""))}.</p>
+    ${reservePDF(b)}`;
   const n=effectifCA(), seuil=seuilMajorite();
   const pour=prenomsParChoix(b,"pour"), contre=prenomsParChoix(b,"contre"), abst=prenomsParChoix(b,"abst");
   const sans=prenomsNonVotants(b);
@@ -2722,6 +2770,7 @@ function corpsPDFBudget(b){
     ${force?`<p style="color:#8a2b2b"><b>Approbation hors seuil</b> \u2014 la majorit\u00e9 simple n'\u00e9tait pas atteinte. D\u00e9cision prise par ${esc(String(b.decidePar||"").replace(/\s*\(hors seuil\)\s*$/i,""))}.</p>`:""}
     <table><thead><tr><th>Pour</th><th>Contre</th><th>Abstention</th><th>N'ont pas vot\u00e9</th></tr></thead>
       <tbody><tr><td>${pour.length}</td><td>${contre.length}</td><td>${abst.length}</td><td>${sans.length}</td></tr></tbody></table>
+    ${reservePDF(b)}
     <h2>D\u00e9tail des voix</h2>
     <table><tbody>
       <tr><th style="width:150px">Pour (${pour.length})</th><td>${esc(listePrenoms(pour))}</td></tr>
@@ -2785,6 +2834,7 @@ async function cloturerBudget(id, force){
     ? "Approuver « "+(b.titre||"")+" » alors que la majorit\u00e9 n'est pas atteinte ("+pour+" voix pour sur "+n+", il en faut "+seuil+") ?\n\nLa mention « hors seuil » figurera dans le PDF et dans le mail envoy\u00e9 \u00e0 tout le CA."
     : "Cl\u00f4turer « "+(b.titre||"")+" » ?\n\nR\u00e9sultat : "+(st==="approuve"?"APPROUV\u00c9":"REFUS\u00c9")+" ("+pour+" voix pour sur "+n+", majorit\u00e9 simple : "+seuil+").\nLe PDF de la d\u00e9cision sera envoy\u00e9 \u00e0 tous les membres du CA.";
   if(!(await modaleConfirm(question, force?"Approuver hors seuil":"Cl\u00f4turer le vote"))) return;
+  const reserve=await modaleReserve(b.titre||""); if(reserve===null) return;
   const sig=(S.session&&S.session.sig)||"\u2014";
   const maj=await sb.from("ca_budgets").update({statut:st, decide_par:sig+(force?" (hors seuil)":""), decide_le:new Date().toISOString()}).eq("id",id).select();
   if(maj&&maj.error){ modaleInfo("La cl\u00f4ture n'a pas pu \u00eatre enregistr\u00e9e : "+maj.error.message); return; }
@@ -2794,13 +2844,14 @@ async function cloturerBudget(id, force){
   if(!maj||!maj.data||!maj.data.length){
     await loadBudgets(); render();
     modaleInfo("La cl\u00f4ture a \u00e9t\u00e9 refus\u00e9e par le serveur : aucune ligne n'a \u00e9t\u00e9 modifi\u00e9e.\n\nC'est presque toujours une question de droits (r\u00e8gle RLS sur la table ca_budgets) : la base n'autorise pas ce compte \u00e0 cl\u00f4turer un budget. Rien n'a chang\u00e9, aucun PDF ni mail n'a \u00e9t\u00e9 envoy\u00e9.","Cl\u00f4ture non enregistr\u00e9e"); return; }
-  logAct("Budget "+(st==="approuve"?"approuv\u00e9":"refus\u00e9")+(force?" hors seuil":"")+" : "+(b.titre||""));
+  await enregistrerReserve(id, reserve);
+  logAct("Budget "+(st==="approuve"?"approuv\u00e9":"refus\u00e9")+(force?" hors seuil":"")+(reserve!=="aucune"?" (r\u00e9serve du tr\u00e9sorier)":"")+" : "+(b.titre||""));
   await loadBudgets(); render();
   /* Le PDF documente la décision qui vient d'être prise. On ne se fie pas au
      rechargement : s'il échoue, l'objet en mémoire est resté « en vote » et le
      PDF annoncerait un refus. Statut et signataire sont donc imposés ici. */
   const bf=Object.assign({}, (S.budgets||[]).find(x=>x.id===id)||b,
-    {statut:st, decidePar:sig+(force?" (hors seuil)":""), decideLe:new Date().toISOString()});
+    {statut:st, decidePar:sig+(force?" (hors seuil)":""), decideLe:new Date().toISOString(), reserve:reserve});
 
   await diffuserDecisionBudget(bf, st, force, sig, n, seuil);
 }
@@ -2818,6 +2869,7 @@ async function voteCAPhysique(id){
   const titre=id?b.titre:donnees.titre;
   const jour=await modaleDate("Date de la s\u00e9ance du CA qui a approuv\u00e9 « "+(titre||"")+" » \u00e0 la majorit\u00e9 simple.\n\n"+(id?"Le vote en ligne sera cl\u00f4tur\u00e9. ":"Aucun vote en ligne ne sera ouvert. ")+"Le PDF de la d\u00e9cision sera envoy\u00e9 \u00e0 tous les membres du CA.","Vot\u00e9 en CA physique");
   if(!jour) return;
+  const reserve=await modaleReserve(titre||""); if(reserve===null) return;
   const sig=(S.session&&S.session.sig)||"\u2014";
   const decidePar="CA physique \u00b7 "+sig, decideLe=new Date(jour+"T12:00:00").toISOString();
   let r;
@@ -2826,10 +2878,11 @@ async function voteCAPhysique(id){
   if(r&&r.error){ modaleInfo("Enregistrement impossible : "+r.error.message); return; }
   if(!r||!r.data||!r.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 l'enregistrement (aucune ligne modifi\u00e9e) \u2014 r\u00e8gle de droits (RLS) sur ca_budgets. Aucun PDF ni mail n'a \u00e9t\u00e9 envoy\u00e9.","D\u00e9cision non enregistr\u00e9e"); return; }
   const ligne=r.data[0];
-  logAct("Budget vot\u00e9 en CA physique : "+(titre||""));
+  await enregistrerReserve(ligne.id, reserve);
+  logAct("Budget vot\u00e9 en CA physique"+(reserve!=="aucune"?" (r\u00e9serve du tr\u00e9sorier)":"")+" : "+(titre||""));
   await loadBudgets(); render();
   const bf=Object.assign({}, (S.budgets||[]).find(x=>x.id===ligne.id)||(b||{titre:ligne.titre,type:ligne.type,cout:ligne.cout,desc:ligne.description,demandeur:ligne.demandeur,votes:[]}),
-    {statut:"approuve",decidePar:decidePar,decideLe:decideLe});
+    {statut:"approuve",decidePar:decidePar,decideLe:decideLe,reserve:reserve});
   await diffuserDecisionBudget(bf,"approuve",false,sig,effectifCA(),seuilMajorite());
 }
 /* Ouvre le PDF de décision envoyé ; à défaut (anciens budgets), le régénère. */
@@ -2884,6 +2937,9 @@ async function diffuserDecisionBudget(bf, st, force, sig, n, seuil){
     +(presentiel?"":`<p><b>Pour (${pourL.length}) :</b> ${caMailEsc(listePrenoms(pourL))}<br>`
     +`<b>Contre (${contreL.length}) :</b> ${caMailEsc(listePrenoms(contreL))}<br>`
     +`<b>Abstention (${abstL.length}) :</b> ${caMailEsc(listePrenoms(abstL))}</p>`)
+    +(reserveInfo(bf)?(reserveInfo(bf).reserve
+        ?`<p style="background:#fff8ec;border:1px solid #ecd3a6;border-radius:8px;padding:10px;color:#7a4a12"><b>\u26a0 R\u00e9serve du tr\u00e9sorier</b>${reserveInfo(bf).texte?" : "+caMailEsc(reserveInfo(bf).texte):""}</p>`
+        :`<p><b>\u2713 Aucune r\u00e9serve du tr\u00e9sorier.</b></p>`):"")
     +(lien?`<p><a href="${lien}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">T\u00e9l\u00e9charger le PDF de la d\u00e9cision</a></p>`:"")
     +(presentiel?`<p>Le PDF de la d\u00e9cision est joint \u00e0 ce message.</p>`:`<p>Le d\u00e9tail complet, non-votants compris, figure dans le PDF de la d\u00e9cision.</p>`);
   const res=await envoyerAvecPiece(destinatairesDecision(), titreMail, corps, piece);
