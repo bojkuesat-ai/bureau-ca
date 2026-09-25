@@ -218,7 +218,7 @@ select.f{width:100%}
 .mini{display:flex;gap:6px;flex-wrap:wrap}
 .mini button{border:1px solid var(--line);background:var(--paper);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--ink-soft)}
 .mini button:hover{border-color:var(--ink-soft);color:var(--ink)}
-.mini button[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.mini button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 
 /* ---- stats budgets ---- */
 .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px}
@@ -609,6 +609,34 @@ function modaleReserve(titre){
     d.querySelector("#ca_res_no").addEventListener("click",()=>rep(null));
   });
 }
+/* Fenetre maison a un seul champ. Renvoie la valeur, ou null si annule. */
+function modaleChamp(texte, titre, o){
+  o=o||{};
+  return new Promise(resolve=>{
+    const anc=document.getElementById("ca_modal_champ"); if(anc) anc.remove();
+    const d=document.createElement("div");
+    d.id="ca_modal_champ"; d.className="ca-mod";
+    d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true">'
+      +'<h3>'+esc(titre||"")+'</h3>'
+      +'<p style="color:var(--ink);font-size:14px;white-space:pre-wrap">'+esc(texte)+'</p>'
+      +(o.erreur?'<p style="color:var(--red);font-size:13px;margin:0 0 8px">'+esc(o.erreur)+'</p>':'')
+      +'<input class="f" id="ca_champ_val" type="'+(o.type||"text")+'"'+(o.type==="password"?' autocomplete="current-password"':'')+' placeholder="'+esc(o.placeholder||"")+'" style="width:100%;margin:0 0 12px">'
+      +'<div class="ca-mod-btns">'
+      +'<button class="btn ghost sm" id="ca_champ_no">Annuler</button>'
+      +'<button class="btn sm" id="ca_champ_ok">'+esc(o.bouton||"Confirmer")+'</button>'
+      +'</div></div>';
+    document.body.appendChild(d);
+    let fini=false;
+    const rep=v=>{ if(fini) return; fini=true; d.remove(); document.removeEventListener("keydown",k); resolve(v); };
+    const champ=d.querySelector("#ca_champ_val");
+    function k(e){ if(e.key==="Escape") rep(null); if(e.key==="Enter"){ e.preventDefault(); rep(String(champ.value||"")); } }
+    document.addEventListener("keydown",k);
+    d.addEventListener("click",e=>{ if(e.target===d) rep(null); });
+    d.querySelector("#ca_champ_ok").addEventListener("click",()=>rep(String(champ.value||"")));
+    d.querySelector("#ca_champ_no").addEventListener("click",()=>rep(null));
+    try{ champ.focus(); }catch(_){ }
+  });
+}
 function modaleConfirm(texte, titre){
   return new Promise(resolve=>{
     const anc=document.getElementById("ca_modal_ask"); if(anc) anc.remove();
@@ -977,7 +1005,7 @@ async function refreshSession(){
   await loadAccounts();
   const jobs=[loadDocs,loadMessages,loadConflits,loadTaches,loadContacts,loadAnnonces,loadReactions,loadPresence,
     loadEvenements,loadReunions,loadCreneaux,loadOrg,loadBudgets,loadVotes,loadMeta,loadBilans,loadJournal,
-    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes];
+    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations];
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
 }
 async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; } }catch(e){} }
@@ -1257,7 +1285,7 @@ const S = {
   org:    {},
   taches: [],
   creneaux: [],
-  budgets: [],
+  budgets: [], procurations: [], prDraft: null,
   votes:  [],
   docs:   [],
   annonces: [],
@@ -1557,9 +1585,9 @@ function viewAuth(){
 function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textContent=msg; e.style.display="block"; } }
 
 /* ---- DASHBOARD ---- */
-const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["conflits","12","M\u00e9diation"]];
+const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,notifs:tabNotifs,search:tabSearch};
+  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,notifs:tabNotifs,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   /* Les cooptes n'ont acces qu'a leur espace de contribution et aux annonces. */
@@ -1608,7 +1636,7 @@ function viewDash(){
       <button class="logout" data-action="set-tab" data-tab="search" title="Recherche">🔍</button>
       <button class="logout" data-action="set-tab" data-tab="notifs" title="À traiter">🔔${notifTot?" "+notifTot:""}</button>
       <button class="logout" data-action="logout">Se déconnecter</button></div>
-    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
+    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
   </div></header>
   <main class="body">${bienvenue}${bandeauRappels()}${body}</main>`;
 }
@@ -1707,7 +1735,7 @@ function tabBudgets(){
   const effectif = effectifCA(), seuil = seuilMajorite();
   const totalApp=S.budgets.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(b.cout||0),0);
   const enVote=S.budgets.filter(b=>b.statut==="vote").length;
-  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v23 — avis du trésorier (réserve) à la clôture</p><div class="stat-row">
+  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v25 — procuration signée par mot de passe</p><div class="stat-row">
     <div class="stat"><p class="k">Demandes en vote</p><p class="v">${enVote}</p></div>
     <div class="stat"><p class="k">Budget approuvé</p><p class="v" style="color:var(--green)">${eur(totalApp)}</p></div>
     <div class="stat"><p class="k">Total demandes</p><p class="v">${S.budgets.length}</p></div></div>`;
@@ -1743,6 +1771,232 @@ function tabBudgets(){
         <button class="link" data-action="del-budget" data-id="${b.id}" style="margin-left:auto">Supprimer</button></div>`:""}</div>`;
   }).join("");
   return stats+compose+list;
+}
+
+/* ---- onglet PROCURATION ----
+   Chaque membre du CA donne procuration pour une réunion dont il saisit lui-même
+   la date. Le PDF signé part à la secrétaire, au mandant et au mandataire.
+   La liste complète n'est visible que par la secrétaire désignée. */
+const PROCURATION_EMAIL = "secretaire@be-droit.be";
+function prDraft(){ if(!S.prDraft) S.prDraft={portee:"tous",clause:false,nbPts:1}; return S.prDraft; }
+async function loadProcurations(){
+  try{
+    const r=await sb.from("ca_procurations").select("*").order("date_reunion",{ascending:false});
+    S.procurations = (r&&r.error) ? [] : ((r&&r.data)||[]).map(p=>({
+      id:p.id, creeLe:p.created_at, mandantId:p.mandant_id, mandantNom:p.mandant_nom||"", mandantFonction:p.mandant_fonction||"",
+      mandantEmail:p.mandant_email||"", mandataireId:p.mandataire_id, mandataireNom:p.mandataire_nom||"", mandataireEmail:p.mandataire_email||"",
+      dateReunion:p.date_reunion, portee:p.portee||"tous", points:Array.isArray(p.points)?p.points:[], clause:!!p.clause_delib,
+      signature:p.signature||"", signeLe:p.signe_le||p.created_at, empreinte:p.empreinte||"", statut:p.statut||"active",
+      annuleeLe:p.annulee_le||null, pdfPath:p.pdf_path||"" }));
+  }catch(e){ S.procurations=[]; }
+}
+function prDateLongue(iso){ if(!iso) return "—"; return new Date(String(iso).slice(0,10)+"T12:00:00").toLocaleDateString("fr-BE",{day:"numeric",month:"long",year:"numeric"}); }
+function prDateCourte(iso){ if(!iso) return "—"; return new Date(String(iso).slice(0,10)+"T12:00:00").toLocaleDateString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric"}); }
+function prModifiable(p){ return p.statut==="active" && String(p.dateReunion||"").slice(0,10) >= todayISO(); }
+function prEmpreinteCourte(h){ const s=String(h||"").toUpperCase().slice(0,16); return s.match(/.{1,4}/g)?s.match(/.{1,4}/g).join("-"):"—"; }
+async function prCalculerEmpreinte(obj){
+  const txt=JSON.stringify(obj);
+  try{
+    const buf=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt));
+    return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
+  }catch(e){
+    const a=new Uint8Array(32); crypto.getRandomValues(a);
+    return [...a].map(b=>b.toString(16).padStart(2,"0")).join("");
+  }
+}
+function prPointsSaisis(){
+  const d=prDraft(), out=[];
+  for(let i=0;i<d.nbPts;i++){ const v=String(val("pr_pt_"+i)||"").trim(); if(v) out.push(v); }
+  return out;
+}
+/* Corps du PDF, fidèle au modèle de procuration de l'ASBL. */
+function corpsPDFProcuration(p){
+  const dr=prDateLongue(p.dateReunion);
+  const pts=(p.points||[]).map((t,i)=>`<li>Point ${i+1} : ${esc(t)}</li>`).join("");
+  const signeLe=new Date(p.signeLe||Date.now());
+  return `${p.statut==="annulee"?`<div style="border:2px solid #b3261e;color:#b3261e;border-radius:6px;padding:10px 14px;margin:0 0 16px;font-weight:bold;text-align:center">PROCURATION ANNULÉE${p.annuleeLe?" le "+new Date(p.annuleeLe).toLocaleDateString("fr-BE")+" à "+new Date(p.annuleeLe).toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"}):""}</div>`:""}
+    <h1>Procuration</h1>
+    <p class="d">Destinataire : ${esc(PROCURATION_EMAIL)}</p>
+    <p><b>OBJET : Procuration — réunion du ${esc(prDateCourte(p.dateReunion))}</b></p>
+    <p>Je soussigné(e), <b>${esc(p.mandantNom)}</b>${p.mandantFonction?` (${esc(p.mandantFonction)})`:""}, administrateur/trice de l’ASBL LE BUREAU ETUDIANT (B.E)</p>
+    <p>donne procuration à <b>${esc(p.mandataireNom)}</b>, également administrateur/trice de l’ASBL, afin de me représenter lors de la réunion de l’Organe d’Administration qui se tiendra le <b>${esc(dr)}</b>, conformément aux dispositions des statuts de l’ASBL.</p>
+    <p>Je donne procuration à mon/ma mandataire :</p>
+    ${p.portee==="points"
+      ? `<p><b>Uniquement pour les points suivants inscrits à l’ordre du jour :</b></p><ul>${pts}</ul>`
+      : `<p><b>Pour l’ensemble des points inscrits à l’ordre du jour.</b></p>`}
+    <p>Pour les points faisant l’objet de la présente procuration, le/la mandataire est autorisé(e) à me représenter et à exercer en mon nom mon droit de vote.</p>
+    ${p.clause?`<p>Le/la mandataire est également autorisé(e), pour les points concernés par la présente procuration, à participer aux délibérations et aux échanges de l’Organe d’administration en mon nom et à exprimer ma position dans le cadre des discussions.</p>`:""}
+    <p>La présente procuration est valable uniquement pour la réunion de l’Organe d’Administration du <b>${esc(dr)}</b>.</p>
+    <table style="margin-top:14px"><tbody>
+      <tr><th style="width:230px">Nom et prénom du/de la mandant(e)</th><td>${esc(p.mandantNom)}</td></tr>
+      <tr><th>Date</th><td>${esc(signeLe.toLocaleDateString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric"}))}</td></tr>
+    </tbody></table>
+    <p>Je confirme cette procuration par signature \u00e9lectronique, depuis mon compte personnel de l\u2019espace CA.</p>
+    <div style="margin-top:14px;border:2px solid #241c46;border-radius:8px;padding:12px 14px;font-size:12px;color:#222;max-width:440px">
+      <div style="font-size:13px;font-weight:bold;color:#241c46;margin-bottom:4px">\u2714 Sign\u00e9 \u00e9lectroniquement</div>
+      par <b>${esc(p.mandantNom)}</b>${p.mandantFonction?`, ${esc(p.mandantFonction)}`:""}<br>
+      ${p.mandantEmail?`Compte : ${esc(p.mandantEmail)}<br>`:""}
+      Authentification : ${esc(p.signature&&!/^data:/.test(p.signature)?p.signature:PR_METHODE)}<br>
+      Le : ${esc(signeLe.toLocaleDateString("fr-BE"))} à ${esc(signeLe.toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit",second:"2-digit"}))}<br>
+      Code de vérification : <b>${esc(prEmpreinteCourte(p.empreinte))}</b><br>
+      <span style="color:#777">Empreinte SHA-256 : ${esc(p.empreinte||"—")}</span>
+    </div>`;
+}
+async function prPDFBlob(p){
+  return await telechargerPDF(prNomFichier(p), cssDocImprimable(), corpsPDFProcuration(p), null, "blob");
+}
+function prNomFichier(p){ return nomPDF("procuration-"+(p.mandantNom||"")+"-"+String(p.dateReunion||"").slice(0,10)); }
+function prDestinataires(p){ return [PROCURATION_EMAIL, p.mandantEmail, p.mandataireEmail].filter(Boolean); }
+
+function tabProcuration(){
+  const me=S.session||{}, d=prDraft();
+  const P=S.procurations||[];
+  const autres=membresActifs().filter(a=>a.id!==me.id);
+  const meta=`<p class="du" style="margin:0 0 10px;font-weight:700;color:#f5c542">● Procurations numériques — envoyées à ${esc(PROCURATION_EMAIL)}</p>`;
+  let pts=""; for(let i=0;i<d.nbPts;i++) pts+=`<input class="f" id="pr_pt_${i}" placeholder="Point ${i+1} : intitulé du point de l'ordre du jour" style="margin:0 0 6px">`;
+  const form=`<div class="compose" style="border:2px solid #f5c542;box-shadow:0 0 0 3px rgba(245,197,66,.12)">
+    <h3 class="serif">✍ Donner procuration</h3>
+    <p style="font-size:14px;line-height:1.6;margin:0 0 12px">Je soussigné(e), <b>${esc(me.nom||"")}</b>${me.fonction?` (${esc(me.fonction)})`:""}, administrateur/trice de l’ASBL LE BUREAU ETUDIANT (B.E), donne procuration pour la réunion de l’Organe d’Administration du :</p>
+    <div class="two">
+      <div><label class="du" for="pr_date">Date de la réunion</label><input class="f" type="date" id="pr_date" min="${todayISO()}"></div>
+      <div><label class="du" for="pr_mandataire">Mandataire</label><select class="f" id="pr_mandataire"><option value="">— Choisir un·e administrateur/trice —</option>${autres.map(a=>`<option value="${a.id}">${esc(((a.prenom||"")+" "+(a.nom||"")).trim())}${a.fonction?" · "+esc(a.fonction):""}</option>`).join("")}</select></div>
+    </div>
+    <p class="du" style="margin:12px 0 6px">Je donne procuration à mon/ma mandataire :</p>
+    <div class="mini" style="margin:0 0 8px">
+      <button aria-pressed="${d.portee==="tous"}" data-action="pr-portee" data-v="tous">Pour l'ensemble des points</button>
+      <button aria-pressed="${d.portee==="points"}" data-action="pr-portee" data-v="points">Uniquement certains points</button>
+    </div>
+    ${d.portee==="points"?`<div id="pr_points">${pts}</div><button class="link" data-action="pr-add-point">+ Ajouter un point</button>`:""}
+    <label style="display:flex;gap:8px;align-items:flex-start;margin:12px 0 0;font-size:13.5px;cursor:pointer"><input type="checkbox" id="pr_clause" data-action="pr-clause" ${d.clause?"checked":""} style="margin-top:3px"><span>Le/la mandataire peut aussi participer aux délibérations et exprimer ma position en mon nom <span class="du">(facultatif)</span></span></label>
+
+    <div style="margin:14px 0 0;padding:10px 12px;border:1px dashed #f5c542;border-radius:8px;font-size:13px;line-height:1.55">
+      <b style="color:#f5c542">\ud83d\udd12 Signature \u00e9lectronique</b><br>
+      Pour signer, vous retapez le <b>mot de passe</b> de votre compte (${esc(me.email||"")}). Il est v\u00e9rifi\u00e9 par le serveur.<br>
+      <span class="du">La date de la procuration (${esc(prDateCourte(todayISO()))}), l'heure exacte et un code de v\u00e9rification sont ajout\u00e9s automatiquement. Le PDF est envoy\u00e9 \u00e0 la secr\u00e9taire, \u00e0 vous et \u00e0 votre mandataire.</span>
+    </div>
+    <div class="row-btn"><button class="btn" data-action="pr-envoyer" style="background:#f5c542;border-color:#f5c542;color:#141026">Signer et envoyer la procuration</button></div></div>`;
+  const badge=p=>p.statut==="annulee"?`<span class="badge no">Annulée</span>`:(prModifiable(p)?`<span class="badge ok">Active</span>`:`<span class="badge closed">Passée</span>`);
+  const portee=p=>p.portee==="points"?("Points : "+(p.points||[]).join(" · ")):"Ensemble des points";
+  const carte=(p,titre,annulable)=>`<div class="vote"><div class="vote-h"><div><h4 class="serif">Réunion du ${esc(prDateLongue(p.dateReunion))}</h4>
+      <p class="by" style="margin:2px 0 0">${titre}</p></div>${badge(p)}</div>
+      <p class="b-desc" style="margin:6px 0 0">${esc(portee(p))}${p.clause?" · délibérations incluses":""}</p>
+      <p class="voters">Signée le ${esc(new Date(p.signeLe).toLocaleDateString("fr-BE"))} · code ${esc(prEmpreinteCourte(p.empreinte))}</p>
+      <div class="foot-line"><button class="chip" data-action="pr-pdf" data-id="${p.id}">📄 PDF</button>
+      ${(annulable&&prModifiable(p))?`<button class="link" data-action="pr-annuler" data-id="${p.id}" style="margin-left:auto;color:var(--red)">Annuler la procuration</button>`:""}</div></div>`;
+  const miennes=P.filter(p=>p.mandantId===me.id);
+  const recues=P.filter(p=>p.mandataireId===me.id);
+  let html=meta+form;
+  html+=`<h3 class="serif" style="margin:22px 0 10px">Mes procurations</h3>`+(miennes.length?miennes.map(p=>carte(p,"Mandataire : <b>"+esc(p.mandataireNom)+"</b>",true)).join(""):`<div class="empty">Aucune procuration donnée.</div>`);
+  if(recues.length) html+=`<h3 class="serif" style="margin:22px 0 10px">On m'a donné procuration</h3>`+recues.map(p=>carte(p,"Mandant·e : <b>"+esc(p.mandantNom)+"</b>",false)).join("");
+  if(estSecretaire()){
+    const parDate={}; P.forEach(p=>{ const k=String(p.dateReunion||"").slice(0,10); (parDate[k]=parDate[k]||[]).push(p); });
+    const cles=Object.keys(parDate).sort().reverse();
+    html+=`<h3 class="serif" style="margin:26px 0 6px">Toutes les procurations <span class="du">(secrétariat)</span></h3>`
+      +(cles.length?cles.map(k=>{ const l=parDate[k]; const act=l.filter(p=>p.statut==="active").length;
+        return `<div class="vote" style="border-left:3px solid #f5c542"><div class="vote-h"><h4 class="serif">Réunion du ${esc(prDateLongue(k))}</h4><span class="badge closed">${act} active${act>1?"s":""}</span></div>
+          ${l.map(p=>`<div class="foot-line" style="gap:8px;flex-wrap:wrap"><span style="${p.statut==="annulee"?"text-decoration:line-through;opacity:.6":""}"><b>${esc(p.mandantNom)}</b> → ${esc(p.mandataireNom)} <span class="du">· ${esc(p.portee==="points"?"certains points":"tous les points")}</span></span>${p.statut==="annulee"?`<span class="badge no">Annulée</span>`:""}<button class="chip" data-action="pr-pdf" data-id="${p.id}" style="margin-left:auto">📄 PDF</button></div>`).join("")}</div>`; }).join("")
+      :`<div class="empty">Aucune procuration reçue.</div>`);
+  }
+  return html;
+}
+
+const PR_METHODE="Mot de passe du compte, v\u00e9rifi\u00e9 par le serveur";
+/* Signature : la personne retape le mot de passe de son compte, vérifié par Supabase. */
+async function prAuthentifier(email){
+  if(!email){ modaleInfo("Votre compte n'a pas d'adresse e-mail : signature impossible."); return false; }
+  let err="";
+  for(let essai=0; essai<3; essai++){
+    const mdp=await modaleChamp("Pour signer, retapez le mot de passe de votre compte ("+email+").","Signer la procuration",{type:"password",placeholder:"Mot de passe",bouton:"\ud83d\udd12 Signer",erreur:err});
+    if(mdp===null) return false;
+    if(!mdp){ err="Saisissez votre mot de passe."; essai--; continue; }
+    let r=null; try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }catch(e){ r={error:e}; }
+    if(!(r&&r.error)) return true;
+    err="Mot de passe incorrect.";
+  }
+  modaleInfo("Mot de passe incorrect (3 essais). La procuration n'a pas \u00e9t\u00e9 sign\u00e9e.");
+  return false;
+}
+async function prEnvoyer(){
+  if(!sb||!S.session) return;
+  const me=S.session, d=prDraft();
+  const date=String(val("pr_date")||"");
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ modaleInfo("Indiquez la date de la réunion."); return; }
+  if(date<todayISO()){ modaleInfo("La date de la réunion est déjà passée."); return; }
+  const mid=val("pr_mandataire"); const m=(S.admins||[]).find(a=>a.id===mid);
+  if(!m){ modaleInfo("Choisissez votre mandataire."); return; }
+  const points = d.portee==="points" ? prPointsSaisis() : [];
+  if(d.portee==="points" && !points.length){ modaleInfo("Indiquez au moins un point de l'ordre du jour, ou choisissez « l'ensemble des points »."); return; }
+  if((S.procurations||[]).some(p=>p.mandantId===me.id && p.statut==="active" && String(p.dateReunion).slice(0,10)===date)){
+    modaleInfo("Vous avez déjà une procuration active pour la réunion du "+prDateLongue(date)+". Annulez-la d'abord si vous voulez en donner une autre."); return; }
+  const mNom=((m.prenom||"")+" "+(m.nom||"")).trim();
+  if(!(await modaleConfirm("Donner procuration à "+mNom+" pour la réunion du "+prDateLongue(date)+" ("+(d.portee==="points"?points.length+" point(s)":"ensemble des points")+") ?\n\nLe PDF signé sera envoyé à la secrétaire ("+PROCURATION_EMAIL+"), à vous et à "+mNom+".","Signer la procuration"))) return;
+  const clause=!!d.clause, portee=d.portee;
+  if(!(await prAuthentifier(me.email))) return;
+  const signeLe=new Date().toISOString();
+  const contenu={mandant_id:me.id, mandant_nom:me.nom||"", mandant_fonction:me.fonction||"", mandant_email:me.email||"",
+    mandataire_id:m.id, mandataire_nom:mNom, mandataire_email:m.email||"", date_reunion:date, portee:portee, points:points, clause_delib:clause, signe_le:signeLe};
+  const methode=PR_METHODE;
+  const empreinte=await prCalculerEmpreinte(Object.assign({},contenu,{signature:methode}));
+  const ins=await sb.from("ca_procurations").insert(Object.assign({},contenu,{signature:methode, empreinte:empreinte, statut:"active"})).select();
+  if(ins&&ins.error){ modaleInfo("La procuration n'a pas pu être enregistrée : "+ins.error.message+(/ca_procurations/.test(ins.error.message)?"\n\nLa table ca_procurations n'existe pas encore dans Supabase.":"")); return; }
+  if(!ins||!ins.data||!ins.data.length){ modaleInfo("Le serveur a refusé l'enregistrement (règle de droits RLS sur ca_procurations). Rien n'a été envoyé."); return; }
+  const row=ins.data[0];
+  logAct("Procuration donnée à "+mNom+" — réunion du "+prDateCourte(date));
+  const p={id:row.id, mandantId:me.id, mandantNom:contenu.mandant_nom, mandantFonction:contenu.mandant_fonction, mandantEmail:contenu.mandant_email,
+    mandataireId:m.id, mandataireNom:mNom, mandataireEmail:contenu.mandataire_email, dateReunion:date, portee:portee, points:points, clause:clause,
+    signature:methode, signeLe:signeLe, empreinte:empreinte, statut:"active"};
+  S.prDraft=null;
+  await loadProcurations(); render();
+  /* PDF, dépôt, puis envoi aux trois destinataires. */
+  let blob=null; try{ blob=await prPDFBlob(p); }catch(e){ blob=null; }
+  let piece=null, lien="";
+  if(blob){
+    const nom=prNomFichier(p);
+    try{
+      const chemin=uid()+"-"+nom;
+      const up=await sb.storage.from("ca-documents").upload(chemin, blob, {contentType:"application/pdf", upsert:false});
+      if(!(up&&up.error)){
+        await sb.from("ca_procurations").update({pdf_path:chemin}).eq("id",p.id);
+        const su=await sb.storage.from("ca-documents").createSignedUrl(chemin, CA_LIEN_DUREE, {download:nom});
+        if(su&&su.data&&su.data.signedUrl) lien=su.data.signedUrl;
+      }
+    }catch(_){ }
+    try{ const b64=await blobEnBase64(blob); if(b64.length<4500000) piece={filename:nom, content:b64, contentType:"application/pdf"}; }catch(_){ }
+  }
+  const corps=`<h2 style="margin:0 0 10px">Procuration — réunion du ${caMailEsc(prDateCourte(date))}</h2>`
+    +`<p><b>${caMailEsc(p.mandantNom)}</b>${p.mandantFonction?" ("+caMailEsc(p.mandantFonction)+")":""} donne procuration à <b>${caMailEsc(mNom)}</b> pour la réunion de l'Organe d'Administration du <b>${caMailEsc(prDateLongue(date))}</b>.</p>`
+    +`<p>${portee==="points"?"Uniquement pour les points : "+points.map(caMailEsc).join(" ; "):"Pour l'ensemble des points inscrits à l'ordre du jour."}${p.clause?"<br>Le/la mandataire peut aussi participer aux délibérations en son nom.":""}</p>`
+    +`<p style="font-size:12px;color:#666">Signée électroniquement le ${caMailEsc(new Date(signeLe).toLocaleString("fr-BE"))} — code de vérification ${caMailEsc(prEmpreinteCourte(empreinte))}</p>`
+    +(lien?`<p><a href="${lien}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Télécharger la procuration (PDF)</a></p>`:"");
+  const res=await envoyerAvecPiece(prDestinataires(p), "Procuration — réunion du "+prDateCourte(date)+" — "+p.mandantNom, corps, piece, {sansInvitation:true, tous:true});
+  if(!blob) modaleInfo("Procuration enregistrée, mais le PDF n'a pas pu être généré. "+(res.ok?res.ok+" mail(s) envoyé(s) sans pièce jointe.":"Aucun mail envoyé."),"Procuration");
+  else modaleInfo("✓ Procuration signée.\n"+res.ok+" mail(s) envoyé(s) : secrétaire, vous et "+mNom+"."+(res.err?"\n⚠ "+res.err+" échec(s).":"")+((res.sansPiece&&res.ok)?"\n⚠ Pièce jointe refusée par le serveur : le mail contient le lien de téléchargement.":""),"Procuration envoyée");
+}
+async function prAnnuler(id){
+  const p=(S.procurations||[]).find(x=>x.id===id); if(!p||!sb||!S.session) return;
+  if(p.mandantId!==S.session.id || !prModifiable(p)) return;
+  if(!(await modaleConfirm("Annuler votre procuration à "+p.mandataireNom+" pour la réunion du "+prDateLongue(p.dateReunion)+" ?\n\nUn mail d'annulation sera envoyé à la secrétaire, à vous et à "+p.mandataireNom+".","Annuler la procuration"))) return;
+  const quand=new Date().toISOString();
+  const r=await sb.from("ca_procurations").update({statut:"annulee", annulee_le:quand}).eq("id",id).select();
+  if(r&&r.error){ modaleInfo("Annulation impossible : "+r.error.message); return; }
+  if(!r||!r.data||!r.data.length){ modaleInfo("Le serveur a refusé l'annulation (règle de droits RLS). Rien n'a changé."); return; }
+  logAct("Procuration annulée — réunion du "+prDateCourte(p.dateReunion));
+  await loadProcurations(); render();
+  const pa=Object.assign({},p,{statut:"annulee",annuleeLe:quand});
+  let piece=null; try{ const blob=await prPDFBlob(pa); if(blob){ const b64=await blobEnBase64(blob); if(b64.length<4500000) piece={filename:prNomFichier(pa).replace(/\.pdf$/,"-annulee.pdf"), content:b64, contentType:"application/pdf"}; } }catch(_){ }
+  const corps=`<h2 style="margin:0 0 10px;color:#b3261e">Procuration annulée</h2>`
+    +`<p><b>${caMailEsc(p.mandantNom)}</b> annule la procuration donnée à <b>${caMailEsc(p.mandataireNom)}</b> pour la réunion de l'Organe d'Administration du <b>${caMailEsc(prDateLongue(p.dateReunion))}</b>.</p>`
+    +`<p style="font-size:12px;color:#666">Annulée le ${caMailEsc(new Date(quand).toLocaleString("fr-BE"))} — procuration d'origine : code ${caMailEsc(prEmpreinteCourte(p.empreinte))}</p>`;
+  const res=await envoyerAvecPiece(prDestinataires(p), "Annulation de procuration — réunion du "+prDateCourte(p.dateReunion)+" — "+p.mandantNom, corps, piece, {sansInvitation:true, tous:true});
+  modaleInfo("✓ Procuration annulée. "+res.ok+" mail(s) envoyé(s)."+(res.err?"\n⚠ "+res.err+" échec(s).":""),"Annulation");
+}
+async function prOuvrirPDF(id){
+  const p=(S.procurations||[]).find(x=>x.id===id); if(!p||!sb) return;
+  if(p.pdfPath && p.statut!=="annulee"){
+    try{ const su=await sb.storage.from("ca-documents").createSignedUrl(p.pdfPath, 600, {download:prNomFichier(p)});
+      if(su&&su.data&&su.data.signedUrl){ window.open(su.data.signedUrl,"_blank"); return; } }catch(_){ }
+  }
+  try{ await telechargerPDF(prNomFichier(p), cssDocImprimable(), corpsPDFProcuration(p)); }catch(e){ modaleInfo("Le PDF n'a pas pu être généré."); }
 }
 
 /* ---- onglet VOTES ---- */
@@ -2790,10 +3044,12 @@ function blobEnBase64(blob){
 }
 /* Envoi avec pièce jointe réelle. Le lien signé est TOUJOURS dans le corps :
    si la pièce jointe est refusée par le serveur, le mail reste utilisable. */
-async function envoyerAvecPiece(dest, subject, corpsHtml, piece){
-  const liste=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))].filter(e=>!estDesabonne(e));
+async function envoyerAvecPiece(dest, subject, corpsHtml, piece, opts){
+  opts=opts||{};
+  /* opts.tous : document officiel (procuration) — envoyé même aux adresses désabonnées des annonces. */
+  const liste=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))].filter(e=>opts.tous||!estDesabonne(e));
   if(!liste.length) return {ok:0,err:0,total:0,sansPiece:false};
-  const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corpsHtml}${blocInvitationCA()}${blocNoReplyCA()}</div>`;
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corpsHtml}${opts.sansInvitation?"":blocInvitationCA()}${blocNoReplyCA()}</div>`;
   const headers=await caSendHeaders();
   let ok=0, err=0, avec=!!piece, sansPiece=false, okAvecPiece=0;
   for(const to of liste){
@@ -3863,6 +4119,12 @@ ${sections||"<p>Aucun retour.</p>"}
     case "add-budget-ca": { await voteCAPhysique(null); break; }
     case "bca-physique": { await voteCAPhysique(id); break; }
     case "budget-pdf-decision": { await ouvrirPDFDecision(id); break; }
+    case "pr-portee": { prDraft().portee=el.dataset.v==="points"?"points":"tous"; rendreEnPreservant(); break; }
+    case "pr-add-point": { const d=prDraft(); if(d.nbPts<20){ d.nbPts++; rendreEnPreservant(); const n=document.getElementById("pr_pt_"+(d.nbPts-1)); if(n) try{ n.focus(); }catch(_){ } } break; }
+    case "pr-clause": { prDraft().clause=!!el.checked; break; }
+    case "pr-envoyer": { await prEnvoyer(); break; }
+    case "pr-annuler": { await prAnnuler(id); break; }
+    case "pr-pdf": { await prOuvrirPDF(id); break; }
     case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; const r=await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix},{onConflict:"budget_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadBudgets(); render(); break; }
     case "bdecide": { if(!(S.session&&S.session.role==="owner")||!sb) break; const st=el.dataset.st; const md=await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id).select(); if(md&&md.error){ modaleInfo("Enregistrement impossible : "+md.error.message); break; } if(!md||!md.data||!md.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 la modification (aucune ligne chang\u00e9e) \u2014 il s'agit d'une r\u00e8gle de droits (RLS) sur ca_budgets.","Action non enregistr\u00e9e"); break; } await loadBudgets(); render(); break; }
     case "bcloture": { await cloturerBudget(id, el.dataset.force==="1"); break; }
