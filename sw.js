@@ -1,43 +1,65 @@
-/* Espace CA — service worker.
-   Stratégie : RÉSEAU D'ABORD. On sert toujours la version en ligne ;
-   le cache ne sert que de filet quand le réseau tombe.
-   IMPORTANT : incrémente CACHE à chaque déploiement (v2, v3, …).
-   Le changement de nom déclenche la purge de l'ancien cache dans "activate",
-   donc plus aucune vieille version ne peut rester coincée. */
+/* Service worker — contrôle d'entrée QR (mode hors-ligne) */
+const CACHE = "qrentry-v176";
+const PRECACHE = [
+  "./",
+  "https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js",
+  "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js",
+  "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+];
 
-const CACHE = "ca-v25";
+self.addEventListener("install", function(e){
+  self.skipWaiting();
+  e.waitUntil(caches.open(CACHE).then(function(c){
+    return Promise.allSettled(PRECACHE.map(function(u){ return c.add(u); }));
+  }));
+});
 
-self.addEventListener("install", () => self.skipWaiting());
-
-self.addEventListener("activate", (e) => {
+self.addEventListener("activate", function(e){
   e.waitUntil(
-    caches.keys()
-      .then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
+    caches.keys().then(function(keys){
+      return Promise.all(keys.filter(function(k){ return k!==CACHE; }).map(function(k){ return caches.delete(k); }));
+    }).then(function(){ return self.clients.claim(); })
   );
 });
 
-self.addEventListener("fetch", (e) => {
+// Les appels d'API doivent toujours passer par le réseau (jamais servis depuis le cache)
+const BYPASS = /(firestore|identitytoolkit|securetoken)\.googleapis\.com|supabase\.co|esm\.sh/;
+
+self.addEventListener("fetch", function(e){
   const req = e.request;
-  if (req.method !== "GET") return;
+  if(req.method !== "GET") return;
+  let url;
+  try { url = new URL(req.url); } catch(_) { return; }
+  if(BYPASS.test(url.href)) return; // réseau direct
 
-  const url = new URL(req.url);
-  /* On ne touche à rien d'externe : Supabase, edge functions, CDN passent en direct. */
-  if (url.origin !== self.location.origin) return;
+  const cacheable = (url.origin === self.location.origin) ||
+                    /cdnjs\.cloudflare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com/.test(url.href);
 
+  // Navigation (ouverture de la page) : réseau d'abord, puis cache si hors-ligne
+  if(req.mode === "navigate"){
+    e.respondWith(
+      fetch(req, { cache:"no-store" }).then(function(r){   // toujours la dernière version publiée
+        const clone = r.clone();
+        caches.open(CACHE).then(function(c){ c.put("./", clone); });
+        return r;
+      }).catch(function(){ return caches.match("./"); })
+    );
+    return;
+  }
+
+  // Ressources : cache d'abord, sinon réseau (et on met en cache si pertinent)
   e.respondWith(
-    fetch(req)
-      .then(res => {
-        if (res && res.ok) {
-          const copie = res.clone();
-          caches.open(CACHE).then(c => c.put(req, copie)).catch(() => {});
+    caches.match(req).then(function(hit){
+      if(hit) return hit;
+      return fetch(req).then(function(r){
+        if(cacheable && r && r.status === 200){
+          const clone = r.clone();
+          caches.open(CACHE).then(function(c){ c.put(req, clone); });
         }
-        return res;
-      })
-      .catch(() => caches.match(req).then(r => r || Response.error()))
+        return r;
+      }).catch(function(){ return caches.match(req); });
+    })
   );
 });
 
-/* Permet de forcer la mise à jour depuis la page si besoin :
-   navigator.serviceWorker.controller.postMessage("maj") */
-self.addEventListener("message", (e) => { if (e.data === "maj") self.skipWaiting(); });
+self.addEventListener("message", function(e){ if(e.data==="skipWaiting") self.skipWaiting(); });
