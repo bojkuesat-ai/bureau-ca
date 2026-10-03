@@ -1005,7 +1005,7 @@ async function refreshSession(){
   await loadAccounts();
   const jobs=[loadDocs,loadMessages,loadConflits,loadTaches,loadContacts,loadAnnonces,loadReactions,loadPresence,
     loadEvenements,loadReunions,loadCreneaux,loadOrg,loadBudgets,loadVotes,loadMeta,loadBilans,loadJournal,
-    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations];
+    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation];
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
 }
 async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; } }catch(e){} }
@@ -1461,7 +1461,7 @@ function viewAdmin(){
       ${secretairesExtra().length?"":`<p class="du" style="color:var(--red)">Personne n'est désigné : plus aucun compte ne peut clôturer ni publier les bilans moraux.</p>`}
     </div>
     <div class="card2"><h3 class="serif">Droits médiation</h3>
-      <p class="du">Lecture des signalements et réponse aux personnes qui les déposent. À réserver au strict nécessaire : ces messages sont les plus sensibles de l'app.</p>
+      <p class="du">Liste des médiateurs. Vous attribuez chaque dossier à l'un d'eux : seul celui-ci en voit le contenu. Prévoyez-en au moins trois.</p>
       ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte").map(a=>{
         const on=directionExtra().indexOf(a.id)>=0;
         return `<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
@@ -1469,7 +1469,7 @@ function viewAdmin(){
           ${esc(((a.prenom||"")+" "+(a.nom||"")).trim()||a.email)} <span class="du">${esc(a.fonction||"")}</span></label>
         ${ligneEtatDroit("mediation",a.id)}`;
       }).join("")}
-      ${directionExtra().length?"":`<p class="du" style="color:var(--red)">Personne n'est désigné : les signalements déposés ne seront lus par personne.</p>`}
+      ${directionExtra().length?"":`<p class="du" style="color:var(--red)">Aucun médiateur : vous ne pourrez attribuer aucun dossier.</p>`}
     </div>`:""}
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Liste e-mail (invités externes)</h2><span class="l"></span></div>
     <div class="compose">
@@ -2252,46 +2252,144 @@ function tabBilan(){
 
 /* ---- onglet MESSAGES (directs 1 à 1, démo locale) ---- */
 function msgMeId(){ const k=((S.session&&S.session.nom)||"").trim().toLowerCase(); const p=PERSONNES.find(x=>(x.prenom+" "+x.nom).toLowerCase()===k); return p?p.id:S.session.id; }
-function tabConflits(){
-  const me=S.session; const dir=estDirection();
-  const C=(S.conflits||[]);
-  if(dir){
-    const fils={}; C.forEach(m=>{ (fils[m.fil_id]=fils[m.fil_id]||[]).push(m); });
-    const cles=Object.keys(fils).sort((a,b)=> new Date(fils[b][fils[b].length-1].created_at)-new Date(fils[a][fils[a].length-1].created_at));
-    const blocs=cles.map(k=>{
-      const msgs=fils[k].sort((x,y)=> new Date(x.created_at)-new Date(y.created_at));
-      const p=msgs[0];
-      const bulles=msgs.map(m=>`<div style="margin:7px 0;padding:9px 12px;border-radius:11px;background:${m.de_direction?"var(--or-soft,#efe9d8)":"#f3f1fa"}">
-        <div style="font-size:11.5px;color:#666;margin-bottom:3px">${m.de_direction?esc(m.auteur||"Direction"):(p.anonyme?"Membre (anonyme)":esc(m.auteur||"Membre"))} \u00b7 ${dateFR(m.created_at)}</div>
-        <div style="white-space:pre-wrap">${esc(m.texte)}</div></div>`).join("");
-      return `<div class="card2"><h3 class="serif">${p.anonyme?"Signalement anonyme":esc(p.auteur||"Membre")}</h3>
-        ${bulles}
-        <textarea id="cf_rep_${k}" placeholder="R\u00e9pondre\u2026"></textarea>
-        <div class="row-btn"><button class="btn sm" data-action="cf-repondre" data-fil="${k}">R\u00e9pondre</button></div></div>`;
-    }).join("");
-    return `<p class="du">Espace confidentiel : seuls la pr\u00e9sidence et la vice-pr\u00e9sidence voient ces \u00e9changes.</p>`
-      + (cles.length?blocs:`<div class="empty">Aucun signalement.</div>`);
+/* ===================== MÉDIATION v2 =====================
+   Toute la logique de confidentialité est dans la base (fonctions ca_med_*) :
+   l'app n'affiche que ce que la base lui renvoie déjà masqué. */
+const CA_MED_FN = SB_URL + "/functions/v1/mediation";
+const MED_STATUT = {
+  a_attribuer:["En attente d'un médiateur","--slate"],
+  en_cours:["En cours","--amber"],
+  a_reattribuer:["À réattribuer (pas de réponse en 12 h)","--red"],
+  regle:["Réglé","--green"],
+  escalade:["Non réglé — transmis","--red"],
+  tranche:["Décision rendue","--green"]
+};
+async function loadMediation(){
+  S.med=S.med||{dossiers:[],personnes:[],msgs:{},ouvert:null};
+  try{ const r=await sb.rpc("ca_med_dossiers_vue"); S.med.dossiers=(r&&!r.error&&r.data)||[]; S.med.erreur=(r&&r.error)?r.error.message:""; }catch(e){ S.med.dossiers=[]; }
+  try{ const r=await sb.rpc("ca_med_personnes"); S.med.personnes=(r&&!r.error&&r.data)||[]; }catch(e){ S.med.personnes=[]; }
+}
+async function loadMedMessages(id){
+  try{ const r=await sb.rpc("ca_med_lire",{p_dossier:id}); S.med.msgs[id]=(r&&!r.error&&r.data)||[]; }catch(e){ S.med.msgs[id]=[]; }
+}
+/* Mails : envoyés par la fonction serveur, qui seule connaît les adresses. */
+async function medNotif(evenement, dossier){
+  try{ const h=await caSendHeaders(); const r=await fetch(CA_MED_FN,{method:"POST",headers:h,body:JSON.stringify({evenement:evenement,dossier:dossier||null})}); return r.ok; }
+  catch(e){ return false; }
+}
+async function traiterRetardsMediation(){
+  if(!sb||!S.session||S.session.statut!=="actif") return;
+  try{ const r=await sb.rpc("ca_med_verifier_retards"); if(r&&!r.error&&r.data>0){ await medNotif("retard"); } }catch(e){}
+  /* Un dossier signalé en retard par un autre appareil doit aussi partir chez le propriétaire. */
+  if(S.session.role==="owner"){ try{ await medNotif("retard"); }catch(e){} }
+}
+function medBadge(d){
+  const s=MED_STATUT[d.statut]||[d.statut,"--slate"];
+  let lib=s[0];
+  /* Les parties ne savent pas qu'un médiateur a tardé : ça reste « en cours » pour elles. */
+  if((d.role==="demandeur"||d.role==="vise") && d.statut==="a_reattribuer") lib=MED_STATUT.en_cours[0];
+  if((d.role==="demandeur"||d.role==="vise") && d.statut==="a_attribuer") lib="En attente d'un médiateur";
+  if(d.statut==="escalade" && d.escalade && d.role!=="owner") lib="Non réglé — transmis à "+d.escalade;
+  if(d.statut==="escalade" && d.role==="owner") lib="Non réglé — transmis à "+(d.escalade||"?");
+  return `<span class="badge" style="background:var(${s[1]});color:#fff">${esc(lib)}</span>`;
+}
+function medCarte(d){
+  const titre = d.role==="owner"||d.role==="escalade"
+      ? `${esc(d.demandeur||"?")} ↔ ${esc(d.vise||"?")}`
+    : d.role==="demandeur" ? `Votre demande concernant ${esc(d.vise||"?")}`
+    : d.role==="vise" ? `Demande de ${esc(d.demandeur||"un membre")}`
+    : d.role==="mediateur" ? `${esc(d.demandeur||"Demandeur (anonyme)")} ↔ ${esc(d.vise||"?")}`
+    : "Médiation réglée";
+  const ligne2 = d.role==="owner"
+      ? `Déposée le ${esc(dateFR(d.created_at))}${d.anonyme?" · anonyme":""}${d.mediateur?" · médiateur : "+esc(d.mediateur):""}${d.presidente_concernee?" · présidence concernée":""}`
+      : `Déposée le ${esc(dateFR(d.created_at))}`;
+  const ouvrir = (d.role!=="owner"&&d.role!=="rapport")
+      ? `<div class="row-btn"><button class="btn sm" data-action="med-open" data-id="${d.id}" data-role="${d.role}">Ouvrir le dossier</button></div>` : "";
+  const rapport = d.role==="rapport"
+      ? `<p class="b-desc"><b>Conclusion du médiateur :</b> ${esc(d.conclusion||"—")}</p><p class="du">Clos le ${esc(d.clos_le?dateFR(d.clos_le):"—")}</p>` : "";
+  let attrib="";
+  if(d.role==="owner" && ["a_attribuer","a_reattribuer","en_cours"].indexOf(d.statut)>=0){
+    const pool=(S.admins||[]).filter(a=>a.statut==="actif" && directionExtra().indexOf(a.id)>=0 && a.id!==S.session.id
+      && ((a.prenom||"")+" "+(a.nom||"")).trim()!==d.demandeur && ((a.prenom||"")+" "+(a.nom||"")).trim()!==d.vise);
+    attrib = `<div class="foot-line" style="flex-direction:column;align-items:stretch;gap:7px">
+      ${d.statut==="a_reattribuer"?`<p class="du" style="color:var(--red);margin:0">${esc(d.mediateur||"Le médiateur")} n'a pas répondu dans les 12 h.</p>`:""}
+      <select class="f" id="med_sel_${d.id}" style="max-width:340px"><option value="">— Choisir un médiateur sans lien avec les deux personnes —</option>
+        ${pool.map(a=>`<option value="${a.id}">${esc(((a.prenom||"")+" "+(a.nom||"")).trim())}${a.fonction?" · "+esc(a.fonction):""}</option>`).join("")}</select>
+      <label style="display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer"><input type="checkbox" class="sw" role="switch" id="med_pres_${d.id}" ${d.presidente_concernee?"checked":""}> La présidence a un lien avec une des deux personnes</label>
+      <div><button class="btn sm" data-action="med-attribuer" data-id="${d.id}">${d.statut==="a_attribuer"?"Attribuer":"Réattribuer"}</button></div>
+      ${pool.length?"":`<p class="du" style="color:var(--red);margin:0">Aucun médiateur disponible : cochez-en dans Admin › Droits médiation.</p>`}</div>`;
   }
-  /* Inutile de filtrer sur l'auteur : hors direction, la base ne renvoie que
-     les fils de la personne connectee. */
-  const miens=C.filter(m=> m.fil_id);
-  const fils={}; miens.forEach(m=>{ (fils[m.fil_id]=fils[m.fil_id]||[]).push(m); });
-  const cles=Object.keys(fils);
-  const historique=cles.map(k=>{
-    const msgs=fils[k].sort((x,y)=> new Date(x.created_at)-new Date(y.created_at));
-    return `<div class="card2">${msgs.map(m=>`<div style="margin:7px 0;padding:9px 12px;border-radius:11px;background:${m.de_direction?"#efe9d8":"#f3f1fa"}">
-      <div style="font-size:11.5px;color:#666;margin-bottom:3px">${m.de_direction?"Pr\u00e9sidence":"Vous"} \u00b7 ${dateFR(m.created_at)}</div>
-      <div style="white-space:pre-wrap">${esc(m.texte)}</div></div>`).join("")}
-      <textarea id="cf_suite_${k}" placeholder="Ajouter un message\u2026"></textarea>
-      <div class="row-btn"><button class="btn sm" data-action="cf-suite" data-fil="${k}">Envoyer</button></div></div>`;
-  }).join("");
-  return `<div class="compose"><h3 class="serif">Signaler un probl\u00e8me</h3>
-    <p class="du">Votre message n'est lu que par la ou les personnes d\u00e9sign\u00e9es pour la m\u00e9diation. Aucun autre membre n'y a acc\u00e8s.</p>
-    <textarea id="cf_texte" placeholder="D\u00e9crivez la situation\u2026"></textarea>
-    <label style="display:flex;align-items:center;gap:9px;margin:8px 0;font-size:14px;cursor:pointer"><input type="checkbox" class="sw" role="switch" id="cf_anon"> Envoyer de mani\u00e8re anonyme</label>
-    <p class="du" style="margin:0 0 8px">Anonyme signifie que la personne qui vous r\u00e9pond ne voit pas votre nom, m\u00eame en cherchant. Elle peut malgr\u00e9 tout dialoguer avec vous dans ce fil. Seule r\u00e9serve : l'administrateur technique du bureau garde un acc\u00e8s direct \u00e0 la base.</p>
-    <div class="row-btn"><button class="btn" data-action="cf-envoyer">Envoyer</button></div></div>
-    ${cles.length?`<h3 class="serif" style="margin-top:20px">Vos \u00e9changes</h3>${historique}`:""}`;
+  return `<div class="vote"><div class="vote-h"><h4 class="serif">${titre}</h4>${medBadge(d)}</div>
+    <p class="du" style="margin:4px 0 0">${ligne2}</p>${rapport}${attrib}${ouvrir}</div>`;
+}
+function medBulles(liste){
+  if(!liste.length) return `<div class="empty" style="border:none;color:var(--slate)">Aucun message.</div>`;
+  return liste.map(m=>`<div class="bub ${m.de_moi?"me":"them"}" style="max-width:90%">${esc(m.texte)}<div class="m-meta">${esc(m.auteur)} · ${esc(fmtQuand(m.created_at))}</div></div>`).join("");
+}
+function medFil(){
+  const o=S.med.ouvert; const d=(S.med.dossiers||[]).find(x=>x.id===o.id&&x.role===o.role);
+  if(!d){ S.med.ouvert=null; return tabConflits(); }
+  const msgs=S.med.msgs[d.id]||[];
+  const clos = d.statut==="regle"||d.statut==="tranche";
+  const gestion = (d.role==="mediateur" && ["en_cours","a_reattribuer"].indexOf(d.statut)>=0) || (d.role==="escalade" && d.statut==="escalade");
+  const zone=(cote,titre)=>{
+    const l=msgs.filter(m=>m.cote===cote);
+    return `<div class="card2" style="margin-bottom:14px"><h3 class="serif" style="margin-top:0">${titre}</h3>
+      <div class="msg-thread" style="min-height:0">${medBulles(l)}</div>
+      ${(!clos && (gestion || d.role===cote))?`<textarea id="med_txt_${cote}" placeholder="Votre message…"></textarea>
+        <div class="row-btn"><button class="btn sm" data-action="med-ecrire" data-id="${d.id}" data-cote="${cote}">Envoyer</button></div>`:""}</div>`;
+  };
+  let corps="";
+  if(d.role==="mediateur"||d.role==="escalade"){
+    corps = zone("demandeur","Échange avec "+(d.demandeur||"le demandeur (anonyme)"))
+          + zone("vise","Échange avec "+(d.vise||"la personne concernée"));
+  } else {
+    corps = zone(d.role, "Échange avec "+(d.statut==="escalade"?(d.escalade||"le responsable"):"le médiateur"));
+  }
+  const infos = (d.conclusion?`<p class="b-desc"><b>Conclusion du médiateur :</b> ${esc(d.conclusion)}</p>`:"")
+              + (d.decision?`<p class="b-desc"><b>Décision :</b> ${esc(d.decision)}</p>`:"");
+  let actions="";
+  if(d.role==="mediateur" && ["en_cours","a_reattribuer"].indexOf(d.statut)>=0){
+    actions=`<div class="card2"><h3 class="serif" style="margin-top:0">Clôturer la médiation</h3>
+      <textarea id="med_concl" placeholder="Conclusion (sans détail inutile : elle figure dans le rapport)…"></textarea>
+      <div class="row-btn"><button class="btn sm" data-action="med-clore" data-id="${d.id}" data-regle="1" style="background:var(--green);border-color:var(--green)">✓ Réglé</button>
+      <button class="btn ghost sm" data-action="med-clore" data-id="${d.id}" data-regle="0" style="border-color:var(--red);color:var(--red)">✕ Non réglé</button></div>
+      <p class="du">Non réglé : le dossier est transmis à la présidence (ou, si elle est concernée, à un autre responsable), avec les noms et les messages.</p></div>`;
+  }
+  if(d.role==="escalade" && d.statut==="escalade"){
+    actions=`<div class="card2"><h3 class="serif" style="margin-top:0">Trancher le litige</h3>
+      <textarea id="med_dec" placeholder="Votre décision…"></textarea>
+      <div class="row-btn"><button class="btn sm" data-action="med-trancher" data-id="${d.id}">Rendre la décision</button></div></div>`;
+  }
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="med-back">← Médiation</button>${medBadge(d)}</div>${infos}${corps}${actions}`;
+}
+function tabConflits(){
+  S.med=S.med||{dossiers:[],personnes:[],msgs:{},ouvert:null};
+  if(S.med.ouvert) return medFil();
+  const D=S.med.dossiers||[];
+  const groupe=(role,titre,vide)=>{ const l=D.filter(d=>d.role===role); if(!l.length) return vide?`<h3 class="serif" style="margin-top:22px">${titre}</h3><div class="empty">${vide}</div>`:"";
+    return `<h3 class="serif" style="margin-top:22px">${titre}</h3>${l.map(medCarte).join("")}`; };
+  const form=`<div class="compose"><h3 class="serif">Demander une médiation</h3>
+    <p class="du">Votre message n'est lu que par la ou les personnes désignées pour la médiation. Aucun autre membre n'y a accès.</p>
+    <select class="f" id="cf_vise"><option value="">— Avec qui avez-vous un problème ? —</option>
+      ${(S.med.personnes||[]).map(p=>`<option value="${p.id}">${esc(p.nom||"")}${p.fonction?" · "+esc(p.fonction):""}</option>`).join("")}</select>
+    <textarea id="cf_texte" placeholder="Décrivez la situation…"></textarea>
+    <label style="display:flex;align-items:center;gap:9px;margin:8px 0;font-size:14px;cursor:pointer"><input type="checkbox" class="sw" role="switch" id="cf_anon"> Envoyer de manière anonyme</label>
+    <p class="du" style="margin:0 0 8px">Anonyme : la personne qui vous répond ne voit pas votre nom.</p>
+    <p class="du" style="margin:0 0 8px">Si la médiation n'aboutit pas, le dossier est transmis à la présidence.</p>
+    <div class="row-btn"><button class="btn" data-action="cf-envoyer">Envoyer</button></div></div>`;
+  const owner = S.session && S.session.role==="owner";
+  const aAttribuer = D.filter(d=>d.role==="owner" && (d.statut==="a_attribuer"||d.statut==="a_reattribuer"));
+  const suivi = D.filter(d=>d.role==="owner" && !(d.statut==="a_attribuer"||d.statut==="a_reattribuer"));
+  return (S.med.erreur?`<p class="du" style="color:var(--red)">Médiation indisponible : ${esc(S.med.erreur)}</p>`:"")
+    + form
+    + (owner?`<h3 class="serif" style="margin-top:22px">À attribuer</h3>${aAttribuer.length?aAttribuer.map(medCarte).join(""):`<div class="empty">Aucun dossier à attribuer.</div>`}
+       <h3 class="serif" style="margin-top:22px">Suivi des dossiers</h3><p class="du">Vous voyez les noms et l'état, jamais les messages.</p>${suivi.length?suivi.map(medCarte).join(""):`<div class="empty">Aucun dossier.</div>`}`:"")
+    + groupe("mediateur","Dossiers qui vous sont confiés")
+    + groupe("escalade","Dossiers non réglés à trancher")
+    + groupe("demandeur","Mes demandes")
+    + groupe("vise","Médiations qui me concernent")
+    + groupe("rapport","Rapports — médiations réglées");
 }
 function tabMessages(){
   if(!S.msgUI) S.msgUI={sel:null,draft:"",file:null};
@@ -3733,21 +3831,54 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       if(window.alert) window.alert("Publié. "+((res&&res.ok)||0)+" membre(s) prévenu(s) par e-mail.");
       render(); break; }
     case "cf-envoyer": { if(!sb||!me) break;
-      const t=(val("cf_texte")||"").trim(); if(!t){ if(window.alert) window.alert("\u00c9crivez votre message."); break; }
+      const vise=val("cf_vise"); const t=(val("cf_texte")||"").trim();
+      if(!vise){ modaleInfo("Choisissez la personne avec qui vous avez un problème."); break; }
+      if(!t){ modaleInfo("Décrivez la situation."); break; }
       const anon=!!(document.getElementById("cf_anon")&&document.getElementById("cf_anon").checked);
-      const fil=uid();
-      const {error}=await sb.from("ca_conflits").insert({fil_id:fil,membre_id:me.id,auteur:anon?null:me.sig,anonyme:anon,de_direction:false,texte:t});
-      if(error){ if(window.alert) window.alert("Envoi impossible : "+error.message); break; }
-      await loadConflits(); render();
-      const dests=destinatairesMediation();
-      if(dests.length){
-        const corps=`<h2 style="margin:0 0 10px">Nouveau signalement (m\u00e9diation)</h2><p>Un membre a signal\u00e9 une situation${anon?" de mani\u00e8re <b>anonyme</b>":""}.</p><p>Le contenu est consultable uniquement dans l'espace CA, onglet M\u00e9diation.</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-        envoyerNotifCAListe(dests,"Nouveau signalement \u2014 m\u00e9diation",corps);
-      }
-      modaleInfo(dests.length
-        ? "Votre signalement a \u00e9t\u00e9 enregistr\u00e9. La personne charg\u00e9e de la m\u00e9diation vient d'\u00eatre pr\u00e9venue par e-mail."
-        : "Votre signalement a \u00e9t\u00e9 enregistr\u00e9, mais personne n'est actuellement d\u00e9sign\u00e9 pour la m\u00e9diation : pr\u00e9venez le bureau pour qu'il le soit.",
-        "Signalement envoy\u00e9"); break; }
+      const r=await sb.rpc("ca_med_ouvrir",{p_vise:vise,p_anonyme:anon,p_texte:t});
+      if(r&&r.error){ modaleInfo("Envoi impossible : "+r.error.message); break; }
+      await loadMediation(); render();
+      await medNotif("nouveau", r.data);
+      modaleInfo("Votre demande est enregistrée. Un médiateur neutre va être désigné, et vous serez prévenu·e par e-mail.","Demande envoyée");
+      break; }
+    case "med-attribuer": { if(!sb||!(me&&me.role==="owner")) break;
+      const med=val("med_sel_"+id); if(!med){ modaleInfo("Choisissez un médiateur."); break; }
+      const pres=!!(document.getElementById("med_pres_"+id)&&document.getElementById("med_pres_"+id).checked);
+      if(!(await modaleConfirm("Confier ce dossier à ce médiateur ? Il devra répondre dans les 12 heures."))) break;
+      const r=await sb.rpc("ca_med_attribuer",{p_dossier:id,p_mediateur:med,p_presidente:pres});
+      if(r&&r.error){ modaleInfo("Attribution impossible : "+r.error.message); break; }
+      await loadMediation(); render();
+      await medNotif("attribue", id);
+      modaleInfo("Dossier attribué. Le médiateur et les deux personnes ont été prévenus par e-mail.","Médiation");
+      break; }
+    case "med-open": { S.med.ouvert={id:id,role:el.dataset.role}; await loadMedMessages(id); render(); break; }
+    case "med-back": { S.med.ouvert=null; await loadMediation(); render(); break; }
+    case "med-ecrire": { if(!sb) break;
+      const cote=el.dataset.cote; const t=(val("med_txt_"+cote)||"").trim(); if(!t) break;
+      const r=await sb.rpc("ca_med_ecrire",{p_dossier:id,p_cote:cote,p_texte:t});
+      if(r&&r.error){ modaleInfo("Message non envoyé : "+r.error.message); break; }
+      await loadMediation(); await loadMedMessages(id); render();
+      medNotif("message", id);
+      break; }
+    case "med-clore": { if(!sb) break;
+      const regle=el.dataset.regle==="1"; const c=(val("med_concl")||"").trim();
+      if(!c){ modaleInfo("Écrivez une conclusion."); break; }
+      if(!(await modaleConfirm(regle?"Clôturer : le litige est réglé ?":"Clôturer : la médiation n'a pas abouti ? Le dossier sera transmis, avec les noms et les messages."))) break;
+      const r=await sb.rpc("ca_med_clore",{p_dossier:id,p_regle:regle,p_conclusion:c});
+      if(r&&r.error){ modaleInfo("Clôture impossible : "+r.error.message); break; }
+      await medNotif("clos", id);
+      S.med.ouvert=null; await loadMediation(); render();
+      modaleInfo(regle?"Dossier clos : réglé. La présidence reçoit le rapport.":"Dossier transmis. Les personnes concernées ont été prévenues.","Médiation");
+      break; }
+    case "med-trancher": { if(!sb) break;
+      const dec=(val("med_dec")||"").trim(); if(!dec){ modaleInfo("Écrivez la décision."); break; }
+      if(!(await modaleConfirm("Rendre cette décision ? Le dossier sera définitivement clos."))) break;
+      const r=await sb.rpc("ca_med_trancher",{p_dossier:id,p_decision:dec});
+      if(r&&r.error){ modaleInfo("Impossible : "+r.error.message); break; }
+      await medNotif("tranche", id);
+      await loadMediation(); await loadMedMessages(id); render();
+      modaleInfo("Décision rendue. Les deux personnes ont été prévenues.","Médiation");
+      break; }
     case "cf-repondre": { if(!sb||!estDirection()) break;
       const fil=el.dataset.fil; const t=(val("cf_rep_"+fil)||"").trim(); if(!t) break;
       const prem=(S.conflits||[]).find(x=>x.fil_id===fil);
@@ -4249,7 +4380,7 @@ async function boot(){
   if(!sb){ render(); return; }
   try{ const h=String(location.hash||""); if(/type=recovery/.test(h)||/[?&]type=recovery/.test(location.search)){ S.recovery=true; } }catch(e){}
   try{ await refreshSession(); }catch(e){} render();
-  if(S.session){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") rendreEnPreservant(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterRecapIdees().catch(()=>{}); traiterInscriptions().catch(()=>{}); }
+  if(S.session){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") rendreEnPreservant(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterRecapIdees().catch(()=>{}); traiterInscriptions().catch(()=>{}); traiterRetardsMediation().catch(()=>{}); }
   try{ sb.auth.onAuthStateChange(async (evt)=>{
     if(evt==="PASSWORD_RECOVERY"){ S.recovery=true; render(); return; }
     if(S.recovery) return;
