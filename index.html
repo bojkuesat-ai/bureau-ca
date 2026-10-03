@@ -684,7 +684,7 @@ function ligneEtatDroit(type, id){
     ? `<p class="du" style="margin:-2px 0 6px 51px;color:var(--green)">\u2713 Enregistr\u00e9 \u00e0 ${esc(e.quand)}</p>`
     : `<p class="du" style="margin:-2px 0 6px 51px;color:var(--red)">\u26a0 Non enregistr\u00e9 \u2014 ${esc(e.msg||"le serveur a refus\u00e9")}. L'interrupteur ci-dessus montre l'\u00e9tat r\u00e9el.</p>`;
 }
-function directionExtra(){ return (S.meta && Array.isArray(S.meta.direction)) ? S.meta.direction : []; }
+function directionExtra(){ return Array.isArray(S.mediateurs) ? S.mediateurs : []; }
 function estSecretaire(){
   const u=S.session; if(!u) return false;
   return secretairesExtra().indexOf(u.id)>=0;
@@ -1465,11 +1465,12 @@ function viewAdmin(){
       ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte").map(a=>{
         const on=directionExtra().indexOf(a.id)>=0;
         return `<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
-          <input type="checkbox" class="sw" role="switch" ${on?"checked":""} data-action="toggle-direction" data-id="${a.id}">
+          <input type="checkbox" class="sw med-chk" role="switch" ${on?"checked":""} value="${a.id}">
           ${esc(((a.prenom||"")+" "+(a.nom||"")).trim()||a.email)} <span class="du">${esc(a.fonction||"")}</span></label>
-        ${ligneEtatDroit("mediation",a.id)}`;
+`;
       }).join("")}
-      ${directionExtra().length?"":`<p class="du" style="color:var(--red)">Aucun médiateur : vous ne pourrez attribuer aucun dossier.</p>`}
+      <div class="row-btn"><button class="btn sm" data-action="save-mediateurs">Enregistrer</button></div>
+      ${directionExtra().length?`<p class="du">${directionExtra().length} médiateur(s) enregistré(s).</p>`:`<p class="du" style="color:var(--red)">Aucun médiateur enregistré : vous ne pourrez attribuer aucun dossier.</p>`}
     </div>`:""}
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Liste e-mail (invités externes)</h2><span class="l"></span></div>
     <div class="compose">
@@ -2264,7 +2265,12 @@ const MED_STATUT = {
   escalade:["Non réglé — transmis","--red"],
   tranche:["Décision rendue","--green"]
 };
+async function loadMediateurs(){
+  if(!(S.session&&S.session.role==="owner")){ S.mediateurs=[]; return; }
+  try{ const r=await sb.rpc("ca_med_liste_mediateurs"); S.mediateurs=(r&&!r.error&&Array.isArray(r.data))?r.data:[]; }catch(e){ S.mediateurs=[]; }
+}
 async function loadMediation(){
+  await loadMediateurs();
   S.med=S.med||{dossiers:[],personnes:[],msgs:{},ouvert:null};
   try{ const r=await sb.rpc("ca_med_dossiers_vue"); S.med.dossiers=(r&&!r.error&&r.data)||[]; S.med.erreur=(r&&r.error)?r.error.message:""; }catch(e){ S.med.dossiers=[]; }
   try{ const r=await sb.rpc("ca_med_personnes"); S.med.personnes=(r&&!r.error&&r.data)||[]; }catch(e){ S.med.personnes=[]; }
@@ -4059,7 +4065,19 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       S.meta.clotureOdj=h; S.meta.modeleOdj=mo;
       logAct("R\u00e9glages secr\u00e9tariat modifi\u00e9s"); render();
       if(window.alert) window.alert("Enregistr\u00e9."); break; }
-    case "toggle-direction": case "toggle-secretaire": {
+    case "save-mediateurs": {
+      if(!(S.session&&S.session.role==="owner")||!sb) break;
+      const ids=[...document.querySelectorAll(".med-chk")].filter(c=>c.checked).map(c=>c.value);
+      let r; try{ r=await sb.rpc("ca_med_set_liste",{p_ids:ids}); }catch(e){ r={error:{message:String(e&&e.message||e)}}; }
+      if(r&&r.error){ modaleInfo("Les médiateurs n'ont PAS été enregistrés.\n\nErreur : "+r.error.message,"Erreur"); break; }
+      const res=Array.isArray(r&&r.data)?r.data:[];
+      const manque=ids.filter(x=>res.indexOf(x)<0);
+      S.mediateurs=res; render();
+      if(manque.length||res.length!==ids.length){ modaleInfo("Enregistrement incomplet : la base n'a pas gardé toute la liste. Rechargez l'app et réessayez.","Erreur"); break; }
+      logAct("Droits m\u00e9diation modifi\u00e9s");
+      modaleInfo(res.length+" médiateur(s) enregistré(s).","Enregistré");
+      break; }
+    case "toggle-secretaire": {
       if(!(S.session&&S.session.role==="owner")||!sb) break;
       const mediation = el.dataset.action==="toggle-direction";
       const type = mediation ? "mediation" : "secretariat";
