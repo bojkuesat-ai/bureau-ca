@@ -308,6 +308,31 @@ select.f{width:100%}
 .ca-mod-lien{display:block;width:100%;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:11px;font-size:12.5px;color:var(--stamp);word-break:break-all;font-family:ui-monospace,monospace;margin:0 0 14px}
 .ca-mod-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .ca-mod-ok{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--green);margin:0 0 12px}
+
+/* ---- Soutien psychologique ---- */
+.sout-zone{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.sout-zone textarea{-webkit-user-select:text;user-select:text}
+.sout-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.sout-exit{background:var(--red);color:#fff;border:none;border-radius:20px;padding:8px 15px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 4px 12px rgba(242,100,95,.3)}
+.sout-urg{background:#3b1420;border:1px solid #6b2333;color:#ffd9dc;border-radius:12px;padding:10px 14px;font-size:13px;line-height:1.6;margin-bottom:14px}
+.sout-urg a,.sout-res a{color:#fff;font-weight:600}
+.sout-e2e{background:#0f2a20;border:1px solid #1f5a41;color:#c9f2de;border-radius:12px;padding:10px 14px;font-size:13px;line-height:1.6;margin-bottom:12px}
+.sout-verif{font-family:'IBM Plex Mono',monospace;font-size:14px;letter-spacing:1px;color:#fff;font-weight:600;white-space:nowrap}
+.sout-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:12px}
+.sout-p{font-size:14px;line-height:1.6;color:var(--ink);margin:0 0 8px}
+.sout-small{font-size:12.5px;color:var(--ink-soft);line-height:1.5}
+.sout-liste{margin:4px 0 10px;padding-left:20px;font-size:13.5px;line-height:1.7;color:var(--ink)}
+.sout-statut{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink)}
+.sout-dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.sout-clause{background:#fffaf0;color:#1b2338;border-radius:12px;padding:14px 16px;font-family:Georgia,serif;font-size:13.5px;line-height:1.6;max-height:340px;overflow-y:auto}
+.sout-clause p{margin:0 0 8px}
+.sout-clause-msg{align-self:center;max-width:92%;background:#2a2150;border:1px solid #b48cf2;border-radius:12px;padding:10px 14px;font-size:13.5px;text-align:center;color:var(--ink)}
+.sout-zone .msg-head .btn{white-space:nowrap;flex:none}
+.sout-compose textarea{flex:1;min-height:52px}
+.sout-compose textarea:disabled,.sout-compose button:disabled{opacity:.45;cursor:not-allowed}
+.sout-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+.sout-table th,.sout-table td{border:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
+.sout-table th{background:var(--surface2);color:var(--ink-soft);font-weight:600}
 </style>
 <!-- Versions figees et empreintes verifiees. L'URL « @2 » suivait la branche majeure :
      une version compromise publiee demain se serait executee chez tout le monde.
@@ -1005,7 +1030,7 @@ async function refreshSession(){
   await loadAccounts();
   const jobs=[loadDocs,loadMessages,loadConflits,loadTaches,loadContacts,loadAnnonces,loadReactions,loadPresence,
     loadEvenements,loadReunions,loadCreneaux,loadOrg,loadBudgets,loadVotes,loadMeta,loadBilans,loadJournal,
-    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation];
+    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien];
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
 }
 async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; } }catch(e){} }
@@ -1586,9 +1611,9 @@ function viewAuth(){
 function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textContent=msg; e.style.display="block"; } }
 
 /* ---- DASHBOARD ---- */
-const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["conflits","12","M\u00e9diation"]];
+const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,notifs:tabNotifs,search:tabSearch};
+  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,notifs:tabNotifs,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   /* Les cooptes n'ont acces qu'a leur espace de contribution et aux annonces. */
@@ -1596,9 +1621,9 @@ function viewDash(){
      leur espace existe. Ils y deposent un signalement et suivent leur fil,
      comme un membre ; la base l'autorisait deja (conf_ins n'exige que
      membre_id = auth.uid()), seule l'app le leur refusait. */
-  if(estCoopte() && ["agenda","avis","conflits","rgpd"].indexOf(S.tab)<0) S.tab="agenda";
+  if(estCoopte() && ["agenda","avis","conflits","soutien","rgpd"].indexOf(S.tab)<0) S.tab="agenda";
   const tabs = estCoopte()
-    ? [["agenda","\ud83d\udcc5","Agenda"],["avis","\ud83d\udca1","Id\u00e9es & avis"],["conflits","\ud83e\udd1d","M\u00e9diation"],["rgpd","12","Mes donn\u00e9es"]]
+    ? [["agenda","\ud83d\udcc5","Agenda"],["avis","\ud83d\udca1","Id\u00e9es & avis"],["conflits","\ud83e\udd1d","M\u00e9diation"],["soutien","\ud83d\udc9c","Soutien psychologique"],["rgpd","12","Mes donn\u00e9es"]]
     : [...TABS,["avis","\ud83d\udca1","Id\u00e9es & avis"]];
   /* L'espace admin n'est plus une porte visible depuis l'accueil : c'est un onglet
      qui n'existe que pour le proprietaire, une fois connecte. */
@@ -1637,7 +1662,7 @@ function viewDash(){
       <button class="logout" data-action="set-tab" data-tab="search" title="Recherche">🔍</button>
       <button class="logout" data-action="set-tab" data-tab="notifs" title="À traiter">🔔${notifTot?" "+notifTot:""}</button>
       <button class="logout" data-action="logout">Se déconnecter</button></div>
-    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
+    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():id==="soutien"?soutNonLus():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:id==="soutien"?` style="border:2px solid #b48cf2;border-bottom:none;color:#d4bbff;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
   </div></header>
   <main class="body">${bienvenue}${bandeauRappels()}${body}</main>`;
 }
@@ -3479,7 +3504,7 @@ document.addEventListener("click", async e=>{
       if(r&&r.error) return authErr("Envoi impossible : "+r.error.message);
       return authErr("Si un compte existe pour cette adresse, un lien de réinitialisation vient d'être envoyé. Pensez à vérifier vos spams.");
     }
-    case "logout": { if(sb){ try{ await sb.auth.signOut(); }catch(e){} } S.session=null; S.view="home"; render(); break; }
+    case "logout": { S.sout=null; if(sb){ try{ await sb.auth.signOut(); }catch(e){} } S.session=null; S.view="home"; render(); break; }
     case "noop": render(); break;
     case "export-data": {
       const keys=["meta","admins","org","taches","annonces","creneaux","docs","budgets","votes","reunions","evenements","contacts","messages","bilans","journal"];
@@ -4409,6 +4434,737 @@ async function boot(){
        une connexion. On redessine en gardant la saisie en cours. */
     if(avant===apres) rendreEnPreservant(); else render();
   }); }catch(e){} }
+/* ============================ SOUTIEN PSYCHOLOGIQUE ============================
+   Messagerie chiffrée de bout en bout entre un membre ANONYME et Lamia.
+   - Chiffrement dans le navigateur (WebCrypto : ECDH P-256 + AES-256-GCM).
+     Le serveur ne reçoit et ne stocke que du texte illisible.
+   - Une conversation n'est liée à aucun compte : le membre la rouvre avec son
+     code de récupération (gardé sur son appareil). Le serveur n'en connaît
+     qu'une empreinte.
+   - Lamia protège sa clé avec une phrase de récupération : sans elle,
+     personne (ni le bureau, ni l'hébergeur) ne peut lire les messages.
+   - Avant de répondre, Lamia signe un engagement de confidentialité
+     (mot de passe du compte, comme la procuration), transmis chiffré.
+   - Effacement automatique côté serveur après 14 jours (voir soutien.sql). */
+
+const SOUT_ALPHA="23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+const SOUT_CLAUSE_VERSION="v1";
+const SOUT_POLL_MS=15000;
+const SOUT_URGENCES=[
+  {nom:"Urgences",tel:"112",info:"Danger immédiat, 24 h/24"},
+  {nom:"Centre de Prévention du Suicide",tel:"0800 32 123",info:"Gratuit, 24 h/24"},
+  {nom:"Télé-Accueil",tel:"107",info:"Écoute anonyme, 24 h/24"},
+];
+const SOUT_RESSOURCES=[
+  {groupe:"À l'ULB", items:[
+    {nom:"PsyCampus — Service de Santé Mentale", desc:"Consultations psychologiques pour tous les étudiant·es, de l'ULB ou non.", adr:"Avenue Buyl 127, 1050 Bruxelles", tel:"02 650 20 25", mail:"psycampus@ssmulb.be", web:"http://www.ssmulb.be/"},
+    {nom:"Centre médical de l'ULB", desc:"Médecins et consultations en santé mentale, sur rendez-vous.", adr:"Bâtiment M, avenue Paul Héger 28 (Solbosch)", tel:"02 650 29 29"},
+    {nom:"Aimer à l'ULB", desc:"Psychologues, vie affective et sexuelle. Lun–ven 9 h–19 h, sam 9 h 30–12 h 30.", adr:"Avenue Jeanne 38, 1050 Bruxelles", tel:"02 650 31 31", web:"https://www.aimeralulb.be/"},
+    {nom:"CASH-e — harcèlement", desc:"Écoute et accompagnement confidentiels en cas de harcèlement ou de conflit.", tel:"02 650 45 56", whatsapp:"0474 56 30 97", mail:"cash-e@ulb.be"},
+  ]},
+  {groupe:"Urgences et écoute (24 h/24)", items:[
+    {nom:"Urgences", desc:"Danger immédiat pour vous ou pour quelqu'un d'autre.", tel:"112"},
+    {nom:"Centre de Prévention du Suicide", desc:"Ligne gratuite et anonyme.", tel:"0800 32 123", web:"https://www.preventionsuicide.be/"},
+    {nom:"Télé-Accueil", desc:"Écoute anonyme, pour parler de tout ce qui pèse.", tel:"107", web:"https://www.tele-accueil.be/"},
+  ]},
+];
+
+/* ---------- Outils de chiffrement ---------- */
+const soutTE=new TextEncoder(), soutTD=new TextDecoder();
+function soutB64(buf){ const b=new Uint8Array(buf); let s=""; for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
+function soutUnB64(s){ const bin=atob(String(s||"")); const b=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) b[i]=bin.charCodeAt(i); return b; }
+function soutHex(buf){ return [...new Uint8Array(buf)].map(x=>x.toString(16).padStart(2,"0")).join(""); }
+async function soutSha(str){ return crypto.subtle.digest("SHA-256", soutTE.encode(str)); }
+function soutCodeAleatoire(groupes){
+  const out=[]; const r=crypto.getRandomValues(new Uint8Array(groupes*4*2)); let k=0;
+  for(let g=0; g<groupes; g++){ let s=""; while(s.length<4){ const v=r[k++]; if(k>=r.length){ crypto.getRandomValues(r); k=0; } if(v<SOUT_ALPHA.length*8){ s+=SOUT_ALPHA[v%SOUT_ALPHA.length]; } } out.push(s); }
+  return out.join("-");
+}
+function soutNormaliser(s){
+  const brut=String(s||"").toUpperCase().replace(/O/g,"0").replace(/[IL]/g,"1").replace(/[^A-Z0-9]/g,"");
+  return (brut.match(/.{1,4}/g)||[]).join("-");
+}
+async function soutAcces(token){ return soutHex(await soutSha("be-soutien-acces:"+soutNormaliser(token))); }
+async function soutCleJeton(token){
+  return crypto.subtle.importKey("raw", await soutSha("be-soutien-cle:"+soutNormaliser(token)), {name:"AES-GCM"}, false, ["encrypt","decrypt"]);
+}
+async function soutClePhrase(phrase, selB64){
+  const base=await crypto.subtle.importKey("raw", soutTE.encode(soutNormaliser(phrase)), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2", salt:soutUnB64(selB64), iterations:310000, hash:"SHA-256"}, base, {name:"AES-GCM", length:256}, false, ["encrypt","decrypt"]);
+}
+async function soutChiffrer(cle, obj, aad){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=await crypto.subtle.encrypt({name:"AES-GCM", iv, additionalData:soutTE.encode(aad||"")}, cle, soutTE.encode(JSON.stringify(obj)));
+  return {iv:soutB64(iv), ct:soutB64(ct)};
+}
+async function soutDechiffrer(cle, iv, ct, aad){
+  const pt=await crypto.subtle.decrypt({name:"AES-GCM", iv:soutUnB64(iv), additionalData:soutTE.encode(aad||"")}, cle, soutUnB64(ct));
+  return JSON.parse(soutTD.decode(pt));
+}
+async function soutEnvelopper(cle, obj, aad){ const r=await soutChiffrer(cle, obj, aad); return r.iv+"."+r.ct; }
+async function soutDesenvelopper(cle, s, aad){ const p=String(s||"").split("."); return soutDechiffrer(cle, p[0], p[1], aad); }
+async function soutPaire(){ return crypto.subtle.generateKey({name:"ECDH", namedCurve:"P-256"}, true, ["deriveBits"]); }
+async function soutPub(jwk){ return crypto.subtle.importKey("jwk", {kty:jwk.kty, crv:jwk.crv, x:jwk.x, y:jwk.y, ext:true}, {name:"ECDH", namedCurve:"P-256"}, false, []); }
+async function soutPriv(jwk){ return crypto.subtle.importKey("jwk", jwk, {name:"ECDH", namedCurve:"P-256"}, false, ["deriveBits"]); }
+function soutPubJwk(jwk){ return {kty:jwk.kty, crv:jwk.crv, x:jwk.x, y:jwk.y}; }
+/* Clé de conversation : ECDH (ma clé privée + clé publique de l'autre) puis HKDF. */
+async function soutCleConv(priv, pubJwk, convId){
+  const bits=await crypto.subtle.deriveBits({name:"ECDH", public:await soutPub(pubJwk)}, priv, 256);
+  const hk=await crypto.subtle.importKey("raw", bits, "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"HKDF", hash:"SHA-256", salt:soutTE.encode(String(convId)), info:soutTE.encode("be-soutien-v1")}, hk, {name:"AES-GCM", length:256}, false, ["encrypt","decrypt"]);
+}
+/* Code de vérification : identique chez le membre et chez Lamia si personne ne s'interpose. */
+async function soutCodeVerif(pubLamia, pubMembre){
+  const h=new Uint8Array(await soutSha("be-soutien-verif|"+pubLamia.x+"."+pubLamia.y+"|"+pubMembre.x+"."+pubMembre.y));
+  const n=((h[0]<<24)>>>0)+(h[1]<<16)+(h[2]<<8)+h[3];
+  const s=String(n%100000000).padStart(8,"0");
+  return s.slice(0,4)+" · "+s.slice(4);
+}
+
+/* ---------- État ---------- */
+function soutEtat(){
+  const uidMe=(S.session&&S.session.id)||null;
+  if(!S.sout || S.sout.uid!==uidMe){
+    S.sout={uid:uidMe, info:null, charge:false, chargement:false, erreur:"", vue:"accueil", convs:[], ouverte:null,
+      lamia:{cle:null, liste:[], ouverte:null, stats:null}, occupe:false};
+  }
+  return S.sout;
+}
+function soutCleLocale(){ return "soutien:convs:"+((S.session&&S.session.id)||""); }
+function soutConvsLocales(){ const l=store.get(soutCleLocale(), []); return Array.isArray(l)?l.filter(x=>x&&x.t):[]; }
+function soutSauverConvs(l){ store.set(soutCleLocale(), l); }
+function soutCleLamiaLocale(){ return "soutien:lamia:"+((S.session&&S.session.id)||""); }
+
+async function soutRpc(fn, args){
+  if(!sb) throw new Error("Serveur indisponible.");
+  const r=await sb.rpc(fn, args||{});
+  if(r&&r.error){
+    const m=String(r.error.message||"Erreur serveur.");
+    if(/Could not find the function|does not exist|schema cache/i.test(m)) throw new Error("L'espace Soutien n'est pas encore installé sur le serveur : le script SQL doit être exécuté dans Supabase.");
+    throw new Error(m);
+  }
+  return r?r.data:null;
+}
+function soutRedessiner(){ if(S.tab==="soutien" && S.session){ try{ rendreEnPreservant(); }catch(e){ render(); } } }
+function soutNonLus(){
+  const s=S.sout; if(!s||!s.info) return 0;
+  if(s.info.est_lamia) return (s.lamia.liste||[]).filter(c=>c.non_lu).length;
+  return (s.convs||[]).filter(c=>c.non_lu).length;
+}
+
+/* ---------- Chargement ---------- */
+async function soutCharger(){
+  const s=soutEtat(); if(s.chargement||!S.session) return;
+  s.chargement=true; s.erreur="";
+  try{
+    s.info=await soutRpc("soutien_info");
+    if(s.info.est_lamia){ await soutLamiaCleLocale(); await soutLamiaListe(); }
+    else { await soutResume(); }
+    s.charge=true;
+  }catch(e){ s.erreur=e.message||String(e); }
+  s.chargement=false;
+  soutRedessiner();
+}
+/* Badge de l'onglet au démarrage (aucun déchiffrement). */
+async function loadSoutien(){
+  try{ const s=soutEtat(); if(!S.session) return;
+    s.info=await soutRpc("soutien_info");
+    if(s.info.est_lamia) await soutLamiaListe(); else await soutResume();
+    s.charge=true; s.erreur="";
+  }catch(e){ /* onglet pas encore installé : silencieux */ }
+}
+async function soutResume(){
+  const s=soutEtat(); const loc=soutConvsLocales();
+  if(!loc.length){ s.convs=[]; return; }
+  const acces=await Promise.all(loc.map(c=>soutAcces(c.t)));
+  const r=await soutRpc("soutien_resume", {p_acces:acces});
+  const gardees=[]; const convs=[];
+  (r||[]).forEach(x=>{ const c=loc[x.i-1]; if(!c) return; if(x.existe){ gardees.push(c); convs.push({t:c.t, code:x.code, non_lu:!!x.non_lu}); } });
+  if(gardees.length!==loc.length) soutSauverConvs(gardees);
+  s.convs=convs;
+}
+async function soutRafraichir(){
+  const s=S.sout; if(!s||!s.info||s.occupe||!S.session) return;
+  try{
+    const avant=JSON.stringify([s.convs, s.lamia.liste, s.ouverte&&s.ouverte.msgs.length, s.lamia.ouverte&&s.lamia.ouverte.msgs.length]);
+    s.info=Object.assign(s.info, await soutRpc("soutien_info"));
+    if(s.info.est_lamia){
+      if(!s.lamia.cle) return;
+      await soutLamiaListe();
+      if(s.lamia.ouverte) await soutLamiaOuvrir(s.lamia.ouverte.id, true);
+    } else {
+      await soutResume();
+      if(s.ouverte) await soutMembreOuvrir(s.ouverte.token, true);
+    }
+    const apres=JSON.stringify([s.convs, s.lamia.liste, s.ouverte&&s.ouverte.msgs.length, s.lamia.ouverte&&s.lamia.ouverte.msgs.length]);
+    if(avant!==apres) soutRedessiner();
+  }catch(e){}
+}
+
+/* ---------- Déchiffrement d'une liste de messages ---------- */
+async function soutDechiffrerMsgs(cle, convId, msgs){
+  const out=[];
+  for(const m of (msgs||[])){
+    let d=null;
+    try{ d=await soutDechiffrer(cle, m.iv, m.contenu, convId+":"+m.auteur+":"+m.type); }catch(e){ d=null; }
+    out.push({id:m.id, auteur:m.auteur, type:m.type, ts:m.cree_le, d:d});
+  }
+  return out;
+}
+
+/* ======================= CÔTÉ MEMBRE ======================= */
+async function soutMembreNouvelle(){
+  const s=soutEtat(); if(s.occupe) return;
+  if(!s.info||!s.info.pub_lamia){ modaleInfo("L'espace Soutien n'est pas encore activé par Lamia. Réessayez un peu plus tard.","Soutien psychologique"); return; }
+  if(!(await modaleConfirm("Vous allez ouvrir une conversation privée avec Lamia.\n\n• Lamia ne saura pas qui vous êtes.\n• Vos messages sont chiffrés de bout en bout : seule Lamia peut les lire.\n• Un code de récupération va s'afficher : notez-le, c'est le seul moyen de retrouver la conversation sur un autre appareil.","Écrire à Lamia"))) return;
+  s.occupe=true;
+  try{
+    const token=soutCodeAleatoire(5);
+    const acces=await soutAcces(token);
+    const paire=await soutPaire();
+    const privJwk=await crypto.subtle.exportKey("jwk", paire.privateKey);
+    const pubJwk=soutPubJwk(await crypto.subtle.exportKey("jwk", paire.publicKey));
+    const enveloppe=await soutEnvelopper(await soutCleJeton(token), privJwk, "membre-priv");
+    const r=await soutRpc("soutien_creer", {p_acces:acces, p_pub:pubJwk, p_priv:enveloppe});
+    const loc=soutConvsLocales(); loc.unshift({t:token, code:r.code}); soutSauverConvs(loc);
+    s.occupe=false;
+    await soutMembreOuvrir(token);
+    s.vue="conv"; soutRedessiner();
+    soutAfficherCode(token, true);
+  }catch(e){ s.occupe=false; modaleInfo("La conversation n'a pas pu être créée : "+(e.message||e),"Soutien psychologique"); }
+}
+function soutAfficherCode(token, nouveau){
+  modaleInfo((nouveau?"Votre conversation est ouverte.\n\n":"")+"Votre code de récupération :\n\n"+soutNormaliser(token)+"\n\nNotez-le sur papier ou dans un gestionnaire de mots de passe. C'est le seul moyen de retrouver cette conversation sur un autre appareil ou si vous videz votre navigateur.\n\nPersonne — ni Lamia, ni le bureau — ne peut le retrouver pour vous. Ne le partagez avec personne.","🔑 Code de récupération");
+}
+async function soutMembreRetrouver(){
+  const s=soutEtat();
+  const saisie=await modaleChamp("Saisissez le code de récupération de votre conversation (ex. K7QM-4XPA-…).","Retrouver une conversation",{placeholder:"XXXX-XXXX-XXXX-XXXX-XXXX",bouton:"Ouvrir"});
+  if(saisie===null) return;
+  const token=soutNormaliser(saisie);
+  if(token.replace(/-/g,"").length<20){ modaleInfo("Ce code est incomplet. Il compte 20 caractères."); return; }
+  try{
+    await soutMembreOuvrir(token);
+    const loc=soutConvsLocales();
+    if(!loc.some(c=>soutNormaliser(c.t)===token)){ loc.unshift({t:token, code:s.ouverte.code}); soutSauverConvs(loc); }
+    await soutResume().catch(()=>{});
+    s.vue="conv"; soutRedessiner();
+  }catch(e){ modaleInfo(e.message||String(e),"Retrouver une conversation"); }
+}
+async function soutMembreOuvrir(token, silencieux){
+  const s=soutEtat();
+  const acces=await soutAcces(token);
+  const c=await soutRpc("soutien_ouvrir", {p_acces:acces});
+  let cle=(s.ouverte&&s.ouverte.id===c.id)?s.ouverte.cle:null, verif=(s.ouverte&&s.ouverte.id===c.id)?s.ouverte.verif:"";
+  if(!cle){
+    let privJwk;
+    try{ privJwk=await soutDesenvelopper(await soutCleJeton(token), c.priv_membre_chiffree, "membre-priv"); }
+    catch(e){ throw new Error("Code de récupération incorrect pour cette conversation."); }
+    if(!s.info.pub_lamia) throw new Error("La clé de Lamia est introuvable.");
+    cle=await soutCleConv(await soutPriv(privJwk), s.info.pub_lamia, c.id);
+    verif=await soutCodeVerif(s.info.pub_lamia, c.pub_membre);
+  }
+  const msgs=await soutDechiffrerMsgs(cle, c.id, c.messages);
+  s.ouverte={token:token, acces:acces, id:c.id, code:c.code, cle:cle, verif:verif, msgs:msgs,
+    clause:c.clause_signee_le, avis:c.avis, aReponse:!!c.a_reponse, creeLe:c.cree_le};
+  const l=(s.convs||[]).find(x=>soutNormaliser(x.t)===soutNormaliser(token)); if(l) l.non_lu=false;
+  if(!silencieux) soutRedessiner();
+}
+async function soutMembreEnvoyer(){
+  const s=soutEtat(); const o=s.ouverte; if(!o||s.occupe) return;
+  const champ=document.getElementById("sout_txt"); const texte=String(champ?champ.value:"").trim();
+  if(!texte) return;
+  if(texte.length>8000){ modaleInfo("Message trop long (8 000 caractères maximum)."); return; }
+  s.occupe=true;
+  try{
+    const e=await soutChiffrer(o.cle, {t:texte}, o.id+":membre:texte");
+    const r=await soutRpc("soutien_envoyer", {p_acces:o.acces, p_iv:e.iv, p_contenu:e.ct});
+    if(champ) champ.value="";
+    s.occupe=false;
+    await soutMembreOuvrir(o.token);
+    /* Prévenir Lamia (sans identité ni contenu) : au premier message, puis au plus une fois par 15 min. */
+    const dernier=r&&r.dernier?new Date(r.dernier).getTime():0;
+    if(r&&(r.premier || Date.now()-dernier>15*60*1000)) soutNotifierLamia().catch(()=>{});
+  }catch(e){ s.occupe=false; modaleInfo("Message non envoyé : "+(e.message||e)); }
+}
+function soutEmailLamia(){
+  const s=S.sout; const id=s&&s.info&&s.info.lamia_id;
+  const l=(S.admins||[]).find(a=>a.id===id); return (l&&l.email)||"";
+}
+async function soutNotifierLamia(){
+  const dest=soutEmailLamia(); if(!dest) return;
+  const corps=`<h2 style="margin:0 0 10px;color:#241c46">Espace Soutien psychologique</h2>`
+    +`<p>Vous avez un nouveau message dans l'espace Soutien.</p>`
+    +`<p>Ouvrez l'application, onglet <b>Soutien psychologique</b>, pour le lire.</p>`
+    +`<p style="font-size:12px;color:#666">Pour protéger la personne, ce mail ne contient ni son identité ni le contenu du message.</p>`;
+  await envoyerAvecPiece([dest], "Espace Soutien — nouveau message", corps, null, {sansInvitation:true, tous:true});
+}
+async function soutMembreEffacer(){
+  const s=soutEtat(); const o=s.ouverte; if(!o) return;
+  if(!(await modaleConfirm("Effacer définitivement cette conversation ?\n\nTous les messages seront supprimés tout de suite, pour vous comme pour Lamia. C'est irréversible.","Effacer maintenant"))) return;
+  try{
+    await soutRpc("soutien_effacer", {p_acces:o.acces});
+    soutSauverConvs(soutConvsLocales().filter(c=>soutNormaliser(c.t)!==soutNormaliser(o.token)));
+    s.ouverte=null; s.vue="accueil"; await soutResume().catch(()=>{});
+    soutRedessiner(); modaleInfo("La conversation a été effacée.","Effacer maintenant");
+  }catch(e){ modaleInfo("Effacement impossible : "+(e.message||e)); }
+}
+async function soutMembreAvis(v){
+  const s=soutEtat(); const o=s.ouverte; if(!o) return;
+  try{ await soutRpc("soutien_avis", {p_acces:o.acces, p_valeur:v}); o.avis=v; soutRedessiner(); modaleInfo("Merci pour votre avis. Il est anonyme.","Avis"); }
+  catch(e){ modaleInfo(e.message||String(e)); }
+}
+
+/* ======================= CÔTÉ LAMIA ======================= */
+async function soutLamiaCleLocale(){
+  const s=soutEtat(); if(s.lamia.cle) return;
+  const jwk=store.get(soutCleLamiaLocale(), null);
+  if(!jwk || !s.info.pub_lamia) return;
+  if(jwk.x!==s.info.pub_lamia.x){ store.set(soutCleLamiaLocale(), null); return; } /* clé remplacée entre-temps */
+  try{ s.lamia.cle=await soutPriv(jwk); }catch(e){ store.set(soutCleLamiaLocale(), null); }
+}
+async function soutLamiaConfigurer(reinit){
+  const s=soutEtat(); if(s.occupe) return;
+  if(reinit){
+    if(!(await modaleConfirm("Réinitialiser vos clés ?\n\nÀ utiliser uniquement si vous avez perdu votre phrase de récupération.\n\nTOUTES les conversations en cours seront effacées définitivement (elles deviendraient illisibles de toute façon).","Phrase perdue"))) return;
+  } else {
+    if(!(await modaleConfirm("Vous allez activer l'espace Soutien.\n\nUne phrase de récupération va s'afficher. Notez-la sur papier et gardez-la en lieu sûr : elle seule permet de lire les messages sur un nouveau téléphone. Personne ne peut la retrouver pour vous.","Activer l'espace Soutien"))) return;
+  }
+  const phrase=soutCodeAleatoire(6);
+  modaleInfo("Votre phrase de récupération :\n\n"+phrase+"\n\nNotez-la maintenant. Vous allez devoir la retaper pour confirmer.","🔑 Phrase de récupération");
+  await new Promise(r=>{ const t=setInterval(()=>{ if(!document.getElementById("ca_modal_info")){ clearInterval(t); r(); } },200); });
+  let ok=false, err="";
+  for(let i=0;i<3 && !ok;i++){
+    const v=await modaleChamp("Retapez votre phrase de récupération pour confirmer que vous l'avez bien notée.","Confirmer la phrase",{placeholder:"XXXX-XXXX-XXXX-XXXX-XXXX-XXXX",bouton:"Confirmer",erreur:err});
+    if(v===null) return;
+    if(soutNormaliser(v)===phrase) ok=true; else err="La phrase ne correspond pas. Vérifiez ce que vous avez noté.";
+  }
+  if(!ok){ modaleInfo("Activation annulée : la phrase n'a pas été confirmée. Recommencez quand vous êtes prête."); return; }
+  s.occupe=true;
+  try{
+    const sel=soutB64(crypto.getRandomValues(new Uint8Array(16)));
+    const paire=await soutPaire();
+    const privJwk=await crypto.subtle.exportKey("jwk", paire.privateKey);
+    const pubJwk=soutPubJwk(await crypto.subtle.exportKey("jwk", paire.publicKey));
+    const enveloppe=await soutEnvelopper(await soutClePhrase(phrase, sel), privJwk, "lamia-priv");
+    await soutRpc("soutien_lamia_init", {p_pub:pubJwk, p_priv:enveloppe, p_sel:sel, p_reinit:!!reinit});
+    store.set(soutCleLamiaLocale(), privJwk);
+    s.info=await soutRpc("soutien_info"); s.lamia.cle=null; s.lamia.ouverte=null;
+    await soutLamiaCleLocale(); await soutLamiaListe();
+    s.occupe=false; s.vue="accueil"; soutRedessiner();
+    modaleInfo("✓ L'espace Soutien est activé. Les membres peuvent maintenant vous écrire.","Soutien psychologique");
+  }catch(e){ s.occupe=false; modaleInfo("Activation impossible : "+(e.message||e)); }
+}
+async function soutLamiaDeverrouiller(){
+  const s=soutEtat(); let err="";
+  for(let i=0;i<5;i++){
+    const v=await modaleChamp("Saisissez votre phrase de récupération pour lire les messages sur cet appareil.","🔑 Déverrouiller",{placeholder:"XXXX-XXXX-XXXX-XXXX-XXXX-XXXX",bouton:"Déverrouiller",erreur:err});
+    if(v===null) return;
+    try{
+      const privJwk=await soutDesenvelopper(await soutClePhrase(v, s.info.sel), s.info.cle_privee, "lamia-priv");
+      store.set(soutCleLamiaLocale(), privJwk);
+      s.lamia.cle=await soutPriv(privJwk);
+      await soutLamiaListe(); soutRedessiner(); return;
+    }catch(e){ err="Phrase incorrecte."; }
+  }
+}
+function soutLamiaVerrouiller(){
+  const s=soutEtat(); store.set(soutCleLamiaLocale(), null);
+  s.lamia.cle=null; s.lamia.ouverte=null; s.vue="accueil"; soutRedessiner();
+  modaleInfo("La clé a été retirée de cet appareil. Votre phrase de récupération sera demandée à la prochaine ouverture.","Verrouillé");
+}
+async function soutLamiaListe(){ const s=soutEtat(); s.lamia.liste=(await soutRpc("soutien_lamia_liste"))||[]; }
+async function soutLamiaOuvrir(id, silencieux){
+  const s=soutEtat(); if(!s.lamia.cle) return;
+  const c=await soutRpc("soutien_lamia_ouvrir", {p_id:id});
+  let cle=(s.lamia.ouverte&&s.lamia.ouverte.id===c.id)?s.lamia.ouverte.cle:null, verif=(s.lamia.ouverte&&s.lamia.ouverte.id===c.id)?s.lamia.ouverte.verif:"";
+  if(!cle){ cle=await soutCleConv(s.lamia.cle, c.pub_membre, c.id); verif=await soutCodeVerif(s.info.pub_lamia, c.pub_membre); }
+  const msgs=await soutDechiffrerMsgs(cle, c.id, c.messages);
+  s.lamia.ouverte={id:c.id, code:c.code, cle:cle, verif:verif, msgs:msgs, clause:c.clause_signee_le, empreinte:c.clause_empreinte};
+  const l=(s.lamia.liste||[]).find(x=>x.id===c.id); if(l) l.non_lu=false;
+  if(!silencieux){ s.vue="conv"; soutRedessiner(); }
+}
+async function soutAuthentifier(email){
+  if(!email){ modaleInfo("Votre compte n'a pas d'adresse e-mail : signature impossible."); return false; }
+  let err="";
+  for(let essai=0; essai<3; essai++){
+    const mdp=await modaleChamp("Pour signer l'engagement de confidentialité, retapez le mot de passe de votre compte ("+email+").","Signer l'engagement",{type:"password",placeholder:"Mot de passe",bouton:"🔒 Signer",erreur:err});
+    if(mdp===null) return false;
+    if(!mdp){ err="Saisissez votre mot de passe."; essai--; continue; }
+    let r=null; try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }catch(e){ r={error:e}; }
+    if(!(r&&r.error)) return true;
+    err="Mot de passe incorrect.";
+  }
+  modaleInfo("Mot de passe incorrect (3 essais). L'engagement n'a pas été signé.");
+  return false;
+}
+async function soutLamiaSigner(){
+  const s=soutEtat(); const o=s.lamia.ouverte; if(!o||o.clause||s.occupe) return;
+  const me=S.session;
+  if(!(await modaleConfirm("Signer l'engagement de confidentialité pour la conversation #"+o.code+" ?\n\nLe document signé sera transmis à la personne dans la conversation (chiffré), et vous en recevrez une copie PDF par mail.","Signer l'engagement"))) return;
+  if(!(await soutAuthentifier(me.email))) return;
+  s.occupe=true;
+  try{
+    const signeLe=new Date().toISOString();
+    const base={v:SOUT_CLAUSE_VERSION, nom:me.nom||"", email:me.email||"", code:o.code, signeLe:signeLe, methode:PR_METHODE};
+    const empreinte=soutHex(await soutSha(JSON.stringify(base)+"|"+soutClauseTexte(base.nom, o.code).join("\n")));
+    const clause=Object.assign({}, base, {empreinte:empreinte});
+    const e=await soutChiffrer(o.cle, clause, o.id+":lamia:clause");
+    await soutRpc("soutien_lamia_signer", {p_id:o.id, p_iv:e.iv, p_contenu:e.ct, p_empreinte:empreinte});
+    s.occupe=false;
+    await soutLamiaOuvrir(o.id, true); await soutLamiaListe(); soutRedessiner();
+    /* Copie PDF à Lamia uniquement (aucune copie au secrétariat). */
+    let piece=null;
+    try{ const blob=await telechargerPDF(soutNomPDFClause(clause), cssDocImprimable(), soutCorpsPDFClause(clause), null, "blob");
+      if(blob){ const b64=await blobEnBase64(blob); if(b64.length<4500000) piece={filename:soutNomPDFClause(clause), content:b64, contentType:"application/pdf"}; } }catch(_){ }
+    const corps=`<h2 style="margin:0 0 10px;color:#241c46">Engagement de confidentialité signé</h2>`
+      +`<p>Vous avez signé l'engagement de confidentialité pour la conversation <b>#${caMailEsc(o.code)}</b> de l'espace Soutien psychologique.</p>`
+      +`<p style="font-size:12px;color:#666">Signé électroniquement le ${caMailEsc(new Date(signeLe).toLocaleString("fr-BE"))} — code de vérification ${caMailEsc(prEmpreinteCourte(empreinte))}</p>`
+      +`<p style="font-size:12px;color:#666">Le document a été transmis à la personne dans la conversation chiffrée. Ce mail ne contient aucune information sur son identité.</p>`;
+    const dest=me.email; let res={ok:0};
+    if(dest) res=await envoyerAvecPiece([dest], "Copie — engagement de confidentialité #"+o.code, corps, piece, {sansInvitation:true, tous:true});
+    modaleInfo("✓ Engagement signé et transmis à la personne.\n"+(res.ok?"Copie PDF envoyée sur "+dest+".":"La copie par mail n'a pas pu être envoyée, mais vous pouvez télécharger le PDF dans la conversation.")+"\n\nVous pouvez maintenant répondre.","Engagement signé");
+  }catch(e){ s.occupe=false; modaleInfo("Signature impossible : "+(e.message||e)); }
+}
+async function soutLamiaRepondre(){
+  const s=soutEtat(); const o=s.lamia.ouverte; if(!o||!o.clause||s.occupe) return;
+  const champ=document.getElementById("sout_txt"); const texte=String(champ?champ.value:"").trim();
+  if(!texte) return;
+  if(texte.length>8000){ modaleInfo("Message trop long (8 000 caractères maximum)."); return; }
+  s.occupe=true;
+  try{
+    const e=await soutChiffrer(o.cle, {t:texte}, o.id+":lamia:texte");
+    await soutRpc("soutien_lamia_repondre", {p_id:o.id, p_iv:e.iv, p_contenu:e.ct});
+    if(champ) champ.value="";
+    s.occupe=false;
+    await soutLamiaOuvrir(o.id, true); soutRedessiner();
+  }catch(e){ s.occupe=false; modaleInfo("Réponse non envoyée : "+(e.message||e)); }
+}
+async function soutLamiaStatut(st){
+  const s=soutEtat(); let jusqua=null;
+  if(st==="absente"){
+    const v=await modaleChamp("Jusqu'à quelle date êtes-vous absente ?","Statut : absente",{type:"date",bouton:"Enregistrer"});
+    if(v===null) return;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){ modaleInfo("Choisissez une date."); return; }
+    jusqua=v;
+  }
+  try{ await soutRpc("soutien_statut", {p_statut:st, p_jusqua:jusqua}); s.info=await soutRpc("soutien_info"); soutRedessiner(); }
+  catch(e){ modaleInfo("Statut non enregistré : "+(e.message||e)); }
+}
+async function soutLamiaStats(){
+  const s=soutEtat();
+  try{ s.lamia.stats=await soutRpc("soutien_lamia_stats"); s.vue="stats"; soutRedessiner(); }
+  catch(e){ modaleInfo("Statistiques indisponibles : "+(e.message||e)); }
+}
+
+/* ---------- Clause de confidentialité ---------- */
+function soutClauseTexte(nom, code){
+  return [
+    "Je soussignée, "+nom+", personne de confiance de l'espace Soutien psychologique de l'ASBL LE BUREAU ETUDIANT (B.E), m'engage envers la personne qui me contacte dans la conversation #"+code+" à :",
+    "1. Garder strictement confidentiel tout ce qui me sera confié dans cet échange, pendant la conversation et après celle-ci, sans limite de durée.",
+    "2. Ne rien transmettre à quiconque, y compris aux membres du Conseil d'administration, de l'ASBL ou à des tiers, sauf accord exprès de la personne.",
+    "3. Ne jamais chercher à connaître son identité, ni à la deviner ou à la révéler.",
+    "4. Ne conserver aucune copie des échanges (captures d'écran, notes, transferts).",
+    "5. Orienter vers un professionnel (médecin, psychologue, services d'aide) lorsque la situation dépasse mon rôle. Je ne suis pas thérapeute et cet espace ne remplace pas un suivi professionnel.",
+    "Limite de la confidentialité : si la personne ou un tiers est exposé à un danger grave et immédiat, je pourrai l'encourager à contacter les services d'urgence (112, Centre de Prévention du Suicide 0800 32 123) et agir dans le cadre de mes obligations légales.",
+    "Les échanges sont chiffrés de bout en bout et effacés automatiquement après 14 jours.",
+  ];
+}
+function soutClauseHTML(nom, code){
+  const p=soutClauseTexte(nom, code);
+  return `<p><b>Engagement de confidentialité — Espace Soutien psychologique</b></p>`+p.map((t,i)=>{
+    if(i===6) return `<p><b>Limite de la confidentialité :</b> ${esc(t.replace(/^Limite de la confidentialité : /,""))}</p>`;
+    return `<p>${esc(t)}</p>`; }).join("");
+}
+function soutNomPDFClause(c){ return nomPDF("engagement-confidentialite-"+String(c.code||"")); }
+function soutCorpsPDFClause(c){
+  const d=new Date(c.signeLe||Date.now());
+  return `<div style="max-width:640px"><h1>Engagement de confidentialité</h1>
+    <p class="d">Espace Soutien psychologique — ASBL LE BUREAU ETUDIANT (B.E) — conversation #${esc(c.code)}</p>
+    ${soutClauseTexte(c.nom, c.code).map((t,i)=>i===6?`<p><b>Limite de la confidentialité :</b> ${esc(t.replace(/^Limite de la confidentialité : /,""))}</p>`:`<p>${esc(t)}</p>`).join("")}
+    <table style="margin-top:14px"><tbody>
+      <tr><th style="width:230px">Personne de confiance</th><td>${esc(c.nom)}</td></tr>
+      <tr><th>Conversation</th><td>#${esc(c.code)}</td></tr>
+      <tr><th>Date</th><td>${esc(d.toLocaleDateString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric"}))}</td></tr>
+    </tbody></table>
+    <div style="margin-top:14px;border:2px solid #241c46;border-radius:8px;padding:12px 14px;font-size:12px;color:#222;max-width:440px">
+      <div style="font-size:13px;font-weight:bold;color:#241c46;margin-bottom:4px">✔ Signé électroniquement</div>
+      par <b>${esc(c.nom)}</b><br>
+      ${c.email?`Compte : ${esc(c.email)}<br>`:""}
+      Authentification : ${esc(c.methode||PR_METHODE)}<br>
+      Le ${esc(d.toLocaleDateString("fr-BE"))} à ${esc(d.toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"}))}<br>
+      Code de vérification : <b>${esc(prEmpreinteCourte(c.empreinte))}</b>
+    </div>
+    <p class="d" style="margin-top:24px">Ce document ne contient aucune information sur l'identité de la personne accompagnée.</p></div>`;
+}
+function soutTelechargerClause(msgId){
+  const s=S.sout; const o=s&&(s.info&&s.info.est_lamia?s.lamia.ouverte:s.ouverte); if(!o) return;
+  const m=(o.msgs||[]).find(x=>String(x.id)===String(msgId)); if(!m||!m.d) return;
+  telechargerPDF(soutNomPDFClause(m.d), cssDocImprimable(), soutCorpsPDFClause(m.d));
+}
+
+/* ---------- Statistiques ---------- */
+function soutDelai(min){
+  if(min==null) return "—"; min=Math.round(min);
+  if(min<60) return min+" min";
+  const h=Math.floor(min/60), m=min%60;
+  if(h<24) return h+" h"+(m?" "+String(m).padStart(2,"0"):"");
+  const j=Math.floor(h/24), hr=h%24; return j+" j"+(hr?" "+hr+" h":"");
+}
+function soutMoisLabel(d){ try{ return new Date(String(d).slice(0,10)+"T00:00").toLocaleDateString("fr-BE",{month:"long",year:"numeric"}); }catch(e){ return d; } }
+function soutTableStats(st, pourPDF){
+  const mois=(st&&st.mois)||[];
+  const tot=mois.reduce((a,m)=>{ ["conversations","msgs_membres","msgs_lamia","clauses","avis_pos","avis_neg","delai_total_min","nb_delais"].forEach(k=>a[k]=(a[k]||0)+Number(m[k]||0)); return a; },{});
+  const ligne=(lab,m,b)=>`<tr${b?' style="font-weight:bold"':""}><td>${esc(lab)}</td><td>${m.conversations||0}</td><td>${m.msgs_membres||0}</td><td>${m.msgs_lamia||0}</td><td>${m.clauses||0}</td><td>${m.avis_pos||0} / ${m.avis_neg||0}</td><td>${m.nb_delais?soutDelai(m.delai_total_min/m.nb_delais):"—"}</td></tr>`;
+  const st2=pourPDF?"":` class="sout-table"`;
+  return `<table${st2}><thead><tr><th>Mois</th><th>Conversations</th><th>Messages reçus</th><th>Réponses</th><th>Engagements signés</th><th>Avis 👍 / 👎</th><th>Délai moyen 1re réponse</th></tr></thead><tbody>`
+    +(mois.length?mois.map(m=>ligne(soutMoisLabel(m.mois),m)).join("")+ligne("Total",tot,true):`<tr><td colspan="7">Aucune activité pour le moment.</td></tr>`)
+    +`</tbody></table>`;
+}
+function soutStatsPDF(){
+  const s=S.sout; const st=s&&s.lamia.stats; if(!st) return;
+  const corps=`<div style="max-width:900px"><h1>Statistiques — Espace Soutien psychologique</h1>
+    <p class="d">Document réservé à ${esc(S.session.nom||"")} — généré le ${esc(new Date().toLocaleString("fr-BE"))}</p>
+    <p>Conversations actives au moment de l'export : <b>${Number(st.actives||0)}</b></p>
+    ${soutTableStats(st, true)}
+    <p class="d" style="margin-top:18px">Chiffres mensuels anonymes. Aucun contenu de message ni aucune identité n'est conservé.</p></div>`;
+  telechargerPDF(nomPDF("statistiques-soutien"), cssDocImprimable(), corps, "landscape");
+}
+
+/* ---------- Sortie rapide ---------- */
+function soutSortie(){
+  const s=S.sout;
+  if(s){ s.ouverte=null; s.lamia.ouverte=null; s.vue="accueil"; }
+  const champ=document.getElementById("sout_txt"); if(champ) champ.value="";
+  S.tab="accueil"; render();
+  try{ window.scrollTo(0,0); }catch(e){}
+}
+
+/* ======================= RENDU ======================= */
+function soutStatutHTML(info){
+  const st=(info&&info.statut)||"disponible";
+  if(st==="48h") return `<span class="sout-statut"><span class="sout-dot" style="background:var(--amber)"></span>Lamia répond sous 48 h</span>`;
+  if(st==="absente") return `<span class="sout-statut"><span class="sout-dot" style="background:var(--slate)"></span>Lamia est absente${info.statut_jusqua?" jusqu'au "+esc(fmtDateLong(String(info.statut_jusqua).slice(0,10))):""}</span>`;
+  return `<span class="sout-statut"><span class="sout-dot" style="background:var(--green)"></span>Lamia est disponible</span>`;
+}
+function soutTel(t){ return `<a href="tel:${esc(String(t).replace(/\s/g,""))}">${esc(t)}</a>`; }
+function soutEntete(){
+  return `<div class="sout-top"><h2 class="serif" style="margin:0;font-size:22px">💜 Soutien psychologique</h2>
+    <button class="sout-exit" data-action="sout-sortie" title="Quitter tout de suite (touche Échap)">✕ Sortie rapide</button></div>
+    <div class="sout-urg"><b>En cas d'urgence :</b> ${SOUT_URGENCES.map(u=>`${esc(u.nom)} ${soutTel(u.tel)}`).join(" · ")}</div>`;
+}
+function soutBandeauE2E(verif, pourLamia){
+  return `<div class="sout-e2e">🔒 <b>Chiffré de bout en bout.</b> ${pourLamia
+      ?"Seule vous pouvez lire ces messages. L'identité de la personne ne vous est jamais transmise."
+      :"Seule Lamia peut lire vos messages. Votre identité ne lui est jamais transmise, ni au serveur."}
+    Merci de ne pas copier les échanges.<br>
+    <span class="sout-small">Code de vérification : <span class="sout-verif">${esc(verif)}</span> — ${pourLamia?"la personne voit le même code de son côté.":"Lamia voit le même code de son côté : s'il est identique, personne ne s'interpose."}</span>
+    · <button class="link" data-action="sout-aide" style="color:inherit">Comment ça marche ?</button></div>`;
+}
+function soutBulles(o, pourLamia){
+  const moi=pourLamia?"lamia":"membre";
+  const html=(o.msgs||[]).map(m=>{
+    const mine=m.auteur===moi;
+    const qui=mine?"Vous":(m.auteur==="lamia"?"Lamia":"Personne anonyme");
+    if(m.type==="clause"){
+      return `<div class="sout-clause-msg">✍ <b>Engagement de confidentialité signé</b><br>
+        <span class="sout-small">par ${esc(m.d?m.d.nom:"Lamia")} le ${esc(fmtQuand(m.d?m.d.signeLe:m.ts))}${m.d?" — code "+esc(prEmpreinteCourte(m.d.empreinte)):""}</span><br>
+        ${m.d?`<button class="btn ghost sm" data-action="sout-clause-pdf" data-id="${esc(m.id)}" style="margin-top:8px">📄 Lire / télécharger le PDF</button>`:`<span class="sout-small">Document illisible.</span>`}</div>`;
+    }
+    const txt=m.d&&typeof m.d.t==="string"?esc(m.d.t):`<i>Message illisible</i>`;
+    return `<div class="bub ${mine?"me":"them"}"><div style="white-space:pre-wrap;word-break:break-word">${txt}</div><div class="m-meta">🔒 ${qui} · ${esc(fmtQuand(m.ts))}</div></div>`;
+  }).join("");
+  return html;
+}
+function soutComposer(placeholder, action, desactive){
+  return `<div class="msg-compose sout-compose">
+    <textarea id="sout_txt" placeholder="${esc(placeholder)}" maxlength="8000" ${desactive?"disabled":""} autocomplete="off" autocorrect="on" spellcheck="true"></textarea>
+    <button class="btn" data-action="${action}" ${desactive?"disabled":""}>Envoyer 🔒</button></div>`;
+}
+
+/* --- Vue membre --- */
+function soutVueMembre(){
+  const s=S.sout;
+  if(s.vue==="ressources") return soutVueRessources();
+  if(s.vue==="conv" && s.ouverte) return soutVueConvMembre();
+  const actif=!!(s.info&&s.info.pub_lamia);
+  const liste=(s.convs||[]).length?`<div class="msg-list">${s.convs.map(c=>`<button class="msg-row" data-action="sout-ouvrir" data-t="${esc(c.t)}">
+      <span class="msg-av">🔒</span><span><span class="nm">Conversation #${esc(c.code)}</span><br><span class="fn">Chiffrée de bout en bout</span></span>
+      ${c.non_lu?`<span class="pill" style="background:var(--red);margin-left:auto">Nouvelle réponse</span>`:""}</button>`).join("")}</div>`:"";
+  return `<div class="sout-card">
+      <p class="sout-p">Besoin de parler ? <b>Lamia</b> est la personne de confiance du bureau. Vous pouvez lui écrire en toute discrétion.</p>
+      <ul class="sout-liste">
+        <li><b>Anonyme</b> : Lamia ne sait pas qui vous êtes, et la conversation n'est liée à aucun compte.</li>
+        <li><b>Chiffré de bout en bout</b> : seule Lamia peut lire vos messages.</li>
+        <li><b>Confidentiel</b> : Lamia signe un engagement de confidentialité avant de vous répondre.</li>
+        <li><b>Éphémère</b> : chaque message s'efface automatiquement 14 jours après son envoi.</li>
+      </ul>
+      <p class="sout-small">Lamia n'est pas thérapeute : si nécessaire, elle vous orientera vers un professionnel.</p>
+      <div style="margin:10px 0 4px">${soutStatutHTML(s.info)}</div>
+      <div class="row-btn" style="margin-top:12px">
+        ${actif?`<button class="btn" data-action="sout-nouvelle">✍ Écrire à Lamia</button>`:`<span class="sout-small">L'espace sera ouvert dès que Lamia l'aura activé.</span>`}
+        <button class="btn ghost sm" data-action="sout-aide">🔒 Comment ça marche ?</button>
+        <button class="btn ghost sm" data-action="sout-vue" data-vue="ressources">📚 Ressources</button>
+      </div></div>
+    ${liste?`<h3 class="serif" style="margin:18px 0 8px">Mes conversations</h3>${liste}`:""}
+    <p style="margin-top:14px"><button class="link" data-action="sout-retrouver">Retrouver une conversation avec mon code de récupération</button></p>`;
+}
+function soutVueConvMembre(){
+  const s=S.sout, o=s.ouverte;
+  const st=s.info&&s.info.statut;
+  const accueil=`Bonjour, merci pour votre message. ${st==="absente"?"Lamia est absente"+(s.info.statut_jusqua?" jusqu'au "+fmtDateLong(String(s.info.statut_jusqua).slice(0,10)):"")+" : elle vous répondra à son retour.":st==="48h"?"Lamia vous répondra sous 48 heures.":"Lamia vous répondra dès que possible."}\nEn cas d'urgence, appelez le 112 ou le Centre de Prévention du Suicide au 0800 32 123.`;
+  const avis = (o.aReponse && o.avis==null)
+    ? `<div class="sout-card" style="text-align:center"><span class="sout-small">Cet échange vous a-t-il aidé ? (anonyme)</span><div class="row-btn" style="justify-content:center"><button class="btn ghost sm" data-action="sout-avis" data-v="1">👍 Oui</button><button class="btn ghost sm" data-action="sout-avis" data-v="-1">👎 Non</button></div></div>`
+    : (o.avis!=null?`<p class="sout-small" style="text-align:center">Merci pour votre avis.</p>`:"");
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="sout-retour">← Retour</button>
+      <span class="msg-av">🔒</span><span><span class="u-nom">Conversation #${esc(o.code)}</span> <span class="u-id">avec Lamia</span></span></div>
+    ${soutBandeauE2E(o.verif, false)}
+    <div class="msg-thread">
+      <div class="bub them"><div style="white-space:pre-wrap">${esc(accueil)}</div><div class="m-meta">Message automatique</div></div>
+      ${soutBulles(o, false)}
+      ${!o.clause?`<p class="sout-small" style="text-align:center;margin:6px 0">Lamia signera un engagement de confidentialité avant de vous répondre. Vous le recevrez ici.</p>`:""}
+    </div>
+    ${soutComposer("Votre message à Lamia…","sout-envoyer",false)}
+    ${avis}
+    <div class="row-btn" style="margin-top:14px;justify-content:space-between">
+      <button class="link" data-action="sout-code">🔑 Afficher mon code de récupération</button>
+      <button class="link" data-action="sout-effacer" style="color:var(--red)">🗑 Effacer maintenant</button></div>`;
+}
+function soutVueRessources(){
+  const lien=(u,t)=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t||u)}</a>`;
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="sout-retour">← Retour</button><span class="u-nom">📚 Ressources</span></div>
+    ${SOUT_RESSOURCES.map(g=>`<h3 class="serif" style="margin:16px 0 8px">${esc(g.groupe)}</h3>
+      ${g.items.map(r=>`<div class="sout-card sout-res"><b>${esc(r.nom)}</b><br><span class="sout-small">${esc(r.desc||"")}</span>
+        <div style="font-size:13px;line-height:1.7;margin-top:6px">
+          ${r.adr?`📍 ${esc(r.adr)}<br>`:""}
+          ${r.tel?`📞 ${soutTel(r.tel)}`:""}${r.whatsapp?` · WhatsApp ${soutTel(r.whatsapp)}`:""}${(r.tel||r.whatsapp)?"<br>":""}
+          ${r.mail?`✉ <a href="mailto:${esc(r.mail)}">${esc(r.mail)}</a><br>`:""}
+          ${r.web?`🌐 ${lien(r.web)}`:""}</div></div>`).join("")}`).join("")}
+    <p class="sout-small">Coordonnées à vérifier régulièrement. Signalez à Lamia toute information erronée.</p>`;
+}
+
+/* --- Vue Lamia --- */
+function soutVueLamia(){
+  const s=S.sout;
+  if(!s.info.pub_lamia){
+    return `<div class="sout-card"><p class="sout-p"><b>Bienvenue Lamia.</b> L'espace Soutien n'est pas encore activé.</p>
+      <p class="sout-p">En l'activant, votre téléphone crée une clé de chiffrement protégée par une <b>phrase de récupération</b>. Gardez-la en lieu sûr : elle permet de lire les messages sur un nouvel appareil.</p>
+      <div class="row-btn"><button class="btn" data-action="sout-activer">🔑 Activer l'espace Soutien</button></div></div>`;
+  }
+  if(!s.lamia.cle){
+    return `<div class="sout-card"><p class="sout-p">🔒 Les messages sont verrouillés sur cet appareil.</p>
+      <div class="row-btn"><button class="btn" data-action="sout-deverrouiller">Déverrouiller avec ma phrase</button>
+      <button class="link" data-action="sout-reinit" style="color:var(--red)">Phrase perdue ?</button></div></div>`;
+  }
+  if(s.vue==="ressources") return soutVueRessources();
+  if(s.vue==="stats") return soutVueStats();
+  if(s.vue==="conv" && s.lamia.ouverte) return soutVueConvLamia();
+  const st=s.info.statut||"disponible";
+  const bt=(id,l)=>`<button class="btn ${st===id?"":"ghost"} sm" data-action="sout-statut" data-st="${id}">${l}</button>`;
+  const L=s.lamia.liste||[];
+  return `<div class="sout-card"><b>Mon statut</b> <span style="margin-left:6px">${soutStatutHTML(s.info)}</span>
+      <div class="row-btn" style="margin-top:8px">${bt("disponible","🟢 Disponible")}${bt("48h","🟡 Réponse sous 48 h")}${bt("absente","⚪ Absente")}</div></div>
+    <div class="row-btn" style="margin-bottom:12px">
+      <button class="btn ghost sm" data-action="sout-stats">📊 Statistiques</button>
+      <button class="btn ghost sm" data-action="sout-vue" data-vue="ressources">📚 Ressources</button>
+      <button class="btn ghost sm" data-action="sout-aide">🔒 Comment ça marche ?</button>
+      <button class="btn ghost sm" data-action="sout-verrouiller">Verrouiller cet appareil</button></div>
+    <h3 class="serif" style="margin:6px 0 8px">Conversations (${L.length})</h3>
+    ${L.length?`<div class="msg-list">${L.map(c=>`<button class="msg-row" data-action="sout-l-ouvrir" data-id="${esc(c.id)}">
+        <span class="msg-av">🔒</span><span><span class="nm">Conversation #${esc(c.code)}</span><br>
+        <span class="fn">Personne anonyme · ${c.a_message?"dernière activité "+esc(fmtQuand(c.derniere_activite)):"aucun message encore"}</span></span>
+        <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          ${c.non_lu?`<span class="pill" style="background:var(--red)">Nouveau</span>`:""}
+          ${!c.clause&&c.a_message?`<span class="pill" style="background:var(--gold-dim)">✍ À signer</span>`:""}</span></button>`).join("")}</div>`
+      :`<div class="empty">Aucune conversation pour le moment.</div>`}`;
+}
+function soutVueConvLamia(){
+  const s=S.sout, o=s.lamia.ouverte;
+  const bloc = o.clause ? soutComposer("Votre réponse…","sout-l-repondre",false)
+    : `<div class="sout-card"><p class="sout-p"><b>Avant de répondre</b>, signez l'engagement de confidentialité. Il sera transmis à la personne dans la conversation.</p>
+        <div class="sout-clause">${soutClauseHTML(S.session.nom||"", o.code)}</div>
+        <div class="row-btn" style="margin-top:12px"><button class="btn" data-action="sout-l-signer">✍ Signer et transmettre l'engagement</button></div></div>
+      ${soutComposer("Signez d'abord l'engagement pour répondre","sout-l-repondre",true)}`;
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="sout-retour">← Conversations</button>
+      <span class="msg-av">🔒</span><span><span class="u-nom">Conversation #${esc(o.code)}</span> <span class="u-id">personne anonyme</span></span></div>
+    ${soutBandeauE2E(o.verif, true)}
+    <div class="msg-thread">${soutBulles(o, true)||`<div class="empty" style="border:none">Aucun message pour le moment.</div>`}</div>
+    ${bloc}`;
+}
+function soutVueStats(){
+  const st=S.sout.lamia.stats||{mois:[],actives:0};
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="sout-retour">← Retour</button><span class="u-nom">📊 Statistiques</span></div>
+    <div class="sout-card"><p class="sout-p">Conversations actives en ce moment : <b>${Number(st.actives||0)}</b></p>
+      <p class="sout-small">Chiffres mensuels anonymes, visibles par vous seule. Aucun contenu ni aucune identité n'est conservé.</p>
+      <div style="overflow-x:auto">${soutTableStats(st, false)}</div>
+      <div class="row-btn" style="margin-top:12px"><button class="btn sm" data-action="sout-stats-pdf">📄 Télécharger en PDF</button></div></div>`;
+}
+
+function tabSoutien(){
+  const s=soutEtat();
+  if(!s.charge && !s.chargement && !s.erreur) setTimeout(soutCharger,0);
+  let corps;
+  if(s.erreur) corps=`<div class="sout-card"><p class="sout-p" style="color:var(--red)">${esc(s.erreur)}</p><div class="row-btn"><button class="btn ghost sm" data-action="sout-recharger">Réessayer</button></div></div>`;
+  else if(!s.info || (!s.charge && s.chargement)) corps=`<div class="empty">Chargement sécurisé…</div>`;
+  else corps = s.info.est_lamia ? soutVueLamia() : soutVueMembre();
+  return `<div class="sout-zone">${soutEntete()}${corps}</div>`;
+}
+
+function soutAide(){
+  modaleInfo("1. Votre message est verrouillé (chiffré) sur votre téléphone, avant de partir.\n\n2. Il voyage et il est stocké verrouillé : le serveur, le bureau et l'hébergeur ne voient qu'une suite de caractères illisibles.\n\n3. Seule la clé de Lamia, qui ne quitte jamais son appareil, peut l'ouvrir. Lamia ne sait pas qui vous êtes : la conversation n'est liée à aucun compte, seulement à votre code de récupération.\n\nLe code de vérification affiché en haut de la conversation est le même chez vous et chez Lamia : c'est la preuve que personne ne s'interpose.\n\nChaque message s'efface automatiquement 14 jours après son envoi, et une conversation sans activité pendant 14 jours disparaît entièrement.","🔒 Comment ça marche ?");
+}
+
+/* ---------- Actions ---------- */
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-action^='sout-']"); if(!el) return;
+  const a=el.dataset.action, s=soutEtat();
+  try{
+    switch(a){
+      case "sout-sortie": soutSortie(); break;
+      case "sout-aide": soutAide(); break;
+      case "sout-vue": s.vue=el.dataset.vue||"accueil"; render(); break;
+      case "sout-retour": s.vue="accueil"; s.ouverte=null; s.lamia.ouverte=null; render(); soutRafraichir(); break;
+      case "sout-recharger": s.erreur=""; s.charge=false; render(); break;
+      case "sout-nouvelle": await soutMembreNouvelle(); break;
+      case "sout-retrouver": await soutMembreRetrouver(); break;
+      case "sout-ouvrir": await soutMembreOuvrir(el.dataset.t); s.vue="conv"; soutRedessiner(); break;
+      case "sout-envoyer": await soutMembreEnvoyer(); break;
+      case "sout-code": if(s.ouverte) soutAfficherCode(s.ouverte.token, false); break;
+      case "sout-effacer": await soutMembreEffacer(); break;
+      case "sout-avis": await soutMembreAvis(Number(el.dataset.v)); break;
+      case "sout-clause-pdf": soutTelechargerClause(el.dataset.id); break;
+      case "sout-activer": await soutLamiaConfigurer(false); break;
+      case "sout-reinit": await soutLamiaConfigurer(true); break;
+      case "sout-deverrouiller": await soutLamiaDeverrouiller(); break;
+      case "sout-verrouiller": soutLamiaVerrouiller(); break;
+      case "sout-l-ouvrir": await soutLamiaOuvrir(el.dataset.id); break;
+      case "sout-l-signer": await soutLamiaSigner(); break;
+      case "sout-l-repondre": await soutLamiaRepondre(); break;
+      case "sout-statut": await soutLamiaStatut(el.dataset.st); break;
+      case "sout-stats": await soutLamiaStats(); break;
+      case "sout-stats-pdf": soutStatsPDF(); break;
+    }
+  }catch(err){ modaleInfo(err.message||String(err),"Soutien psychologique"); }
+});
+/* Entrée = envoyer (Maj+Entrée = retour à la ligne) sur ordinateur. */
+document.addEventListener("keydown", e=>{
+  if(S.tab!=="soutien") return;
+  if(e.key==="Escape" && !document.querySelector(".ca-mod")){ soutSortie(); return; }
+  if(e.key==="Enter" && !e.shiftKey && e.target && e.target.id==="sout_txt" && !("ontouchstart" in window)){
+    e.preventDefault(); const s=S.sout; if(s&&s.info&&s.info.est_lamia) soutLamiaRepondre(); else soutMembreEnvoyer();
+  }
+});
+/* Blocage du copier / couper / coller et du menu contextuel dans l'onglet Soutien. */
+["copy","cut","paste","contextmenu","dragstart","drop"].forEach(t=>document.addEventListener(t, e=>{
+  const n=e.target&&(e.target.nodeType===3?e.target.parentElement:e.target);
+  if(n&&n.closest&&n.closest(".sout-zone")) e.preventDefault();
+}, true));
+document.addEventListener("selectstart", e=>{
+  const n=e.target&&(e.target.nodeType===3?e.target.parentElement:e.target);
+  if(n&&n.closest&&n.closest(".sout-zone") && !/^(TEXTAREA|INPUT)$/.test(n.tagName)) e.preventDefault();
+}, true);
+/* Nouveaux messages : vérification toutes les 15 s quand l'onglet est ouvert. */
+setInterval(()=>{ if(S.session && S.tab==="soutien" && document.visibilityState==="visible") soutRafraichir(); }, SOUT_POLL_MS);
+
 boot();
 
 </script>
