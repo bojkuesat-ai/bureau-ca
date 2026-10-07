@@ -333,11 +333,37 @@ select.f{width:100%}
 .sout-zone .msg-head .btn{white-space:nowrap;flex:none}
 .sout-proprio{border-color:#1f5a41;background:#0f2a20;color:#c9f2de;font-size:13.5px;line-height:1.6}
 .sout-bloque{background:#2a1a1f;border:1px solid #6b2333;color:#ffd9dc;border-radius:12px;padding:12px 14px;font-size:13.5px;line-height:1.6;margin-top:8px}
+.sout-fiche{align-self:stretch;background:#1d2a4a;border:1px solid #4a6bb5;color:#e3ebff;border-radius:14px;padding:12px 14px;font-size:13.5px;line-height:1.5}
+.sout-fiche a{color:#fff;font-weight:600}
+.sout-fiche-g{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;opacity:.75;margin:10px 0 4px}
+.sout-res-l{padding:6px 0;border-top:1px solid rgba(255,255,255,.08)}
 .sout-compose textarea{flex:1;min-height:52px}
 .sout-compose textarea:disabled,.sout-compose button:disabled{opacity:.45;cursor:not-allowed}
 .sout-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
 .sout-table th,.sout-table td{border:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
 .sout-table th{background:var(--surface2);color:var(--ink-soft);font-weight:600}
+
+/* ---- Espace étudiants (page publique) + CES ---- */
+.etu-page{min-height:100vh;background:var(--paper);padding:18px 16px 30px}
+.etu-in{max-width:720px;margin:0 auto}
+.etu-brand{margin:0 0 14px}
+.etu-choix{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:0 0 10px;color:var(--ink);cursor:pointer}
+.etu-choix:hover,.etu-choix.on{border-color:var(--stamp)}
+.etu-choix-t{display:block;font-size:16px;font-weight:700;margin-bottom:4px}
+.etu-choix-d{display:block;font-size:13px;color:var(--ink-soft);line-height:1.5}
+.ces-etapes{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.ces-etapes span{font-size:11.5px;padding:4px 9px;border-radius:20px;border:1px solid var(--line);color:var(--slate)}
+.ces-etapes span.on{border-color:var(--stamp);color:var(--stamp)}
+.ces-etapes span.ok{color:var(--green);border-color:#1f5a41}
+.ces-form h4{margin:16px 0 2px;font-size:14px;color:var(--stamp-soft)}
+.ces-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.ces-tabs button{background:var(--surface2);border:1px solid var(--line);color:var(--ink-soft);border-radius:20px;padding:6px 12px;font-size:12.5px;cursor:pointer}
+.ces-tabs button.on{border-color:var(--stamp);color:var(--ink);background:var(--card)}
+.ces-suivi{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:13px;color:var(--slate)}
+.ces-suivi .ok{color:var(--green);font-weight:600}
+.ces-fl{color:var(--slate)}
+.ces-evt{font-size:12.5px;color:var(--ink-soft);text-align:center;padding:4px 8px;border-top:1px dashed var(--line);margin:4px 0}
+.ces-decision{border-color:var(--stamp)}
 </style>
 <!-- Versions figees et empreintes verifiees. L'URL « @2 » suivait la branche majeure :
      une version compromise publiee demain se serait executee chez tout le monde.
@@ -1068,7 +1094,7 @@ async function refreshSession(){
   await loadAccounts();
   const jobs=[loadDocs,loadMessages,loadConflits,loadTaches,loadContacts,loadAnnonces,loadReactions,loadPresence,
     loadEvenements,loadReunions,loadCreneaux,loadOrg,loadBudgets,loadVotes,loadMeta,loadBilans,loadJournal,
-    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien];
+    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes];
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
 }
 async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; } }catch(e){} }
@@ -1378,7 +1404,7 @@ function viewRevoque(){ return `<div class="wrap" style="max-width:520px;margin:
   <h1 class="serif" style="font-size:26px;margin:0 0 10px">Accès retiré</h1>
   <p style="color:var(--ink-soft);font-size:14px;margin:0 0 18px">Votre accès à l'espace CA a été retiré par le secrétariat. Si vous pensez qu'il s'agit d'une erreur, contactez le bureau.</p>
   <button class="chip" data-action="logout">Se déconnecter</button></div>`; }
-function renderVue(){ return S.view==="home" && !S.goto ? viewHome() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.needProfile ? viewCompleteProfile() : viewAuth()) : (S.session.statut==="attente" ? viewPending() : (S.session.statut==="revoque" ? viewRevoque() : viewDash()))); }
+function renderVue(){ if(S.etu) return viewEtu(); return S.view==="home" && !S.goto ? viewHome() : S.view==="caisse" ? viewCaisse() : (!S.session ? (S.needProfile ? viewCompleteProfile() : viewAuth()) : (S.session.statut==="attente" ? viewPending() : (S.session.statut==="revoque" ? viewRevoque() : viewDash()))); }
 function render(){ if(S.recovery){ root().innerHTML = viewNewPwd(); return; } root().innerHTML = renderVue(); }
 
 /* ---- Redessiner sans effacer ce que la personne est en train d'ecrire ----
@@ -1652,7 +1678,7 @@ function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textC
 /* ---- DASHBOARD ---- */
 const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,notifs:tabNotifs,search:tabSearch};
+  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,notifs:tabNotifs,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   /* Les cooptes n'ont acces qu'a leur espace de contribution et aux annonces. */
@@ -1666,6 +1692,8 @@ function viewDash(){
     : [...TABS,["avis","\ud83d\udca1","Id\u00e9es & avis"]];
   /* L'espace admin n'est plus une porte visible depuis l'accueil : c'est un onglet
      qui n'existe que pour le proprietaire, une fois connecte. */
+  if(S.sout && S.sout.info && S.sout.info.est_lamia && !estCoopte()) tabs.push(["soutien_etu","\ud83c\udf93","Soutien psy — étudiants"]);
+  if(cesOngletVisible() && !estCoopte()) tabs.push(["soutien_ces","\ud83e\udd1d","Soutien social — CES"]);
   const estProprio = S.session && S.session.role==="owner";
   if(estProprio && !estCoopte()) tabs.push(["admin","\u2699","Admin"]);
   if(S.tab==="admin" && !estProprio) S.tab="accueil";
@@ -1701,7 +1729,7 @@ function viewDash(){
       <button class="logout" data-action="set-tab" data-tab="search" title="Recherche">🔍</button>
       <button class="logout" data-action="set-tab" data-tab="notifs" title="À traiter">🔔${notifTot?" "+notifTot:""}</button>
       <button class="logout" data-action="logout">Se déconnecter</button></div>
-    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():id==="soutien"?soutNonLus():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:id==="soutien"?` style="border:2px solid #b48cf2;border-bottom:none;color:#d4bbff;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
+    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():id==="soutien"?soutNonLus("ca"):id==="soutien_etu"?soutNonLus("etu"):id==="soutien_ces"?cesNonLus():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:id==="soutien"?` style="border:2px solid #b48cf2;border-bottom:none;color:#d4bbff;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
   </div></header>
   <main class="body">${bienvenue}${bandeauRappels()}${body}</main>`;
 }
@@ -3544,7 +3572,7 @@ document.addEventListener("click", async e=>{
       if(r&&r.error) return authErr("Envoi impossible : "+r.error.message);
       return authErr("Si un compte existe pour cette adresse, un lien de réinitialisation vient d'être envoyé. Pensez à vérifier vos spams.");
     }
-    case "logout": { S.sout=null; if(sb){ try{ await sb.auth.signOut(); }catch(e){} } S.session=null; S.view="home"; render(); break; }
+    case "logout": { S.sout=null; S.cesR=null; S.ces=null; if(sb){ try{ await sb.auth.signOut(); }catch(e){} } S.session=null; S.view="home"; render(); break; }
     case "noop": render(); break;
     case "export-data": {
       const keys=["meta","admins","org","taches","annonces","creneaux","docs","budgets","votes","reunions","evenements","contacts","messages","bilans","journal"];
@@ -4461,6 +4489,7 @@ async function boot(){
   try{ const h=String(location.hash||"");
     if(/access_token|type=signup|type=magiclink|type=invite/.test(h)) S.view="ca";
   }catch(e){}
+  etuDemarrer();
   if(!sb){ render(); return; }
   try{ const h=String(location.hash||""); if(/type=recovery/.test(h)||/[?&]type=recovery/.test(location.search)){ S.recovery=true; } }catch(e){}
   try{ await refreshSession(); }catch(e){} render();
@@ -4577,19 +4606,24 @@ async function soutCodeVerif(pubLamia, pubMembre){
 
 /* ---------- État ---------- */
 function soutEtat(){
-  const uidMe=(S.session&&S.session.id)||null;
+  const etu=!!S.etu;
+  const uidMe=etu?"etu":((S.session&&S.session.id)||null);
   if(!S.sout || S.sout.uid!==uidMe){
-    S.sout={uid:uidMe, info:null, charge:false, chargement:false, erreur:"", vue:"accueil", convs:[], ouverte:null,
-      lamia:{cle:null, liste:[], ouverte:null, stats:null}, occupe:false};
+    S.sout={uid:uidMe, mode:etu?"etu":"ca", info:null, charge:false, chargement:false, erreur:"", vue:"accueil", convs:[], ouverte:null,
+      lamia:{cle:null, liste:[], ouverte:null, stats:null, espace:"ca", nb:{ca:0,etu:0}}, occupe:false};
   }
   return S.sout;
 }
-function soutCleLocale(){ return "soutien:convs:"+((S.session&&S.session.id)||""); }
+function soutCleLocale(){ return (S.sout&&S.sout.mode==="etu")?"soutien:etu:convs":"soutien:convs:"+((S.session&&S.session.id)||""); }
 function soutConvsLocales(){ const l=store.get(soutCleLocale(), []); return Array.isArray(l)?l.filter(x=>x&&x.t):[]; }
 function soutSauverConvs(l){ store.set(soutCleLocale(), l); }
 function soutCleLamiaLocale(){ return "soutien:lamia:"+((S.session&&S.session.id)||""); }
 
 async function soutRpc(fn, args){
+  if(S.sout && S.sout.mode==="etu"){                       /* page publique : client anonyme, fonctions etu_psy_* */
+    if(!SOUT_RPC_ETU[fn]) throw new Error("Action non disponible.");
+    return etuRpc(SOUT_RPC_ETU[fn], args);
+  }
   if(!sb) throw new Error("Serveur indisponible.");
   const r=await sb.rpc(fn, args||{});
   if(r&&r.error){
@@ -4599,16 +4633,23 @@ async function soutRpc(fn, args){
   }
   return r?r.data:null;
 }
-function soutRedessiner(){ if(S.tab==="soutien" && S.session){ try{ rendreEnPreservant(); }catch(e){ render(); } } }
-function soutNonLus(){
-  const s=S.sout; if(!s||!s.info) return 0;
-  if(s.info.est_lamia) return (s.lamia.liste||[]).filter(c=>c.non_lu).length;
-  return (s.convs||[]).filter(c=>c.non_lu).length;
+function soutRedessiner(){ if(S.etu || ((S.tab==="soutien"||S.tab==="soutien_etu") && S.session)){ try{ rendreEnPreservant(); }catch(e){ render(); } } }
+function soutNonLus(espace){
+  const s=S.sout; if(!s||!s.info||s.mode==="etu") return 0;
+  if(s.info.est_lamia) return (s.lamia.nb&&s.lamia.nb[espace||"ca"])||0;
+  return espace==="etu"?0:(s.convs||[]).filter(c=>c.non_lu).length;
+}
+/* Lamia passe d'un espace à l'autre (CA / étudiants) : même clé, listes séparées. */
+function soutLamiaEspace(e){
+  const s=soutEtat(); if(s.mode==="etu") return;
+  if(s.lamia.espace===e) return;
+  s.lamia.espace=e; s.lamia.ouverte=null; s.lamia.liste=[]; s.lamia.stats=null; s.vue="accueil";
+  if(s.lamia.cle) soutLamiaListe().then(soutRedessiner).catch(()=>{});
 }
 
 /* ---------- Chargement ---------- */
 async function soutCharger(){
-  const s=soutEtat(); if(s.chargement||!S.session) return;
+  const s=soutEtat(); if(s.chargement||(!S.session&&s.mode!=="etu")) return;
   s.chargement=true; s.erreur="";
   try{
     s.info=await soutRpc("soutien_info");
@@ -4623,7 +4664,11 @@ async function soutCharger(){
 async function loadSoutien(){
   try{ const s=soutEtat(); if(!S.session) return;
     s.info=await soutRpc("soutien_info");
-    if(s.info.est_lamia) await soutLamiaListe(); else await soutResume();
+    if(s.info.est_lamia){
+      await soutLamiaCleLocale();                          /* clé déjà sur l'appareil : pas de verrouillage inutile */
+      try{ const l=(await soutRpc("soutien_lamia_liste",{p_espace:"etu"}))||[]; s.lamia.nb.etu=l.filter(c=>c.non_lu).length; }catch(e){}
+      await soutLamiaListe();
+    } else await soutResume();
     s.charge=true; s.erreur="";
   }catch(e){ /* onglet pas encore installé : silencieux */ }
 }
@@ -4638,7 +4683,7 @@ async function soutResume(){
   s.convs=convs;
 }
 async function soutRafraichir(){
-  const s=S.sout; if(!s||!s.info||s.occupe||!S.session) return;
+  const s=S.sout; if(!s||!s.info||s.occupe||(!S.session&&s.mode!=="etu")) return;
   try{
     const avant=JSON.stringify([s.convs, s.lamia.liste, s.ouverte&&s.ouverte.msgs.length, s.lamia.ouverte&&s.lamia.ouverte.msgs.length]);
     s.info=Object.assign(s.info, await soutRpc("soutien_info"));
@@ -4747,6 +4792,7 @@ function soutEmailLamia(){
   const l=(S.admins||[]).find(a=>a.id===id); return (l&&l.email)||"";
 }
 async function soutNotifierLamia(){
+  if(S.sout && S.sout.mode==="etu"){ soutNotifServeur("psy_etu"); return; }
   const dest=soutEmailLamia(); if(!dest) return;
   const corps=`<h2 style="margin:0 0 10px;color:#241c46">Espace Soutien psychologique</h2>`
     +`<p>Vous avez un nouveau message dans l'espace Soutien.</p>`
@@ -4828,7 +4874,8 @@ function soutLamiaVerrouiller(){
   s.lamia.cle=null; s.lamia.ouverte=null; s.vue="accueil"; soutRedessiner();
   modaleInfo("La clé a été retirée de cet appareil. Votre phrase de récupération sera demandée à la prochaine ouverture.","Verrouillé");
 }
-async function soutLamiaListe(){ const s=soutEtat(); s.lamia.liste=(await soutRpc("soutien_lamia_liste"))||[]; }
+async function soutLamiaListe(){ const s=soutEtat(); const e=s.lamia.espace||"ca";
+  s.lamia.liste=(await soutRpc("soutien_lamia_liste",{p_espace:e}))||[]; s.lamia.nb[e]=s.lamia.liste.filter(c=>c.non_lu).length; }
 async function soutLamiaOuvrir(id, silencieux){
   const s=soutEtat(); if(!s.lamia.cle) return;
   const c=await soutRpc("soutien_lamia_ouvrir", {p_id:id});
@@ -4909,7 +4956,7 @@ async function soutLamiaStatut(st){
 }
 async function soutLamiaStats(){
   const s=soutEtat();
-  try{ s.lamia.stats=await soutRpc("soutien_lamia_stats"); s.vue="stats"; soutRedessiner(); }
+  try{ s.lamia.stats=await soutRpc("soutien_lamia_stats",{p_espace:s.lamia.espace||"ca"}); s.vue="stats"; soutRedessiner(); }
   catch(e){ modaleInfo("Statistiques indisponibles : "+(e.message||e)); }
 }
 
@@ -5010,7 +5057,7 @@ function soutBlocProprio(){
       <span class="sout-small" style="color:inherit;opacity:.85">Signé par ${esc(e.nom)} le ${esc(fmtQuand(e.signeLe))} — code ${esc(prEmpreinteCourte(e.empreinte))}</span><br>
       <button class="btn ghost sm" data-action="sout-proprio-pdf" style="margin-top:8px">📄 Lire / télécharger l'engagement</button></div>`;
   }
-  if(!soutEstProprio()) return "";
+  if(!soutEstProprio() || (S.sout&&S.sout.mode==="etu")) return "";
   return `<div class="sout-card"><p class="sout-p"><b>Réservé au propriétaire de l'app.</b> Signez cette déclaration : elle sera affichée à tous les membres dans cet onglet.</p>
     <div class="sout-clause">${soutProprioTexte(S.session.nom||"", S.session.fonction||"").map(t=>`<p>${esc(t)}</p>`).join("")}</div>
     <div class="row-btn" style="margin-top:12px"><button class="btn" data-action="sout-proprio-signer">✍ Signer la déclaration</button></div></div>`;
@@ -5045,7 +5092,7 @@ function soutTextePause(iso){
   return "Lamia n'accepte pas de nouvelles conversations pour le moment"+(q?" (jusqu'au "+q+")":"")+". Vos conversations en cours restent ouvertes. En cas d'urgence : 112 ou 0800 32 123.";
 }
 function soutBlocPause(){
-  const p=S.sout&&S.sout.info&&S.sout.info.pause_jusqua;
+  const s=S.sout, p=s&&s.info&&(s.lamia.espace==="etu"?s.info.pause_etu_jusqua:s.info.pause_jusqua);
   if(p) return `<div class="sout-card"><b>Nouvelles conversations :</b> <span style="color:var(--amber)">en pause jusqu'au ${esc(fmtQuand(p))}</span>
       <div class="row-btn" style="margin-top:8px"><button class="btn ghost sm" data-action="sout-pause" data-h="0">Reprendre maintenant</button></div></div>`;
   return `<div class="sout-card"><b>Nouvelles conversations :</b> ouvertes
@@ -5065,8 +5112,36 @@ async function soutLamiaPause(heures){
   const s=soutEtat();
   const jusqua=heures>0?new Date(Date.now()+heures*3600000).toISOString():null;
   if(heures>0 && !(await modaleConfirm("Mettre en pause les nouvelles conversations pendant "+(heures>=168?"7 jours":heures+" heures")+" ?\n\nLes conversations en cours restent ouvertes. Les membres verront que l'espace n'accepte pas de nouvelles conversations pour le moment.","Pause"))) return;
-  try{ await soutRpc("soutien_lamia_pause", {p_jusqua:jusqua}); s.info=await soutRpc("soutien_info"); soutRedessiner(); }
+  try{ await soutRpc("soutien_lamia_pause", {p_jusqua:jusqua, p_espace:s.lamia.espace||"ca"}); s.info=await soutRpc("soutien_info"); soutRedessiner(); }
   catch(e){ modaleInfo("Pause impossible : "+(e.message||e)); }
+}
+
+
+/* ---------- Fiche « aides possibles » envoyée par Lamia ----------
+   Un message chiffré comme les autres, affiché sous forme de fiche cliquable
+   (numéros appelables d'un geste). Le texte brut sert de secours. */
+function soutRessourcesTexte(){
+  return "Voici des services qui peuvent vous aider :\n\n"+SOUT_RESSOURCES.map(g=>g.groupe+"\n"+g.items.map(r=>"• "+r.nom+(r.tel?" — "+r.tel:"")+(r.whatsapp?" (WhatsApp "+r.whatsapp+")":"")+(r.mail?" — "+r.mail:"")).join("\n")).join("\n\n");
+}
+function soutFicheRessources(mine, ts){
+  const ligne=r=>`<div class="sout-res-l"><b>${esc(r.nom)}</b>${r.desc?`<br><span class="sout-small" style="color:inherit;opacity:.8">${esc(r.desc)}</span>`:""}
+    <div style="margin-top:2px">${r.tel?`📞 ${soutTel(r.tel)}`:""}${r.whatsapp?` · WhatsApp ${soutTel(r.whatsapp)}`:""}${r.mail?` · ✉ <a href="mailto:${esc(r.mail)}">${esc(r.mail)}</a>`:""}${r.web?` · <a href="${esc(r.web)}" target="_blank" rel="noopener">site</a>`:""}</div></div>`;
+  const groupes=[...SOUT_RESSOURCES].reverse();   /* urgences d'abord */
+  return `<div class="sout-fiche">
+    <div style="font-weight:700;margin-bottom:6px">🆘 ${mine?"Vous avez envoyé la liste des aides":"Lamia vous a envoyé des contacts qui peuvent vous aider"}</div>
+    ${groupes.map(g=>`<div class="sout-fiche-g">${esc(g.groupe)}</div>${g.items.map(ligne).join("")}`).join("")}
+    ${mine?"":`<p class="sout-small" style="color:inherit;opacity:.85;margin:8px 0 0">Ces services sont confidentiels, et les lignes d'urgence et d'écoute sont gratuites. Vous pouvez les contacter quand vous voulez, même sans prévenir Lamia.</p>`}
+    <div class="m-meta" style="margin-top:6px">🔒 ${mine?"Vous":"Lamia"} · ${esc(fmtQuand(ts))}</div></div>`;
+}
+async function soutLamiaEnvoyerRessources(){
+  const s=soutEtat(); const o=s.lamia.ouverte; if(!o||!o.clause||o.bloquee||s.occupe) return;
+  if(!(await modaleConfirm("Envoyer à la personne la liste des aides (urgences, Centre de Prévention du Suicide, Télé-Accueil, services de l'ULB) ?\n\nElle la recevra dans la conversation, avec des numéros qu'elle peut appeler d'un geste.","Envoyer la liste des aides"))) return;
+  s.occupe=true;
+  try{
+    const e=await soutChiffrerMsg(o.cle, {t:soutRessourcesTexte(), res:1}, o.id+":lamia:texte");
+    await soutRpc("soutien_lamia_repondre", {p_id:o.id, p_iv:e.iv, p_contenu:e.ct});
+    s.occupe=false; await soutLamiaOuvrir(o.id, true); soutRedessiner();
+  }catch(e){ s.occupe=false; modaleInfo("Envoi impossible : "+(e.message||e)); }
 }
 
 /* ---------- Statistiques ---------- */
@@ -5089,7 +5164,7 @@ function soutTableStats(st, pourPDF){
 }
 function soutStatsPDF(){
   const s=S.sout; const st=s&&s.lamia.stats; if(!st) return;
-  const corps=`<div style="max-width:900px"><h1>Statistiques — Espace Soutien psychologique</h1>
+  const corps=`<div style="max-width:900px"><h1>Statistiques — Soutien psychologique ${s.lamia.espace==="etu"?"(étudiant·es)":"(membres du CA)"}</h1>
     <p class="d">Document réservé à ${esc(S.session.nom||"")} — généré le ${esc(new Date().toLocaleString("fr-BE"))}</p>
     <p>Conversations actives au moment de l'export : <b>${Number(st.actives||0)}</b></p>
     ${soutTableStats(st, true)}
@@ -5099,6 +5174,7 @@ function soutStatsPDF(){
 
 /* ---------- Sortie rapide ---------- */
 function soutSortie(){
+  if(S.etu){ etuSortie(); return; }
   const s=S.sout;
   if(s){ s.ouverte=null; s.lamia.ouverte=null; s.vue="accueil"; }
   const champ=document.getElementById("sout_txt"); if(champ) champ.value="";
@@ -5137,6 +5213,7 @@ function soutBulles(o, pourLamia){
         <span class="sout-small">par ${esc(m.d?m.d.nom:"Lamia")} le ${esc(fmtQuand(m.d?m.d.signeLe:m.ts))}${m.d?" — code "+esc(prEmpreinteCourte(m.d.empreinte)):""}</span><br>
         ${m.d?`<button class="btn ghost sm" data-action="sout-clause-pdf" data-id="${esc(m.id)}" style="margin-top:8px">📄 Lire / télécharger le PDF</button>`:`<span class="sout-small">Document illisible.</span>`}</div>`;
     }
+    if(m.d && m.d.res) return soutFicheRessources(mine, m.ts);
     const txt=m.d&&typeof m.d.t==="string"?esc(m.d.t):`<i>Message illisible</i>`;
     return `<div class="bub ${mine?"me":"them"}"><div style="white-space:pre-wrap;word-break:break-word">${txt}</div><div class="m-meta">🔒 ${qui} · ${esc(fmtQuand(m.ts))}</div></div>`;
   }).join("");
@@ -5256,6 +5333,7 @@ function soutVueConvLamia(){
     ? `<div class="sout-bloque">🚫 <b>Conversation bloquée</b> le ${esc(fmtQuand(o.bloquee))}. La personne ne peut plus vous écrire ici.
         <div class="row-btn" style="margin-top:8px"><button class="btn ghost sm" data-action="sout-l-bloquer" data-v="0">Débloquer</button></div></div>`
     : o.clause ? soutComposer("Votre réponse…","sout-l-repondre",false)
+      +`<div class="row-btn" style="margin-top:8px"><button class="btn ghost sm" data-action="sout-l-ressources">🆘 Envoyer la liste des aides</button></div>`
     : `<div class="sout-card"><p class="sout-p"><b>Avant de répondre</b>, signez l'engagement de confidentialité. Il sera transmis à la personne dans la conversation.</p>
         <div class="sout-clause">${soutClauseHTML(S.session.nom||"", o.code)}</div>
         <div class="row-btn" style="margin-top:12px"><button class="btn" data-action="sout-l-signer">✍ Signer et transmettre l'engagement</button></div></div>
@@ -5276,14 +5354,26 @@ function soutVueStats(){
       <div class="row-btn" style="margin-top:12px"><button class="btn sm" data-action="sout-stats-pdf">📄 Télécharger en PDF</button></div></div>`;
 }
 
+function tabSoutienEtu(){
+  const s=soutEtat(); soutLamiaEspace("etu");
+  if(!s.charge && !s.chargement && !s.erreur) setTimeout(soutCharger,0);
+  let corps;
+  if(s.erreur) corps=`<div class="sout-card"><p class="sout-p" style="color:var(--red)">${esc(s.erreur)}</p><div class="row-btn"><button class="btn ghost sm" data-action="sout-recharger">Réessayer</button></div></div>`;
+  else if(!s.info || (!s.charge && s.chargement)) corps=`<div class="empty">Chargement sécurisé…</div>`;
+  else if(!s.info.est_lamia) corps=`<div class="empty">Cet onglet est réservé à Lamia.</div>`;
+  else corps=`<p class="sout-small" style="margin:0 0 10px">Conversations anonymes des étudiant·es venus par le lien public. Elles sont séparées de celles du CA.</p>`+soutVueLamia();
+  return `<div class="sout-zone"><div class="sout-top"><h2 class="serif" style="margin:0;font-size:22px">🎓 Soutien psy — étudiants</h2>
+    <button class="btn ghost sm" data-action="etu-partage">🔗 Liens étudiants</button></div>${corps}</div>`;
+}
 function tabSoutien(){
-  const s=soutEtat();
+  const s=soutEtat(); soutLamiaEspace("ca");
   if(!s.charge && !s.chargement && !s.erreur) setTimeout(soutCharger,0);
   let corps;
   if(s.erreur) corps=`<div class="sout-card"><p class="sout-p" style="color:var(--red)">${esc(s.erreur)}</p><div class="row-btn"><button class="btn ghost sm" data-action="sout-recharger">Réessayer</button></div></div>`;
   else if(!s.info || (!s.charge && s.chargement)) corps=`<div class="empty">Chargement sécurisé…</div>`;
   else corps = s.info.est_lamia ? soutVueLamia() : soutVueMembre();
-  return `<div class="sout-zone">${soutEntete()}${corps}</div>`;
+  const pied=(s.info&&s.vue==="accueil"&&!s.ouverte&&!(s.lamia&&s.lamia.ouverte))?`<div class="row-btn" style="margin-top:18px"><button class="btn ghost sm" data-action="etu-bilan">📊 Bilan anonyme de l'entraide étudiante</button><button class="btn ghost sm" data-action="etu-partage">🔗 Liens pour les étudiant·es</button></div>`:"";
+  return `<div class="sout-zone">${soutEntete()}${corps}${pied}</div>`;
 }
 
 function soutAide(){
@@ -5321,6 +5411,7 @@ document.addEventListener("click", async e=>{
       case "sout-stats-pdf": soutStatsPDF(); break;
       case "sout-proprio-signer": await soutProprioSigner(); break;
       case "sout-proprio-pdf": soutProprioPDF(); break;
+      case "sout-l-ressources": await soutLamiaEnvoyerRessources(); break;
       case "sout-l-bloquer": await soutLamiaBloquer(el.dataset.v==="1"); break;
       case "sout-pause": await soutLamiaPause(Number(el.dataset.h)); break;
     }
@@ -5328,7 +5419,7 @@ document.addEventListener("click", async e=>{
 });
 /* Entrée = envoyer (Maj+Entrée = retour à la ligne) sur ordinateur. */
 document.addEventListener("keydown", e=>{
-  if(S.tab!=="soutien") return;
+  if(!S.etu && S.tab!=="soutien" && S.tab!=="soutien_etu") return;
   if(e.key==="Escape" && !document.querySelector(".ca-mod")){ soutSortie(); return; }
   if(e.key==="Enter" && !e.shiftKey && e.target && e.target.id==="sout_txt" && !("ontouchstart" in window)){
     e.preventDefault(); const s=S.sout; if(s&&s.info&&s.info.est_lamia) soutLamiaRepondre(); else soutMembreEnvoyer();
@@ -5344,7 +5435,1088 @@ document.addEventListener("selectstart", e=>{
   if(n&&n.closest&&n.closest(".sout-zone") && !/^(TEXTAREA|INPUT)$/.test(n.tagName)) e.preventDefault();
 }, true);
 /* Nouveaux messages : vérification toutes les 15 s quand l'onglet est ouvert. */
-setInterval(()=>{ if(S.session && S.tab==="soutien" && document.visibilityState==="visible") soutRafraichir(); }, SOUT_POLL_MS);
+setInterval(()=>{ if(document.visibilityState!=="visible") return;
+  if((S.session && (S.tab==="soutien"||S.tab==="soutien_etu")) || (S.etu && S.etu.vue==="psy")) soutRafraichir(); }, SOUT_POLL_MS);
+
+window.ETU_QR={"general": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 37 37\" width=\"100%\" height=\"100%\" shape-rendering=\"crispEdges\"><rect width=\"37\" height=\"37\" fill=\"#fff\"/><path d=\"M2,2h1v1h-1zM3,2h1v1h-1zM4,2h1v1h-1zM5,2h1v1h-1zM6,2h1v1h-1zM7,2h1v1h-1zM8,2h1v1h-1zM10,2h1v1h-1zM11,2h1v1h-1zM13,2h1v1h-1zM14,2h1v1h-1zM15,2h1v1h-1zM16,2h1v1h-1zM17,2h1v1h-1zM18,2h1v1h-1zM20,2h1v1h-1zM25,2h1v1h-1zM28,2h1v1h-1zM29,2h1v1h-1zM30,2h1v1h-1zM31,2h1v1h-1zM32,2h1v1h-1zM33,2h1v1h-1zM34,2h1v1h-1zM2,3h1v1h-1zM8,3h1v1h-1zM11,3h1v1h-1zM12,3h1v1h-1zM14,3h1v1h-1zM15,3h1v1h-1zM16,3h1v1h-1zM18,3h1v1h-1zM20,3h1v1h-1zM21,3h1v1h-1zM22,3h1v1h-1zM24,3h1v1h-1zM28,3h1v1h-1zM34,3h1v1h-1zM2,4h1v1h-1zM4,4h1v1h-1zM5,4h1v1h-1zM6,4h1v1h-1zM8,4h1v1h-1zM12,4h1v1h-1zM16,4h1v1h-1zM17,4h1v1h-1zM18,4h1v1h-1zM19,4h1v1h-1zM20,4h1v1h-1zM21,4h1v1h-1zM22,4h1v1h-1zM23,4h1v1h-1zM25,4h1v1h-1zM26,4h1v1h-1zM28,4h1v1h-1zM30,4h1v1h-1zM31,4h1v1h-1zM32,4h1v1h-1zM34,4h1v1h-1zM2,5h1v1h-1zM4,5h1v1h-1zM5,5h1v1h-1zM6,5h1v1h-1zM8,5h1v1h-1zM10,5h1v1h-1zM13,5h1v1h-1zM14,5h1v1h-1zM18,5h1v1h-1zM19,5h1v1h-1zM21,5h1v1h-1zM25,5h1v1h-1zM26,5h1v1h-1zM28,5h1v1h-1zM30,5h1v1h-1zM31,5h1v1h-1zM32,5h1v1h-1zM34,5h1v1h-1zM2,6h1v1h-1zM4,6h1v1h-1zM5,6h1v1h-1zM6,6h1v1h-1zM8,6h1v1h-1zM10,6h1v1h-1zM12,6h1v1h-1zM13,6h1v1h-1zM18,6h1v1h-1zM21,6h1v1h-1zM24,6h1v1h-1zM25,6h1v1h-1zM28,6h1v1h-1zM30,6h1v1h-1zM31,6h1v1h-1zM32,6h1v1h-1zM34,6h1v1h-1zM2,7h1v1h-1zM8,7h1v1h-1zM10,7h1v1h-1zM11,7h1v1h-1zM12,7h1v1h-1zM13,7h1v1h-1zM14,7h1v1h-1zM17,7h1v1h-1zM19,7h1v1h-1zM22,7h1v1h-1zM24,7h1v1h-1zM28,7h1v1h-1zM34,7h1v1h-1zM2,8h1v1h-1zM3,8h1v1h-1zM4,8h1v1h-1zM5,8h1v1h-1zM6,8h1v1h-1zM7,8h1v1h-1zM8,8h1v1h-1zM10,8h1v1h-1zM12,8h1v1h-1zM14,8h1v1h-1zM16,8h1v1h-1zM18,8h1v1h-1zM20,8h1v1h-1zM22,8h1v1h-1zM24,8h1v1h-1zM26,8h1v1h-1zM28,8h1v1h-1zM29,8h1v1h-1zM30,8h1v1h-1zM31,8h1v1h-1zM32,8h1v1h-1zM33,8h1v1h-1zM34,8h1v1h-1zM10,9h1v1h-1zM13,9h1v1h-1zM16,9h1v1h-1zM19,9h1v1h-1zM20,9h1v1h-1zM21,9h1v1h-1zM22,9h1v1h-1zM23,9h1v1h-1zM26,9h1v1h-1zM2,10h1v1h-1zM6,10h1v1h-1zM8,10h1v1h-1zM9,10h1v1h-1zM10,10h1v1h-1zM12,10h1v1h-1zM14,10h1v1h-1zM16,10h1v1h-1zM17,10h1v1h-1zM19,10h1v1h-1zM22,10h1v1h-1zM23,10h1v1h-1zM24,10h1v1h-1zM25,10h1v1h-1zM27,10h1v1h-1zM28,10h1v1h-1zM29,10h1v1h-1zM30,10h1v1h-1zM31,10h1v1h-1zM34,10h1v1h-1zM2,11h1v1h-1zM4,11h1v1h-1zM5,11h1v1h-1zM7,11h1v1h-1zM12,11h1v1h-1zM13,11h1v1h-1zM14,11h1v1h-1zM16,11h1v1h-1zM17,11h1v1h-1zM18,11h1v1h-1zM19,11h1v1h-1zM20,11h1v1h-1zM22,11h1v1h-1zM24,11h1v1h-1zM25,11h1v1h-1zM27,11h1v1h-1zM31,11h1v1h-1zM32,11h1v1h-1zM3,12h1v1h-1zM4,12h1v1h-1zM6,12h1v1h-1zM8,12h1v1h-1zM9,12h1v1h-1zM11,12h1v1h-1zM12,12h1v1h-1zM13,12h1v1h-1zM15,12h1v1h-1zM16,12h1v1h-1zM17,12h1v1h-1zM18,12h1v1h-1zM20,12h1v1h-1zM22,12h1v1h-1zM23,12h1v1h-1zM25,12h1v1h-1zM26,12h1v1h-1zM31,12h1v1h-1zM33,12h1v1h-1zM3,13h1v1h-1zM5,13h1v1h-1zM9,13h1v1h-1zM11,13h1v1h-1zM15,13h1v1h-1zM23,13h1v1h-1zM24,13h1v1h-1zM27,13h1v1h-1zM28,13h1v1h-1zM33,13h1v1h-1zM2,14h1v1h-1zM3,14h1v1h-1zM8,14h1v1h-1zM9,14h1v1h-1zM11,14h1v1h-1zM13,14h1v1h-1zM14,14h1v1h-1zM15,14h1v1h-1zM17,14h1v1h-1zM18,14h1v1h-1zM23,14h1v1h-1zM24,14h1v1h-1zM25,14h1v1h-1zM26,14h1v1h-1zM28,14h1v1h-1zM30,14h1v1h-1zM31,14h1v1h-1zM34,14h1v1h-1zM2,15h1v1h-1zM5,15h1v1h-1zM10,15h1v1h-1zM11,15h1v1h-1zM12,15h1v1h-1zM13,15h1v1h-1zM14,15h1v1h-1zM16,15h1v1h-1zM19,15h1v1h-1zM20,15h1v1h-1zM21,15h1v1h-1zM22,15h1v1h-1zM25,15h1v1h-1zM27,15h1v1h-1zM29,15h1v1h-1zM32,15h1v1h-1zM6,16h1v1h-1zM8,16h1v1h-1zM11,16h1v1h-1zM15,16h1v1h-1zM16,16h1v1h-1zM17,16h1v1h-1zM19,16h1v1h-1zM22,16h1v1h-1zM24,16h1v1h-1zM25,16h1v1h-1zM26,16h1v1h-1zM27,16h1v1h-1zM28,16h1v1h-1zM30,16h1v1h-1zM31,16h1v1h-1zM32,16h1v1h-1zM33,16h1v1h-1zM10,17h1v1h-1zM11,17h1v1h-1zM14,17h1v1h-1zM15,17h1v1h-1zM16,17h1v1h-1zM17,17h1v1h-1zM18,17h1v1h-1zM19,17h1v1h-1zM20,17h1v1h-1zM23,17h1v1h-1zM27,17h1v1h-1zM28,17h1v1h-1zM4,18h1v1h-1zM7,18h1v1h-1zM8,18h1v1h-1zM10,18h1v1h-1zM11,18h1v1h-1zM12,18h1v1h-1zM15,18h1v1h-1zM19,18h1v1h-1zM21,18h1v1h-1zM22,18h1v1h-1zM23,18h1v1h-1zM24,18h1v1h-1zM26,18h1v1h-1zM28,18h1v1h-1zM30,18h1v1h-1zM33,18h1v1h-1zM2,19h1v1h-1zM3,19h1v1h-1zM4,19h1v1h-1zM5,19h1v1h-1zM10,19h1v1h-1zM16,19h1v1h-1zM17,19h1v1h-1zM23,19h1v1h-1zM25,19h1v1h-1zM27,19h1v1h-1zM31,19h1v1h-1zM32,19h1v1h-1zM3,20h1v1h-1zM5,20h1v1h-1zM7,20h1v1h-1zM8,20h1v1h-1zM9,20h1v1h-1zM11,20h1v1h-1zM12,20h1v1h-1zM16,20h1v1h-1zM17,20h1v1h-1zM18,20h1v1h-1zM19,20h1v1h-1zM22,20h1v1h-1zM23,20h1v1h-1zM24,20h1v1h-1zM25,20h1v1h-1zM29,20h1v1h-1zM31,20h1v1h-1zM33,20h1v1h-1zM2,21h1v1h-1zM5,21h1v1h-1zM11,21h1v1h-1zM14,21h1v1h-1zM18,21h1v1h-1zM19,21h1v1h-1zM20,21h1v1h-1zM23,21h1v1h-1zM27,21h1v1h-1zM29,21h1v1h-1zM34,21h1v1h-1zM4,22h1v1h-1zM5,22h1v1h-1zM6,22h1v1h-1zM8,22h1v1h-1zM12,22h1v1h-1zM20,22h1v1h-1zM21,22h1v1h-1zM22,22h1v1h-1zM23,22h1v1h-1zM24,22h1v1h-1zM25,22h1v1h-1zM27,22h1v1h-1zM28,22h1v1h-1zM30,22h1v1h-1zM31,22h1v1h-1zM33,22h1v1h-1zM34,22h1v1h-1zM2,23h1v1h-1zM3,23h1v1h-1zM4,23h1v1h-1zM5,23h1v1h-1zM6,23h1v1h-1zM9,23h1v1h-1zM11,23h1v1h-1zM12,23h1v1h-1zM15,23h1v1h-1zM18,23h1v1h-1zM21,23h1v1h-1zM25,23h1v1h-1zM27,23h1v1h-1zM31,23h1v1h-1zM32,23h1v1h-1zM33,23h1v1h-1zM5,24h1v1h-1zM6,24h1v1h-1zM7,24h1v1h-1zM8,24h1v1h-1zM10,24h1v1h-1zM11,24h1v1h-1zM13,24h1v1h-1zM14,24h1v1h-1zM15,24h1v1h-1zM16,24h1v1h-1zM18,24h1v1h-1zM19,24h1v1h-1zM20,24h1v1h-1zM21,24h1v1h-1zM23,24h1v1h-1zM24,24h1v1h-1zM25,24h1v1h-1zM26,24h1v1h-1zM30,24h1v1h-1zM33,24h1v1h-1zM4,25h1v1h-1zM5,25h1v1h-1zM6,25h1v1h-1zM11,25h1v1h-1zM12,25h1v1h-1zM14,25h1v1h-1zM15,25h1v1h-1zM16,25h1v1h-1zM19,25h1v1h-1zM21,25h1v1h-1zM22,25h1v1h-1zM23,25h1v1h-1zM26,25h1v1h-1zM28,25h1v1h-1zM30,25h1v1h-1zM33,25h1v1h-1zM2,26h1v1h-1zM3,26h1v1h-1zM4,26h1v1h-1zM6,26h1v1h-1zM7,26h1v1h-1zM8,26h1v1h-1zM11,26h1v1h-1zM12,26h1v1h-1zM13,26h1v1h-1zM15,26h1v1h-1zM16,26h1v1h-1zM17,26h1v1h-1zM19,26h1v1h-1zM22,26h1v1h-1zM23,26h1v1h-1zM24,26h1v1h-1zM25,26h1v1h-1zM26,26h1v1h-1zM27,26h1v1h-1zM28,26h1v1h-1zM29,26h1v1h-1zM30,26h1v1h-1zM33,26h1v1h-1zM34,26h1v1h-1zM10,27h1v1h-1zM12,27h1v1h-1zM14,27h1v1h-1zM16,27h1v1h-1zM17,27h1v1h-1zM18,27h1v1h-1zM19,27h1v1h-1zM20,27h1v1h-1zM24,27h1v1h-1zM26,27h1v1h-1zM30,27h1v1h-1zM32,27h1v1h-1zM33,27h1v1h-1zM2,28h1v1h-1zM3,28h1v1h-1zM4,28h1v1h-1zM5,28h1v1h-1zM6,28h1v1h-1zM7,28h1v1h-1zM8,28h1v1h-1zM10,28h1v1h-1zM12,28h1v1h-1zM13,28h1v1h-1zM14,28h1v1h-1zM15,28h1v1h-1zM16,28h1v1h-1zM17,28h1v1h-1zM20,28h1v1h-1zM22,28h1v1h-1zM23,28h1v1h-1zM26,28h1v1h-1zM28,28h1v1h-1zM30,28h1v1h-1zM31,28h1v1h-1zM33,28h1v1h-1zM2,29h1v1h-1zM8,29h1v1h-1zM11,29h1v1h-1zM13,29h1v1h-1zM15,29h1v1h-1zM16,29h1v1h-1zM17,29h1v1h-1zM22,29h1v1h-1zM23,29h1v1h-1zM26,29h1v1h-1zM30,29h1v1h-1zM33,29h1v1h-1zM34,29h1v1h-1zM2,30h1v1h-1zM4,30h1v1h-1zM5,30h1v1h-1zM6,30h1v1h-1zM8,30h1v1h-1zM10,30h1v1h-1zM12,30h1v1h-1zM13,30h1v1h-1zM18,30h1v1h-1zM22,30h1v1h-1zM23,30h1v1h-1zM24,30h1v1h-1zM26,30h1v1h-1zM27,30h1v1h-1zM28,30h1v1h-1zM29,30h1v1h-1zM30,30h1v1h-1zM31,30h1v1h-1zM2,31h1v1h-1zM4,31h1v1h-1zM5,31h1v1h-1zM6,31h1v1h-1zM8,31h1v1h-1zM12,31h1v1h-1zM19,31h1v1h-1zM20,31h1v1h-1zM21,31h1v1h-1zM22,31h1v1h-1zM25,31h1v1h-1zM28,31h1v1h-1zM29,31h1v1h-1zM30,31h1v1h-1zM32,31h1v1h-1zM2,32h1v1h-1zM4,32h1v1h-1zM5,32h1v1h-1zM6,32h1v1h-1zM8,32h1v1h-1zM11,32h1v1h-1zM13,32h1v1h-1zM14,32h1v1h-1zM15,32h1v1h-1zM17,32h1v1h-1zM19,32h1v1h-1zM23,32h1v1h-1zM26,32h1v1h-1zM28,32h1v1h-1zM29,32h1v1h-1zM30,32h1v1h-1zM2,33h1v1h-1zM8,33h1v1h-1zM11,33h1v1h-1zM12,33h1v1h-1zM14,33h1v1h-1zM17,33h1v1h-1zM18,33h1v1h-1zM19,33h1v1h-1zM21,33h1v1h-1zM22,33h1v1h-1zM23,33h1v1h-1zM24,33h1v1h-1zM26,33h1v1h-1zM27,33h1v1h-1zM28,33h1v1h-1zM2,34h1v1h-1zM3,34h1v1h-1zM4,34h1v1h-1zM5,34h1v1h-1zM6,34h1v1h-1zM7,34h1v1h-1zM8,34h1v1h-1zM10,34h1v1h-1zM11,34h1v1h-1zM12,34h1v1h-1zM14,34h1v1h-1zM16,34h1v1h-1zM18,34h1v1h-1zM19,34h1v1h-1zM22,34h1v1h-1zM23,34h1v1h-1zM26,34h1v1h-1zM31,34h1v1h-1zM34,34h1v1h-1z\" fill=\"#000\"/></svg>", "psy": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 37 37\" width=\"100%\" height=\"100%\" shape-rendering=\"crispEdges\"><rect width=\"37\" height=\"37\" fill=\"#fff\"/><path d=\"M2,2h1v1h-1zM3,2h1v1h-1zM4,2h1v1h-1zM5,2h1v1h-1zM6,2h1v1h-1zM7,2h1v1h-1zM8,2h1v1h-1zM10,2h1v1h-1zM13,2h1v1h-1zM15,2h1v1h-1zM16,2h1v1h-1zM17,2h1v1h-1zM18,2h1v1h-1zM19,2h1v1h-1zM20,2h1v1h-1zM25,2h1v1h-1zM28,2h1v1h-1zM29,2h1v1h-1zM30,2h1v1h-1zM31,2h1v1h-1zM32,2h1v1h-1zM33,2h1v1h-1zM34,2h1v1h-1zM2,3h1v1h-1zM8,3h1v1h-1zM11,3h1v1h-1zM12,3h1v1h-1zM13,3h1v1h-1zM14,3h1v1h-1zM15,3h1v1h-1zM16,3h1v1h-1zM18,3h1v1h-1zM20,3h1v1h-1zM21,3h1v1h-1zM22,3h1v1h-1zM24,3h1v1h-1zM28,3h1v1h-1zM34,3h1v1h-1zM2,4h1v1h-1zM4,4h1v1h-1zM5,4h1v1h-1zM6,4h1v1h-1zM8,4h1v1h-1zM11,4h1v1h-1zM12,4h1v1h-1zM16,4h1v1h-1zM17,4h1v1h-1zM18,4h1v1h-1zM19,4h1v1h-1zM20,4h1v1h-1zM21,4h1v1h-1zM22,4h1v1h-1zM23,4h1v1h-1zM25,4h1v1h-1zM26,4h1v1h-1zM28,4h1v1h-1zM30,4h1v1h-1zM31,4h1v1h-1zM32,4h1v1h-1zM34,4h1v1h-1zM2,5h1v1h-1zM4,5h1v1h-1zM5,5h1v1h-1zM6,5h1v1h-1zM8,5h1v1h-1zM10,5h1v1h-1zM11,5h1v1h-1zM12,5h1v1h-1zM13,5h1v1h-1zM14,5h1v1h-1zM18,5h1v1h-1zM19,5h1v1h-1zM21,5h1v1h-1zM22,5h1v1h-1zM25,5h1v1h-1zM26,5h1v1h-1zM28,5h1v1h-1zM30,5h1v1h-1zM31,5h1v1h-1zM32,5h1v1h-1zM34,5h1v1h-1zM2,6h1v1h-1zM4,6h1v1h-1zM5,6h1v1h-1zM6,6h1v1h-1zM8,6h1v1h-1zM10,6h1v1h-1zM11,6h1v1h-1zM14,6h1v1h-1zM18,6h1v1h-1zM20,6h1v1h-1zM24,6h1v1h-1zM25,6h1v1h-1zM28,6h1v1h-1zM30,6h1v1h-1zM31,6h1v1h-1zM32,6h1v1h-1zM34,6h1v1h-1zM2,7h1v1h-1zM8,7h1v1h-1zM10,7h1v1h-1zM12,7h1v1h-1zM13,7h1v1h-1zM17,7h1v1h-1zM19,7h1v1h-1zM21,7h1v1h-1zM24,7h1v1h-1zM28,7h1v1h-1zM34,7h1v1h-1zM2,8h1v1h-1zM3,8h1v1h-1zM4,8h1v1h-1zM5,8h1v1h-1zM6,8h1v1h-1zM7,8h1v1h-1zM8,8h1v1h-1zM10,8h1v1h-1zM12,8h1v1h-1zM14,8h1v1h-1zM16,8h1v1h-1zM18,8h1v1h-1zM20,8h1v1h-1zM22,8h1v1h-1zM24,8h1v1h-1zM26,8h1v1h-1zM28,8h1v1h-1zM29,8h1v1h-1zM30,8h1v1h-1zM31,8h1v1h-1zM32,8h1v1h-1zM33,8h1v1h-1zM34,8h1v1h-1zM10,9h1v1h-1zM11,9h1v1h-1zM12,9h1v1h-1zM13,9h1v1h-1zM16,9h1v1h-1zM19,9h1v1h-1zM20,9h1v1h-1zM21,9h1v1h-1zM23,9h1v1h-1zM26,9h1v1h-1zM2,10h1v1h-1zM6,10h1v1h-1zM8,10h1v1h-1zM9,10h1v1h-1zM10,10h1v1h-1zM11,10h1v1h-1zM13,10h1v1h-1zM16,10h1v1h-1zM17,10h1v1h-1zM19,10h1v1h-1zM21,10h1v1h-1zM22,10h1v1h-1zM23,10h1v1h-1zM24,10h1v1h-1zM25,10h1v1h-1zM27,10h1v1h-1zM28,10h1v1h-1zM29,10h1v1h-1zM30,10h1v1h-1zM31,10h1v1h-1zM34,10h1v1h-1zM3,11h1v1h-1zM4,11h1v1h-1zM9,11h1v1h-1zM11,11h1v1h-1zM13,11h1v1h-1zM16,11h1v1h-1zM17,11h1v1h-1zM18,11h1v1h-1zM19,11h1v1h-1zM20,11h1v1h-1zM22,11h1v1h-1zM24,11h1v1h-1zM25,11h1v1h-1zM27,11h1v1h-1zM31,11h1v1h-1zM32,11h1v1h-1zM4,12h1v1h-1zM5,12h1v1h-1zM6,12h1v1h-1zM7,12h1v1h-1zM8,12h1v1h-1zM9,12h1v1h-1zM10,12h1v1h-1zM13,12h1v1h-1zM14,12h1v1h-1zM15,12h1v1h-1zM16,12h1v1h-1zM17,12h1v1h-1zM18,12h1v1h-1zM20,12h1v1h-1zM22,12h1v1h-1zM23,12h1v1h-1zM25,12h1v1h-1zM26,12h1v1h-1zM31,12h1v1h-1zM33,12h1v1h-1zM3,13h1v1h-1zM4,13h1v1h-1zM5,13h1v1h-1zM6,13h1v1h-1zM9,13h1v1h-1zM10,13h1v1h-1zM11,13h1v1h-1zM13,13h1v1h-1zM15,13h1v1h-1zM23,13h1v1h-1zM24,13h1v1h-1zM27,13h1v1h-1zM28,13h1v1h-1zM33,13h1v1h-1zM5,14h1v1h-1zM6,14h1v1h-1zM7,14h1v1h-1zM8,14h1v1h-1zM9,14h1v1h-1zM10,14h1v1h-1zM11,14h1v1h-1zM13,14h1v1h-1zM14,14h1v1h-1zM15,14h1v1h-1zM17,14h1v1h-1zM18,14h1v1h-1zM23,14h1v1h-1zM24,14h1v1h-1zM25,14h1v1h-1zM26,14h1v1h-1zM28,14h1v1h-1zM30,14h1v1h-1zM31,14h1v1h-1zM34,14h1v1h-1zM3,15h1v1h-1zM4,15h1v1h-1zM6,15h1v1h-1zM9,15h1v1h-1zM11,15h1v1h-1zM12,15h1v1h-1zM15,15h1v1h-1zM16,15h1v1h-1zM19,15h1v1h-1zM20,15h1v1h-1zM25,15h1v1h-1zM27,15h1v1h-1zM29,15h1v1h-1zM32,15h1v1h-1zM2,16h1v1h-1zM3,16h1v1h-1zM4,16h1v1h-1zM5,16h1v1h-1zM6,16h1v1h-1zM7,16h1v1h-1zM8,16h1v1h-1zM13,16h1v1h-1zM14,16h1v1h-1zM16,16h1v1h-1zM17,16h1v1h-1zM19,16h1v1h-1zM24,16h1v1h-1zM25,16h1v1h-1zM26,16h1v1h-1zM27,16h1v1h-1zM28,16h1v1h-1zM30,16h1v1h-1zM31,16h1v1h-1zM32,16h1v1h-1zM33,16h1v1h-1zM2,17h1v1h-1zM3,17h1v1h-1zM4,17h1v1h-1zM10,17h1v1h-1zM15,17h1v1h-1zM17,17h1v1h-1zM18,17h1v1h-1zM19,17h1v1h-1zM20,17h1v1h-1zM23,17h1v1h-1zM27,17h1v1h-1zM28,17h1v1h-1zM5,18h1v1h-1zM6,18h1v1h-1zM8,18h1v1h-1zM9,18h1v1h-1zM13,18h1v1h-1zM19,18h1v1h-1zM21,18h1v1h-1zM22,18h1v1h-1zM23,18h1v1h-1zM24,18h1v1h-1zM26,18h1v1h-1zM28,18h1v1h-1zM30,18h1v1h-1zM33,18h1v1h-1zM3,19h1v1h-1zM5,19h1v1h-1zM6,19h1v1h-1zM12,19h1v1h-1zM17,19h1v1h-1zM23,19h1v1h-1zM25,19h1v1h-1zM27,19h1v1h-1zM31,19h1v1h-1zM32,19h1v1h-1zM2,20h1v1h-1zM3,20h1v1h-1zM6,20h1v1h-1zM7,20h1v1h-1zM8,20h1v1h-1zM9,20h1v1h-1zM10,20h1v1h-1zM11,20h1v1h-1zM13,20h1v1h-1zM15,20h1v1h-1zM17,20h1v1h-1zM18,20h1v1h-1zM19,20h1v1h-1zM22,20h1v1h-1zM23,20h1v1h-1zM24,20h1v1h-1zM25,20h1v1h-1zM29,20h1v1h-1zM31,20h1v1h-1zM33,20h1v1h-1zM2,21h1v1h-1zM7,21h1v1h-1zM9,21h1v1h-1zM10,21h1v1h-1zM11,21h1v1h-1zM13,21h1v1h-1zM15,21h1v1h-1zM16,21h1v1h-1zM18,21h1v1h-1zM19,21h1v1h-1zM20,21h1v1h-1zM23,21h1v1h-1zM27,21h1v1h-1zM29,21h1v1h-1zM34,21h1v1h-1zM2,22h1v1h-1zM3,22h1v1h-1zM5,22h1v1h-1zM8,22h1v1h-1zM9,22h1v1h-1zM13,22h1v1h-1zM15,22h1v1h-1zM16,22h1v1h-1zM20,22h1v1h-1zM21,22h1v1h-1zM23,22h1v1h-1zM24,22h1v1h-1zM25,22h1v1h-1zM27,22h1v1h-1zM28,22h1v1h-1zM30,22h1v1h-1zM31,22h1v1h-1zM33,22h1v1h-1zM34,22h1v1h-1zM2,23h1v1h-1zM3,23h1v1h-1zM6,23h1v1h-1zM7,23h1v1h-1zM11,23h1v1h-1zM13,23h1v1h-1zM14,23h1v1h-1zM15,23h1v1h-1zM16,23h1v1h-1zM18,23h1v1h-1zM25,23h1v1h-1zM27,23h1v1h-1zM31,23h1v1h-1zM32,23h1v1h-1zM33,23h1v1h-1zM6,24h1v1h-1zM7,24h1v1h-1zM8,24h1v1h-1zM10,24h1v1h-1zM11,24h1v1h-1zM14,24h1v1h-1zM16,24h1v1h-1zM18,24h1v1h-1zM19,24h1v1h-1zM20,24h1v1h-1zM22,24h1v1h-1zM23,24h1v1h-1zM24,24h1v1h-1zM25,24h1v1h-1zM26,24h1v1h-1zM30,24h1v1h-1zM33,24h1v1h-1zM4,25h1v1h-1zM10,25h1v1h-1zM11,25h1v1h-1zM13,25h1v1h-1zM14,25h1v1h-1zM15,25h1v1h-1zM16,25h1v1h-1zM19,25h1v1h-1zM22,25h1v1h-1zM23,25h1v1h-1zM26,25h1v1h-1zM28,25h1v1h-1zM30,25h1v1h-1zM33,25h1v1h-1zM2,26h1v1h-1zM3,26h1v1h-1zM4,26h1v1h-1zM5,26h1v1h-1zM7,26h1v1h-1zM8,26h1v1h-1zM9,26h1v1h-1zM10,26h1v1h-1zM11,26h1v1h-1zM12,26h1v1h-1zM13,26h1v1h-1zM15,26h1v1h-1zM17,26h1v1h-1zM19,26h1v1h-1zM22,26h1v1h-1zM23,26h1v1h-1zM24,26h1v1h-1zM25,26h1v1h-1zM26,26h1v1h-1zM27,26h1v1h-1zM28,26h1v1h-1zM29,26h1v1h-1zM30,26h1v1h-1zM34,26h1v1h-1zM10,27h1v1h-1zM11,27h1v1h-1zM13,27h1v1h-1zM16,27h1v1h-1zM17,27h1v1h-1zM18,27h1v1h-1zM19,27h1v1h-1zM20,27h1v1h-1zM24,27h1v1h-1zM26,27h1v1h-1zM30,27h1v1h-1zM32,27h1v1h-1zM33,27h1v1h-1zM2,28h1v1h-1zM3,28h1v1h-1zM4,28h1v1h-1zM5,28h1v1h-1zM6,28h1v1h-1zM7,28h1v1h-1zM8,28h1v1h-1zM10,28h1v1h-1zM14,28h1v1h-1zM15,28h1v1h-1zM17,28h1v1h-1zM20,28h1v1h-1zM22,28h1v1h-1zM23,28h1v1h-1zM26,28h1v1h-1zM28,28h1v1h-1zM30,28h1v1h-1zM31,28h1v1h-1zM33,28h1v1h-1zM2,29h1v1h-1zM8,29h1v1h-1zM11,29h1v1h-1zM13,29h1v1h-1zM14,29h1v1h-1zM15,29h1v1h-1zM16,29h1v1h-1zM17,29h1v1h-1zM22,29h1v1h-1zM23,29h1v1h-1zM26,29h1v1h-1zM30,29h1v1h-1zM33,29h1v1h-1zM34,29h1v1h-1zM2,30h1v1h-1zM4,30h1v1h-1zM5,30h1v1h-1zM6,30h1v1h-1zM8,30h1v1h-1zM10,30h1v1h-1zM12,30h1v1h-1zM13,30h1v1h-1zM14,30h1v1h-1zM16,30h1v1h-1zM18,30h1v1h-1zM23,30h1v1h-1zM24,30h1v1h-1zM26,30h1v1h-1zM27,30h1v1h-1zM28,30h1v1h-1zM29,30h1v1h-1zM30,30h1v1h-1zM31,30h1v1h-1zM2,31h1v1h-1zM4,31h1v1h-1zM5,31h1v1h-1zM6,31h1v1h-1zM8,31h1v1h-1zM11,31h1v1h-1zM13,31h1v1h-1zM16,31h1v1h-1zM19,31h1v1h-1zM20,31h1v1h-1zM22,31h1v1h-1zM25,31h1v1h-1zM28,31h1v1h-1zM29,31h1v1h-1zM30,31h1v1h-1zM32,31h1v1h-1zM2,32h1v1h-1zM4,32h1v1h-1zM5,32h1v1h-1zM6,32h1v1h-1zM8,32h1v1h-1zM11,32h1v1h-1zM12,32h1v1h-1zM13,32h1v1h-1zM16,32h1v1h-1zM17,32h1v1h-1zM19,32h1v1h-1zM23,32h1v1h-1zM26,32h1v1h-1zM28,32h1v1h-1zM29,32h1v1h-1zM30,32h1v1h-1zM2,33h1v1h-1zM8,33h1v1h-1zM11,33h1v1h-1zM12,33h1v1h-1zM13,33h1v1h-1zM15,33h1v1h-1zM16,33h1v1h-1zM17,33h1v1h-1zM18,33h1v1h-1zM19,33h1v1h-1zM21,33h1v1h-1zM22,33h1v1h-1zM23,33h1v1h-1zM24,33h1v1h-1zM26,33h1v1h-1zM27,33h1v1h-1zM28,33h1v1h-1zM2,34h1v1h-1zM3,34h1v1h-1zM4,34h1v1h-1zM5,34h1v1h-1zM6,34h1v1h-1zM7,34h1v1h-1zM8,34h1v1h-1zM10,34h1v1h-1zM12,34h1v1h-1zM13,34h1v1h-1zM15,34h1v1h-1zM18,34h1v1h-1zM19,34h1v1h-1zM22,34h1v1h-1zM23,34h1v1h-1zM26,34h1v1h-1zM31,34h1v1h-1zM34,34h1v1h-1z\" fill=\"#000\"/></svg>", "social": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 37 37\" width=\"100%\" height=\"100%\" shape-rendering=\"crispEdges\"><rect width=\"37\" height=\"37\" fill=\"#fff\"/><path d=\"M2,2h1v1h-1zM3,2h1v1h-1zM4,2h1v1h-1zM5,2h1v1h-1zM6,2h1v1h-1zM7,2h1v1h-1zM8,2h1v1h-1zM12,2h1v1h-1zM14,2h1v1h-1zM15,2h1v1h-1zM18,2h1v1h-1zM20,2h1v1h-1zM21,2h1v1h-1zM22,2h1v1h-1zM23,2h1v1h-1zM25,2h1v1h-1zM28,2h1v1h-1zM29,2h1v1h-1zM30,2h1v1h-1zM31,2h1v1h-1zM32,2h1v1h-1zM33,2h1v1h-1zM34,2h1v1h-1zM2,3h1v1h-1zM8,3h1v1h-1zM12,3h1v1h-1zM13,3h1v1h-1zM15,3h1v1h-1zM16,3h1v1h-1zM17,3h1v1h-1zM18,3h1v1h-1zM19,3h1v1h-1zM20,3h1v1h-1zM23,3h1v1h-1zM24,3h1v1h-1zM28,3h1v1h-1zM34,3h1v1h-1zM2,4h1v1h-1zM4,4h1v1h-1zM5,4h1v1h-1zM6,4h1v1h-1zM8,4h1v1h-1zM10,4h1v1h-1zM13,4h1v1h-1zM14,4h1v1h-1zM15,4h1v1h-1zM17,4h1v1h-1zM21,4h1v1h-1zM22,4h1v1h-1zM23,4h1v1h-1zM24,4h1v1h-1zM28,4h1v1h-1zM30,4h1v1h-1zM31,4h1v1h-1zM32,4h1v1h-1zM34,4h1v1h-1zM2,5h1v1h-1zM4,5h1v1h-1zM5,5h1v1h-1zM6,5h1v1h-1zM8,5h1v1h-1zM10,5h1v1h-1zM11,5h1v1h-1zM16,5h1v1h-1zM18,5h1v1h-1zM19,5h1v1h-1zM21,5h1v1h-1zM24,5h1v1h-1zM28,5h1v1h-1zM30,5h1v1h-1zM31,5h1v1h-1zM32,5h1v1h-1zM34,5h1v1h-1zM2,6h1v1h-1zM4,6h1v1h-1zM5,6h1v1h-1zM6,6h1v1h-1zM8,6h1v1h-1zM10,6h1v1h-1zM12,6h1v1h-1zM13,6h1v1h-1zM14,6h1v1h-1zM15,6h1v1h-1zM17,6h1v1h-1zM20,6h1v1h-1zM21,6h1v1h-1zM22,6h1v1h-1zM23,6h1v1h-1zM24,6h1v1h-1zM25,6h1v1h-1zM28,6h1v1h-1zM30,6h1v1h-1zM31,6h1v1h-1zM32,6h1v1h-1zM34,6h1v1h-1zM2,7h1v1h-1zM8,7h1v1h-1zM10,7h1v1h-1zM12,7h1v1h-1zM14,7h1v1h-1zM15,7h1v1h-1zM16,7h1v1h-1zM17,7h1v1h-1zM18,7h1v1h-1zM19,7h1v1h-1zM22,7h1v1h-1zM23,7h1v1h-1zM24,7h1v1h-1zM28,7h1v1h-1zM34,7h1v1h-1zM2,8h1v1h-1zM3,8h1v1h-1zM4,8h1v1h-1zM5,8h1v1h-1zM6,8h1v1h-1zM7,8h1v1h-1zM8,8h1v1h-1zM10,8h1v1h-1zM12,8h1v1h-1zM14,8h1v1h-1zM16,8h1v1h-1zM18,8h1v1h-1zM20,8h1v1h-1zM22,8h1v1h-1zM24,8h1v1h-1zM26,8h1v1h-1zM28,8h1v1h-1zM29,8h1v1h-1zM30,8h1v1h-1zM31,8h1v1h-1zM32,8h1v1h-1zM33,8h1v1h-1zM34,8h1v1h-1zM10,9h1v1h-1zM12,9h1v1h-1zM13,9h1v1h-1zM16,9h1v1h-1zM17,9h1v1h-1zM21,9h1v1h-1zM22,9h1v1h-1zM23,9h1v1h-1zM24,9h1v1h-1zM25,9h1v1h-1zM2,10h1v1h-1zM4,10h1v1h-1zM5,10h1v1h-1zM6,10h1v1h-1zM7,10h1v1h-1zM8,10h1v1h-1zM11,10h1v1h-1zM13,10h1v1h-1zM14,10h1v1h-1zM15,10h1v1h-1zM17,10h1v1h-1zM19,10h1v1h-1zM21,10h1v1h-1zM24,10h1v1h-1zM25,10h1v1h-1zM28,10h1v1h-1zM29,10h1v1h-1zM30,10h1v1h-1zM31,10h1v1h-1zM32,10h1v1h-1zM3,11h1v1h-1zM6,11h1v1h-1zM10,11h1v1h-1zM11,11h1v1h-1zM13,11h1v1h-1zM14,11h1v1h-1zM18,11h1v1h-1zM19,11h1v1h-1zM20,11h1v1h-1zM21,11h1v1h-1zM23,11h1v1h-1zM24,11h1v1h-1zM25,11h1v1h-1zM28,11h1v1h-1zM29,11h1v1h-1zM31,11h1v1h-1zM32,11h1v1h-1zM33,11h1v1h-1zM34,11h1v1h-1zM2,12h1v1h-1zM3,12h1v1h-1zM4,12h1v1h-1zM6,12h1v1h-1zM7,12h1v1h-1zM8,12h1v1h-1zM10,12h1v1h-1zM14,12h1v1h-1zM17,12h1v1h-1zM20,12h1v1h-1zM22,12h1v1h-1zM23,12h1v1h-1zM24,12h1v1h-1zM30,12h1v1h-1zM32,12h1v1h-1zM33,12h1v1h-1zM2,13h1v1h-1zM3,13h1v1h-1zM4,13h1v1h-1zM5,13h1v1h-1zM6,13h1v1h-1zM7,13h1v1h-1zM10,13h1v1h-1zM12,13h1v1h-1zM14,13h1v1h-1zM16,13h1v1h-1zM18,13h1v1h-1zM23,13h1v1h-1zM25,13h1v1h-1zM26,13h1v1h-1zM27,13h1v1h-1zM28,13h1v1h-1zM30,13h1v1h-1zM31,13h1v1h-1zM32,13h1v1h-1zM33,13h1v1h-1zM2,14h1v1h-1zM4,14h1v1h-1zM8,14h1v1h-1zM10,14h1v1h-1zM11,14h1v1h-1zM12,14h1v1h-1zM13,14h1v1h-1zM19,14h1v1h-1zM21,14h1v1h-1zM24,14h1v1h-1zM25,14h1v1h-1zM26,14h1v1h-1zM27,14h1v1h-1zM29,14h1v1h-1zM30,14h1v1h-1zM31,14h1v1h-1zM33,14h1v1h-1zM3,15h1v1h-1zM5,15h1v1h-1zM7,15h1v1h-1zM10,15h1v1h-1zM11,15h1v1h-1zM12,15h1v1h-1zM16,15h1v1h-1zM17,15h1v1h-1zM18,15h1v1h-1zM19,15h1v1h-1zM20,15h1v1h-1zM21,15h1v1h-1zM22,15h1v1h-1zM23,15h1v1h-1zM25,15h1v1h-1zM28,15h1v1h-1zM32,15h1v1h-1zM33,15h1v1h-1zM34,15h1v1h-1zM2,16h1v1h-1zM3,16h1v1h-1zM4,16h1v1h-1zM6,16h1v1h-1zM7,16h1v1h-1zM8,16h1v1h-1zM9,16h1v1h-1zM11,16h1v1h-1zM12,16h1v1h-1zM13,16h1v1h-1zM14,16h1v1h-1zM15,16h1v1h-1zM16,16h1v1h-1zM20,16h1v1h-1zM22,16h1v1h-1zM27,16h1v1h-1zM28,16h1v1h-1zM33,16h1v1h-1zM2,17h1v1h-1zM3,17h1v1h-1zM4,17h1v1h-1zM5,17h1v1h-1zM7,17h1v1h-1zM9,17h1v1h-1zM10,17h1v1h-1zM14,17h1v1h-1zM18,17h1v1h-1zM21,17h1v1h-1zM23,17h1v1h-1zM24,17h1v1h-1zM25,17h1v1h-1zM26,17h1v1h-1zM27,17h1v1h-1zM28,17h1v1h-1zM30,17h1v1h-1zM31,17h1v1h-1zM32,17h1v1h-1zM2,18h1v1h-1zM3,18h1v1h-1zM5,18h1v1h-1zM6,18h1v1h-1zM8,18h1v1h-1zM10,18h1v1h-1zM14,18h1v1h-1zM15,18h1v1h-1zM19,18h1v1h-1zM24,18h1v1h-1zM26,18h1v1h-1zM27,18h1v1h-1zM29,18h1v1h-1zM30,18h1v1h-1zM34,18h1v1h-1zM3,19h1v1h-1zM4,19h1v1h-1zM5,19h1v1h-1zM9,19h1v1h-1zM10,19h1v1h-1zM11,19h1v1h-1zM13,19h1v1h-1zM14,19h1v1h-1zM15,19h1v1h-1zM21,19h1v1h-1zM22,19h1v1h-1zM25,19h1v1h-1zM28,19h1v1h-1zM29,19h1v1h-1zM31,19h1v1h-1zM32,19h1v1h-1zM33,19h1v1h-1zM34,19h1v1h-1zM2,20h1v1h-1zM3,20h1v1h-1zM5,20h1v1h-1zM7,20h1v1h-1zM8,20h1v1h-1zM11,20h1v1h-1zM12,20h1v1h-1zM13,20h1v1h-1zM17,20h1v1h-1zM20,20h1v1h-1zM22,20h1v1h-1zM23,20h1v1h-1zM26,20h1v1h-1zM29,20h1v1h-1zM30,20h1v1h-1zM32,20h1v1h-1zM33,20h1v1h-1zM2,21h1v1h-1zM7,21h1v1h-1zM11,21h1v1h-1zM12,21h1v1h-1zM14,21h1v1h-1zM16,21h1v1h-1zM23,21h1v1h-1zM24,21h1v1h-1zM25,21h1v1h-1zM26,21h1v1h-1zM27,21h1v1h-1zM29,21h1v1h-1zM30,21h1v1h-1zM31,21h1v1h-1zM32,21h1v1h-1zM34,21h1v1h-1zM2,22h1v1h-1zM3,22h1v1h-1zM7,22h1v1h-1zM8,22h1v1h-1zM10,22h1v1h-1zM12,22h1v1h-1zM13,22h1v1h-1zM17,22h1v1h-1zM18,22h1v1h-1zM19,22h1v1h-1zM22,22h1v1h-1zM24,22h1v1h-1zM25,22h1v1h-1zM29,22h1v1h-1zM30,22h1v1h-1zM31,22h1v1h-1zM2,23h1v1h-1zM3,23h1v1h-1zM5,23h1v1h-1zM10,23h1v1h-1zM13,23h1v1h-1zM14,23h1v1h-1zM16,23h1v1h-1zM17,23h1v1h-1zM20,23h1v1h-1zM21,23h1v1h-1zM22,23h1v1h-1zM23,23h1v1h-1zM25,23h1v1h-1zM28,23h1v1h-1zM29,23h1v1h-1zM31,23h1v1h-1zM32,23h1v1h-1zM34,23h1v1h-1zM2,24h1v1h-1zM7,24h1v1h-1zM8,24h1v1h-1zM13,24h1v1h-1zM14,24h1v1h-1zM15,24h1v1h-1zM17,24h1v1h-1zM18,24h1v1h-1zM22,24h1v1h-1zM23,24h1v1h-1zM31,24h1v1h-1zM32,24h1v1h-1zM33,24h1v1h-1zM2,25h1v1h-1zM4,25h1v1h-1zM5,25h1v1h-1zM6,25h1v1h-1zM11,25h1v1h-1zM14,25h1v1h-1zM15,25h1v1h-1zM16,25h1v1h-1zM17,25h1v1h-1zM20,25h1v1h-1zM22,25h1v1h-1zM23,25h1v1h-1zM24,25h1v1h-1zM25,25h1v1h-1zM28,25h1v1h-1zM31,25h1v1h-1zM32,25h1v1h-1zM2,26h1v1h-1zM4,26h1v1h-1zM6,26h1v1h-1zM8,26h1v1h-1zM10,26h1v1h-1zM12,26h1v1h-1zM13,26h1v1h-1zM14,26h1v1h-1zM17,26h1v1h-1zM19,26h1v1h-1zM21,26h1v1h-1zM24,26h1v1h-1zM25,26h1v1h-1zM26,26h1v1h-1zM27,26h1v1h-1zM28,26h1v1h-1zM29,26h1v1h-1zM30,26h1v1h-1zM34,26h1v1h-1zM10,27h1v1h-1zM11,27h1v1h-1zM14,27h1v1h-1zM15,27h1v1h-1zM16,27h1v1h-1zM18,27h1v1h-1zM19,27h1v1h-1zM20,27h1v1h-1zM21,27h1v1h-1zM22,27h1v1h-1zM23,27h1v1h-1zM24,27h1v1h-1zM26,27h1v1h-1zM30,27h1v1h-1zM32,27h1v1h-1zM34,27h1v1h-1zM2,28h1v1h-1zM3,28h1v1h-1zM4,28h1v1h-1zM5,28h1v1h-1zM6,28h1v1h-1zM7,28h1v1h-1zM8,28h1v1h-1zM12,28h1v1h-1zM15,28h1v1h-1zM16,28h1v1h-1zM17,28h1v1h-1zM18,28h1v1h-1zM22,28h1v1h-1zM23,28h1v1h-1zM24,28h1v1h-1zM25,28h1v1h-1zM26,28h1v1h-1zM28,28h1v1h-1zM30,28h1v1h-1zM32,28h1v1h-1zM33,28h1v1h-1zM2,29h1v1h-1zM8,29h1v1h-1zM10,29h1v1h-1zM12,29h1v1h-1zM14,29h1v1h-1zM15,29h1v1h-1zM17,29h1v1h-1zM18,29h1v1h-1zM20,29h1v1h-1zM22,29h1v1h-1zM23,29h1v1h-1zM24,29h1v1h-1zM25,29h1v1h-1zM26,29h1v1h-1zM30,29h1v1h-1zM31,29h1v1h-1zM32,29h1v1h-1zM33,29h1v1h-1zM34,29h1v1h-1zM2,30h1v1h-1zM4,30h1v1h-1zM5,30h1v1h-1zM6,30h1v1h-1zM8,30h1v1h-1zM10,30h1v1h-1zM11,30h1v1h-1zM13,30h1v1h-1zM14,30h1v1h-1zM15,30h1v1h-1zM16,30h1v1h-1zM17,30h1v1h-1zM20,30h1v1h-1zM21,30h1v1h-1zM22,30h1v1h-1zM24,30h1v1h-1zM26,30h1v1h-1zM27,30h1v1h-1zM28,30h1v1h-1zM29,30h1v1h-1zM30,30h1v1h-1zM31,30h1v1h-1zM33,30h1v1h-1zM34,30h1v1h-1zM2,31h1v1h-1zM4,31h1v1h-1zM5,31h1v1h-1zM6,31h1v1h-1zM8,31h1v1h-1zM10,31h1v1h-1zM11,31h1v1h-1zM12,31h1v1h-1zM13,31h1v1h-1zM14,31h1v1h-1zM15,31h1v1h-1zM17,31h1v1h-1zM18,31h1v1h-1zM19,31h1v1h-1zM20,31h1v1h-1zM21,31h1v1h-1zM23,31h1v1h-1zM25,31h1v1h-1zM27,31h1v1h-1zM30,31h1v1h-1zM32,31h1v1h-1zM33,31h1v1h-1zM34,31h1v1h-1zM2,32h1v1h-1zM4,32h1v1h-1zM5,32h1v1h-1zM6,32h1v1h-1zM8,32h1v1h-1zM10,32h1v1h-1zM20,32h1v1h-1zM23,32h1v1h-1zM24,32h1v1h-1zM25,32h1v1h-1zM28,32h1v1h-1zM29,32h1v1h-1zM31,32h1v1h-1zM32,32h1v1h-1zM2,33h1v1h-1zM8,33h1v1h-1zM11,33h1v1h-1zM14,33h1v1h-1zM15,33h1v1h-1zM18,33h1v1h-1zM20,33h1v1h-1zM21,33h1v1h-1zM22,33h1v1h-1zM23,33h1v1h-1zM25,33h1v1h-1zM27,33h1v1h-1zM28,33h1v1h-1zM30,33h1v1h-1zM31,33h1v1h-1zM32,33h1v1h-1zM2,34h1v1h-1zM3,34h1v1h-1zM4,34h1v1h-1zM5,34h1v1h-1zM6,34h1v1h-1zM7,34h1v1h-1zM8,34h1v1h-1zM10,34h1v1h-1zM11,34h1v1h-1zM12,34h1v1h-1zM13,34h1v1h-1zM14,34h1v1h-1zM15,34h1v1h-1zM18,34h1v1h-1zM19,34h1v1h-1zM21,34h1v1h-1zM26,34h1v1h-1zM27,34h1v1h-1zM28,34h1v1h-1zM29,34h1v1h-1zM31,34h1v1h-1zM33,34h1v1h-1z\" fill=\"#000\"/></svg>"};
+
+/* =====================================================================
+   ESPACE ÉTUDIANTS — page publique ?soutien (sans compte)
+   - Soutien psychologique anonyme (chez Lamia) : réutilise le module
+     Soutien en mode "etu" (client Supabase anonyme, fonctions etu_psy_*).
+   - Aide sociale (CES, chez Waled) : dossier perso protégé par un code et
+     un mot de passe, chiffré de bout en bout avec la clé de la CES.
+   ===================================================================== */
+const ETU_BASE="https://bojkuesat-ai.github.io/bureau-ca/";
+const ETU_LIENS={general:ETU_BASE+"?soutien", psy:ETU_BASE+"?soutien=psy", social:ETU_BASE+"?soutien=social"};
+const SOUT_NOTIF_FN=SB_URL+"/functions/v1/soutien-notif";
+const SOUT_RPC_ETU={soutien_info:"etu_psy_info",soutien_creer:"etu_psy_creer",soutien_resume:"etu_psy_resume",
+  soutien_ouvrir:"etu_psy_ouvrir",soutien_envoyer:"etu_psy_envoyer",soutien_effacer:"etu_psy_effacer",soutien_avis:"etu_psy_avis"};
+/* Client Supabase sans session : l'étudiant n'a pas de compte, et un membre du CA
+   qui ouvrirait le lien ne serait pas reconnu non plus. */
+function sbAnon(){
+  if(!window.__sbAnon && window.supabase && window.supabase.createClient)
+    window.__sbAnon=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:"be-anon"}});
+  return window.__sbAnon||null;
+}
+async function etuRpc(fn,args){
+  const cli=sbAnon(); if(!cli) throw new Error("Serveur indisponible. Vérifiez votre connexion.");
+  const r=await cli.rpc(fn,args||{});
+  if(r&&r.error){ const m=String(r.error.message||"Erreur serveur.");
+    if(/Could not find the function|does not exist|schema cache/i.test(m)) throw new Error("Cet espace n'est pas encore ouvert. Réessayez plus tard.");
+    throw new Error(m); }
+  return r?r.data:null;
+}
+async function cesRpcR(fn,args){ return soutRpcBrut(fn,args); }
+async function soutRpcBrut(fn,args){
+  if(!sb) throw new Error("Serveur indisponible.");
+  const r=await sb.rpc(fn,args||{});
+  if(r&&r.error){ const m=String(r.error.message||"Erreur serveur.");
+    if(/Could not find the function|does not exist|schema cache/i.test(m)) throw new Error("Cette fonction n'est pas encore installée sur le serveur : le script SQL n°4 doit être exécuté dans Supabase.");
+    throw new Error(m); }
+  return r?r.data:null;
+}
+/* Prévenir Lamia ou le responsable CES : mail neutre, limité côté serveur (1 / 10 min). */
+function soutNotifServeur(type){
+  try{ fetch(SOUT_NOTIF_FN,{method:"POST",headers:{"Content-Type":"application/json","apikey":SB_KEY},body:JSON.stringify({type:type})}).catch(()=>{}); }catch(e){}
+}
+
+/* ---------- Signature manuscrite (doigt ou souris) ---------- */
+function modaleSignature(titre, texte){
+  return new Promise(resolve=>{
+    const anc=document.getElementById("ca_modal_sig"); if(anc) anc.remove();
+    const d=document.createElement("div"); d.id="ca_modal_sig"; d.className="ca-mod";
+    d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true" style="max-width:520px">'
+      +'<h3>'+esc(titre||"Signature")+'</h3><p style="color:var(--ink);font-size:13.5px">'+esc(texte||"Signez dans le cadre blanc, avec le doigt ou la souris.")+'</p>'
+      +'<canvas id="sig_cv" style="width:100%;height:190px;background:#fff;border-radius:10px;touch-action:none;display:block;cursor:crosshair"></canvas>'
+      +'<p id="sig_err" style="color:var(--red);font-size:13px;margin:8px 0 0;display:none">Signez dans le cadre avant de valider.</p>'
+      +'<div class="ca-mod-btns" style="margin-top:12px;flex-wrap:wrap"><button class="btn ghost sm" id="sig_eff">Recommencer</button><button class="btn ghost sm" id="sig_no">Annuler</button><button class="btn sm" id="sig_ok">✍ Valider ma signature</button></div></div>';
+    document.body.appendChild(d);
+    const cv=d.querySelector("#sig_cv"); const ratio=Math.max(1,window.devicePixelRatio||1);
+    const W=cv.clientWidth||460, H=cv.clientHeight||190; cv.width=W*ratio; cv.height=H*ratio;
+    const ctx=cv.getContext("2d"); ctx.scale(ratio,ratio); ctx.lineWidth=2.4; ctx.lineCap="round"; ctx.lineJoin="round"; ctx.strokeStyle="#16213e";
+    let actif=false, points=0;
+    const pos=e=>{ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; };
+    cv.addEventListener("pointerdown",e=>{ actif=true; const p=pos(e); try{ cv.setPointerCapture(e.pointerId); }catch(_){} ctx.beginPath(); ctx.moveTo(p.x,p.y); e.preventDefault(); });
+    cv.addEventListener("pointermove",e=>{ if(!actif) return; const p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); points++; e.preventDefault(); });
+    const fin=()=>{ actif=false; }; cv.addEventListener("pointerup",fin); cv.addEventListener("pointercancel",fin); cv.addEventListener("pointerleave",fin);
+    const rep=v=>{ d.remove(); resolve(v); };
+    d.querySelector("#sig_eff").addEventListener("click",()=>{ ctx.clearRect(0,0,W,H); points=0; });
+    d.querySelector("#sig_no").addEventListener("click",()=>rep(null));
+    d.querySelector("#sig_ok").addEventListener("click",()=>{
+      if(points<6){ d.querySelector("#sig_err").style.display="block"; return; }
+      /* Image réduite (500 px de large) : légère dans le dossier et dans le PDF. */
+      const out=document.createElement("canvas"); out.width=500; out.height=Math.round(500*H/W);
+      const o=out.getContext("2d"); o.fillStyle="#fff"; o.fillRect(0,0,out.width,out.height); o.drawImage(cv,0,0,out.width,out.height);
+      rep(out.toDataURL("image/png"));
+    });
+  });
+}
+/* Choix dans une liste (fenêtre maison). */
+function modaleChoix(titre, texte, options){
+  return new Promise(resolve=>{
+    const d=document.createElement("div"); d.className="ca-mod";
+    d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true"><h3>'+esc(titre)+'</h3><p style="color:var(--ink);font-size:13.5px;white-space:pre-wrap">'+esc(texte||"")+'</p>'
+      +'<select class="f" id="ch_sel" style="width:100%;margin:0 0 12px">'+options.map(o=>'<option value="'+esc(o.v)+'">'+esc(o.l)+'</option>').join("")+'</select>'
+      +'<div class="ca-mod-btns"><button class="btn ghost sm" id="ch_no">Annuler</button><button class="btn sm" id="ch_ok">Confirmer</button></div></div>';
+    document.body.appendChild(d);
+    const rep=v=>{ d.remove(); resolve(v); };
+    d.querySelector("#ch_no").addEventListener("click",()=>rep(null));
+    d.querySelector("#ch_ok").addEventListener("click",()=>rep(d.querySelector("#ch_sel").value));
+  });
+}
+function attendreFermetureInfo(){ return new Promise(r=>{ const t=setInterval(()=>{ if(!document.getElementById("ca_modal_info")){ clearInterval(t); r(); } },200); }); }
+async function soutNouvellePhrase(titre){
+  const phrase=soutCodeAleatoire(6);
+  modaleInfo("Votre phrase de récupération :\n\n"+phrase+"\n\nNotez-la sur papier et gardez-la en lieu sûr. Vous allez devoir la retaper pour confirmer.", titre||"🔑 Phrase de récupération");
+  await attendreFermetureInfo();
+  let err="";
+  for(let i=0;i<3;i++){
+    const v=await modaleChamp("Retapez la phrase de récupération pour confirmer que vous l'avez bien notée.","Confirmer la phrase",{placeholder:"XXXX-XXXX-XXXX-XXXX-XXXX-XXXX",bouton:"Confirmer",erreur:err});
+    if(v===null) return null;
+    if(soutNormaliser(v)===phrase) return phrase;
+    err="La phrase ne correspond pas. Vérifiez ce que vous avez noté.";
+  }
+  modaleInfo("Opération annulée : la phrase n'a pas été confirmée."); return null;
+}
+
+/* ---------- Partage des liens (QR codes) ---------- */
+function etuModalePartage(){
+  const bloc=(t,u,k)=>`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px">
+      <b>${esc(t)}</b><div style="display:flex;gap:12px;align-items:center;margin-top:8px;flex-wrap:wrap">
+      <div style="background:#fff;border-radius:8px;padding:6px;width:112px;height:112px">${(window.ETU_QR&&ETU_QR[k])||""}</div>
+      <div style="flex:1;min-width:150px"><div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;word-break:break-all;color:var(--ink-soft)">${esc(u)}</div>
+      <button class="btn ghost sm" data-copie="${esc(u)}" style="margin-top:8px">Copier le lien</button></div></div></div>`;
+  const d=document.createElement("div"); d.className="ca-mod";
+  d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true" style="max-width:520px;max-height:90vh;overflow:auto"><h3>🔗 Liens pour les étudiant·es</h3>'
+    +'<p>À partager sur les réseaux, par message ou en affiche. Aucun compte n\'est nécessaire.</p>'
+    +bloc("Page d'accueil (choix psy ou social)",ETU_LIENS.general,"general")+bloc("Soutien psychologique — direct",ETU_LIENS.psy,"psy")+bloc("Aide sociale (CES) — direct",ETU_LIENS.social,"social")
+    +'<div class="ca-mod-btns"><button class="btn sm" id="pt_ok">Fermer</button></div></div>';
+  document.body.appendChild(d);
+  d.querySelector("#pt_ok").addEventListener("click",()=>d.remove());
+  d.addEventListener("click",async e=>{ const b=e.target.closest("[data-copie]"); if(!b) return; let ok=false;
+    try{ await navigator.clipboard.writeText(b.dataset.copie); ok=true; }catch(_){ }
+    b.textContent=ok?"✓ Copié":"Copie impossible"; });
+}
+
+/* =====================================================================
+   VUE PUBLIQUE
+   ===================================================================== */
+function etuDemarrer(){
+  try{ const q=new URLSearchParams(location.search); if(!q.has("soutien")) return;
+    const m=String(q.get("soutien")||"").toLowerCase();
+    S.etu={vue: m==="psy"?"psy":(m==="social"?"social":"choix")}; S.view="etu";
+  }catch(e){}
+}
+function viewEtu(){
+  const e=S.etu; let corps="";
+  if(e.vue==="psy") corps=etuVuePsy();
+  else if(e.vue==="social") corps=cesVueEtudiant();
+  else corps=etuVueChoix();
+  return `<div class="etu-page"><div class="etu-in">
+    <div class="etu-brand"><span class="eyebrow">Bureau étudiant · Faculté de Droit et de Criminologie — ULB</span></div>
+    ${corps}
+    <p class="sout-small" style="text-align:center;margin:26px 0 8px">Bureau étudiant — ASBL LE BUREAU ETUDIANT (B.E)</p></div></div>`;
+}
+function etuEntete(titre){
+  return `<div class="sout-top"><h2 class="serif" style="margin:0;font-size:22px">${titre}</h2>
+    <button class="sout-exit" data-action="etu-sortie" title="Quitter tout de suite (touche Échap)">✕ Sortie rapide</button></div>
+    <div class="sout-urg"><b>En cas d'urgence :</b> ${SOUT_URGENCES.map(u=>`${esc(u.nom)} ${soutTel(u.tel)}`).join(" · ")}</div>`;
+}
+function etuVueChoix(){
+  return `<div class="sout-zone">${etuEntete("Besoin d'aide ?")}
+    <p class="sout-p">Le Bureau étudiant vous propose deux espaces confidentiels. Choisissez celui qui vous correspond :</p>
+    <button class="etu-choix" data-action="etu-vue" data-vue="psy">
+      <span class="etu-choix-t">💜 Soutien psychologique</span>
+      <span class="etu-choix-d">Parler en toute confidentialité à une personne de confiance. 100 % anonyme : personne ne sait qui vous êtes.</span></button>
+    <button class="etu-choix" data-action="etu-vue" data-vue="social">
+      <span class="etu-choix-t">🤝 Aide sociale</span>
+      <span class="etu-choix-d">Difficultés financières, logement, alimentation, matériel… Votre demande est traitée par la Commission Entraide Sociale (CES). Réservé aux étudiant·es de la Faculté de Droit et de Criminologie.</span></button>
+    <p class="sout-small" style="margin-top:14px">🔒 Dans les deux espaces, vos échanges sont chiffrés de bout en bout : personne d'autre que la personne qui vous accompagne ne peut les lire.</p></div>`;
+}
+function etuVuePsy(){
+  const s=soutEtat();
+  if(!s.charge && !s.chargement && !s.erreur) setTimeout(soutCharger,0);
+  let corps;
+  if(s.erreur) corps=`<div class="sout-card"><p class="sout-p" style="color:var(--red)">${esc(s.erreur)}</p><div class="row-btn"><button class="btn ghost sm" data-action="sout-recharger">Réessayer</button></div></div>`;
+  else if(!s.info || (!s.charge && s.chargement)) corps=`<div class="empty">Chargement sécurisé…</div>`;
+  else corps=soutVueMembre();
+  return `<div class="sout-zone">${etuEntete("💜 Soutien psychologique")}
+    ${s.vue==="accueil"&&!s.ouverte?`<p style="margin:0 0 10px"><button class="link" data-action="etu-vue" data-vue="choix">← Retour au choix</button></p>`:""}${corps}</div>`;
+}
+function etuSortie(){
+  try{ if(S.sout){ S.sout.ouverte=null; } if(S.ces){ S.ces.ouvert=null; S.ces.brouillon=null; } }catch(e){}
+  try{ window.location.replace("https://www.google.com/"); }catch(e){ location.href="https://www.google.com/"; }
+}
+
+/* =====================================================================
+   AIDE SOCIALE — CÔTÉ ÉTUDIANT
+   ===================================================================== */
+const CES_CATEGORIES=[
+  {id:"financier",l:"💶 Aide financière",d:"Frais d'études, facture urgente, difficulté ponctuelle…"},
+  {id:"logement",l:"🏠 Logement",d:"Loyer, recherche ou perte de logement, situation urgente…"},
+  {id:"alimentation",l:"🍎 Alimentation",d:"Difficulté à se nourrir correctement."},
+  {id:"materiel",l:"📚 Matériel scolaire",d:"Syllabus, ordinateur, fournitures…"},
+  {id:"autre",l:"💬 Autre",d:"Une autre difficulté : expliquez-la nous."},
+];
+const CES_CAT_LABEL=Object.fromEntries(CES_CATEGORIES.map(c=>[c.id,c.l.replace(/^\S+\s/,"")]));
+const CES_STATUTS=[["recue","Reçue"],["examen","En cours d'examen"],["decision","Décision rendue"]];
+const CES_DECISIONS={accordee:"Accordée",partielle:"Partiellement accordée",refusee:"Refusée",reorientee:"Réorientée vers un autre service"};
+const CES_DECL_VERSION="v1", CES_ENG_VERSION="v1";
+const CES_SEPA=new Set("AD AT BE BG CH CY CZ DE DK EE ES FI FR GB GI GR HR HU IE IS IT LI LT LU LV MC MT NL NO PL PT RO SE SI SK SM VA AX BL GF GP MF MQ PM RE YT GG IM JE".split(" "));
+const CES_RESSOURCES=[
+  {groupe:"À l'ULB", items:[
+    {nom:"Service social des étudiants (ULB)", desc:"Aides financières, réduction du minerval, repas à 2 €, épiceries sociales, logement prioritaire, aide administrative. Permanences sans rendez-vous du lundi au jeudi, 9 h–12 h et 13 h–15 h 30 (sauf le mardi matin).", adr:"Bâtiment M, niveau 4, avenue Paul Héger 28 (Solbosch)", tel:"02 650 20 14", mail:"sse@ulb.be", web:"https://www.ulb.be/fr/aides-services-et-accompagnement/aides-financieres-sociales-et-inclusives"},
+    {nom:"Logement étudiant (ULB)", desc:"Kots de l'université, conseils et logement prioritaire pour les étudiant·es en difficulté.", web:"https://www.ulb.be/fr/communaute/logement-etudiant"},
+  ]},
+  {groupe:"Aides publiques", items:[
+    {nom:"Allocations d'études (Fédération Wallonie-Bruxelles)", desc:"Bourse d'études selon les revenus du ménage. La demande se fait en ligne.", web:"https://aides-etudes.cfwb.be/"},
+    {nom:"CPAS de votre commune", desc:"Revenu d'intégration étudiant et aides ponctuelles. Adressez-vous au CPAS de la commune où vous habitez."},
+    {nom:"Guide des aides sociales et financières (Street Law Clinic ULB)", desc:"Un guide clair sur toutes les aides possibles pour les étudiant·es en Belgique.", web:"https://streetlawclinic.ulb.be/wp-content/uploads/2023/10/Les-aides-sociales-et-financieres-pour-les-etudiants-en-Belgique.pdf"},
+  ]},
+];
+const CES_APROPOS=[
+  "La Commission Entraide Sociale (CES) du Bureau étudiant peut vous aider ponctuellement quand vous traversez une difficulté :",
+  "• une aide financière ponctuelle (frais d'études, facture urgente…) ;",
+  "• une aide alimentaire ;",
+  "• du matériel scolaire (syllabus, fournitures…) ;",
+  "• une orientation et un soutien en cas de problème de logement ;",
+  "• une orientation vers les services de l'ULB et les aides publiques (Service social des étudiants, allocations d'études, CPAS).",
+  "Qui peut demander ? Les étudiant·es de la Faculté de Droit et de Criminologie de l'ULB.",
+  "Comment ? Vous ouvrez un dossier en ligne, vous signez une déclaration sur l'honneur et vous ajoutez vos justificatifs. Vous suivez ensuite l'avancement de votre demande dans votre dossier.",
+  "L'aide de la CES n'est pas un droit : elle dépend des moyens de l'ASBL et de l'examen de votre situation.",
+];
+
+function cesIbanNet(s){ return String(s||"").replace(/\s+/g,"").toUpperCase(); }
+function cesIbanValide(s){
+  const v=cesIbanNet(s); if(!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(v)) return false;
+  const r=v.slice(4)+v.slice(0,4); let m=0;
+  for(const ch of r){ const n=/[A-Z]/.test(ch)?String(ch.charCodeAt(0)-55):ch; for(const d of n) m=(m*10+Number(d))%97; }
+  return m===1;
+}
+function cesIbanFormat(s){ return (cesIbanNet(s).match(/.{1,4}/g)||[]).join(" "); }
+function cesEmailValide(s){ return /^[^@\s]+@ulb\.(be|ac\.be)$/i.test(String(s||"").trim()); }
+
+/* --- Crypto du dossier --- */
+async function cesAcces(code, mdp){ return soutHex(await soutSha("be-ces-acces:"+soutNormaliser(code)+"\u0000"+mdp)); }
+async function cesCleMdp(code, mdp){
+  const base=await crypto.subtle.importKey("raw", soutTE.encode(soutNormaliser(code)+"\u0000"+mdp), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2", salt:soutTE.encode("be-ces-v1:"+soutNormaliser(code)), iterations:210000, hash:"SHA-256"}, base, {name:"AES-GCM",length:256}, false, ["encrypt","decrypt"]);
+}
+async function cesCleDossier(priv, pubAutreJwk, pubEtuJwk){
+  const bits=await crypto.subtle.deriveBits({name:"ECDH", public:await soutPub(pubAutreJwk)}, priv, 256);
+  const hk=await crypto.subtle.importKey("raw", bits, "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"HKDF", hash:"SHA-256", salt:soutTE.encode("be-ces-dossier:"+pubEtuJwk.x), info:soutTE.encode("be-ces-v1")}, hk, {name:"AES-GCM",length:256}, false, ["encrypt","decrypt"]);
+}
+function cesAad(pubEtu, auteur, type){ return "ces:"+pubEtu.x+":"+auteur+":"+type; }
+async function cesChiffrerEl(cle, pubEtu, auteur, type, obj){
+  const f=(type==="message"||type==="changement"||type==="profil")?soutChiffrerMsg:soutChiffrer;
+  return f(cle, obj, cesAad(pubEtu,auteur,type));
+}
+async function cesDechiffrerEls(cle, pubEtu, els){
+  const out=[];
+  for(const e of (els||[])){ let d=null;
+    try{ d=await soutDechiffrer(cle, e.iv, e.contenu, cesAad(pubEtu,e.auteur,e.type)); if(d&&typeof d==="object") delete d._; }catch(_){ d=null; }
+    out.push({id:e.id, auteur:e.auteur, type:e.type, ts:e.cree_le, d:d}); }
+  return out;
+}
+/* Pièces jointes : chiffrées en un bloc, envoyées par morceaux de 500 000 caractères. */
+const CES_PART=500000;
+async function cesEnvoyerFichier(fichier, cle, creer, envoyerPart, progres){
+  const buf=await fichier.arrayBuffer();
+  const ctLen=buf.byteLength+16, b64Len=4*Math.ceil(ctLen/3), parts=Math.ceil(b64Len/CES_PART);
+  const fid=await creer(parts, buf.byteLength);
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=await crypto.subtle.encrypt({name:"AES-GCM", iv, additionalData:soutTE.encode("ces-fichier:"+fid)}, cle, buf);
+  const b64=soutB64(ct);
+  for(let i=0;i<parts;i++){ await envoyerPart(fid, i, b64.slice(i*CES_PART,(i+1)*CES_PART)); if(progres) progres(i+1,parts); }
+  return {fichier_id:fid, iv:soutB64(iv), nom:String(fichier.name||"document").slice(0,120), taille:buf.byteLength, mime:typeFichier(fichier)};
+}
+async function cesLireFichier(doc, meta, cle, lirePart){
+  let b64=""; for(let i=0;i<meta.parts;i++){ const p=await lirePart(doc.fichier_id, i); if(p==null) throw new Error("Fichier incomplet."); b64+=p; }
+  const pt=await crypto.subtle.decrypt({name:"AES-GCM", iv:soutUnB64(doc.iv), additionalData:soutTE.encode("ces-fichier:"+doc.fichier_id)}, cle, soutUnB64(b64));
+  return new Blob([pt],{type:doc.mime||"application/octet-stream"});
+}
+function cesTailleLisible(n){ n=Number(n||0); return n>1048576?(n/1048576).toFixed(1).replace(".",",")+" Mo":Math.max(1,Math.round(n/1024))+" Ko"; }
+
+/* --- Textes engageants --- */
+function cesDeclarationTexte(p){
+  const nom=((p.prenom||"")+" "+(p.nom||"")).trim();
+  return [
+    "Je soussigné(e), "+nom+", matricule ULB "+(p.matricule||"")+", adresse "+(p.email||"")+", déclare sur l'honneur que :",
+    "1. Je suis régulièrement inscrit·e à la Faculté de Droit et de Criminologie de l'ULB pour l'année académique en cours.",
+    "2. Mes revenus et ressources, ainsi que ceux des personnes qui contribuent à mes frais, ne me permettent pas de faire face aux dépenses pour lesquelles je demande une aide.",
+    "3. Les informations que je fournis sont exactes et complètes.",
+    "4. Les documents que je joins sont authentiques et n'ont pas été modifiés.",
+    "Je m'engage à :",
+    "5. Utiliser l'aide exclusivement pour l'objet de ma demande.",
+    "6. Informer la CES de tout changement de ma situation (bourse, emploi, aide d'un autre organisme) pendant l'examen de ma demande et la période couverte par l'aide.",
+    "7. Fournir, sur demande, tout justificatif complémentaire.",
+    "Je reconnais que :",
+    "8. Toute fausse déclaration entraîne le remboursement intégral de l'aide perçue et mon exclusion des aides de la CES, sans préjudice d'autres poursuites.",
+    "9. L'aide de la CES n'est pas un droit : elle est accordée selon les moyens de l'ASBL et après examen de ma situation.",
+    "10. Mes données (identité, situation, justificatifs) sont traitées uniquement par le responsable de la CES, pour l'examen de ma demande. Elles sont chiffrées, conservées 5 ans après l'archivage de mon dossier, puis supprimées automatiquement. Je peux demander à y accéder, à les rectifier ou à les supprimer, sous réserve des obligations légales.",
+  ];
+}
+function cesEngagementTexte(nom, numero){
+  return [
+    "Je soussigné(e), "+nom+", responsable de la Commission Entraide Sociale (CES) de l'ASBL LE BUREAU ETUDIANT (B.E), m'engage envers l'étudiant·e titulaire du dossier n° "+numero+" à :",
+    "1. Garder strictement confidentiels son identité, sa situation, ses documents et nos échanges, pendant et après le traitement du dossier, sans limite de durée.",
+    "2. Ne rien communiquer à quiconque, y compris aux membres du Conseil d'administration, sauf les informations strictement nécessaires au versement d'une aide accordée (nom, montant, compte bancaire), transmises à la trésorerie avec l'accord de l'étudiant·e.",
+    "3. N'utiliser ces informations que pour examiner sa demande et assurer son suivi.",
+    "4. Ne conserver aucune copie en dehors de l'espace sécurisé de l'application.",
+    "5. Examiner la demande avec impartialité, sans aucune discrimination.",
+    "6. Signaler tout conflit d'intérêts, par exemple si je connais personnellement l'étudiant·e, et me retirer du dossier si nécessaire.",
+    "7. À la fin de mon mandat, transmettre les dossiers à mon successeur uniquement par la passation prévue dans l'application, et n'en conserver aucun accès.",
+    "Limite de la confidentialité : en cas de danger grave et immédiat pour l'étudiant·e ou pour autrui, je pourrai l'orienter vers les services d'urgence et agir dans le cadre de mes obligations légales.",
+    "Les données du dossier sont chiffrées, conservées 5 ans après l'archivage, puis supprimées automatiquement.",
+  ];
+}
+function cesSigBloc(o, role){
+  const d=new Date(o.signeLe||Date.now());
+  return `<div style="margin-top:14px;border:2px solid #241c46;border-radius:8px;padding:12px 14px;font-size:12px;color:#222;max-width:440px">
+    <div style="font-size:13px;font-weight:bold;color:#241c46;margin-bottom:4px">✔ Signé électroniquement</div>
+    par <b>${esc(o.nom||"")}</b>${role?" — "+esc(role):""}<br>
+    ${o.signature?`<img src="${esc(o.signature)}" alt="Signature" style="max-width:260px;max-height:90px;display:block;margin:6px 0;border-bottom:1px solid #ccc">`:""}
+    Authentification : ${esc(o.methode||"")}<br>
+    Le ${esc(d.toLocaleDateString("fr-BE"))} à ${esc(d.toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"}))}<br>
+    Code de vérification : <b>${esc(prEmpreinteCourte(o.empreinte))}</b></div>`;
+}
+function cesPDFDeclaration(o, numero){
+  return `<div style="max-width:640px"><h1>Déclaration sur l'honneur et engagement</h1>
+    <p class="d">Demande d'aide sociale — Commission Entraide Sociale — ASBL LE BUREAU ETUDIANT (B.E) — dossier ${esc(numero||"")}</p>
+    ${(o.texte||[]).map(t=>`<p>${esc(t)}</p>`).join("")}
+    <p><b>☑ Je certifie sur l'honneur l'exactitude de ces informations.</b></p>
+    ${cesSigBloc(o, "étudiant·e")}</div>`;
+}
+function cesPDFEngagement(o){
+  return `<div style="max-width:640px"><h1>Engagement de confidentialité</h1>
+    <p class="d">Commission Entraide Sociale — ASBL LE BUREAU ETUDIANT (B.E) — dossier ${esc(o.numero||"")}</p>
+    ${(o.texte||[]).map(t=>`<p>${esc(t)}</p>`).join("")}
+    ${cesSigBloc(o, "responsable de la CES")}
+    <p class="d" style="margin-top:20px">Ce document a été transmis à l'étudiant·e dans son dossier chiffré.</p></div>`;
+}
+function cesPDFDecision(o){
+  return `<div style="max-width:640px"><h1>Décision — demande d'aide sociale</h1>
+    <p class="d">Commission Entraide Sociale — ASBL LE BUREAU ETUDIANT (B.E) — dossier ${esc(o.numero||"")}</p>
+    <table><tbody>
+      <tr><th style="width:200px">Étudiant·e</th><td>${esc(o.etudiant||"")}</td></tr>
+      <tr><th>Catégorie</th><td>${esc(CES_CAT_LABEL[o.categorie]||o.categorie||"")}</td></tr>
+      <tr><th>Décision</th><td><b>${esc(CES_DECISIONS[o.decision]||o.decision||"")}</b></td></tr>
+      ${o.montant?`<tr><th>Montant</th><td>${esc(o.montant)} €</td></tr>`:""}
+      ${o.aide?`<tr><th>Aide accordée</th><td>${esc(o.aide)}</td></tr>`:""}
+    </tbody></table>
+    ${o.motif?`<h2>Motif</h2><p style="white-space:pre-wrap">${esc(o.motif)}</p>`:""}
+    ${cesSigBloc(o, "responsable de la CES")}</div>`;
+}
+async function cesEmpreinte(base, texte){ return soutHex(await soutSha(JSON.stringify(base)+"|"+(texte||[]).join("\n"))); }
+
+/* --- État étudiant --- */
+function cesEtat(){ if(!S.ces) S.ces={info:null, vue:"accueil", etape:1, brouillon:null, ouvert:null, onglet:"suivi", creneaux:[], occupe:false, charge:false, erreur:""}; return S.ces; }
+function cesDossiersLocaux(){ const l=store.get("ces:dossiers",[]); return Array.isArray(l)?l.filter(x=>x&&x.c):[]; }
+function cesSauverLocaux(l){ store.set("ces:dossiers", l); }
+function cesRedessiner(){ if(S.etu||S.tab==="soutien_ces"){ try{ rendreEnPreservant(); }catch(e){ render(); } } }
+async function cesCharger(){
+  const c=cesEtat(); if(c.chargement) return; c.chargement=true;
+  try{ c.info=await etuRpc("ces_info"); c.charge=true; c.erreur=""; }catch(e){ c.erreur=e.message||String(e); }
+  c.chargement=false; cesRedessiner();
+}
+
+function cesVueEtudiant(){
+  const c=cesEtat();
+  if(!c.charge && !c.chargement && !c.erreur) setTimeout(cesCharger,0);
+  let corps;
+  if(c.erreur) corps=`<div class="sout-card"><p class="sout-p" style="color:var(--red)">${esc(c.erreur)}</p><div class="row-btn"><button class="btn ghost sm" data-action="ces-recharger">Réessayer</button></div></div>`;
+  else if(!c.info) corps=`<div class="empty">Chargement sécurisé…</div>`;
+  else if(c.vue==="apropos") corps=cesVueApropos();
+  else if(c.vue==="ressources") corps=cesVueRessources(true);
+  else if(c.vue==="creer") corps=cesVueCreer();
+  else if(c.vue==="dossier" && c.ouvert) corps=cesVueDossierEtu();
+  else corps=cesVueAccueilEtu();
+  return `<div class="sout-zone">${etuEntete("🤝 Aide sociale — CES")}${corps}</div>`;
+}
+function cesVueAccueilEtu(){
+  const c=S.ces, loc=cesDossiersLocaux();
+  const ouvert=c.info.ouvert, pause=c.info.pause_jusqua;
+  return `<p style="margin:0 0 10px"><button class="link" data-action="etu-vue" data-vue="choix">← Retour au choix</button></p>
+    <div class="sout-card">
+      <p class="sout-p">La <b>Commission Entraide Sociale</b> du Bureau étudiant peut vous aider ponctuellement : aide financière, alimentaire, matériel scolaire, logement.</p>
+      <p class="sout-small">Réservé aux étudiant·es de la <b>Faculté de Droit et de Criminologie</b> de l'ULB. Votre demande est chiffrée de bout en bout : seul le responsable de la CES peut la lire. Elle n'est jamais transmise au reste du bureau.</p>
+      <div class="row-btn" style="margin-top:12px">
+        ${!ouvert?`<span class="sout-small">L'aide sociale n'est pas encore ouverte.</span>`:pause?`<span class="sout-small" style="color:var(--amber)">La CES n'accepte pas de nouvelles demandes pour le moment (jusqu'au ${esc(fmtQuand(pause))}).</span>`:`<button class="btn" data-action="ces-nouvelle">📝 Faire une demande</button>`}
+        <button class="btn ghost sm" data-action="ces-vue" data-vue="apropos">Ce que la CES peut faire</button>
+        <button class="btn ghost sm" data-action="ces-vue" data-vue="ressources">📚 Autres aides</button></div></div>
+    <h3 class="serif" style="margin:18px 0 8px">Accéder à mon dossier</h3>
+    <div class="sout-card">
+      ${loc.length?`<label class="sout-small">Dossier</label><select class="f" id="ces_login_code">${loc.map(d=>`<option value="${esc(d.c)}">${esc(d.n)}</option>`).join("")}<option value="">Un autre dossier…</option></select>`:""}
+      <input class="f" id="ces_login_code_txt" placeholder="Code du dossier (XXXX-XXXX-XXXX-XXXX)" autocomplete="off" ${loc.length?'style="display:none"':""}>
+      <input class="f" id="ces_login_mdp" type="password" placeholder="Mot de passe du dossier" autocomplete="current-password">
+      <div class="row-btn"><button class="btn sm" data-action="ces-login">🔓 Ouvrir mon dossier</button></div></div>`;
+}
+function cesVueApropos(){
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="ces-vue" data-vue="accueil">← Retour</button><span class="u-nom">Ce que la CES peut faire</span></div>
+    <div class="sout-card">${CES_APROPOS.map(t=>`<p class="sout-p">${esc(t)}</p>`).join("")}</div>`;
+}
+function cesVueRessources(etu){
+  const lien=(u)=>`<a href="${esc(u)}" target="_blank" rel="noopener">site</a>`;
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="${etu?"ces-vue":"cesr-vue"}" data-vue="accueil">← Retour</button><span class="u-nom">📚 Autres aides sociales</span></div>
+    ${CES_RESSOURCES.map(g=>`<h3 class="serif" style="margin:16px 0 8px">${esc(g.groupe)}</h3>
+      ${g.items.map(r=>`<div class="sout-card sout-res"><b>${esc(r.nom)}</b><br><span class="sout-small">${esc(r.desc||"")}</span>
+        <div style="font-size:13px;line-height:1.7;margin-top:6px">${r.adr?`📍 ${esc(r.adr)}<br>`:""}${r.tel?`📞 ${soutTel(r.tel)}<br>`:""}${r.mail?`✉ <a href="mailto:${esc(r.mail)}">${esc(r.mail)}</a><br>`:""}${r.web?`🌐 ${lien(r.web)}`:""}</div></div>`).join("")}`).join("")}
+    <p class="sout-small">Coordonnées relevées en octobre 2026, à vérifier régulièrement.</p>`;
+}
+
+/* --- Formulaire de profil (création et mise à jour) --- */
+const CES_PROFIL_CHAMPS=[["nom","Nom"],["prenom","Prénom"],["matricule","Matricule"],["email","E-mail"],["tel","Téléphone"],["langue","Langue"],["section","Section"],["annee","Année"],
+  ["boursier","Bourse"],["international","Étudiant·e international·e"],["logement","Logement"],["job","Job étudiant"],["charge","Personnes à charge"],["iban","IBAN"],["bic","BIC"],["titulaire","Titulaire du compte"],["consentement","Accord trésorerie"],["contact","Préférence de contact"]];
+function cesSel(id, val, opts){ return `<select class="f" id="${id}">${opts.map(([v,l])=>`<option value="${esc(v)}"${String(val||"")===v?" selected":""}>${esc(l)}</option>`).join("")}</select>`; }
+function cesFormProfil(p){
+  p=p||{};
+  const L=(t)=>`<label class="sout-small" style="display:block;margin-top:8px">${t}</label>`;
+  return `<div class="ces-form">
+    <h4>Identité</h4>
+    ${L("Nom *")}<input class="f" id="ces_nom" value="${esc(p.nom||"")}" autocomplete="family-name">
+    ${L("Prénom *")}<input class="f" id="ces_prenom" value="${esc(p.prenom||"")}" autocomplete="given-name">
+    ${L("Matricule ULB *")}<input class="f" id="ces_matricule" value="${esc(p.matricule||"")}" inputmode="numeric">
+    ${L("Adresse e-mail ULB * (…@ulb.be ou …@ulb.ac.be)")}<input class="f" id="ces_email" type="email" value="${esc(p.email||"")}" autocomplete="email">
+    ${L("Téléphone (facultatif)")}<input class="f" id="ces_tel" type="tel" value="${esc(p.tel||"")}" autocomplete="tel">
+    ${L("Langue préférée")}${cesSel("ces_langue",p.langue||"fr",[["fr","Français"],["en","English"]])}
+    ${L("Préférence de contact")}${cesSel("ces_contact",p.contact||"mail",[["mail","Par e-mail uniquement"],["mail_tel","Par e-mail ou par téléphone"]])}
+    <h4>Études</h4>
+    ${L("Section *")}${cesSel("ces_section",p.section||"",[["","— Choisir —"],["Droit","Droit"],["Criminologie","Criminologie"]])}
+    ${L("Année *")}${cesSel("ces_annee",p.annee||"",[["","— Choisir —"],["BA1","BA1"],["BA2","BA2"],["BA3","BA3"],["MA1","MA1"],["MA2","MA2"],["Autre","Autre (master de spécialisation, doctorat…)"]])}
+    <h4>Situation <span class="sout-small">(facultatif, aide la CES à évaluer votre demande)</span></h4>
+    ${L("Bourse d'études")}${cesSel("ces_boursier",p.boursier||"",[["","—"],["oui","Boursier·ère"],["attente","Demande en cours"],["non","Non boursier·ère"]])}
+    ${L("Étudiant·e international·e")}${cesSel("ces_international",p.international||"",[["","—"],["oui","Oui"],["non","Non"]])}
+    ${L("Logement")}${cesSel("ces_logement",p.logement||"",[["","—"],["parents","Chez mes parents"],["kot","Kot / studio"],["colocation","Colocation"],["autre","Autre"]])}
+    ${L("Job étudiant")}${cesSel("ces_job",p.job||"",[["","—"],["oui","Oui"],["non","Non"]])}
+    ${L("Personnes à charge")}<input class="f" id="ces_charge" type="number" min="0" max="20" value="${esc(p.charge||"")}">
+    <h4>Coordonnées bancaires</h4>
+    ${L("IBAN * (tous pays acceptés)")}<input class="f" id="ces_iban" value="${esc(p.iban?cesIbanFormat(p.iban):"")}" autocomplete="off" placeholder="BE68 5390 0754 7034">
+    ${L("BIC / SWIFT (obligatoire hors zone euro)")}<input class="f" id="ces_bic" value="${esc(p.bic||"")}" autocomplete="off">
+    ${L("Titulaire du compte *")}<input class="f" id="ces_titulaire" value="${esc(p.titulaire||"")}">
+    <label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:13px"><input type="checkbox" id="ces_consent" ${p.consentement?"checked":""} style="margin-top:3px">
+      <span>J'accepte que, si une aide en argent m'est accordée, mon nom, le montant et mes coordonnées bancaires soient transmis à la trésorerie du Bureau étudiant, uniquement pour le paiement.</span></label>
+  </div>`;
+}
+function cesLireProfil(){
+  const v=id=>String(val(id)||"").trim(); const e=[];
+  const p={nom:v("ces_nom"), prenom:v("ces_prenom"), matricule:v("ces_matricule"), email:v("ces_email").toLowerCase(), tel:v("ces_tel"),
+    langue:v("ces_langue"), contact:v("ces_contact"), section:v("ces_section"), annee:v("ces_annee"), boursier:v("ces_boursier"),
+    international:v("ces_international"), logement:v("ces_logement"), job:v("ces_job"), charge:v("ces_charge"),
+    iban:cesIbanNet(v("ces_iban")), bic:v("ces_bic").toUpperCase().replace(/\s+/g,""), titulaire:v("ces_titulaire"),
+    consentement:!!(document.getElementById("ces_consent")||{}).checked};
+  if(!p.nom||!p.prenom) e.push("Indiquez votre nom et votre prénom.");
+  if(!/^[A-Za-z0-9]{4,12}$/.test(p.matricule)) e.push("Indiquez votre matricule ULB.");
+  if(!cesEmailValide(p.email)) e.push("Merci d'utiliser votre adresse ULB (…@ulb.be ou …@ulb.ac.be).");
+  if(!p.section) e.push("Choisissez votre section (Droit ou Criminologie).");
+  if(!p.annee) e.push("Choisissez votre année d'études.");
+  if(!cesIbanValide(p.iban)) e.push("L'IBAN n'est pas valide : vérifiez-le (le numéro de contrôle ne correspond pas).");
+  else if(!CES_SEPA.has(p.iban.slice(0,2)) && !/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(p.bic)) e.push("Pour un compte hors zone euro, indiquez un BIC / code SWIFT valide.");
+  if(p.bic && !/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(p.bic)) e.push("Le BIC / code SWIFT n'est pas valide.");
+  if(!p.titulaire) e.push("Indiquez le titulaire du compte bancaire.");
+  return {p, erreurs:e};
+}
+function cesChangements(avant, apres){
+  const l=[]; CES_PROFIL_CHAMPS.forEach(([k,lab])=>{ if(String((avant||{})[k]??"")!==String((apres||{})[k]??"")) l.push(lab); }); return l;
+}
+
+/* --- Création d'une demande (assistant en 4 étapes) --- */
+function cesVueCreer(){
+  const c=S.ces, b=c.brouillon||(c.brouillon={categorie:"",profil:{},message:""});
+  const etapes=["Type d'aide","Vos informations","Votre demande","Déclaration et signature"];
+  const nav=`<div class="ces-etapes">${etapes.map((t,i)=>`<span class="${i+1===c.etape?"on":i+1<c.etape?"ok":""}">${i+1}. ${t}</span>`).join("")}</div>`;
+  let corps="";
+  if(c.etape===1){
+    corps=`<p class="sout-p">De quel type d'aide avez-vous besoin ?</p>${CES_CATEGORIES.map(k=>`<button class="etu-choix${b.categorie===k.id?" on":""}" data-action="ces-cat" data-cat="${k.id}"><span class="etu-choix-t">${k.l}</span><span class="etu-choix-d">${k.d}</span></button>`).join("")}`;
+  } else if(c.etape===2){
+    corps=`<p class="sout-small">Ces informations sont chiffrées sur votre appareil : seul le responsable de la CES peut les lire.</p>${cesFormProfil(b.profil)}
+      <div class="row-btn" style="margin-top:14px"><button class="btn ghost sm" data-action="ces-etape" data-e="1">← Précédent</button><button class="btn sm" data-action="ces-profil-ok">Suivant →</button></div>`;
+  } else if(c.etape===3){
+    corps=`<p class="sout-p">Expliquez votre situation et ce dont vous avez besoin. Vous pourrez ajouter des justificatifs (PDF ou photo) juste après, dans votre dossier.</p>
+      <textarea class="f" id="ces_msg" rows="7" maxlength="6000" placeholder="Votre demande…">${esc(b.message||"")}</textarea>
+      <div class="row-btn" style="margin-top:12px"><button class="btn ghost sm" data-action="ces-etape" data-e="2">← Précédent</button><button class="btn sm" data-action="ces-msg-ok">Suivant →</button></div>`;
+  } else {
+    corps=`<p class="sout-p">Lisez votre déclaration, choisissez le mot de passe de votre dossier, puis signez.</p>
+      <div class="sout-clause">${cesDeclarationTexte(b.profil).map(t=>`<p>${esc(t)}</p>`).join("")}</div>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:13.5px"><input type="checkbox" id="ces_certifie" style="margin-top:3px"><span><b>Je certifie sur l'honneur l'exactitude de ces informations.</b></span></label>
+      <label class="sout-small" style="display:block;margin-top:12px">Mot de passe du dossier (8 caractères minimum)</label>
+      <input class="f" id="ces_mdp" type="password" autocomplete="new-password">
+      <label class="sout-small" style="display:block">Confirmez le mot de passe</label>
+      <input class="f" id="ces_mdp2" type="password" autocomplete="new-password">
+      <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13px"><input type="checkbox" id="ces_retenir" checked> Mémoriser le numéro de dossier sur cet appareil (jamais le mot de passe)</label>
+      <input id="ces_site" name="site" autocomplete="off" tabindex="-1" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" aria-hidden="true">
+      <div class="row-btn" style="margin-top:14px"><button class="btn ghost sm" data-action="ces-etape" data-e="3">← Précédent</button><button class="btn" data-action="ces-signer">✍ Signer et envoyer ma demande</button></div>`;
+  }
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="ces-vue" data-vue="accueil">✕ Annuler</button><span class="u-nom">Nouvelle demande d'aide</span></div>${nav}<div class="sout-card">${corps}</div>`;
+}
+async function cesCreerDossier(){
+  const c=cesEtat(); const b=c.brouillon; if(c.occupe) return;
+  if((document.getElementById("ces_site")||{}).value) return;              /* piège à robots */
+  if(Date.now()-(c.debut||0)<15000){ modaleInfo("Merci de prendre le temps de relire votre déclaration avant de signer."); return; }
+  if(!(document.getElementById("ces_certifie")||{}).checked){ modaleInfo("Cochez « Je certifie sur l'honneur » pour continuer."); return; }
+  const mdp=String(val("ces_mdp")||""), mdp2=String(val("ces_mdp2")||"");
+  if(mdp.length<8){ modaleInfo("Le mot de passe doit faire au moins 8 caractères."); return; }
+  if(mdp!==mdp2){ modaleInfo("Les deux mots de passe ne correspondent pas."); return; }
+  const retenir=!!(document.getElementById("ces_retenir")||{}).checked;
+  const sig=await modaleSignature("Signer ma déclaration","Signez dans le cadre blanc avec le doigt ou la souris. Votre signature figurera sur la déclaration (PDF) remise à la CES et à vous.");
+  if(!sig) return;
+  c.occupe=true;
+  try{
+    const code=soutCodeAleatoire(4), acces=await cesAcces(code,mdp);
+    const paire=await soutPaire();
+    const privJwk=await crypto.subtle.exportKey("jwk", paire.privateKey);
+    const pubJwk=soutPubJwk(await crypto.subtle.exportKey("jwk", paire.publicKey));
+    const env=await soutEnvelopper(await cesCleMdp(code,mdp), privJwk, "ces-etu-priv");
+    const K=await cesCleDossier(paire.privateKey, c.info.pub_ces, pubJwk);
+    const profil=Object.assign({}, b.profil, {maj:new Date().toISOString()});
+    const texte=cesDeclarationTexte(profil);
+    const base={v:CES_DECL_VERSION, nom:(profil.prenom+" "+profil.nom).trim(), matricule:profil.matricule, email:profil.email,
+      signeLe:new Date().toISOString(), methode:"Mot de passe du dossier + signature manuscrite + case « je certifie »", sigHash:soutHex(await soutSha(sig))};
+    const decl=Object.assign({}, base, {texte:texte, signature:sig, certifie:true, empreinte:await cesEmpreinte(base,texte)});
+    const eP=await cesChiffrerEl(K,pubJwk,"etu","profil",profil);
+    const eD=await cesChiffrerEl(K,pubJwk,"etu","declaration",decl);
+    const eM=b.message?await cesChiffrerEl(K,pubJwk,"etu","message",{t:b.message}):{iv:"",ct:""};
+    const r=await etuRpc("ces_creer",{p_acces:acces,p_pub:pubJwk,p_priv:env,p_categorie:b.categorie,p_profil_iv:eP.iv,p_profil:eP.ct,p_decl_iv:eD.iv,p_decl:eD.ct,p_msg_iv:eM.iv,p_msg:eM.ct});
+    if(retenir){ const l=cesDossiersLocaux(); l.unshift({c:code,n:r.numero}); cesSauverLocaux(l.slice(0,10)); }
+    soutNotifServeur("ces");
+    c.brouillon=null; c.etape=1; c.occupe=false;
+    await cesOuvrirDossier(code, mdp, {privJwk, K, pubJwk});
+    modaleInfo("✓ Votre demande est envoyée.\n\nNuméro de dossier : "+r.numero+"\nCode d'accès : "+code+"\n\nNotez ce code avec votre mot de passe : ils sont indispensables pour revenir dans votre dossier. Personne ne peut les retrouver pour vous.\n\nVous pouvez maintenant ajouter vos justificatifs (PDF ou photo) dans l'onglet « Documents ».","Demande envoyée");
+  }catch(e){ c.occupe=false; modaleInfo("La demande n'a pas pu être envoyée : "+(e.message||e)); }
+}
+
+/* --- Ouverture et vue du dossier (étudiant) --- */
+async function cesOuvrirDossier(code, mdp, cache){
+  const c=cesEtat();
+  const acces=await cesAcces(code,mdp);
+  const d=await etuRpc("ces_ouvrir",{p_acces:acces});
+  let privJwk=cache&&cache.privJwk, K=cache&&cache.K;
+  if(!K){
+    try{ privJwk=await soutDesenvelopper(await cesCleMdp(code,mdp), d.priv_etu_chiffree, "ces-etu-priv"); }
+    catch(e){ throw new Error("Mot de passe incorrect."); }
+    K=await cesCleDossier(await soutPriv(privJwk), c.info.pub_ces, d.pub_etu);
+  }
+  const els=await cesDechiffrerEls(K, d.pub_etu, d.elements);
+  const profils=els.filter(e=>e.type==="profil"&&e.d);
+  c.ouvert={code, mdp, acces, privJwk, K, id:d.id, numero:d.numero, pubEtu:d.pub_etu, categorie:d.categorie, statut:d.statut, decision:d.decision,
+    archive_le:d.archive_le, suppression_le:d.suppression_le, bloque_le:d.bloque_le, els, fichiers:d.fichiers||[], rdv:d.rdv||[],
+    profil:profils.length?profils[profils.length-1].d:{}};
+  c.vue="dossier";
+  cesRedessiner();
+}
+async function cesRafraichirEtu(){
+  const c=S.ces; if(!c||!c.ouvert||c.occupe) return;
+  try{ const o=c.ouvert; const avant=JSON.stringify([o.els.length,o.statut,o.fichiers.length,o.rdv.length]);
+    await cesOuvrirDossier(o.code,o.mdp,{privJwk:o.privJwk,K:o.K});
+    const n=c.ouvert; if(avant!==JSON.stringify([n.els.length,n.statut,n.fichiers.length,n.rdv.length])) cesRedessiner(); }catch(e){}
+}
+function cesSuivi(statut){
+  const i=CES_STATUTS.findIndex(s=>s[0]===statut);
+  return `<div class="ces-suivi">${CES_STATUTS.map((s,k)=>`<span class="${statut==="archive"||k<=i?"ok":""}">${k<=i||statut==="archive"?"●":"○"} ${s[1]}</span>`).join('<span class="ces-fl">→</span>')}</div>`;
+}
+function cesVueDossierEtu(){
+  const c=S.ces, o=c.ouvert;
+  const tabs=[["suivi","Suivi"],["echanges","Échanges"],["documents","Documents"],["rdv","Rendez-vous"],["profil","Mon profil"]];
+  const decisions=o.els.filter(e=>e.type==="decision"&&e.d), engagements=o.els.filter(e=>e.type==="engagement"&&e.d);
+  const decl=o.els.find(e=>e.type==="declaration"&&e.d);
+  let corps="";
+  if(c.onglet==="echanges") corps=cesFil(o.els, "etu")+(o.statut==="archive"||o.bloque_le?"":`<div class="msg-compose sout-compose"><textarea id="ces_txt" placeholder="Votre message à la CES…" maxlength="6000"></textarea><button class="btn" data-action="ces-envoyer">Envoyer 🔒</button></div>`);
+  else if(c.onglet==="documents") corps=cesDocs(o, "etu");
+  else if(c.onglet==="rdv") corps=cesVueRdvEtu();
+  else if(c.onglet==="profil") corps=`${o.statut==="archive"?`<p class="sout-small">Dossier archivé : le profil ne peut plus être modifié.</p>`:`<p class="sout-small">Chaque modification est datée et visible par la CES.</p>${cesFormProfil(o.profil)}
+      <div class="row-btn" style="margin-top:12px"><button class="btn sm" data-action="ces-profil-maj">Enregistrer les modifications</button></div>`}
+      <div class="sout-card" style="margin-top:14px"><b>Changement de situation</b><p class="sout-small">Bourse obtenue, nouvel emploi, aide d'un autre organisme… Vous vous êtes engagé·e à le signaler.</p>
+        <textarea class="f" id="ces_chg" rows="3" placeholder="Décrivez le changement…" maxlength="3000"></textarea>
+        <div class="row-btn"><button class="btn ghost sm" data-action="ces-changement">Signaler le changement</button></div></div>
+      <div class="row-btn" style="margin-top:12px"><button class="btn ghost sm" data-action="ces-mdp">Changer mon mot de passe</button></div>`;
+  else {
+    corps=`${cesSuivi(o.statut)}
+      ${o.statut==="archive"?`<div class="sout-card">📁 <b>Dossier archivé</b> le ${esc(fmtQuand(o.archive_le))}. Il reste consultable et sera supprimé automatiquement le ${esc(fmtQuand(o.suppression_le))}.</div>`:""}
+      ${o.bloque_le?`<div class="sout-bloque">🚫 Ce dossier a été fermé par la CES.</div>`:""}
+      ${decisions.length?decisions.map(e=>`<div class="sout-card ces-decision"><b>⚖ Décision : ${esc(CES_DECISIONS[e.d.decision]||"")}</b>${e.d.montant?` — ${esc(e.d.montant)} €`:""}<br>
+          ${e.d.aide?`<span class="sout-small" style="color:inherit">${esc(e.d.aide)}</span><br>`:""}${e.d.motif?`<p class="sout-p" style="white-space:pre-wrap;margin:6px 0">${esc(e.d.motif)}</p>`:""}
+          <span class="sout-small" style="color:inherit">Signée par ${esc(e.d.nom)} le ${esc(fmtQuand(e.d.signeLe))}</span><br>
+          <button class="btn ghost sm" data-action="ces-pdf" data-type="decision" data-id="${e.id}" style="margin-top:8px">📄 Télécharger la décision (PDF)</button></div>`).join(""):`<p class="sout-small">Aucune décision pour le moment. Vous serez prévenu·e par e-mail.</p>`}
+      ${o.rdv.filter(r=>new Date(r.debut)>new Date()).map(r=>`<div class="sout-card">📅 <b>Rendez-vous</b> le ${esc(fmtQuand(r.debut))} — ${esc(r.lieu)}</div>`).join("")}
+      <div class="sout-card"><b>Mes documents signés</b><div class="row-btn" style="margin-top:8px">
+        ${decl?`<button class="btn ghost sm" data-action="ces-pdf" data-type="declaration" data-id="${decl.id}">📄 Ma déclaration sur l'honneur</button>`:""}
+        ${engagements.map(e=>`<button class="btn ghost sm" data-action="ces-pdf" data-type="engagement" data-id="${e.id}">📄 Engagement de confidentialité de la CES</button>`).join("")}</div>
+        ${engagements.length?"":`<p class="sout-small">Le responsable de la CES signera un engagement de confidentialité avant de traiter votre dossier. Vous le recevrez ici.</p>`}</div>`;
+  }
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="ces-fermer">← Quitter le dossier</button><span><span class="u-nom">Dossier ${esc(o.numero)}</span> <span class="u-id">${esc(CES_CAT_LABEL[o.categorie]||"")}</span></span></div>
+    <div class="sout-e2e">🔒 <b>Dossier chiffré de bout en bout.</b> Seul le responsable de la CES peut le lire. Rien n'est transmis au reste du bureau.</div>
+    <div class="ces-tabs">${tabs.map(([k,l])=>`<button class="${c.onglet===k?"on":""}" data-action="ces-onglet" data-o="${k}">${l}</button>`).join("")}</div>
+    ${corps}`;
+}
+function cesFil(els, moi){
+  const lab={profil:"Profil mis à jour",changement:"Changement de situation signalé",declaration:"Déclaration sur l'honneur signée",engagement:"Engagement de confidentialité signé par la CES",decision:"Décision rendue",document:"Document ajouté"};
+  const items=els.filter(e=>e.d).map(e=>{
+    const mine=e.auteur===moi, qui=e.auteur==="etu"?(moi==="etu"?"Vous":"Étudiant·e"):(moi==="ces"?"Vous":"CES");
+    if(e.type==="message") return `<div class="bub ${mine?"me":"them"}"><div style="white-space:pre-wrap;word-break:break-word">${esc(e.d.t||"")}</div><div class="m-meta">🔒 ${qui} · ${esc(fmtQuand(e.ts))}</div></div>`;
+    if(e.type==="changement") return `<div class="sout-clause-msg">🔔 <b>Changement de situation</b><div style="white-space:pre-wrap;text-align:left;margin-top:4px">${esc(e.d.t||"")}</div><span class="sout-small">${qui} · ${esc(fmtQuand(e.ts))}</span></div>`;
+    if(e.type==="profil" && e.d.changements && e.d.changements.length) return `<div class="ces-evt">✎ Profil modifié : ${esc(e.d.changements.join(", "))} — ${esc(fmtQuand(e.ts))}</div>`;
+    if(e.type==="profil") return "";
+    return `<div class="ces-evt">${esc(lab[e.type]||e.type)}${e.type==="document"&&e.d.nom?" : "+esc(e.d.nom):""} — ${esc(fmtQuand(e.ts))}</div>`;
+  }).join("");
+  return `<div class="msg-thread">${items||`<div class="empty" style="border:none">Aucun échange pour le moment.</div>`}</div>`;
+}
+function cesDocs(o, moi){
+  const docs=o.els.filter(e=>e.type==="document"&&e.d);
+  const fich=Object.fromEntries((o.fichiers||[]).map(f=>[f.id,f]));
+  const liste=docs.map(e=>{ const f=fich[e.d.fichier_id]; const ok=f&&f.complet;
+    return `<div class="doc" style="cursor:default;padding:9px 13px"><span class="meta"><p class="dt" style="font-size:13.5px">📎 ${esc(e.d.nom)}</p>
+      <p class="du">${e.auteur==="etu"?(moi==="etu"?"Ajouté par vous":"Ajouté par l'étudiant·e"):(moi==="ces"?"Envoyé par vous":"Envoyé par la CES")} · ${esc(fmtQuand(e.ts))} · ${cesTailleLisible(e.d.taille)}</p></span>
+      ${ok?`<button class="btn ghost sm" data-action="${moi==="etu"?"ces-doc-lire":"cesr-doc-lire"}" data-id="${e.id}">Ouvrir</button>`:`<span class="du">incomplet</span>`}</div>`; }).join("");
+  const peut=moi==="etu"?(o.statut!=="archive"&&!o.bloque_le):(o.statut!=="archive");
+  return `${peut?`<div class="sout-card"><b>Ajouter un document</b><p class="sout-small">PDF ou photo (JPG, PNG), 5 Mo maximum. Le fichier est chiffré sur votre appareil avant l'envoi.</p>
+      <label class="btn ghost sm" style="cursor:pointer">📎 Choisir un fichier<input type="file" accept="application/pdf,image/jpeg,image/png" data-change="${moi==="etu"?"ces-doc":"cesr-doc"}" style="display:none"></label>
+      <span class="sout-small" id="ces_prog"></span></div>`:""}
+    ${liste||`<div class="empty">Aucun document.</div>`}`;
+}
+function cesVueRdvEtu(){
+  const c=S.ces, o=c.ouvert;
+  const futurs=o.rdv.filter(r=>new Date(r.debut)>new Date());
+  if(!c.creneauxCharges){ c.creneauxCharges=true; etuRpc("ces_creneaux_libres").then(l=>{ c.creneaux=l||[]; cesRedessiner(); }).catch(()=>{}); }
+  return `${futurs.length?futurs.map(r=>`<div class="sout-card">📅 <b>Votre rendez-vous</b> : ${esc(fmtQuand(r.debut))} → ${esc(new Date(r.fin).toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"}))}<br>📍 ${esc(r.lieu)}
+      ${o.statut==="archive"?"":`<div class="row-btn" style="margin-top:8px"><button class="btn ghost sm" data-action="ces-rdv-annuler" data-id="${r.id}">Annuler ce rendez-vous</button></div>`}</div>`).join("")
+    :`<p class="sout-small">Vous n'avez pas de rendez-vous à venir.</p>`}
+    ${(futurs.length||o.statut==="archive"||o.bloque_le)?"":`<h3 class="serif" style="margin:14px 0 8px">Créneaux disponibles</h3>
+      ${(c.creneaux||[]).length?c.creneaux.map(r=>`<div class="doc" style="cursor:default;padding:9px 13px"><span class="meta"><p class="dt" style="font-size:13.5px">${esc(fmtQuand(r.debut))}</p><p class="du">${esc(r.lieu)}</p></span><button class="btn sm" data-action="ces-rdv-prendre" data-id="${r.id}">Réserver</button></div>`).join("")
+      :`<p class="sout-small">Aucun créneau disponible pour le moment. Écrivez à la CES dans « Échanges » si vous souhaitez un rendez-vous.</p>`}`}`;
+}
+async function cesEtuAjouter(type, obj){
+  const c=S.ces, o=c.ouvert;
+  const e=await cesChiffrerEl(o.K, o.pubEtu, "etu", type, obj);
+  await etuRpc("ces_ajouter",{p_acces:o.acces,p_type:type,p_iv:e.iv,p_contenu:e.ct});
+  soutNotifServeur("ces");
+  await cesOuvrirDossier(o.code,o.mdp,{privJwk:o.privJwk,K:o.K});
+}
+function cesTelechargerPDFEl(o, id){
+  const e=o.els.find(x=>String(x.id)===String(id)); if(!e||!e.d) return;
+  if(e.type==="declaration") telechargerPDF(nomPDF("declaration-honneur-"+o.numero), cssDocImprimable(), cesPDFDeclaration(e.d, o.numero));
+  else if(e.type==="engagement") telechargerPDF(nomPDF("engagement-ces-"+o.numero), cssDocImprimable(), cesPDFEngagement(e.d));
+  else if(e.type==="decision") telechargerPDF(nomPDF("decision-ces-"+o.numero), cssDocImprimable(), cesPDFDecision(e.d));
+}
+async function cesOuvrirDoc(o, id, lirePart){
+  const e=o.els.find(x=>String(x.id)===String(id)); if(!e||!e.d) return;
+  const f=(o.fichiers||[]).find(x=>x.id===e.d.fichier_id); if(!f) return;
+  try{ const blob=await cesLireFichier(e.d, f, o.K, lirePart); ouvrirFichier(URL.createObjectURL(blob), e.d.nom); }
+  catch(err){ modaleInfo("Impossible d'ouvrir le document : "+(err.message||err)); }
+}
+async function cesFichierChoisi(input, moi){
+  const f=input.files&&input.files[0]; input.value=""; if(!f) return;
+  const t=typeFichier(f);
+  if(!/^(application\/pdf|image\/jpeg|image\/png)$/.test(t)){ modaleInfo("Format non accepté : PDF, JPG ou PNG uniquement."); return; }
+  if(f.size>5*1024*1024){ modaleInfo("Fichier trop lourd : 5 Mo maximum."); return; }
+  const prog=(i,n)=>{ const el=document.getElementById("ces_prog"); if(el) el.textContent=" Envoi chiffré… "+Math.round(100*i/n)+" %"; };
+  if(moi==="etu"){
+    const c=S.ces, o=c.ouvert; c.occupe=true;
+    try{ const meta=await cesEnvoyerFichier(f, o.K,
+        (parts,taille)=>etuRpc("ces_fichier_creer",{p_acces:o.acces,p_parts:parts,p_taille:taille}),
+        (fid,i,data)=>etuRpc("ces_fichier_part",{p_acces:o.acces,p_fichier:fid,p_idx:i,p_data:data}), prog);
+      c.occupe=false; await cesEtuAjouter("document", meta); modaleInfo("✓ Document ajouté à votre dossier."); }
+    catch(e){ c.occupe=false; modaleInfo("Envoi impossible : "+(e.message||e)); }
+  } else {
+    const r=S.cesR, o=r.ouvert; r.occupe=true;
+    try{ const meta=await cesEnvoyerFichier(f, o.K,
+        (parts,taille)=>cesRpcR("ces_resp_fichier_creer",{p_id:o.id,p_parts:parts,p_taille:taille}),
+        (fid,i,data)=>cesRpcR("ces_resp_fichier_part",{p_id:o.id,p_fichier:fid,p_idx:i,p_data:data}), prog);
+      r.occupe=false; await cesRAjouter("document", meta); cesNotifEtudiant(o); modaleInfo("✓ Document envoyé à l'étudiant·e."); }
+    catch(e){ r.occupe=false; modaleInfo("Envoi impossible : "+(e.message||e)); }
+  }
+}
+
+/* =====================================================================
+   AIDE SOCIALE — CÔTÉ RESPONSABLE (onglet « Soutien social — CES »)
+   ===================================================================== */
+function cesREtat(){ const uidMe=(S.session&&S.session.id)||null;
+  if(!S.cesR||S.cesR.uid!==uidMe) S.cesR={uid:uidMe, info:null, cle:null, privJwk:null, liste:[], ouvert:null, vue:"accueil", recherche:"", filtre:"ouverts", creneaux:[], stats:null, charge:false, chargement:false, erreur:"", occupe:false, cles:{}};
+  return S.cesR; }
+function cesRCleLocale(){ return "ces:resp:"+((S.session&&S.session.id)||""); }
+function cesNonLus(){ const r=S.cesR; if(!r||!r.info||!r.info.est_resp) return 0; return (r.liste||[]).filter(d=>d.non_lu).length; }
+function cesOngletVisible(){ const r=S.cesR; return !!(r&&r.info&&(r.info.est_resp||r.info.est_successeur||r.info.est_owner)); }
+async function loadCes(){
+  try{ const r=cesREtat(); if(!S.session) return; r.info=await cesRpcR("ces_resp_info");
+    if(r.info.est_resp){ r.liste=(await cesRpcR("ces_resp_liste"))||[]; } }catch(e){}
+}
+async function cesRCharger(){
+  const r=cesREtat(); if(r.chargement||!S.session) return; r.chargement=true;
+  try{ r.info=await cesRpcR("ces_resp_info");
+    if(r.info.est_resp){ await cesRCleLocaleCharger(); await cesRListe(); }
+    r.charge=true; r.erreur=""; }catch(e){ r.erreur=e.message||String(e); }
+  r.chargement=false; cesRedessiner();
+}
+async function cesRCleLocaleCharger(){
+  const r=S.cesR; if(r.cle||!r.info.pub_ces) return;
+  const jwk=store.get(cesRCleLocale(),null); if(!jwk) return;
+  if(jwk.x!==r.info.pub_ces.x){ store.set(cesRCleLocale(),null); return; }
+  try{ r.cle=await soutPriv(jwk); r.privJwk=jwk; }catch(e){ store.set(cesRCleLocale(),null); }
+}
+async function cesRListe(){
+  const r=S.cesR; r.liste=(await cesRpcR("ces_resp_liste"))||[];
+  if(!r.cle) return;
+  for(const d of r.liste){
+    try{ if(!r.cles[d.id]) r.cles[d.id]=await cesCleDossier(r.cle, d.pub_etu, d.pub_etu);
+      d.p=d.profil?await soutDechiffrer(r.cles[d.id], d.profil.iv, d.profil.contenu, cesAad(d.pub_etu,"etu","profil")):{}; if(d.p) delete d.p._; }catch(e){ d.p={}; }
+  }
+}
+function cesNomP(p){ return ((p&&p.prenom||"")+" "+(p&&p.nom||"")).trim()||"(nom illisible)"; }
+function cesDejaConnus(d){
+  const r=S.cesR, p=d.p||{}; const mat=String(p.matricule||"").toLowerCase(), nom=cesNomP(p).toLowerCase();
+  return (r.liste||[]).filter(x=>x.id!==d.id && x.p && ((mat && String(x.p.matricule||"").toLowerCase()===mat) || (nom.length>3 && cesNomP(x.p).toLowerCase()===nom)));
+}
+
+function tabCes(){
+  const r=cesREtat();
+  if(!r.charge && !r.chargement && !r.erreur) setTimeout(cesRCharger,0);
+  let corps;
+  if(r.erreur) corps=`<div class="sout-card"><p class="sout-p" style="color:var(--red)">${esc(r.erreur)}</p><div class="row-btn"><button class="btn ghost sm" data-action="cesr-recharger">Réessayer</button></div></div>`;
+  else if(!r.info) corps=`<div class="empty">Chargement sécurisé…</div>`;
+  else corps=cesRVue();
+  return `<div class="sout-zone"><div class="sout-top"><h2 class="serif" style="margin:0;font-size:22px">🤝 Soutien social — CES</h2>
+    <button class="btn ghost sm" data-action="etu-partage">🔗 Liens étudiants</button></div>${corps}</div>`;
+}
+function cesRVue(){
+  const r=S.cesR, i=r.info;
+  const owner=i.est_owner?cesROwnerCarte():"";
+  if(i.est_successeur && !i.est_resp) return owner+`<div class="sout-card"><p class="sout-p"><b>Vous êtes désigné·e comme nouveau responsable de la CES</b> par ${esc(i.responsable_nom||"le responsable actuel")}.</p>
+      <p class="sout-small">Saisissez le code de passation qu'il ou elle vous a remis en main propre. Vous créerez ensuite votre propre phrase de récupération.</p>
+      <div class="row-btn"><button class="btn" data-action="cesr-passation-recevoir">🔑 Saisir le code de passation</button></div></div>`;
+  if(!i.est_resp) return owner||`<div class="empty">Cet onglet est réservé au responsable de la CES.</div>`;
+  if(!i.pub_ces) return owner+`<div class="sout-card"><p class="sout-p"><b>Bienvenue.</b> L'aide sociale n'est pas encore activée.</p>
+      <p class="sout-p">En l'activant, votre appareil crée la <b>clé de la CES</b>, protégée par une phrase de récupération. Gardez-la en lieu sûr : elle permet de lire les dossiers sur un nouvel appareil, et sera transmise à votre successeur lors de la passation.</p>
+      <div class="row-btn"><button class="btn" data-action="cesr-activer">🔑 Activer l'aide sociale</button></div></div>`;
+  if(!r.cle) return owner+`<div class="sout-card"><p class="sout-p">🔒 Les dossiers sont verrouillés sur cet appareil.</p>
+      <p class="sout-small">Si vous venez d'être désigné·e en remplacement, saisissez la phrase remise par l'ancien responsable, puis changez-la.</p>
+      <div class="row-btn"><button class="btn" data-action="cesr-deverrouiller">Déverrouiller avec la phrase</button></div></div>`;
+  if(r.vue==="dossier"&&r.ouvert) return cesRVueDossier();
+  if(r.vue==="creneaux") return cesRVueCreneaux();
+  if(r.vue==="stats") return cesRVueStats();
+  if(r.vue==="ressources") return cesVueRessources(false);
+  return owner+cesRVueListe();
+}
+function cesROwnerCarte(){
+  const i=S.cesR.info;
+  return `<div class="sout-card"><b>Propriétaire de l'app</b><p class="sout-small">Responsable actuel de la CES : <b>${esc(i.responsable_nom||"aucun")}</b>${i.passation_vers?` · passation en cours vers <b>${esc(i.passation_nom||"")}</b>`:""}.<br>Vous ne voyez aucun dossier : seul le responsable y a accès.</p>
+    <div class="row-btn"><button class="btn ghost sm" data-action="cesr-owner-designer">Désigner un autre responsable (secours)</button>${i.passation_vers?`<button class="btn ghost sm" data-action="cesr-passation-annuler">Annuler la passation</button>`:""}</div></div>`;
+}
+function cesRVueListe(){
+  const r=S.cesR, i=r.info, q=String(r.recherche||"").toLowerCase().trim();
+  let L=(r.liste||[]).filter(d=>r.filtre==="archives"?d.statut==="archive":d.statut!=="archive");
+  if(q) L=(r.liste||[]).filter(d=>[d.numero, cesNomP(d.p), d.p&&d.p.matricule, d.p&&d.p.email].join(" ").toLowerCase().includes(q));
+  const pause=i.pause_jusqua;
+  return `<div class="row-btn" style="margin-bottom:12px">
+      <button class="btn ghost sm" data-action="cesr-vue" data-vue="creneaux">📅 Créneaux de rendez-vous</button>
+      <button class="btn ghost sm" data-action="cesr-stats">📊 Statistiques</button>
+      <button class="btn ghost sm" data-action="cesr-vue" data-vue="ressources">📚 Ressources</button>
+      <button class="btn ghost sm" data-action="cesr-phrase">Changer la phrase</button>
+      <button class="btn ghost sm" data-action="cesr-passation">Transmettre au nouveau responsable</button>
+      <button class="btn ghost sm" data-action="cesr-verrouiller">Verrouiller cet appareil</button></div>
+    <div class="sout-card"><b>Nouvelles demandes :</b> ${pause?`<span style="color:var(--amber)">en pause jusqu'au ${esc(fmtQuand(pause))}</span> <button class="btn ghost sm" data-action="cesr-pause" data-h="0">Reprendre</button>`
+      :`ouvertes <span style="margin-left:6px"></span><button class="btn ghost sm" data-action="cesr-pause" data-h="24">Pause 24 h</button> <button class="btn ghost sm" data-action="cesr-pause" data-h="168">Pause 7 jours</button>`}</div>
+    ${i.passation_vers?`<div class="sout-card">🔁 Passation préparée vers <b>${esc(i.passation_nom||"")}</b> : la personne doit saisir le code que vous lui avez remis. <button class="link" data-action="cesr-passation-annuler">Annuler</button></div>`:""}
+    <input class="f" id="cesr_q" placeholder="🔍 Rechercher : nom, matricule, n° de dossier…" value="${esc(r.recherche||"")}" >
+    <div class="ces-tabs" style="margin-top:8px"><button class="${r.filtre!=="archives"?"on":""}" data-action="cesr-filtre" data-f="ouverts">En cours (${(r.liste||[]).filter(d=>d.statut!=="archive").length})</button><button class="${r.filtre==="archives"?"on":""}" data-action="cesr-filtre" data-f="archives">Archivés (${(r.liste||[]).filter(d=>d.statut==="archive").length})</button></div>
+    ${L.length?`<div class="msg-list">${L.map(d=>`<button class="msg-row" data-action="cesr-ouvrir" data-id="${esc(d.id)}">
+        <span class="msg-av">${esc(initials(cesNomP(d.p)))}</span><span><span class="nm">${esc(cesNomP(d.p))}</span> <span class="du" style="display:inline">${esc(d.numero)}</span><br>
+        <span class="fn">${esc(CES_CAT_LABEL[d.categorie]||"")} · ${esc((CES_STATUTS.find(s=>s[0]===d.statut)||["","Archivé"])[1])}${d.decision?" · "+esc(CES_DECISIONS[d.decision]):""} · ${esc(fmtQuand(d.derniere_activite))}</span></span>
+        <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${d.non_lu?`<span class="pill" style="background:var(--red)">Nouveau</span>`:""}${!d.engagement&&d.statut!=="archive"?`<span class="pill" style="background:var(--gold-dim)">✍ À signer</span>`:""}${cesDejaConnus(d).length?`<span class="pill" style="background:#4a6bb5">déjà connu·e</span>`:""}</span></button>`).join("")}</div>`
+      :`<div class="empty">Aucun dossier${q?" ne correspond à la recherche":""}.</div>`}`;
+}
+async function cesROuvrir(id, silencieux){
+  const r=S.cesR;
+  const d=await cesRpcR("ces_resp_ouvrir",{p_id:id});
+  const K=r.cles[d.id]||(r.cles[d.id]=await cesCleDossier(r.cle, d.pub_etu, d.pub_etu));
+  const els=await cesDechiffrerEls(K, d.pub_etu, d.elements);
+  const profils=els.filter(e=>e.type==="profil"&&e.d);
+  r.ouvert={id:d.id, numero:d.numero, pubEtu:d.pub_etu, K, categorie:d.categorie, statut:d.statut, decision:d.decision, archive_le:d.archive_le,
+    suppression_le:d.suppression_le, engagementMoi:!!d.engagement_moi, bloque_le:d.bloque_le, els, fichiers:d.fichiers||[], rdv:d.rdv||[],
+    profil:profils.length?profils[profils.length-1].d:{}, onglet:(r.ouvert&&r.ouvert.id===d.id)?r.ouvert.onglet:"dossier"};
+  const l=(r.liste||[]).find(x=>x.id===d.id); if(l){ l.non_lu=false; l.p=r.ouvert.profil; }
+  if(!silencieux){ r.vue="dossier"; cesRedessiner(); }
+}
+function cesRVueDossier(){
+  const r=S.cesR, o=r.ouvert, p=o.profil||{};
+  const connus=cesDejaConnus({id:o.id, p});
+  const tabs=[["dossier","Dossier"],["echanges","Échanges"],["documents","Documents"],["historique","Profil & historique"]];
+  if(!o.engagementMoi){
+    return `<div class="msg-head"><button class="btn ghost sm" data-action="cesr-retour">← Dossiers</button><span class="u-nom">Dossier ${esc(o.numero)}</span></div>
+      <div class="sout-card"><p class="sout-p"><b>Avant de traiter ce dossier</b>, signez l'engagement de confidentialité. Il sera transmis à l'étudiant·e.</p>
+      <div class="sout-clause">${cesEngagementTexte(S.session.nom||"", o.numero).map(t=>`<p>${esc(t)}</p>`).join("")}</div>
+      <div class="row-btn" style="margin-top:12px"><button class="btn" data-action="cesr-engagement">✍ Signer et transmettre l'engagement</button></div></div>`;
+  }
+  let corps="";
+  if(o.onglet==="echanges") corps=cesFil(o.els,"ces")+(o.statut==="archive"?`<p class="sout-small">Dossier archivé : rouvrez-le pour écrire.</p>`:`<div class="msg-compose sout-compose"><textarea id="cesr_txt" placeholder="Votre message à l'étudiant·e…" maxlength="6000"></textarea><button class="btn" data-action="cesr-envoyer">Envoyer 🔒</button></div>`);
+  else if(o.onglet==="documents") corps=cesDocs(o,"ces");
+  else if(o.onglet==="historique"){
+    const hist=o.els.filter(e=>(e.type==="profil"||e.type==="changement")&&e.d);
+    corps=`<div class="sout-card">${cesRProfilTable(p)}</div>
+      <h3 class="serif" style="margin:14px 0 8px">Historique des modifications</h3>
+      ${hist.map(e=>`<div class="ces-evt">${e.type==="changement"?`🔔 Changement de situation : <span style="white-space:pre-wrap">${esc(e.d.t||"")}</span>`:(e.d.changements&&e.d.changements.length?`✎ Modifié : <b>${esc(e.d.changements.join(", "))}</b>`:"Profil initial")} — ${esc(fmtQuand(e.ts))}</div>`).join("")}`;
+  } else {
+    const decl=o.els.find(e=>e.type==="declaration"&&e.d);
+    const decisions=o.els.filter(e=>e.type==="decision"&&e.d);
+    corps=`${connus.length?`<div class="sout-card" style="border-color:#4a6bb5">⚠ <b>Cet·te étudiant·e a déjà ${connus.length>1?connus.length+" autres dossiers":"un autre dossier"}</b> :<br>${connus.map(x=>`<button class="link" data-action="cesr-ouvrir" data-id="${esc(x.id)}">${esc(x.numero)}</button> — ${esc(CES_CAT_LABEL[x.categorie]||"")}, ${esc(x.decision?CES_DECISIONS[x.decision]:(CES_STATUTS.find(s=>s[0]===x.statut)||["","archivé"])[1])}, ${esc(new Date(x.cree_le).toLocaleDateString("fr-BE",{month:"long",year:"numeric"}))}`).join("<br>")}</div>`:""}
+      <div class="sout-card"><b>${esc(cesNomP(p))}</b> — matricule ${esc(p.matricule||"?")} · ${esc(p.section||"")} ${esc(p.annee||"")}<br>
+        <span class="sout-small">✉ ${esc(p.email||"")}${p.tel?" · 📞 "+esc(p.tel):""} · langue : ${p.langue==="en"?"anglais":"français"}</span></div>
+      ${cesSuivi(o.statut)}
+      ${o.statut==="archive"?`<div class="sout-card">📁 Archivé le ${esc(fmtQuand(o.archive_le))} — suppression automatique le ${esc(fmtQuand(o.suppression_le))}.</div>`:""}
+      ${decisions.map(e=>`<div class="sout-card ces-decision"><b>⚖ ${esc(CES_DECISIONS[e.d.decision]||"")}</b>${e.d.montant?` — ${esc(e.d.montant)} €`:""} · ${esc(fmtQuand(e.d.signeLe))}<br>${e.d.aide?esc(e.d.aide)+"<br>":""}<button class="btn ghost sm" data-action="cesr-pdf" data-type="decision" data-id="${e.id}" style="margin-top:6px">📄 PDF</button></div>`).join("")}
+      ${o.rdv.map(x=>`<div class="sout-card">📅 Rendez-vous : ${esc(fmtQuand(x.debut))} — ${esc(x.lieu)}</div>`).join("")}
+      <div class="row-btn" style="margin:10px 0">
+        ${decl?`<button class="btn ghost sm" data-action="cesr-pdf" data-type="declaration" data-id="${decl.id}">📄 Déclaration sur l'honneur</button>`:""}
+        ${o.statut==="recue"?`<button class="btn ghost sm" data-action="cesr-statut" data-s="examen">Passer « en cours d'examen »</button>`:""}
+        ${o.statut!=="archive"?`<button class="btn sm" data-action="cesr-decision-form">⚖ Rendre une décision</button>`:""}
+        ${o.statut!=="archive"?`<button class="btn ghost sm" data-action="cesr-statut" data-s="archive">📁 Archiver</button>`:`<button class="btn ghost sm" data-action="cesr-statut" data-s="rouvrir">Rouvrir le dossier</button>`}
+        <button class="link" data-action="cesr-bloquer" data-v="${o.bloque_le?0:1}" style="color:var(--red)">${o.bloque_le?"Débloquer":"🚫 Bloquer (abus)"}</button></div>
+      ${r.decisionForm?cesRDecisionForm():""}`;
+  }
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="cesr-retour">← Dossiers</button><span><span class="u-nom">Dossier ${esc(o.numero)}</span> <span class="u-id">${esc(CES_CAT_LABEL[o.categorie]||"")}</span></span></div>
+    <div class="ces-tabs">${tabs.map(([k,l])=>`<button class="${o.onglet===k?"on":""}" data-action="cesr-onglet" data-o="${k}">${l}</button>`).join("")}</div>${corps}`;
+}
+function cesRProfilTable(p){
+  const v=(k)=>{ const x=p[k]; if(k==="consentement") return x?"Oui":"Non"; if(k==="iban") return x?cesIbanFormat(x):""; return x==null?"":String(x); };
+  return `<table class="sout-table"><tbody>${CES_PROFIL_CHAMPS.filter(([k])=>v(k)!=="").map(([k,l])=>`<tr><th>${esc(l)}</th><td style="white-space:normal">${esc(v(k))}</td></tr>`).join("")}</tbody></table>`;
+}
+function cesRDecisionForm(){
+  return `<div class="sout-card"><b>Rendre une décision</b>
+    <label class="sout-small" style="display:block;margin-top:8px">Décision</label>${cesSel("cesr_dec","accordee",Object.entries(CES_DECISIONS))}
+    <label class="sout-small" style="display:block;margin-top:8px">Montant en euros (si aide financière)</label><input class="f" id="cesr_montant" inputmode="decimal" placeholder="ex. 150">
+    <label class="sout-small" style="display:block;margin-top:8px">Aide accordée (description)</label><input class="f" id="cesr_aide" placeholder="ex. 2 colis alimentaires, prise en charge du syllabus…">
+    <label class="sout-small" style="display:block;margin-top:8px">Motif</label><textarea class="f" id="cesr_motif" rows="4" maxlength="4000" placeholder="Explication remise à l'étudiant·e"></textarea>
+    <div class="row-btn"><button class="btn ghost sm" data-action="cesr-decision-annuler">Annuler</button><button class="btn sm" data-action="cesr-decision">✍ Signer et transmettre la décision</button></div></div>`;
+}
+async function cesRAjouter(type, obj){
+  const r=S.cesR, o=r.ouvert;
+  const e=await cesChiffrerEl(o.K, o.pubEtu, "ces", type, obj);
+  await cesRpcR("ces_resp_ajouter",{p_id:o.id,p_type:type,p_iv:e.iv,p_contenu:e.ct});
+  await cesROuvrir(o.id, true); await cesRListe().catch(()=>{}); cesRedessiner();
+}
+/* Mail à l'étudiant·e, envoyé depuis l'appareil du responsable (qui connaît son adresse) : aucun contenu. */
+function cesNotifEtudiant(o){
+  const p=o&&o.profil; if(!p||!cesEmailValide(p.email)) return;
+  const en=p.langue==="en";
+  const corps=`<h2 style="margin:0 0 10px;color:#241c46">Aide sociale — Bureau étudiant</h2>`
+    +`<p>Il y a du nouveau dans votre dossier d'aide sociale (réponse, document, décision ou rendez-vous).</p>`
+    +`<p><a href="${ETU_LIENS.social}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir mon dossier</a></p>`
+    +(en?`<p style="color:#555">There is an update in your social support file. Open it with your file code and password.</p>`:"")
+    +`<p style="font-size:12px;color:#666">Pour votre confidentialité, ce mail ne contient aucun détail. Connectez-vous avec votre code de dossier et votre mot de passe.</p>`;
+  envoyerAvecPiece([p.email], en?"Bureau étudiant — update in your file / du nouveau dans votre dossier":"Bureau étudiant — du nouveau dans votre dossier", corps, null, {sansInvitation:true, tous:true}).catch(()=>{});
+}
+async function cesRSigner(titre, texteSig, quoi){
+  const me=S.session;
+  if(!(await soutAuthentifier(me.email, quoi))) return null;
+  const sig=await modaleSignature(titre, texteSig); if(!sig) return null;
+  return sig;
+}
+async function cesRSignerEngagement(){
+  const r=S.cesR, o=r.ouvert, me=S.session; if(!o||r.occupe) return;
+  if(!(await modaleConfirm("Signer l'engagement de confidentialité pour le dossier "+o.numero+" ?\n\nIl sera transmis à l'étudiant·e dans son dossier chiffré.","Signer l'engagement"))) return;
+  const sig=await cesRSigner("Votre signature","Signez dans le cadre : votre signature figurera sur l'engagement remis à l'étudiant·e.","l'engagement de confidentialité de la CES"); if(!sig) return;
+  r.occupe=true;
+  try{ const texte=cesEngagementTexte(me.nom||"", o.numero);
+    const base={v:CES_ENG_VERSION, nom:me.nom||"", email:me.email||"", numero:o.numero, signeLe:new Date().toISOString(), methode:PR_METHODE+" + signature manuscrite", sigHash:soutHex(await soutSha(sig))};
+    await cesRAjouter("engagement", Object.assign({}, base, {texte, signature:sig, empreinte:await cesEmpreinte(base,texte)}));
+    r.occupe=false; cesNotifEtudiant(r.ouvert); modaleInfo("✓ Engagement signé et transmis. Vous pouvez maintenant traiter le dossier.");
+  }catch(e){ r.occupe=false; modaleInfo("Signature impossible : "+(e.message||e)); }
+}
+async function cesRRendreDecision(){
+  const r=S.cesR, o=r.ouvert, me=S.session; if(!o||r.occupe) return;
+  const decision=String(val("cesr_dec")||""), montant=String(val("cesr_montant")||"").trim().replace(",","."), aide=String(val("cesr_aide")||"").trim(), motif=String(val("cesr_motif")||"").trim();
+  if(!CES_DECISIONS[decision]){ modaleInfo("Choisissez une décision."); return; }
+  if(montant && !/^\d{1,6}(\.\d{1,2})?$/.test(montant)){ modaleInfo("Montant invalide."); return; }
+  if(!(await modaleConfirm("Rendre la décision « "+CES_DECISIONS[decision]+" »"+(montant?" ("+montant+" €)":"")+" pour le dossier "+o.numero+" ?\n\nL'étudiant·e la recevra dans son dossier, en PDF signé.","Rendre la décision"))) return;
+  const sig=await cesRSigner("Signer la décision","Votre signature figurera sur la décision remise à l'étudiant·e.","la décision"); if(!sig) return;
+  r.occupe=true;
+  try{ const base={decision, montant, aide, motif, numero:o.numero, categorie:o.categorie, etudiant:cesNomP(o.profil), nom:me.nom||"", signeLe:new Date().toISOString(), methode:PR_METHODE+" + signature manuscrite", sigHash:soutHex(await soutSha(sig))};
+    await cesRAjouter("decision", Object.assign({}, base, {signature:sig, empreinte:await cesEmpreinte(base,[])}));
+    await cesRpcR("ces_resp_statut",{p_id:o.id,p_statut:"decision",p_decision:decision});
+    r.decisionForm=false; r.occupe=false; await cesROuvrir(o.id,true); await cesRListe(); cesRedessiner(); cesNotifEtudiant(r.ouvert);
+    modaleInfo("✓ Décision rendue et transmise à l'étudiant·e."+(decision!=="refusee"&&montant&&o.profil&&!o.profil.consentement?"\n\n⚠ L'étudiant·e n'a pas donné son accord pour la transmission de ses coordonnées bancaires à la trésorerie : demandez-le lui dans les échanges.":""));
+  }catch(e){ r.occupe=false; modaleInfo("Décision impossible : "+(e.message||e)); }
+}
+function cesRVueCreneaux(){
+  const r=S.cesR;
+  if(!r.creneauxCharges){ r.creneauxCharges=true; cesRpcR("ces_resp_creneaux").then(l=>{ r.creneaux=l||[]; cesRedessiner(); }).catch(()=>{}); }
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="cesr-vue" data-vue="accueil">← Dossiers</button><span class="u-nom">📅 Créneaux de rendez-vous</span></div>
+    <div class="sout-card"><b>Ajouter un créneau</b>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><input class="f" id="cesr_c_date" type="date" style="max-width:170px"><input class="f" id="cesr_c_heure" type="time" style="max-width:130px">
+      ${cesSel("cesr_c_duree","30",[["15","15 min"],["30","30 min"],["45","45 min"],["60","1 h"]])}</div>
+      <input class="f" id="cesr_c_lieu" placeholder="Lieu (ex. salle facultaire, ou « Visio, lien envoyé par message »)">
+      <div class="row-btn"><button class="btn sm" data-action="cesr-creneau-creer">Ajouter</button></div></div>
+    ${(r.creneaux||[]).length?r.creneaux.map(c=>`<div class="doc" style="cursor:default;padding:9px 13px"><span class="meta"><p class="dt" style="font-size:13.5px">${esc(fmtQuand(c.debut))} → ${esc(new Date(c.fin).toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"}))}</p>
+      <p class="du">${esc(c.lieu)} · ${c.numero?`<b>réservé — dossier ${esc(c.numero)}</b>`:"libre"}</p></span><button class="link" data-action="cesr-creneau-suppr" data-id="${esc(c.id)}" style="color:var(--red)">supprimer</button></div>`).join("")
+      :`<div class="empty">Aucun créneau.</div>`}`;
+}
+function cesRVueStats(){
+  const st=S.cesR.stats||{lignes:[]};
+  const L=st.lignes||[];
+  const tot=k=>L.reduce((a,x)=>a+Number(x[k]||0),0);
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="cesr-vue" data-vue="accueil">← Dossiers</button><span class="u-nom">📊 Statistiques CES</span></div>
+    <div class="sout-card"><p class="sout-p">Dossiers en cours : <b>${Number(st.ouverts||0)}</b> · archivés : <b>${Number(st.archives||0)}</b></p>
+    <div style="overflow-x:auto"><table class="sout-table"><thead><tr><th>Mois</th><th>Catégorie</th><th>Demandes</th><th>Accordées</th><th>Partielles</th><th>Refusées</th><th>Réorientées</th></tr></thead><tbody>
+    ${L.length?L.map(x=>`<tr><td>${esc(soutMoisLabel(x.mois))}</td><td>${esc(CES_CAT_LABEL[x.categorie]||x.categorie)}</td><td>${x.demandes}</td><td>${x.accordee}</td><td>${x.partielle}</td><td>${x.refusee}</td><td>${x.reorientee}</td></tr>`).join("")
+      +`<tr style="font-weight:bold"><td>Total</td><td></td><td>${tot("demandes")}</td><td>${tot("accordee")}</td><td>${tot("partielle")}</td><td>${tot("refusee")}</td><td>${tot("reorientee")}</td></tr>`:`<tr><td colspan="7">Aucune activité.</td></tr>`}
+    </tbody></table></div><p class="sout-small">Chiffres anonymes : aucun nom ni contenu.</p></div>`;
+}
+
+/* --- Clés, passation --- */
+async function cesRActiver(){
+  const r=S.cesR;
+  if(!(await modaleConfirm("Activer l'aide sociale ?\n\nUne phrase de récupération va s'afficher : notez-la sur papier. Elle protège tous les dossiers et devra être conservée en lieu sûr.","Activer"))) return;
+  const phrase=await soutNouvellePhrase(); if(!phrase) return;
+  try{ const sel=soutB64(crypto.getRandomValues(new Uint8Array(16)));
+    const paire=await soutPaire(); const privJwk=await crypto.subtle.exportKey("jwk",paire.privateKey); const pubJwk=soutPubJwk(await crypto.subtle.exportKey("jwk",paire.publicKey));
+    await cesRpcR("ces_resp_init",{p_pub:pubJwk,p_priv:await soutEnvelopper(await soutClePhrase(phrase,sel),privJwk,"ces-priv"),p_sel:sel,p_reinit:false});
+    store.set(cesRCleLocale(),privJwk); r.charge=false; r.cle=null; await cesRCharger();
+    modaleInfo("✓ L'aide sociale est activée. Les étudiant·es peuvent maintenant déposer une demande.");
+  }catch(e){ modaleInfo("Activation impossible : "+(e.message||e)); }
+}
+async function cesRDeverrouiller(){
+  const r=S.cesR; let err="";
+  for(let i=0;i<5;i++){
+    const v=await modaleChamp("Saisissez la phrase de récupération de la CES.","🔑 Déverrouiller",{placeholder:"XXXX-XXXX-XXXX-XXXX-XXXX-XXXX",bouton:"Déverrouiller",erreur:err});
+    if(v===null) return;
+    try{ const privJwk=await soutDesenvelopper(await soutClePhrase(v,r.info.sel), r.info.priv_ces_chiffree, "ces-priv");
+      store.set(cesRCleLocale(),privJwk); r.cle=await soutPriv(privJwk); r.privJwk=privJwk; await cesRListe(); cesRedessiner(); return;
+    }catch(e){ err="Phrase incorrecte."; }
+  }
+}
+async function cesRChangerPhrase(){
+  const r=S.cesR; if(!r.privJwk) return;
+  if(!(await modaleConfirm("Créer une nouvelle phrase de récupération ?\n\nL'ancienne ne fonctionnera plus. À faire notamment si vous avez reçu la phrase de l'ancien responsable.","Changer la phrase"))) return;
+  const phrase=await soutNouvellePhrase("🔑 Nouvelle phrase de récupération"); if(!phrase) return;
+  try{ const sel=soutB64(crypto.getRandomValues(new Uint8Array(16)));
+    await cesRpcR("ces_resp_rewrap",{p_priv:await soutEnvelopper(await soutClePhrase(phrase,sel),r.privJwk,"ces-priv"),p_sel:sel});
+    r.info=await cesRpcR("ces_resp_info"); modaleInfo("✓ Nouvelle phrase enregistrée. L'ancienne ne fonctionne plus."); }
+  catch(e){ modaleInfo("Changement impossible : "+(e.message||e)); }
+}
+async function cesRPassation(){
+  const r=S.cesR; if(!r.privJwk) return;
+  const me=S.session&&S.session.id;
+  const opts=(S.admins||[]).filter(a=>a.statut==="actif"&&a.id!==me).map(a=>({v:a.id,l:((a.prenom||"")+" "+(a.nom||"")).trim()+(a.fonction?" — "+a.fonction:"")}));
+  if(!opts.length){ modaleInfo("Aucun autre membre actif."); return; }
+  const id=await modaleChoix("Transmettre la CES","Choisissez le nouveau responsable. Un code de passation va s'afficher : remettez-le-lui en main propre. Dès qu'il l'aura saisi, vous perdrez l'accès aux dossiers.",opts);
+  if(!id) return;
+  try{ const code=soutCodeAleatoire(5), sel=soutB64(crypto.getRandomValues(new Uint8Array(16)));
+    await cesRpcR("ces_passation_preparer",{p_successeur:id,p_wrap:await soutEnvelopper(await soutClePhrase(code,sel),r.privJwk,"ces-passation"),p_sel:sel});
+    r.info=await cesRpcR("ces_resp_info"); cesRedessiner();
+    modaleInfo("Code de passation :\n\n"+code+"\n\nRemettez-le en main propre à "+(opts.find(o=>o.v===id)||{}).l+" (jamais par mail ni message). Il ou elle le saisira dans son onglet « Soutien social — CES ».","🔁 Passation préparée");
+  }catch(e){ modaleInfo("Passation impossible : "+(e.message||e)); }
+}
+async function cesRPassationRecevoir(){
+  const r=S.cesR; const i=r.info; let err=""; let privJwk=null;
+  for(let k=0;k<5&&!privJwk;k++){
+    const v=await modaleChamp("Saisissez le code de passation remis par l'ancien responsable.","🔁 Recevoir la CES",{placeholder:"XXXX-XXXX-XXXX-XXXX-XXXX",bouton:"Valider",erreur:err});
+    if(v===null) return;
+    try{ privJwk=await soutDesenvelopper(await soutClePhrase(v,i.passation_sel), i.passation_wrap, "ces-passation"); }catch(e){ err="Code incorrect."; }
+  }
+  if(!privJwk) return;
+  modaleInfo("Code accepté. Créez maintenant votre propre phrase de récupération.","Passation"); await attendreFermetureInfo();
+  const phrase=await soutNouvellePhrase(); if(!phrase) return;
+  try{ const sel=soutB64(crypto.getRandomValues(new Uint8Array(16)));
+    await cesRpcR("ces_passation_finaliser",{p_priv:await soutEnvelopper(await soutClePhrase(phrase,sel),privJwk,"ces-priv"),p_sel:sel});
+    store.set(cesRCleLocale(),privJwk); r.charge=false; r.cle=null; await cesRCharger();
+    modaleInfo("✓ Vous êtes maintenant responsable de la CES. Signez l'engagement de confidentialité sur chaque dossier que vous traitez.");
+  }catch(e){ modaleInfo("Passation impossible : "+(e.message||e)); }
+}
+async function cesROwnerDesigner(){
+  const opts=(S.admins||[]).filter(a=>a.statut==="actif").map(a=>({v:a.id,l:((a.prenom||"")+" "+(a.nom||"")).trim()+(a.fonction?" — "+a.fonction:"")}));
+  const id=await modaleChoix("Désigner un responsable (secours)","À n'utiliser que si le responsable actuel ne peut pas faire la passation. La nouvelle personne devra saisir la phrase de récupération de l'ancien responsable (remise sous enveloppe), puis la changer.",opts);
+  if(!id) return;
+  try{ await cesRpcR("ces_owner_designer",{p_membre:id}); S.cesR.info=await cesRpcR("ces_resp_info"); cesRedessiner(); modaleInfo("✓ Nouveau responsable désigné."); }
+  catch(e){ modaleInfo(e.message||String(e)); }
+}
+
+/* --- Bilan annuel anonyme pour le CA --- */
+async function cesBilanAfficher(){
+  let b; try{ b=await soutRpcBrut("ces_bilan"); }catch(e){ modaleInfo(e.message||String(e)); return; }
+  const an=a=>a+"–"+(Number(a)+1);
+  const annees=[...new Set([...(b.social||[]).map(x=>x.annee),...(b.psy||[]).map(x=>x.annee)])].sort().reverse();
+  const corps=annees.map(a=>{ const L=(b.social||[]).filter(x=>x.annee===a); const psy=(b.psy||[]).find(x=>x.annee===a);
+    return `<h2>Année académique ${an(a)}</h2><p>Soutien psychologique (étudiant·es) : <b>${psy?psy.conversations:0}</b> conversation(s).</p>
+      <table><thead><tr><th>Aide sociale — catégorie</th><th>Demandes</th><th>Accordées</th><th>Partielles</th><th>Refusées</th><th>Réorientées</th></tr></thead><tbody>
+      ${L.length?L.map(x=>`<tr><td>${esc(CES_CAT_LABEL[x.categorie]||x.categorie)}</td><td>${x.demandes}</td><td>${x.accordee}</td><td>${x.partielle}</td><td>${x.refusee}</td><td>${x.reorientee}</td></tr>`).join(""):`<tr><td colspan="6">Aucune demande.</td></tr>`}</tbody></table>`; }).join("")||"<p>Aucune activité pour le moment.</p>";
+  const html=`<div style="max-width:900px"><h1>Bilan annuel de l'entraide étudiante</h1><p class="d">Chiffres anonymes — aucun nom ni contenu. Généré le ${esc(new Date().toLocaleString("fr-BE"))}.</p>${corps}</div>`;
+  if(await modaleConfirm("Bilan anonyme par année académique :\n\n"+annees.map(a=>{ const L=(b.social||[]).filter(x=>x.annee===a); const psy=(b.psy||[]).find(x=>x.annee===a);
+      return an(a)+" — soutien psy : "+(psy?psy.conversations:0)+" conversation(s) ; aide sociale : "+L.reduce((s,x)=>s+x.demandes,0)+" demande(s), "+L.reduce((s,x)=>s+x.accordee+x.partielle,0)+" aide(s) accordée(s)"; }).join("\n")+"\n\nTélécharger le bilan détaillé en PDF ?","📊 Bilan de l'entraide étudiante"))
+    telechargerPDF(nomPDF("bilan-entraide-etudiante"), cssDocImprimable(), html, "landscape");
+}
+
+/* --- Actions --- */
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-action^='etu-'],[data-action^='ces-'],[data-action^='cesr-']"); if(!el) return;
+  const a=el.dataset.action;
+  try{ switch(a){
+    case "etu-vue": S.etu.vue=el.dataset.vue; if(S.ces) S.ces.vue="accueil"; render(); window.scrollTo(0,0); break;
+    case "etu-sortie": etuSortie(); break;
+    case "etu-partage": etuModalePartage(); break;
+    case "etu-bilan": await cesBilanAfficher(); break;
+    /* étudiant */
+    case "ces-recharger": { const c=cesEtat(); c.erreur=""; c.charge=false; render(); break; }
+    case "ces-vue": { const c=cesEtat(); c.vue=el.dataset.vue; render(); window.scrollTo(0,0); break; }
+    case "ces-nouvelle": { const c=cesEtat(); c.vue="creer"; c.etape=1; c.brouillon={categorie:"",profil:{},message:""}; render(); window.scrollTo(0,0); break; }
+    case "ces-cat": { const c=S.ces; c.brouillon.categorie=el.dataset.cat; c.etape=2; render(); window.scrollTo(0,0); break; }
+    case "ces-etape": { const c=S.ces; if(c.etape===2) c.brouillon.profil=cesLireProfil().p; if(c.etape===3) c.brouillon.message=String(val("ces_msg")||""); c.etape=Number(el.dataset.e); render(); break; }
+    case "ces-profil-ok": { const c=S.ces; const r=cesLireProfil(); c.brouillon.profil=r.p; if(r.erreurs.length){ modaleInfo(r.erreurs.join("\n"),"À corriger"); break; } c.etape=3; render(); window.scrollTo(0,0); break; }
+    case "ces-msg-ok": { const c=S.ces; const m=String(val("ces_msg")||"").trim(); if(m.length<10){ modaleInfo("Décrivez votre demande en quelques phrases."); break; } c.brouillon.message=m; c.etape=4; c.debut=Date.now(); render(); window.scrollTo(0,0); break; }
+    case "ces-signer": await cesCreerDossier(); break;
+    case "ces-login": { const sel=document.getElementById("ces_login_code"); let code=(sel&&sel.value)||String(val("ces_login_code_txt")||"");
+      if(sel && !sel.value){ const t=document.getElementById("ces_login_code_txt"); if(t&&t.style.display==="none"){ t.style.display=""; t.focus(); break; } code=String(val("ces_login_code_txt")||""); }
+      code=soutNormaliser(code); const mdp=String(val("ces_login_mdp")||"");
+      if(code.replace(/-/g,"").length<16||!mdp){ modaleInfo("Saisissez le code de votre dossier et votre mot de passe."); break; }
+      await cesOuvrirDossier(code,mdp);
+      const l=cesDossiersLocaux(); if(!l.some(x=>soutNormaliser(x.c)===code) && await modaleConfirm("Mémoriser le numéro de ce dossier sur cet appareil ? (jamais le mot de passe)","Mémoriser")){ l.unshift({c:code,n:S.ces.ouvert.numero}); cesSauverLocaux(l.slice(0,10)); }
+      break; }
+    case "ces-fermer": { const c=S.ces; c.ouvert=null; c.vue="accueil"; render(); break; }
+    case "ces-onglet": { const c=S.ces; c.onglet=el.dataset.o; c.creneauxCharges=false; render(); break; }
+    case "ces-envoyer": { const t=String(val("ces_txt")||"").trim(); if(!t) break; await cesEtuAjouter("message",{t}); const f=document.getElementById("ces_txt"); if(f) f.value=""; break; }
+    case "ces-changement": { const t=String(val("ces_chg")||"").trim(); if(t.length<5){ modaleInfo("Décrivez le changement."); break; } await cesEtuAjouter("changement",{t}); modaleInfo("✓ Changement signalé à la CES."); break; }
+    case "ces-profil-maj": { const o=S.ces.ouvert; const r=cesLireProfil(); if(r.erreurs.length){ modaleInfo(r.erreurs.join("\n"),"À corriger"); break; }
+      const ch=cesChangements(o.profil, r.p); if(!ch.length){ modaleInfo("Aucune modification."); break; }
+      if(!(await modaleConfirm("Enregistrer ces modifications ?\n\n"+ch.join(", ")+"\n\nElles seront visibles, datées, par la CES.","Mettre à jour mon profil"))) break;
+      await cesEtuAjouter("profil", Object.assign({}, r.p, {maj:new Date().toISOString(), changements:ch})); modaleInfo("✓ Profil mis à jour."); break; }
+    case "ces-mdp": { const o=S.ces.ouvert;
+      const ancien=await modaleChamp("Mot de passe actuel","Changer mon mot de passe",{type:"password"}); if(ancien===null) break;
+      if(ancien!==o.mdp){ modaleInfo("Mot de passe actuel incorrect."); break; }
+      const n1=await modaleChamp("Nouveau mot de passe (8 caractères minimum)","Changer mon mot de passe",{type:"password"}); if(n1===null) break;
+      if(n1.length<8){ modaleInfo("8 caractères minimum."); break; }
+      const n2=await modaleChamp("Confirmez le nouveau mot de passe","Changer mon mot de passe",{type:"password"}); if(n2!==n1){ modaleInfo("Les mots de passe ne correspondent pas."); break; }
+      await etuRpc("ces_changer_acces",{p_acces:o.acces,p_acces_nouveau:await cesAcces(o.code,n1),p_priv:await soutEnvelopper(await cesCleMdp(o.code,n1),o.privJwk,"ces-etu-priv")});
+      o.mdp=n1; o.acces=await cesAcces(o.code,n1); modaleInfo("✓ Mot de passe changé."); break; }
+    case "ces-pdf": cesTelechargerPDFEl(S.ces.ouvert, el.dataset.id); break;
+    case "ces-doc-lire": { const o=S.ces.ouvert; await cesOuvrirDoc(o, el.dataset.id, (fid,i)=>etuRpc("ces_fichier_lire",{p_acces:o.acces,p_fichier:fid,p_idx:i})); break; }
+    case "ces-rdv-prendre": { const o=S.ces.ouvert; const c=(S.ces.creneaux||[]).find(x=>x.id===el.dataset.id);
+      if(!(await modaleConfirm("Réserver ce rendez-vous ?\n\n"+(c?fmtQuand(c.debut)+" — "+c.lieu:""),"Rendez-vous"))) break;
+      await etuRpc("ces_reserver",{p_acces:o.acces,p_creneau:el.dataset.id}); soutNotifServeur("ces"); S.ces.creneauxCharges=false;
+      await cesOuvrirDossier(o.code,o.mdp,{privJwk:o.privJwk,K:o.K}); modaleInfo("✓ Rendez-vous réservé."); break; }
+    case "ces-rdv-annuler": { const o=S.ces.ouvert; if(!(await modaleConfirm("Annuler ce rendez-vous ?","Rendez-vous"))) break;
+      await etuRpc("ces_annuler_rdv",{p_acces:o.acces,p_creneau:el.dataset.id}); soutNotifServeur("ces"); S.ces.creneauxCharges=false;
+      await cesOuvrirDossier(o.code,o.mdp,{privJwk:o.privJwk,K:o.K}); break; }
+    /* responsable */
+    case "cesr-recharger": { const r=cesREtat(); r.erreur=""; r.charge=false; render(); break; }
+    case "cesr-activer": await cesRActiver(); break;
+    case "cesr-deverrouiller": await cesRDeverrouiller(); break;
+    case "cesr-verrouiller": { const r=S.cesR; store.set(cesRCleLocale(),null); r.cle=null; r.privJwk=null; r.cles={}; r.ouvert=null; r.vue="accueil"; render(); break; }
+    case "cesr-phrase": await cesRChangerPhrase(); break;
+    case "cesr-passation": await cesRPassation(); break;
+    case "cesr-passation-recevoir": await cesRPassationRecevoir(); break;
+    case "cesr-passation-annuler": { if(!(await modaleConfirm("Annuler la passation en cours ?","Passation"))) break; await cesRpcR("ces_passation_annuler"); S.cesR.info=await cesRpcR("ces_resp_info"); render(); break; }
+    case "cesr-owner-designer": await cesROwnerDesigner(); break;
+    case "cesr-vue": { const r=S.cesR; r.vue=el.dataset.vue; r.creneauxCharges=false; render(); break; }
+    case "cesr-filtre": { S.cesR.filtre=el.dataset.f; render(); break; }
+    case "cesr-ouvrir": { S.cesR.decisionForm=false; await cesROuvrir(el.dataset.id); break; }
+    case "cesr-retour": { const r=S.cesR; r.ouvert=null; r.vue="accueil"; await cesRListe().catch(()=>{}); render(); break; }
+    case "cesr-onglet": { S.cesR.ouvert.onglet=el.dataset.o; render(); break; }
+    case "cesr-engagement": await cesRSignerEngagement(); break;
+    case "cesr-envoyer": { const t=String(val("cesr_txt")||"").trim(); if(!t) break; await cesRAjouter("message",{t}); cesNotifEtudiant(S.cesR.ouvert); const f=document.getElementById("cesr_txt"); if(f) f.value=""; break; }
+    case "cesr-decision-form": { S.cesR.decisionForm=true; render(); break; }
+    case "cesr-decision-annuler": { S.cesR.decisionForm=false; render(); break; }
+    case "cesr-decision": await cesRRendreDecision(); break;
+    case "cesr-statut": { const r=S.cesR, o=r.ouvert, s=el.dataset.s;
+      const q=s==="archive"?"Archiver le dossier "+o.numero+" ?\n\nIl passera en lecture seule et sera supprimé automatiquement dans 5 ans. Vous pourrez le rouvrir.":s==="rouvrir"?"Rouvrir le dossier "+o.numero+" ?":"Passer le dossier "+o.numero+" en « cours d'examen » ?";
+      if(!(await modaleConfirm(q,"Dossier"))) break;
+      await cesRpcR("ces_resp_statut",{p_id:o.id,p_statut:s}); await cesROuvrir(o.id,true); await cesRListe(); render(); if(s!=="rouvrir") cesNotifEtudiant(r.ouvert); break; }
+    case "cesr-bloquer": { const r=S.cesR, o=r.ouvert, b=el.dataset.v==="1";
+      if(!(await modaleConfirm(b?"Bloquer ce dossier ? L'étudiant·e ne pourra plus rien y ajouter.":"Débloquer ce dossier ?","Dossier"))) break;
+      await cesRpcR("ces_resp_bloquer",{p_id:o.id,p_bloquer:b}); await cesROuvrir(o.id,true); render(); break; }
+    case "cesr-pdf": cesTelechargerPDFEl(S.cesR.ouvert, el.dataset.id); break;
+    case "cesr-doc-lire": { const o=S.cesR.ouvert; await cesOuvrirDoc(o, el.dataset.id, (fid,i)=>cesRpcR("ces_resp_fichier_lire",{p_id:o.id,p_fichier:fid,p_idx:i})); break; }
+    case "cesr-creneau-creer": { const d=val("cesr_c_date"), h=val("cesr_c_heure"), du=Number(val("cesr_c_duree")||30), lieu=String(val("cesr_c_lieu")||"").trim();
+      if(!d||!h||lieu.length<2){ modaleInfo("Indiquez la date, l'heure et le lieu."); break; }
+      const debut=new Date(d+"T"+h); if(isNaN(debut)||debut<new Date()){ modaleInfo("Choisissez une date à venir."); break; }
+      await cesRpcR("ces_resp_creneau_creer",{p_debut:debut.toISOString(),p_fin:new Date(debut.getTime()+du*60000).toISOString(),p_lieu:lieu});
+      S.cesR.creneauxCharges=false; render(); break; }
+    case "cesr-creneau-suppr": { const r=S.cesR; const c=(r.creneaux||[]).find(x=>x.id===el.dataset.id);
+      if(!(await modaleConfirm(c&&c.numero?"Ce créneau est réservé (dossier "+c.numero+"). Le supprimer ? L'étudiant·e sera prévenu·e par e-mail.":"Supprimer ce créneau ?","Créneau"))) break;
+      await cesRpcR("ces_resp_creneau_suppr",{p_creneau:el.dataset.id});
+      if(c&&c.dossier_id){ const d=(r.liste||[]).find(x=>x.id===c.dossier_id); if(d&&d.p) cesNotifEtudiant({profil:d.p}); }
+      r.creneauxCharges=false; render(); break; }
+    case "cesr-stats": { const r=S.cesR; r.stats=await cesRpcR("ces_resp_stats"); r.vue="stats"; render(); break; }
+    case "cesr-pause": { const h=Number(el.dataset.h); if(h>0 && !(await modaleConfirm("Mettre en pause les nouvelles demandes ? Les dossiers en cours continuent normalement.","Pause"))) break;
+      await cesRpcR("ces_resp_pause",{p_jusqua:h>0?new Date(Date.now()+h*3600000).toISOString():null}); S.cesR.info=await cesRpcR("ces_resp_info"); render(); break; }
+  } }catch(err){ const c=S.ces, r=S.cesR; if(c) c.occupe=false; if(r) r.occupe=false; modaleInfo(err.message||String(err)); }
+});
+document.addEventListener("change", e=>{
+  const t=e.target; if(!t||!t.dataset) return;
+  if(t.dataset.change==="ces-doc") cesFichierChoisi(t,"etu");
+  else if(t.dataset.change==="cesr-doc") cesFichierChoisi(t,"ces");
+  else if(t.id==="ces_login_code"){ const x=document.getElementById("ces_login_code_txt"); if(x) x.style.display=t.value?"none":""; }
+});
+document.addEventListener("input", e=>{
+  const t=e.target; if(t&&t.id==="cesr_q"){ S.cesR.recherche=t.value; clearTimeout(window.__cesQ); window.__cesQ=setTimeout(()=>{ rendreEnPreservant(); const f=document.getElementById("cesr_q"); if(f){ f.focus(); try{ f.setSelectionRange(f.value.length,f.value.length); }catch(_){} } },250); }
+});
+/* Rafraîchissement : nouveaux éléments toutes les 20 s quand un dossier est ouvert. */
+setInterval(()=>{
+  if(document.visibilityState!=="visible") return;
+  if(S.etu && S.etu.vue==="social" && S.ces && S.ces.ouvert) cesRafraichirEtu();
+  else if(S.session && S.tab==="soutien_ces" && S.cesR && S.cesR.cle && !S.cesR.occupe){
+    const r=S.cesR; const avant=JSON.stringify((r.liste||[]).map(d=>[d.id,d.non_lu,d.statut]))+(r.ouvert?r.ouvert.els.length:"");
+    (async()=>{ try{ await cesRListe(); if(r.ouvert) await cesROuvrir(r.ouvert.id,true);
+      if(avant!==JSON.stringify((r.liste||[]).map(d=>[d.id,d.non_lu,d.statut]))+(r.ouvert?r.ouvert.els.length:"")) rendreEnPreservant(); }catch(e){} })();
+  }
+}, 20000);
 
 boot();
 
