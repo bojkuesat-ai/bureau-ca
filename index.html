@@ -328,6 +328,7 @@ select.f{width:100%}
 .sout-clause p{margin:0 0 8px}
 .sout-clause-msg{align-self:center;max-width:92%;background:#2a2150;border:1px solid #b48cf2;border-radius:12px;padding:10px 14px;font-size:13.5px;text-align:center;color:var(--ink)}
 .sout-zone .msg-head .btn{white-space:nowrap;flex:none}
+.sout-proprio{border-color:#1f5a41;background:#0f2a20;color:#c9f2de;font-size:13.5px;line-height:1.6}
 .sout-compose textarea{flex:1;min-height:52px}
 .sout-compose textarea:disabled,.sout-compose button:disabled{opacity:.45;cursor:not-allowed}
 .sout-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
@@ -4783,11 +4784,12 @@ async function soutLamiaOuvrir(id, silencieux){
   const l=(s.lamia.liste||[]).find(x=>x.id===c.id); if(l) l.non_lu=false;
   if(!silencieux){ s.vue="conv"; soutRedessiner(); }
 }
-async function soutAuthentifier(email){
+async function soutAuthentifier(email, quoi){
+  quoi=quoi||"l'engagement de confidentialité";
   if(!email){ modaleInfo("Votre compte n'a pas d'adresse e-mail : signature impossible."); return false; }
   let err="";
   for(let essai=0; essai<3; essai++){
-    const mdp=await modaleChamp("Pour signer l'engagement de confidentialité, retapez le mot de passe de votre compte ("+email+").","Signer l'engagement",{type:"password",placeholder:"Mot de passe",bouton:"🔒 Signer",erreur:err});
+    const mdp=await modaleChamp("Pour signer "+quoi+", retapez le mot de passe de votre compte ("+email+").","Signer",{type:"password",placeholder:"Mot de passe",bouton:"🔒 Signer",erreur:err});
     if(mdp===null) return false;
     if(!mdp){ err="Saisissez votre mot de passe."; essai--; continue; }
     let r=null; try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }catch(e){ r={error:e}; }
@@ -4902,6 +4904,84 @@ function soutTelechargerClause(msgId){
   telechargerPDF(soutNomPDFClause(m.d), cssDocImprimable(), soutCorpsPDFClause(m.d));
 }
 
+
+/* ---------- Engagement du programmeur / propriétaire de l'app ----------
+   Le contenu des messages lui est techniquement inaccessible (chiffrement de
+   bout en bout). Il garde en revanche la main sur le code et sur les journaux
+   techniques de l'hébergeur : l'engagement porte donc aussi sur ces deux points. */
+const SOUT_PROPRIO_VERSION="v2";
+function soutProprioTexte(nom, fonction){
+  return [
+    "Je soussigné, "+nom+(fonction?" ("+fonction+")":"")+", programmeur et propriétaire de l'application de l'ASBL LE BUREAU ETUDIANT (B.E), déclare que :",
+    "1. Je n'ai pas accès au contenu des messages de l'espace Soutien psychologique. Ils sont chiffrés de bout en bout sur le téléphone de la personne qui écrit, et seule Lamia détient la clé qui permet de les lire. La base de données ne contient que du texte illisible.",
+    "2. Les conversations ne sont liées à aucun compte. Ni l'application ni la base de données n'enregistrent qui a écrit à Lamia.",
+    "En conséquence, je m'engage, sans limite de durée et y compris après la fin de mon mandat, à :",
+    "3. Ne jamais tenter d'accéder au contenu des messages, ni à la clé de Lamia.",
+    "4. Ne jamais chercher à identifier les personnes qui utilisent l'espace Soutien, notamment en consultant les journaux techniques de l'hébergeur ou du service d'envoi des e-mails.",
+    "5. Ne jamais modifier l'application dans le but d'affaiblir le chiffrement ou l'anonymat. Toute évolution future de l'espace Soutien respectera ces garanties.",
+    "6. Ne transmettre à personne une donnée technique liée à l'espace Soutien, sauf obligation légale.",
+    "Je reconnais que les messages de l'espace Soutien peuvent contenir des données concernant la santé, que le Règlement général sur la protection des données (RGPD) protège comme données sensibles. Accéder à ces messages ou chercher à identifier les personnes qui les écrivent serait donc aussi une violation de la loi sur la protection des données.",
+    "En cas de manquement :",
+    "7. Tout manquement à cet engagement constitue une faute grave.",
+    "8. Je m'engage, dans ce cas, à démissionner immédiatement de mes fonctions au sein du bureau et à cesser toute administration de l'application.",
+    "9. Toute personne peut signaler un manquement au Conseil d'administration de l'ASBL et à l'Autorité de protection des données (APD).",
+  ];
+}
+function soutCorpsPDFProprio(c){
+  const d=new Date(c.signeLe||Date.now());
+  return `<div style="max-width:640px"><h1>Déclaration et engagement du programmeur</h1>
+    <p class="d">Espace Soutien psychologique — ASBL LE BUREAU ETUDIANT (B.E)</p>
+    ${soutProprioTexte(c.nom, c.fonction).map(t=>`<p>${esc(t)}</p>`).join("")}
+    <table style="margin-top:14px"><tbody>
+      <tr><th style="width:230px">Programmeur et propriétaire</th><td>${esc(c.nom)}${c.fonction?" — "+esc(c.fonction):""}</td></tr>
+      <tr><th>Date</th><td>${esc(d.toLocaleDateString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric"}))}</td></tr>
+    </tbody></table>
+    <div style="margin-top:14px;border:2px solid #241c46;border-radius:8px;padding:12px 14px;font-size:12px;color:#222;max-width:440px">
+      <div style="font-size:13px;font-weight:bold;color:#241c46;margin-bottom:4px">✔ Signé électroniquement</div>
+      par <b>${esc(c.nom)}</b><br>
+      ${c.email?`Compte : ${esc(c.email)}<br>`:""}
+      Authentification : ${esc(c.methode||PR_METHODE)}<br>
+      Le ${esc(d.toLocaleDateString("fr-BE"))} à ${esc(d.toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"}))}<br>
+      Code de vérification : <b>${esc(prEmpreinteCourte(c.empreinte))}</b>
+    </div></div>`;
+}
+function soutNomPDFProprio(){ return nomPDF("engagement-programmeur-soutien"); }
+function soutProprioPDF(){ const e=S.sout&&S.sout.info&&S.sout.info.engagement_proprio; if(e) telechargerPDF(soutNomPDFProprio(), cssDocImprimable(), soutCorpsPDFProprio(e)); }
+function soutEstProprio(){ return !!(S.session && S.session.role==="owner"); }
+function soutBlocProprio(){
+  const s=S.sout, e=s&&s.info&&s.info.engagement_proprio;
+  if(e && e.v===SOUT_PROPRIO_VERSION){
+    return `<div class="sout-card sout-proprio">🛡 <b>Le programmeur de l'app s'est engagé par écrit</b> à ne jamais accéder à vos messages ni chercher à vous identifier.<br>
+      <span class="sout-small" style="color:inherit;opacity:.85">Signé par ${esc(e.nom)} le ${esc(fmtQuand(e.signeLe))} — code ${esc(prEmpreinteCourte(e.empreinte))}</span><br>
+      <button class="btn ghost sm" data-action="sout-proprio-pdf" style="margin-top:8px">📄 Lire / télécharger l'engagement</button></div>`;
+  }
+  if(!soutEstProprio()) return "";
+  return `<div class="sout-card"><p class="sout-p"><b>Réservé au propriétaire de l'app.</b> Signez cette déclaration : elle sera affichée à tous les membres dans cet onglet.</p>
+    <div class="sout-clause">${soutProprioTexte(S.session.nom||"", S.session.fonction||"").map(t=>`<p>${esc(t)}</p>`).join("")}</div>
+    <div class="row-btn" style="margin-top:12px"><button class="btn" data-action="sout-proprio-signer">✍ Signer la déclaration</button></div></div>`;
+}
+async function soutProprioSigner(){
+  const s=soutEtat(); const me=S.session; if(!soutEstProprio()||s.occupe) return;
+  if(!(await modaleConfirm("Signer la déclaration et l'engagement du programmeur ?\n\nLe document signé sera affiché à tous les membres dans l'onglet Soutien, et vous en recevrez une copie PDF par mail.","Signer la déclaration"))) return;
+  if(!(await soutAuthentifier(me.email, "la déclaration du programmeur"))) return;
+  s.occupe=true;
+  try{
+    const base={v:SOUT_PROPRIO_VERSION, nom:me.nom||"", fonction:me.fonction||"", email:me.email||"", signeLe:new Date().toISOString(), methode:PR_METHODE};
+    const empreinte=soutHex(await soutSha(JSON.stringify(base)+"|"+soutProprioTexte(base.nom, base.fonction).join("\n")));
+    const eng=Object.assign({}, base, {empreinte:empreinte});
+    await soutRpc("soutien_proprio_signer", {p_engagement:eng});
+    s.info=await soutRpc("soutien_info"); s.occupe=false; soutRedessiner();
+    let piece=null;
+    try{ const blob=await telechargerPDF(soutNomPDFProprio(), cssDocImprimable(), soutCorpsPDFProprio(eng), null, "blob");
+      if(blob){ const b64=await blobEnBase64(blob); if(b64.length<4500000) piece={filename:soutNomPDFProprio(), content:b64, contentType:"application/pdf"}; } }catch(_){ }
+    let res={ok:0};
+    if(me.email) res=await envoyerAvecPiece([me.email], "Copie — déclaration du programmeur (espace Soutien)",
+      `<h2 style="margin:0 0 10px;color:#241c46">Déclaration du programmeur signée</h2><p>Votre déclaration et engagement pour l'espace Soutien psychologique est signé et affiché à tous les membres.</p><p style="font-size:12px;color:#666">Code de vérification ${caMailEsc(prEmpreinteCourte(empreinte))}</p>`,
+      piece, {sansInvitation:true, tous:true});
+    modaleInfo("✓ Déclaration signée. Elle est maintenant affichée à tous les membres dans l'onglet Soutien."+(res.ok?"\nCopie PDF envoyée sur "+me.email+".":""),"Déclaration signée");
+  }catch(e){ s.occupe=false; modaleInfo("Signature impossible : "+(e.message||e)); }
+}
+
 /* ---------- Statistiques ---------- */
 function soutDelai(min){
   if(min==null) return "—"; min=Math.round(min);
@@ -5005,6 +5085,7 @@ function soutVueMembre(){
         <button class="btn ghost sm" data-action="sout-aide">🔒 Comment ça marche ?</button>
         <button class="btn ghost sm" data-action="sout-vue" data-vue="ressources">📚 Ressources</button>
       </div></div>
+    ${soutBlocProprio()}
     ${liste?`<h3 class="serif" style="margin:18px 0 8px">Mes conversations</h3>${liste}`:""}
     <p style="margin-top:14px"><button class="link" data-action="sout-retrouver">Retrouver une conversation avec mon code de récupération</button></p>`;
 }
@@ -5110,7 +5191,7 @@ function tabSoutien(){
 }
 
 function soutAide(){
-  modaleInfo("1. Votre message est verrouillé (chiffré) sur votre téléphone, avant de partir.\n\n2. Il voyage et il est stocké verrouillé : le serveur, le bureau et l'hébergeur ne voient qu'une suite de caractères illisibles.\n\n3. Seule la clé de Lamia, qui ne quitte jamais son appareil, peut l'ouvrir. Lamia ne sait pas qui vous êtes : la conversation n'est liée à aucun compte, seulement à votre code de récupération.\n\nLe code de vérification affiché en haut de la conversation est le même chez vous et chez Lamia : c'est la preuve que personne ne s'interpose.\n\nChaque message s'efface automatiquement 14 jours après son envoi, et une conversation sans activité pendant 14 jours disparaît entièrement.","🔒 Comment ça marche ?");
+  modaleInfo("1. Votre message est verrouillé (chiffré) sur votre téléphone, avant de partir.\n\n2. Il voyage et il est stocké verrouillé : le serveur, le bureau et l'hébergeur ne voient qu'une suite de caractères illisibles.\n\n3. Seule la clé de Lamia, qui ne quitte jamais son appareil, peut l'ouvrir. Lamia ne sait pas qui vous êtes : la conversation n'est liée à aucun compte, seulement à votre code de récupération.\n\nLe code de vérification affiché en haut de la conversation est le même chez vous et chez Lamia : c'est la preuve que personne ne s'interpose.\n\nChaque message s'efface automatiquement 14 jours après son envoi, et une conversation sans activité pendant 14 jours disparaît entièrement."+((S.sout&&S.sout.info&&S.sout.info.engagement_proprio)?"\n\nLe programmeur de l'app a signé un engagement écrit : il n'a pas accès à vos messages et s'engage à ne jamais chercher à vous identifier.":""),"🔒 Comment ça marche ?");
 }
 
 /* ---------- Actions ---------- */
@@ -5142,6 +5223,8 @@ document.addEventListener("click", async e=>{
       case "sout-statut": await soutLamiaStatut(el.dataset.st); break;
       case "sout-stats": await soutLamiaStats(); break;
       case "sout-stats-pdf": soutStatsPDF(); break;
+      case "sout-proprio-signer": await soutProprioSigner(); break;
+      case "sout-proprio-pdf": soutProprioPDF(); break;
     }
   }catch(err){ modaleInfo(err.message||String(err),"Soutien psychologique"); }
 });
