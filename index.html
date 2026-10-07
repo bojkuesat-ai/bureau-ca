@@ -2,6 +2,9 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
+<!-- Politique de sécurité (CSP) : l'app ne peut échanger des données qu'avec son propre site et Supabase.
+     Un code injecté ne pourrait donc rien envoyer ailleurs. Toute nouvelle source externe doit être ajoutée ici. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.3/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; media-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; connect-src 'self' https://mlgzdfyqjhvyubrywuim.supabase.co wss://mlgzdfyqjhvyubrywuim.supabase.co; frame-src 'self' blob: https://bojkuesat-ai.github.io; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#000000">
 <title>Bureau étudiant — CA</title>
@@ -4539,6 +4542,19 @@ async function soutDechiffrer(cle, iv, ct, aad){
   const pt=await crypto.subtle.decrypt({name:"AES-GCM", iv:soutUnB64(iv), additionalData:soutTE.encode(aad||"")}, cle, soutUnB64(ct));
   return JSON.parse(soutTD.decode(pt));
 }
+/* Bourrage : avant chiffrement, chaque message est complété jusqu'à un palier
+   (256 o, 1 Ko, 4 Ko, 16 Ko, puis par tranches de 4 Ko). Un « ok » et un long
+   message ont ainsi la même taille dans la base : leur longueur ne trahit rien. */
+const SOUT_PALIERS=[256,1024,4096,16384];
+function soutBourrer(obj){
+  const o=Object.assign({}, obj); delete o._;
+  const n=soutTE.encode(JSON.stringify(Object.assign({}, o, {_:""}))).length;
+  let cible=SOUT_PALIERS.find(x=>x>=n) || Math.ceil(n/4096)*4096;
+  if(cible>29000) cible=n;                       /* reste sous la limite du serveur */
+  o._=" ".repeat(Math.max(0, cible-n));
+  return o;
+}
+async function soutChiffrerMsg(cle, obj, aad){ return soutChiffrer(cle, soutBourrer(obj), aad); }
 async function soutEnvelopper(cle, obj, aad){ const r=await soutChiffrer(cle, obj, aad); return r.iv+"."+r.ct; }
 async function soutDesenvelopper(cle, s, aad){ const p=String(s||"").split("."); return soutDechiffrer(cle, p[0], p[1], aad); }
 async function soutPaire(){ return crypto.subtle.generateKey({name:"ECDH", namedCurve:"P-256"}, true, ["deriveBits"]); }
@@ -4645,6 +4661,7 @@ async function soutDechiffrerMsgs(cle, convId, msgs){
   for(const m of (msgs||[])){
     let d=null;
     try{ d=await soutDechiffrer(cle, m.iv, m.contenu, convId+":"+m.auteur+":"+m.type); }catch(e){ d=null; }
+    if(d && typeof d==="object") delete d._;
     out.push({id:m.id, auteur:m.auteur, type:m.type, ts:m.cree_le, d:d});
   }
   return out;
@@ -4715,7 +4732,7 @@ async function soutMembreEnvoyer(){
   if(texte.length>8000){ modaleInfo("Message trop long (8 000 caractères maximum)."); return; }
   s.occupe=true;
   try{
-    const e=await soutChiffrer(o.cle, {t:texte}, o.id+":membre:texte");
+    const e=await soutChiffrerMsg(o.cle, {t:texte}, o.id+":membre:texte");
     const r=await soutRpc("soutien_envoyer", {p_acces:o.acces, p_iv:e.iv, p_contenu:e.ct});
     if(champ) champ.value="";
     s.occupe=false;
@@ -4848,7 +4865,7 @@ async function soutLamiaSigner(){
     const base={v:SOUT_CLAUSE_VERSION, nom:me.nom||"", email:me.email||"", code:o.code, signeLe:signeLe, methode:PR_METHODE};
     const empreinte=soutHex(await soutSha(JSON.stringify(base)+"|"+soutClauseTexte(base.nom, o.code).join("\n")));
     const clause=Object.assign({}, base, {empreinte:empreinte});
-    const e=await soutChiffrer(o.cle, clause, o.id+":lamia:clause");
+    const e=await soutChiffrerMsg(o.cle, clause, o.id+":lamia:clause");
     await soutRpc("soutien_lamia_signer", {p_id:o.id, p_iv:e.iv, p_contenu:e.ct, p_empreinte:empreinte});
     s.occupe=false;
     await soutLamiaOuvrir(o.id, true); await soutLamiaListe(); soutRedessiner();
@@ -4872,7 +4889,7 @@ async function soutLamiaRepondre(){
   if(texte.length>8000){ modaleInfo("Message trop long (8 000 caractères maximum)."); return; }
   s.occupe=true;
   try{
-    const e=await soutChiffrer(o.cle, {t:texte}, o.id+":lamia:texte");
+    const e=await soutChiffrerMsg(o.cle, {t:texte}, o.id+":lamia:texte");
     await soutRpc("soutien_lamia_repondre", {p_id:o.id, p_iv:e.iv, p_contenu:e.ct});
     if(champ) champ.value="";
     s.occupe=false;
