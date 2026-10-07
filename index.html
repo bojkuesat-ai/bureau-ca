@@ -337,6 +337,7 @@ select.f{width:100%}
 .sout-fiche a{color:#fff;font-weight:600}
 .sout-fiche-g{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;opacity:.75;margin:10px 0 4px}
 .sout-res-l{padding:6px 0;border-top:1px solid rgba(255,255,255,.08)}
+.badge-coopte{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:20px;background:#b48cf2;color:#141026;vertical-align:middle;margin-left:4px}
 .sout-compose textarea{flex:1;min-height:52px}
 .sout-compose textarea:disabled,.sout-compose button:disabled{opacity:.45;cursor:not-allowed}
 .sout-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
@@ -757,6 +758,9 @@ function membresActifs(){ return (S.admins||[]).filter(a=>a.email && a.statut===
 function peutGererCooptes(){ return estSecretaire() || (S.session && S.session.role==="owner"); }
 function estCoopte(){ return !!(S.session && S.session.role==="coopte"); }
 function cooptesActifs(){ return (S.admins||[]).filter(a=>a.statut==="actif" && a.role==="coopte"); }
+/* Les coopté·es ne font pas partie du CA : on les distingue partout où une personne est affichée. */
+function estCoopteA(a){ return !!(a && a.role==="coopte"); }
+function badgeCoopte(a){ return estCoopteA(a)?` <span class="badge-coopte">Coopté·e</span>`:""; }
 /* Membres inscrits uniquement (convocations, rappels internes, bilans). */
 function destinatairesMembres(){
   const set=new Set();
@@ -1481,7 +1485,7 @@ function viewAdmin(){
      deja la session de l'utilisateur connecte. */
   if(!(S.session && S.session.role==="owner")) return `<div class="empty">Espace r\u00e9serv\u00e9 au propri\u00e9taire.</div>`;
   const pend = S.admins.filter(a=>a.statut==="attente");
-  const actifs = S.admins.filter(a=>a.statut!=="attente" && a.statut!=="revoque");
+  const actifs = S.admins.filter(a=>a.statut!=="attente" && a.statut!=="revoque").sort((x,y)=>(estCoopteA(x)?1:0)-(estCoopteA(y)?1:0));
   const revoques = S.admins.filter(a=>a.statut==="revoque");
   const revHtml = revoques.map(a=>`<div class="doc" style="cursor:default;opacity:.72">
       <span class="ic">✕</span>
@@ -1498,8 +1502,8 @@ function viewAdmin(){
     </div>`).join("") : `<div class="empty">Aucun compte en attente.</div>`;
   const actHtml = actifs.map(a=>{ const self=a.id===S.session.id;
     return `<div class="doc" style="cursor:default">
-      <span class="ic">${a.role==="owner"?"★":"✓"}</span>
-      <span class="meta"><p class="dt">${esc(a.prenom?a.prenom+" "+a.nom:a.nom)}${self?" (vous)":""}</p><p class="du">${esc([a.fonction,a.email?("connexion : "+a.email):"aucune adresse enregistrée"].filter(Boolean).join(" · "))}${a.emailAlt?`<br><span style="opacity:.8">adresse ULB : ${esc(a.emailAlt)}</span>`:""}</p></span>
+      <span class="ic">${a.role==="owner"?"★":estCoopteA(a)?"◇":"✓"}</span>
+      <span class="meta"><p class="dt">${esc(a.prenom?a.prenom+" "+a.nom:a.nom)}${self?" (vous)":""}${badgeCoopte(a)}</p><p class="du">${esc([a.fonction,a.email?("connexion : "+a.email):"aucune adresse enregistrée"].filter(Boolean).join(" · "))}${a.emailAlt?`<br><span style="opacity:.8">adresse ULB : ${esc(a.emailAlt)}</span>`:""}</p></span>
       ${a.email?`<button class="link" data-action="reset-pwd" data-id="${esc(a.id)}">Réinitialiser le mot de passe</button>`:""}
       ${(!self && a.role!=="owner")?`<button class="link" data-action="revoke-admin" data-id="${esc(a.id)}">Révoquer</button>`:""}
     </div>`;
@@ -1717,6 +1721,7 @@ function viewDash(){
         <li><b>Agenda</b> : ajouter ou retirer les cr\u00e9neaux et \u00e9v\u00e9nements</li>
         <li><b>Mod\u00e8le de r\u00e9union</b> : d\u00e9finir les points r\u00e9currents pr\u00e9-remplis</li>
         <li><b>Rapports</b> : rapport d'activit\u00e9 et suivi de pr\u00e9sence <span class="du">(avec la pr\u00e9sidence)</span></li>
+        <li><b>Coopt\u00e9\u00b7es</b> : valider ou refuser leurs demandes <span class="du">(onglet Id\u00e9es &amp; avis)</span></li>
       </ul>
       <div class="row-btn"><button class="btn sm" data-action="guide-ok" data-guide="secr">J'ai compris</button></div>
     </div>` : "";
@@ -2492,7 +2497,7 @@ function tabConflits(){
 function tabMessages(){
   if(!S.msgUI) S.msgUI={sel:null,draft:"",file:null};
   const meId=S.session.id;
-  const others=(S.admins||[]).filter(a=>a.id!==meId && a.statut==="actif");
+  const others=(S.admins||[]).filter(a=>a.id!==meId && a.statut==="actif" && !estCoopteA(a));
   if(!S.msgUI.sel){
     return `<div class="compose" style="padding:12px 16px 8px"><h3 class="serif" style="margin:0">Messages directs</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:4px 0 0">Choisissez une personne pour lui écrire en privé (avec pièce jointe possible).</p></div>
@@ -2596,10 +2601,11 @@ function tabAvis(){
   const moi=(S.session||{}).id;
   const invit = peutGererCooptes() ? `<div class="card2" style="margin-bottom:16px">
     <h3 class="serif" style="margin-top:0">Inviter un\u00b7e coopt\u00e9\u00b7e</h3>
-    <p class="du" style="margin:0 0 8px">Ce lien permet \u00e0 une personne coopt\u00e9e de cr\u00e9er un compte. Elle acc\u00e9dera \u00e0 l'agenda des \u00e9v\u00e9nements et \u00e0 cet espace, et \u00e0 rien d'autre. Sa demande doit \u00eatre valid\u00e9e par le propri\u00e9taire.</p>
+    <p class="du" style="margin:0 0 8px">Ce lien permet \u00e0 une personne coopt\u00e9e de cr\u00e9er un compte. Elle acc\u00e9dera \u00e0 l'agenda des \u00e9v\u00e9nements et \u00e0 cet espace, et \u00e0 rien d'autre. Sa demande est valid\u00e9e par le secr\u00e9tariat ou le propri\u00e9taire, ci-dessous.</p>
     ${S.meta.codeCoopte?`<p style="color:var(--slate);font-size:12px;margin:0 0 8px">Code en cours : <b>${esc(S.meta.codeCoopte)}</b> \u00b7 ${cooptesActifs().length} coopt\u00e9\u00b7e(s) valid\u00e9\u00b7e(s)</p>`:""}
     <div class="row-btn"><button class="btn" data-action="coopte-lien">Copier le lien d'invitation</button>
-      ${S.meta.codeCoopte?`<button class="btn ghost" data-action="coopte-newcode">G\u00e9n\u00e9rer un nouveau code</button>`:""}</div></div>` : "";
+      ${S.meta.codeCoopte?`<button class="btn ghost" data-action="coopte-newcode">G\u00e9n\u00e9rer un nouveau code</button>`:""}</div>
+    ${blocCooptesAttente()}</div>` : "";
   const compose = invit + `<div class="compose"><h3 class="serif">D\u00e9poser un avis ou une id\u00e9e</h3>
     <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">${estCoopte()?"Vos contributions sont lues par les membres du CA. Elles n'ont pas valeur de vote : les d\u00e9cisions restent prises par le conseil.":"Vous pouvez aussi d\u00e9poser une id\u00e9e ici."}</p>
     <input class="f" id="av_sujet" placeholder="Sujet (ex. Organisation de la soir\u00e9e de rentr\u00e9e)">
@@ -2772,7 +2778,9 @@ function tabMail(){
   const cible=m.target||"to";
   const cibleNom={to:"À",cc:"CC",cci:"CCI"}[cible]||"À";
   // sources d'adresses connues
-  const membres=(S.admins||[]).filter(a=>a.email && a.statut==="actif")
+  const membres=(S.admins||[]).filter(a=>a.email && a.statut==="actif" && !estCoopteA(a))
+    .map(a=>({label:((a.prenom||"")+" "+(a.nom||"")).trim()||a.email, email:a.email}));
+  const cooptesMail=(S.admins||[]).filter(a=>a.email && a.statut==="actif" && estCoopteA(a))
     .map(a=>({label:((a.prenom||"")+" "+(a.nom||"")).trim()||a.email, email:a.email}));
   const contacts=(S.contacts||[]).filter(c=>c.email).map(c=>({label:c.nom||c.email, email:c.email}));
   /* Comme les envois automatiques : une adresse deja rattachee a un compte
@@ -2846,6 +2854,7 @@ function tabMail(){
     </div>
     <div id="mail_manual_err" style="display:none;color:var(--red);font-size:12px;margin:-6px 0 10px"></div>
     ${grp("Membres du bureau", membres, membres.map(x=>x.email).join(","))}
+    ${grp("Coopté·es (hors CA)", cooptesMail, cooptesMail.map(x=>x.email).join(","))}
     ${grp("Contacts enregistrés", contacts, contacts.map(x=>x.email).join(","))}
     ${grp("Liste de diffusion", diffusion, diffusion.map(x=>x.email).join(","))}
     ${(!membres.length&&!contacts.length&&!diffusion.length)?`<div class="empty">Aucune adresse enregistrée pour l'instant. Saisissez-les à la main ou importez un fichier.</div>`:""}
@@ -3420,7 +3429,8 @@ async function traiterInscriptions(){
       if(deja&&deja.data) continue;
       const nom=((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||"Nouveau membre";
       const estC = !!a.viaCode;
-      await envoyerNotifCAListe(owners, estC?"Nouvelle demande \u2014 coopt\u00e9\u00b7e":"Nouvelle demande d'inscription en attente",
+      const secr=(S.admins||[]).filter(x=>x.email && x.statut==="actif" && secretairesExtra().indexOf(x.id)>=0).map(x=>x.email);
+      await envoyerNotifCAListe(estC?[...new Set([...owners,...secr])]:owners, estC?"Nouvelle demande \u2014 coopt\u00e9\u00b7e":"Nouvelle demande d'inscription en attente",
         ("<p>Une nouvelle demande est <b>en attente de validation</b>"+(estC?" \u2014 <b>coopt\u00e9\u00b7e</b> (code "+caMailEsc(a.viaCode)+")":"")+" :</p><p><b>"+caMailEsc(nom)+"</b>"+(a.fonction?(" \u2014 "+caMailEsc(a.fonction)):"")+"</p><p>"+caMailEsc(a.email||"")+"</p><p>Connectez-vous \u00e0 l'espace CA pour la valider.</p>"), true);
       try{ await sb.from("ca_rappels_envoyes").insert({cle:cle}); }catch(_){ }
       logAct("Notification d'inscription envoy\u00e9e pour "+nom);
@@ -4075,7 +4085,8 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
         .b{border:1px solid #ddd;border-radius:9px;padding:14px;margin:14px 0}.s{color:#666;font-size:13px;margin:0 0 8px}`;
       const corpsArch=`<h1>Archive de mandat — ${an}</h1>
         <p>${esc(S.meta.nom||"Bureau étudiant")} — document de passation, arrêté le ${esc(fmtQuand(new Date().toISOString()))}.</p>
-        <h2>Composition</h2><ul>${(S.admins||[]).filter(a=>a.statut==="actif").map(a=>`<li>${esc(((a.prenom||"")+" "+(a.nom||"")).trim())}${a.fonction?" — "+esc(a.fonction):""}</li>`).join("")}</ul>
+        <h2>Composition</h2><ul>${(S.admins||[]).filter(a=>a.statut==="actif"&&!estCoopteA(a)).map(a=>`<li>${esc(((a.prenom||"")+" "+(a.nom||"")).trim())}${a.fonction?" — "+esc(a.fonction):""}</li>`).join("")}</ul>
+        ${cooptesActifs().length?`<h2>Coopté·es (hors CA)</h2><ul>${cooptesActifs().map(a=>`<li>${esc(((a.prenom||"")+" "+(a.nom||"")).trim())}</li>`).join("")}</ul>`:""}
         <h2>Réunions et procès-verbaux</h2>${blocsR||"<p>Aucune réunion.</p>"}
         <h2>Votes</h2>${blocsV||"<p>Aucun vote.</p>"}
         ${S.meta.bilanPublie?`<h2>Synthèse des bilans moraux</h2><p style="white-space:pre-wrap">${esc(S.meta.bilanPublie)}</p>`:""}`;
@@ -4136,7 +4147,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       telechargerPDF(nomPDF("rapport-activite-"+an), cssRap, corpsRap); break; }
     case "suivi-presence": { if(!peutVoirRapports()) break;
       const R=(S.reunions||[]).filter(m=>Object.keys(m.presences||{}).length);
-      const membres=(S.admins||[]).filter(a=>a.statut==="actif");
+      const membres=(S.admins||[]).filter(a=>a.statut==="actif" && !estCoopteA(a));
       const rows=membres.map(a=>{
         let p=0,ab=0,ex=0;
         R.forEach(m=>{ const v=(m.presences||{})[a.id]; if(v==="present")p++; else if(v==="absent")ab++; else if(v==="excuse")ex++; });
@@ -5372,7 +5383,7 @@ function tabSoutien(){
   if(s.erreur) corps=`<div class="sout-card"><p class="sout-p" style="color:var(--red)">${esc(s.erreur)}</p><div class="row-btn"><button class="btn ghost sm" data-action="sout-recharger">Réessayer</button></div></div>`;
   else if(!s.info || (!s.charge && s.chargement)) corps=`<div class="empty">Chargement sécurisé…</div>`;
   else corps = s.info.est_lamia ? soutVueLamia() : soutVueMembre();
-  const pied=(s.info&&s.vue==="accueil"&&!s.ouverte&&!(s.lamia&&s.lamia.ouverte))?`<div class="row-btn" style="margin-top:18px"><button class="btn ghost sm" data-action="etu-bilan">📊 Bilan anonyme de l'entraide étudiante</button><button class="btn ghost sm" data-action="etu-partage">🔗 Liens pour les étudiant·es</button></div>`:"";
+  const pied=(!estCoopte()&&s.info&&s.vue==="accueil"&&!s.ouverte&&!(s.lamia&&s.lamia.ouverte))?`<div class="row-btn" style="margin-top:18px"><button class="btn ghost sm" data-action="etu-bilan">📊 Bilan anonyme de l'entraide étudiante</button><button class="btn ghost sm" data-action="etu-partage">🔗 Liens pour les étudiant·es</button></div>`:"";
   return `<div class="sout-zone">${soutEntete()}${corps}${pied}</div>`;
 }
 
@@ -6355,7 +6366,7 @@ async function cesRChangerPhrase(){
 async function cesRPassation(){
   const r=S.cesR; if(!r.privJwk) return;
   const me=S.session&&S.session.id;
-  const opts=(S.admins||[]).filter(a=>a.statut==="actif"&&a.id!==me).map(a=>({v:a.id,l:((a.prenom||"")+" "+(a.nom||"")).trim()+(a.fonction?" — "+a.fonction:"")}));
+  const opts=(S.admins||[]).filter(a=>a.statut==="actif"&&a.id!==me&&!estCoopteA(a)).map(a=>({v:a.id,l:((a.prenom||"")+" "+(a.nom||"")).trim()+(a.fonction?" — "+a.fonction:"")}));
   if(!opts.length){ modaleInfo("Aucun autre membre actif."); return; }
   const id=await modaleChoix("Transmettre la CES","Choisissez le nouveau responsable. Un code de passation va s'afficher : remettez-le-lui en main propre. Dès qu'il l'aura saisi, vous perdrez l'accès aux dossiers.",opts);
   if(!id) return;
@@ -6382,7 +6393,7 @@ async function cesRPassationRecevoir(){
   }catch(e){ modaleInfo("Passation impossible : "+(e.message||e)); }
 }
 async function cesROwnerDesigner(){
-  const opts=(S.admins||[]).filter(a=>a.statut==="actif").map(a=>({v:a.id,l:((a.prenom||"")+" "+(a.nom||"")).trim()+(a.fonction?" — "+a.fonction:"")}));
+  const opts=(S.admins||[]).filter(a=>a.statut==="actif"&&!estCoopteA(a)).map(a=>({v:a.id,l:((a.prenom||"")+" "+(a.nom||"")).trim()+(a.fonction?" — "+a.fonction:"")}));
   const id=await modaleChoix("Désigner un responsable (secours)","À n'utiliser que si le responsable actuel ne peut pas faire la passation. La nouvelle personne devra saisir la phrase de récupération de l'ancien responsable (remise sous enveloppe), puis la changer.",opts);
   if(!id) return;
   try{ await cesRpcR("ces_owner_designer",{p_membre:id}); S.cesR.info=await cesRpcR("ces_resp_info"); cesRedessiner(); modaleInfo("✓ Nouveau responsable désigné."); }
@@ -6517,6 +6528,45 @@ setInterval(()=>{
       if(avant!==JSON.stringify((r.liste||[]).map(d=>[d.id,d.non_lu,d.statut]))+(r.ouvert?r.ouvert.els.length:"")) rendreEnPreservant(); }catch(e){} })();
   }
 }, 20000);
+
+
+/* ---- Demandes de coopté·es : validées par le secrétariat ou le propriétaire ----
+   Passe par des fonctions serveur (soutien_v5_cooptes.sql) : la secrétaire n'a pas
+   le droit de modifier directement les comptes, et ne peut valider QUE des coopté·es. */
+function blocCooptesAttente(){
+  if(!S.cooptesAttenteCharge){ S.cooptesAttenteCharge=true;
+    sb.rpc("ca_cooptes_en_attente").then(r=>{ S.cooptesAttente=(r&&!r.error&&r.data)||[]; S.cooptesAttenteErr=r&&r.error?r.error.message:""; if(S.tab==="avis") rendreEnPreservant(); }).catch(()=>{}); }
+  if(S.cooptesAttenteErr) return `<p class="du" style="color:var(--red);margin-top:10px">Validation des coopté·es indisponible : le script SQL n°5 doit être exécuté dans Supabase.</p>`;
+  const L=S.cooptesAttente||[];
+  return `<h4 style="margin:14px 0 6px">Demandes en attente (${L.length})</h4>`+(L.length?L.map(a=>`<div class="doc" style="cursor:default">
+      <span class="ic">⏳</span><span class="meta"><p class="dt">${esc(((a.prenom||"")+" "+(a.nom||"")).trim())} <span class="badge-coopte">Coopté·e</span></p>
+      <p class="du">${esc([a.email, "demande du "+dateFR(a.cree_le), a.via_code===(S.meta.codeCoopte||"")?"code valide":"code inconnu"].filter(Boolean).join(" · "))}</p></span>
+      <button class="chip" data-action="coopte-valider" data-id="${esc(a.id)}">✓ Valider</button>
+      <button class="chip" data-action="coopte-refuser" data-id="${esc(a.id)}">✕ Refuser</button></div>`).join(""):`<p class="du">Aucune demande en attente.</p>`);
+}
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-action='coopte-valider'],[data-action='coopte-refuser']"); if(!el||!sb) return;
+  const id=el.dataset.id, a=(S.cooptesAttente||[]).find(x=>x.id===id)||{};
+  const nom=((a.prenom||"")+" "+(a.nom||"")).trim();
+  if(el.dataset.action==="coopte-valider"){
+    if(!(await modaleConfirm("Valider "+nom+" comme coopté·e ?\n\nIl ou elle aura accès uniquement à l'agenda, aux idées & avis, à la médiation et au soutien — jamais au CA.","Valider"))) return;
+    const r=await sb.rpc("ca_valider_coopte",{p_id:id});
+    if(r&&r.error){ modaleInfo("Validation impossible : "+r.error.message); return; }
+    if(!r||r.data!==true){ modaleInfo("Cette demande n'est plus en attente."); }
+    else{
+      if(a.email){ try{ await envoyerNotifCAListe([a.email],"Votre accès est validé",
+        "<h2 style=\"margin:0 0 10px\">Bienvenue</h2><p>Bonjour "+caMailEsc(a.prenom||"")+",</p><p>Votre accès vient d'être validé <b>en tant que coopté·e</b> du Bureau étudiant.</p><p>Vous pouvez dès maintenant consulter l'agenda des événements et déposer vos avis et vos idées.</p><p><a href=\""+caAppUrl()+"\" style=\"background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;display:inline-block\">Ouvrir mon espace</a></p>", true); }catch(_){ } }
+      try{ logAct("Coopté·e validé·e : "+nom); }catch(_){ }
+      modaleInfo("✓ "+nom+" est validé·e comme coopté·e.","Coopté·e validé·e");
+    }
+  } else {
+    if(!(await modaleConfirm("Refuser la demande de "+nom+" ?","Refuser"))) return;
+    const r=await sb.rpc("ca_refuser_coopte",{p_id:id});
+    if(r&&r.error){ modaleInfo("Refus impossible : "+r.error.message); return; }
+    try{ logAct("Demande de coopté·e refusée : "+nom); }catch(_){ }
+  }
+  S.cooptesAttenteCharge=false; await loadAccounts(); render();
+});
 
 boot();
 
