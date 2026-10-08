@@ -337,6 +337,14 @@ select.f{width:100%}
 .sout-fiche a{color:#fff;font-weight:600}
 .sout-fiche-g{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;opacity:.75;margin:10px 0 4px}
 .sout-res-l{padding:6px 0;border-top:1px solid rgba(255,255,255,.08)}
+.valid-btns{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:-4px 0 14px;padding:0 4px}
+.valid-btn{flex:1;min-width:190px;border:none;border-radius:12px;padding:13px 14px;font-size:14px;font-weight:700;cursor:pointer}
+.valid-btn.co{background:#b48cf2;color:#141026}
+.valid-btn.ca{background:linear-gradient(150deg,var(--stamp),var(--gold-dim));color:#241100}
+.valid-tete{border-radius:10px;padding:10px 12px;font-weight:800;font-size:15px;text-align:center}
+.valid-tete.co{background:#b48cf2;color:#141026}
+.valid-tete.ca{background:linear-gradient(150deg,var(--stamp),var(--gold-dim));color:#241100}
+.valid-alerte{background:#3b1420;border:1px solid #6b2333;color:#ffd9dc;border-radius:10px;padding:8px 10px;font-size:13px;margin:8px 0}
 .badge-coopte{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:20px;background:#b48cf2;color:#141026;vertical-align:middle;margin-left:4px}
 .sout-compose textarea{flex:1;min-height:52px}
 .sout-compose textarea:disabled,.sout-compose button:disabled{opacity:.45;cursor:not-allowed}
@@ -500,8 +508,36 @@ const store = {
 const SB_URL="https://mlgzdfyqjhvyubrywuim.supabase.co";
 const SB_KEY="sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createClient(SB_URL,SB_KEY):null;
-function sess2session(user,prof){ return {id:user.id,email:user.email,prenom:prof.prenom,nom:((prof.prenom||"")+" "+(prof.nom||"")).trim(),fonction:prof.fonction,sig:((prof.prenom||prof.nom||"")+(prof.fonction?" \u00b7 "+prof.fonction:"")),statut:prof.statut||"attente",role:prof.role||"membre"}; }
-async function loadAccounts(){ try{ const {data}=await sb.from("ca_membres").select("*"); S.admins=(data||[]).map(a=>({id:a.id,email:a.email,emailAlt:a.email_alt||"",prenom:a.prenom,nom:a.nom,fonction:a.fonction,statut:a.statut,role:a.role,ts:a.created_at,viaCode:a.via_code||""})); }catch(e){} }
+/* Un compte arrivé par le lien des coopté·es (via_code) ou dont la fonction est « Coopté·e »
+   est TOUJOURS traité comme coopté·e, même si la base l'a enregistré comme « membre »
+   (cas d'une validation avec le mauvais bouton). Le propriétaire n'est jamais concerné. */
+function roleReel(p){ const r=(p&&p.role)||"membre"; if(r==="owner") return "owner";
+  if(r==="coopte" || String((p&&p.via_code)||"").trim() || /^coopt/i.test(String((p&&p.fonction)||"").trim())) return "coopte"; return r; }
+/* Fenêtre de confirmation d'une validation de compte : dit clairement ce que la personne pourra faire. */
+function estInscritCoopte(a){ return !!(a && (String(a.viaCode||a.via_code||"").trim() || /^coopt/i.test(String(a.fonction||"").trim()))); }
+function modaleValidation(a, type){
+  return new Promise(resolve=>{
+    const nom=((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||"cette personne";
+    const ca=type==="ca", lien=estInscritCoopte(a);
+    const d=document.createElement("div"); d.className="ca-mod";
+    d.innerHTML='<div class="ca-mod-box" role="alertdialog" aria-modal="true" style="max-width:480px">'
+      +'<div class="valid-tete '+(ca?"ca":"co")+'">'+(ca?"Valider comme MEMBRE DU CA":"Valider comme COOPTÉ·E")+'</div>'
+      +'<p style="color:var(--ink);font-size:15px;margin:12px 0 6px"><b>'+esc(nom)+'</b>'+(a.email?'<br><span style="font-size:12.5px;color:var(--ink-soft)">'+esc(a.email)+'</span>':'')+'</p>'
+      +(ca&&lien?'<p class="valid-alerte">⚠ Cette personne s\'est inscrite avec le <b>lien des coopté·es</b>. Êtes-vous sûr·e de vouloir en faire un membre du CA ?</p>':'')
+      +(!ca&&!lien?'<p class="valid-alerte">⚠ Cette personne ne s\'est <b>pas</b> inscrite avec le lien des coopté·es.</p>':'')
+      +'<p style="color:var(--ink);font-size:13.5px;line-height:1.6;margin:8px 0">'+(ca
+        ?'Elle aura <b>accès à tout l\'espace CA</b> : réunions et PV, votes, budgets, documents, procurations, messages, et elle recevra <b>tous les mails du CA</b>.'
+        :'Elle aura accès <b>uniquement</b> à : Agenda, Idées &amp; avis, Médiation, Soutien psychologique et Mes données.<br><b>Aucun accès au CA</b> : ni votes, ni réunions, ni documents, ni mails du CA.')+'</p>'
+      +'<div class="ca-mod-btns"><button class="btn ghost sm" id="vl_no">Annuler</button><button class="btn sm" id="vl_ok">'+(ca?"✓ Oui, membre du CA":"✓ Oui, coopté·e")+'</button></div></div>';
+    document.body.appendChild(d);
+    const rep=v=>{ d.remove(); resolve(v); };
+    d.querySelector("#vl_no").addEventListener("click",()=>rep(false));
+    d.querySelector("#vl_ok").addEventListener("click",()=>rep(true));
+    d.addEventListener("click",e=>{ if(e.target===d) rep(false); });
+  });
+}
+function sess2session(user,prof){ return {id:user.id,email:user.email,prenom:prof.prenom,nom:((prof.prenom||"")+" "+(prof.nom||"")).trim(),fonction:prof.fonction,sig:((prof.prenom||prof.nom||"")+(prof.fonction?" \u00b7 "+prof.fonction:"")),statut:prof.statut||"attente",role:roleReel(prof)}; }
+async function loadAccounts(){ try{ const {data}=await sb.from("ca_membres").select("*"); S.admins=(data||[]).map(a=>({id:a.id,email:a.email,emailAlt:a.email_alt||"",prenom:a.prenom,nom:a.nom,fonction:a.fonction,statut:a.statut,role:roleReel(a),ts:a.created_at,viaCode:a.via_code||""})); }catch(e){} }
 async function loadAvis(){ try{ const {data}=await sb.from("ca_avis").select("*").order("created_at",{ascending:false}); S.avis=(data||[]).map(x=>({id:x.id,membreId:x.membre_id,auteur:x.auteur,sujet:x.sujet,texte:x.texte,ts:x.created_at,statut:x.statut||"nouveau",reponse:x.reponse||"",reponduPar:x.repondu_par||"",reponduLe:x.repondu_le||null,odjReunion:x.odj_reunion||null})); }catch(e){ S.avis=[]; } }
 async function loadAvisVotes(){ try{ const {data}=await sb.from("ca_avis_votes").select("*"); S.avisVotes=(data||[]).map(v=>({avisId:v.avis_id,membreId:v.membre_id,valeur:v.valeur})); }catch(e){ S.avisVotes=[]; } }
 async function loadMailing(){ try{ const {data}=await sb.from("ca_mailing").select("*").order("created_at",{ascending:true}); S.mailing=(data||[]).map(m=>({id:m.id,email:m.email})); }catch(e){ S.mailing=[]; } }
@@ -1096,9 +1132,13 @@ async function refreshSession(){
   if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; }
   S.needProfile=null; S.session=sess2session(user,prof);
   await loadAccounts();
-  const jobs=[loadDocs,loadMessages,loadConflits,loadTaches,loadContacts,loadAnnonces,loadReactions,loadPresence,
+  /* Coopté·e : on ne télécharge sur son appareil que ce qui le ou la concerne.
+     Aucune donnée du CA (documents, votes, réunions, tâches, budgets, messages…) n'est chargée. */
+  const jobsCoopte=[loadConflits,loadEvenements,loadMeta,loadAvis,loadAvisVotes,loadMediation,loadSoutien];
+  const jobs=(S.session.role==="coopte")?jobsCoopte:[loadDocs,loadMessages,loadConflits,loadTaches,loadContacts,loadAnnonces,loadReactions,loadPresence,
     loadEvenements,loadReunions,loadCreneaux,loadOrg,loadBudgets,loadVotes,loadMeta,loadBilans,loadJournal,
     loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes];
+  if(S.session.role==="coopte"){ ["docs","messages","taches","contacts","annonces","reunions","creneaux","budgets","votes","bilans","journal","mailing","procurations"].forEach(k=>{ S[k]=[]; }); }
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
 }
 async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; } }catch(e){} }
@@ -1267,6 +1307,7 @@ function destinatairesTache(t){
 
 /* Bandeau de rappels dans l'app (fiable, sans e-mail) : ce qui arrive sous 48 h. */
 function bandeauRappels(){
+  if(estCoopte()) return "";
   const now=new Date(); now.setHours(0,0,0,0);
   const dansXjours=d=>{ if(!d) return 999; const x=new Date(String(d).slice(0,10)+"T00:00"); return Math.round((x-now)/86400000); };
   const items=[];
@@ -1495,13 +1536,16 @@ function viewAdmin(){
   const pendHtml = pend.length ? pend.map(a=>`<div class="doc" style="cursor:default">
       <span class="ic">⏳</span>
       <span class="meta"><p class="dt">${esc(a.prenom?a.prenom+" "+a.nom:a.nom)}</p><p class="du">${esc([a.fonction,a.email||a.id,"inscrit le "+dateFR(a.ts)].filter(Boolean).join(" · "))}</p></span>
-      ${a.viaCode?`<span class="badge" style="margin-right:6px">coopté·e · ${a.viaCode===(S.meta.codeCoopte||"")?"code valide":"code inconnu"}</span>`:""}
-      <button class="chip" data-action="approve-admin" data-id="${esc(a.id)}">✓ Valider (membre)</button>
-      <button class="chip" data-action="approve-coopte" data-id="${esc(a.id)}">✓ Valider (coopté)</button>
-      <button class="chip" data-action="reject-admin" data-id="${esc(a.id)}">✕ Refuser</button>
+      ${estInscritCoopte(a)?`<span class="badge-coopte" style="margin-right:6px">Inscrit·e via le lien coopté·es${a.viaCode?(a.viaCode===(S.meta.codeCoopte||"")?" · code valide":" · code inconnu"):""}</span>`:`<span class="badge" style="margin-right:6px">Inscription membre du CA</span>`}
+    </div>
+    <div class="valid-btns">
+      <button class="valid-btn co" data-action="approve-coopte" data-id="${esc(a.id)}">✓ Valider comme coopté·e</button>
+      <button class="valid-btn ca" data-action="approve-admin" data-id="${esc(a.id)}">✓ Valider comme membre du CA</button>
+      <button class="link" data-action="reject-admin" data-id="${esc(a.id)}" style="color:var(--red)">✕ Refuser</button>
     </div>`).join("") : `<div class="empty">Aucun compte en attente.</div>`;
-  const actHtml = actifs.map(a=>{ const self=a.id===S.session.id;
-    return `<div class="doc" style="cursor:default">
+  const actHtml = actifs.map((a,i)=>{ const self=a.id===S.session.id;
+    const titre=(i===0&&!estCoopteA(a))?`<h3 class="serif" style="margin:6px 0 8px">Membres du CA</h3>`:(estCoopteA(a)&&(i===0||!estCoopteA(actifs[i-1])))?`<h3 class="serif" style="margin:18px 0 8px">Coopté·es <span class="du" style="display:inline">(hors CA)</span></h3>`:"";
+    return titre+`<div class="doc" style="cursor:default">
       <span class="ic">${a.role==="owner"?"★":estCoopteA(a)?"◇":"✓"}</span>
       <span class="meta"><p class="dt">${esc(a.prenom?a.prenom+" "+a.nom:a.nom)}${self?" (vous)":""}${badgeCoopte(a)}</p><p class="du">${esc([a.fonction,a.email?("connexion : "+a.email):"aucune adresse enregistrée"].filter(Boolean).join(" · "))}${a.emailAlt?`<br><span style="opacity:.8">adresse ULB : ${esc(a.emailAlt)}</span>`:""}</p></span>
       ${a.email?`<button class="link" data-action="reset-pwd" data-id="${esc(a.id)}">Réinitialiser le mot de passe</button>`:""}
@@ -1731,8 +1775,8 @@ function viewDash(){
     <p class="sub"><b>${TOUS_POSTES.length} postes</b> · organigramme, budgets, votes et plus.</p>
     <div class="userbar"><span class="u-av">${esc(initials(S.session.nom))}</span>
       <span><span class="u-nom">${esc(S.session.nom)}</span> <span class="u-id">${esc(S.session.fonction||"")}</span></span>
-      <button class="logout" data-action="set-tab" data-tab="search" title="Recherche">🔍</button>
-      <button class="logout" data-action="set-tab" data-tab="notifs" title="À traiter">🔔${notifTot?" "+notifTot:""}</button>
+      ${estCoopte()?`<span class="badge-coopte">Coopté·e</span>`:`<button class="logout" data-action="set-tab" data-tab="search" title="Recherche">🔍</button>
+      <button class="logout" data-action="set-tab" data-tab="notifs" title="À traiter">🔔${notifTot?" "+notifTot:""}</button>`}
       <button class="logout" data-action="logout">Se déconnecter</button></div>
     <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():id==="soutien"?soutNonLus("ca"):id==="soutien_etu"?soutNonLus("etu"):id==="soutien_ces"?cesNonLus():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:id==="soutien"?` style="border:2px solid #b48cf2;border-bottom:none;color:#d4bbff;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
   </div></header>
@@ -3886,6 +3930,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
     case "approve-coopte": {
       if(!(S.session&&S.session.role==="owner")) break;
       const ad=(S.admins||[]).find(a=>a.id===id);
+      if(!(await modaleValidation(ad||{}, "coopte"))) break;
       const r=await sb.from("ca_membres").update({statut:"actif",role:"coopte"}).eq("id",id).select();
       if(r&&r.error){ if(window.alert) window.alert("\u00c9chec : "+r.error.message); break; }
       if(!r||!r.data||!r.data.length){ modaleInfo("Validation refus\u00e9e par le serveur : le compte reste en attente et aucun mail n'a \u00e9t\u00e9 envoy\u00e9."); await loadAccounts(); render(); break; }
@@ -4283,9 +4328,12 @@ ${sections||"<p>Aucun retour.</p>"}
     }
     case "approve-admin": { if(!(S.session&&S.session.role==="owner")) break;
       const ad=(S.admins||[]).find(a=>a.id===id);
+      if(!(await modaleValidation(ad||{}, "ca"))) break;
       /* Supabase ne lève pas d'exception quand la RLS écarte la ligne : on exige
          que la mise à jour renvoie bien la ligne avant d'annoncer la validation. */
-      const rv=await sb.from("ca_membres").update({statut:"actif"}).eq("id",id).select();
+      const majCA={statut:"actif", role:"membre"};
+      if(ad && estInscritCoopte(ad)){ majCA.via_code=null; if(/^coopt/i.test(String(ad.fonction||""))) majCA.fonction=null; }
+      const rv=await sb.from("ca_membres").update(majCA).eq("id",id).select();
       if(rv&&rv.error){ modaleInfo("Validation impossible : "+rv.error.message); break; }
       if(!rv||!rv.data||!rv.data.length){ modaleInfo("Validation refus\u00e9e par le serveur : le compte reste en attente et aucun mail n'a \u00e9t\u00e9 envoy\u00e9."); await loadAccounts(); render(); break; }
       if(ad && ad.email){ try{ await envoyerNotifCAListe([ad.email], "Votre accès à l'espace CA est validé",
@@ -4504,7 +4552,7 @@ async function boot(){
   if(!sb){ render(); return; }
   try{ const h=String(location.hash||""); if(/type=recovery/.test(h)||/[?&]type=recovery/.test(location.search)){ S.recovery=true; } }catch(e){}
   try{ await refreshSession(); }catch(e){} render();
-  if(S.session){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") rendreEnPreservant(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterRecapIdees().catch(()=>{}); traiterInscriptions().catch(()=>{}); traiterRetardsMediation().catch(()=>{}); }
+  if(S.session && S.session.role!=="coopte"){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") rendreEnPreservant(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterRecapIdees().catch(()=>{}); traiterInscriptions().catch(()=>{}); traiterRetardsMediation().catch(()=>{}); }
   try{ sb.auth.onAuthStateChange(async (evt)=>{
     if(evt==="PASSWORD_RECOVERY"){ S.recovery=true; render(); return; }
     if(S.recovery) return;
@@ -6541,15 +6589,15 @@ function blocCooptesAttente(){
   return `<h4 style="margin:14px 0 6px">Demandes en attente (${L.length})</h4>`+(L.length?L.map(a=>`<div class="doc" style="cursor:default">
       <span class="ic">⏳</span><span class="meta"><p class="dt">${esc(((a.prenom||"")+" "+(a.nom||"")).trim())} <span class="badge-coopte">Coopté·e</span></p>
       <p class="du">${esc([a.email, "demande du "+dateFR(a.cree_le), a.via_code===(S.meta.codeCoopte||"")?"code valide":"code inconnu"].filter(Boolean).join(" · "))}</p></span>
-      <button class="chip" data-action="coopte-valider" data-id="${esc(a.id)}">✓ Valider</button>
-      <button class="chip" data-action="coopte-refuser" data-id="${esc(a.id)}">✕ Refuser</button></div>`).join(""):`<p class="du">Aucune demande en attente.</p>`);
+    </div><div class="valid-btns"><button class="valid-btn co" data-action="coopte-valider" data-id="${esc(a.id)}">✓ Valider comme coopté·e</button>
+      <button class="link" data-action="coopte-refuser" data-id="${esc(a.id)}" style="color:var(--red)">✕ Refuser</button></div>`).join(""):`<p class="du">Aucune demande en attente.</p>`);
 }
 document.addEventListener("click", async e=>{
   const el=e.target.closest("[data-action='coopte-valider'],[data-action='coopte-refuser']"); if(!el||!sb) return;
   const id=el.dataset.id, a=(S.cooptesAttente||[]).find(x=>x.id===id)||{};
   const nom=((a.prenom||"")+" "+(a.nom||"")).trim();
   if(el.dataset.action==="coopte-valider"){
-    if(!(await modaleConfirm("Valider "+nom+" comme coopté·e ?\n\nIl ou elle aura accès uniquement à l'agenda, aux idées & avis, à la médiation et au soutien — jamais au CA.","Valider"))) return;
+    if(!(await modaleValidation(Object.assign({}, a, {viaCode:a.via_code}), "coopte"))) return;
     const r=await sb.rpc("ca_valider_coopte",{p_id:id});
     if(r&&r.error){ modaleInfo("Validation impossible : "+r.error.message); return; }
     if(!r||r.data!==true){ modaleInfo("Cette demande n'est plus en attente."); }
