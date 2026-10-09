@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="25.09.2026 · 2">
+<meta name="app-build" content="09.10.2026 · 2">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -680,7 +680,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 25.09.2026 · 2</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 09.10.2026 · 2</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -695,6 +695,8 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     <button id="tabIncomes" aria-pressed="false" hidden>Recettes</button>
     <button id="tabReprise" aria-pressed="false" hidden>Dépense CA sortant</button>
     <button id="tabExtraits" aria-pressed="false" hidden>Extraits</button>
+    <button id="tabDocs" aria-pressed="false" hidden>Documents</button>
+    <button id="tabPreuves" aria-pressed="false" hidden>Preuves à déposer<span class="pill" id="pillPreuves" hidden>0</span></button>
     <button id="tabMembers" aria-pressed="false" hidden>Membres<span class="pill" id="pillMem" hidden>0</span></button>
     <button id="tabMessages" aria-pressed="false" hidden>Messages<span class="pill" id="pillMsg" hidden>0</span></button>
     <button id="tabBudget" aria-pressed="false" hidden>Budget</button>
@@ -717,6 +719,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
       <div class="kpi done"><div class="eyebrow">Déjà remboursé</div><div class="n" id="m_paid">0 €</div></div>
     </div>
     <p class="hint" id="m_detail" style="margin:-8px 0 0"></p>
+    <div class="callout" id="m_preuves" hidden style="border-left:4px solid var(--amber)"></div>
     <div class="card pad">
       <div class="eyebrow">Nouvelle demande</div>
       <h2 style="font-size:22px;margin:6px 0 16px">Se faire rembourser une dépense</h2>
@@ -1635,6 +1638,74 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     </div>
   </section>
 
+  <!-- preuves à déposer : demandes sans aucune pièce -->
+  <section id="viewPreuves" class="stack" hidden>
+    <div class="kpis">
+      <div class="kpi wait"><div class="eyebrow">Demandes sans preuve</div><div class="n" id="prv_k">0</div></div>
+      <div class="kpi wait"><div class="eyebrow">Montant concerné</div><div class="n" id="prv_kAmt">0 €</div></div>
+      <div class="kpi"><div class="eyebrow">Personnes à relancer</div><div class="n" id="prv_kPers">0</div></div>
+      <div class="kpi"><div class="eyebrow">Dont déjà payées</div><div class="n" id="prv_kPaye">0</div></div>
+    </div>
+    <p class="hint" style="margin:-4px 2px 0">Toutes les demandes (remboursements et paiements directs, sauf refusées) qui n'ont <b>aucune pièce</b>. Le membre reçoit un lien vers sa demande et peut y déposer sa preuve — rien d'autre. Dès qu'une pièce est déposée, la demande quitte cette liste.</p>
+    <div class="toolbar">
+      <input type="text" id="prvSearch" placeholder="Nom, objet, montant, référence…">
+      <div class="spacer"></div>
+      <button class="btn sm" id="prvTous">Rappeler tout le monde</button>
+    </div>
+    <div id="prvList" class="stack" style="gap:12px"></div>
+  </section>
+
+  <!-- documents : factures de vente et bons de commande (archive seule) -->
+  <section id="viewDocs" class="stack" hidden>
+    <div class="kpis">
+      <div class="kpi"><div class="eyebrow">Factures de vente</div><div class="n" id="doc_kV">0</div></div>
+      <div class="kpi"><div class="eyebrow">Total facturé</div><div class="n" id="doc_kVt">0 €</div></div>
+      <div class="kpi"><div class="eyebrow">Bons de commande</div><div class="n" id="doc_kC">0</div></div>
+      <div class="kpi"><div class="eyebrow">Total commandé</div><div class="n" id="doc_kCt">0 €</div></div>
+    </div>
+
+    <div class="card pad">
+      <div class="eyebrow">Classement</div>
+      <h2 style="font-size:20px;margin:6px 0 10px">Déposer une facture de vente ou un bon de commande</h2>
+      <p class="hint" style="margin:0 0 14px">Simple archive : ces documents ne créent aucune écriture. Ils ne touchent ni au solde, ni à la comptabilité, ni à la TVA. Quand l'argent d'une facture arrive, encode la recette dans l'onglet Recettes (pièce « Facture émise »).</p>
+      <form id="docForm" class="stack" style="gap:14px">
+        <div class="field"><label for="doc_cat">Type de document</label>
+          <select id="doc_cat"><option value="vente">Facture de vente</option><option value="commande">Bon de commande</option></select></div>
+        <div class="grid2">
+          <div class="field"><label for="doc_date">Date du document</label><input type="date" id="doc_date" required></div>
+          <div class="field"><label for="doc_num">Numéro</label><input type="text" id="doc_num" maxlength="60" placeholder="Ex. F-2026-014"></div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label for="doc_tiers" id="doc_tiersLbl">Client</label>
+            <input type="text" id="doc_tiers" maxlength="90" placeholder="Ex. Cabinet Dupont" required></div>
+          <div class="field"><label for="doc_montant">Montant TTC (€, facultatif)</label>
+            <input type="number" id="doc_montant" step="0.01" min="0" placeholder="0,00"></div>
+        </div>
+        <div class="field"><label for="doc_note">Objet / commentaire (facultatif)</label>
+          <textarea id="doc_note" maxlength="400" placeholder="Ex. sponsoring soirée de rentrée"></textarea></div>
+        <div class="field"><label for="doc_files">Fichier(s)</label>
+          <input type="file" id="doc_files" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.xml,.doc,.docx,.xls,.xlsx">
+          <span class="hint">PDF, photo, Word, Excel ou XML. 15 Mo maximum par fichier. Plusieurs fichiers possibles pour un même document.</span></div>
+        <div class="err" id="docErr" hidden></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn" type="submit" id="docBtn">Enregistrer le document</button>
+          <button class="btn ghost" type="button" id="docCancel">Annuler</button>
+        </div>
+      </form>
+    </div>
+
+    <div>
+      <div class="toolbar">
+        <select id="docFiltre"><option value="tous">Tous les documents</option><option value="vente">Factures de vente</option><option value="commande">Bons de commande</option></select>
+        <input type="text" id="docSearch" placeholder="Client, fournisseur, numéro, montant…">
+      </div>
+      <div class="card" style="overflow:hidden">
+        <div class="head"><span>Date</span><span>Document</span><span>Type</span><span class="r">Montant</span><span></span></div>
+        <div id="docList"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- recettes -->
   <section id="viewIncomes" class="stack" hidden>
     <div class="kpis">
@@ -2099,9 +2170,9 @@ async function mailCorriger(it, motif){
     <h2 style="margin:0 0 10px">Demande à corriger</h2>
     <p>Bonjour ${mailEsc(prenomDe(it))},</p>
     <p>Votre demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}) doit être <b>corrigée</b> avant d'être traitée.</p>
-    <p style="background:#fdf6ec;border:1px solid #e8d3ab;border-radius:8px;padding:12px"><b>À corriger :</b><br>${mailEsc(motif).replace(/\\n/g,"<br>")}</p>
+    <p style="background:#fdf6ec;border:1px solid #e8d3ab;border-radius:8px;padding:12px"><b>À corriger :</b><br>${mailEsc(motif).replace(/\n/g,"<br>")}</p>
     <p>Ouvrez votre demande dans l'application : vous pouvez <b>ajouter de nouvelles pièces</b> et compléter, puis renvoyer. Elle repassera automatiquement en attente de décision.</p>
-    <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#c47f17;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Corriger ma demande</a></p>
+    <p style="text-align:center;margin:22px 0"><a href="${lienDemande(it)}" style="background:#c47f17;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Corriger ma demande</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
   return envoyerMail(to, "Demande à corriger — "+refOf(it), html);
@@ -2239,8 +2310,10 @@ function construireRelance(it){
   const prenom = (mem && mem.first_name) || String(it.requester_name||"").split(" ")[0] || "";
   const manque=[];
   if(piecesDe(it).length===0) manque.push("le justificatif (facture ou ticket)");
-  if(String(it.iban||"").replace(/\s+/g,"").length<14) manque.push("un IBAN valide pour le virement");
-  const msg = `Bonjour ${prenom},\n\nVotre demande de remboursement ${refOf(it)} (${it.object}, ${euro(it.amount)}) est en attente car il manque ${manque.join(" et ")}.\n\nMerci de compléter ta demande dès que possible directement dans l'application. Sans cela, le remboursement ne pourra pas être effectué.\n\nMerci !\nLe bureau étudiant`;
+  const ibanRequis = it.kind !== "direct" || (it.pay_mode === "virement" && !!String(it.iban||"").trim());
+  if(ibanRequis && !ibanValide(it.iban)) manque.push("un IBAN valide pour le virement");
+  if(!manque.length) manque.push("le justificatif (facture ou ticket)");
+  const msg = `Bonjour ${prenom},\n\nVotre demande ${it.kind==="direct"?"de paiement direct":"de remboursement"} ${refOf(it)} (${it.object}, ${euro(it.amount)}) est en attente car il manque ${manque.join(" et ")}.\n\nMerci de compléter ta demande dès que possible directement dans l'application. Sans cela, le remboursement ne pourra pas être effectué.\n\nMerci !\nLe bureau étudiant`;
   return { prenom, manque, msg };
 }
 async function mailRelance(it){
@@ -2251,7 +2324,7 @@ async function mailRelance(it){
     <p>Bonjour ${mailEsc(prenomDe(it))},</p>
     <p>Votre demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}) est en attente car il manque ${mailEsc(manque.join(" et "))}.</p>
     <p>Merci de la compléter dès que possible directement dans l'application. Sans cela, le remboursement ne pourra pas être effectué.</p>
-    <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Compléter ma demande</a></p>
+    <p style="text-align:center;margin:24px 0"><a href="${lienDemande(it)}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Compléter ma demande</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
   return envoyerMail(to, "Demande incomplète — "+refOf(it), html);
@@ -2301,7 +2374,7 @@ async function alerterDormantes(auto){
 async function relancerIncompletes(auto){
   const now = Date.now();
   const J = 864e5;
-  const incompletes = state.items.filter(i => i.status==="En attente" && i.kind!=="direct" && estIncomplet(i));
+  const incompletes = state.items.filter(i => i.status==="En attente" && estIncomplet(i));
   const cible = incompletes.filter(i => {
     const age = i.created_at ? now - new Date(i.created_at).getTime() : Infinity;
     const derniere = i.relance_at ? now - new Date(i.relance_at).getTime() : Infinity;
@@ -2539,6 +2612,16 @@ function ouvrirRecuModal(it){
   document.getElementById("recuDl").onclick = () => genererRecuPDF(it);
   document.getElementById("recuClose").onclick = () => { ov.style.display="none"; try{ history.replaceState(null,"",window.location.pathname); }catch(e){} };
 }
+function lienDemande(it){ return window.location.origin + window.location.pathname + "#demande=" + it.id; }
+let _demandePending = (function(){ const m=(window.location.hash||"").match(/demande=([A-Za-z0-9-]+)/); return m?m[1]:null; })();
+function verifierLienDemande(){
+  if(!_demandePending) return;
+  const it = (state.items||[]).find(x => x.id === _demandePending);
+  if(!it) return;
+  _demandePending = null;
+  try{ history.replaceState(null, "", window.location.pathname); }catch(_){}
+  setTimeout(() => openDrawer(it.id), 300);
+}
 let _reexamenPending = (function(){ const m=(window.location.hash||"").match(/reexamen=([A-Za-z0-9-]+)/); return m?m[1]:null; })();
 function verifierLienReexamen(){
   if(!_reexamenPending) return;
@@ -2744,7 +2827,7 @@ function _dlg(mode, titre, texte, opts){
   bBox.hidden = !opts.bascule;
   if(opts.bascule){
     bTxt.textContent = opts.bascule.texte || "Prévenir par e-mail";
-    bCb.checked = false;
+    bCb.checked = !!opts.bascule.defaut;
     const majB = () => {
       bSt.textContent = bCb.checked ? "Activé — un e-mail sera envoyé" : "Désactivé — aucun e-mail ne sera envoyé";
       bSt.className = "tglstate " + (bCb.checked ? "on" : "off");
@@ -2813,7 +2896,7 @@ const demander = (titre, texte, opts) => _dlg("question", titre, texte, opts);
 async function confirmerAvecMail(titre, texte, bouton, opts){
   opts = opts || {};
   const ok = await demander(titre, texte, { bouton, danger: !!opts.danger,
-    bascule: { texte: opts.basculeTexte || "Prévenir le membre par e-mail" },
+    bascule: { texte: opts.basculeTexte || "Prévenir le membre par e-mail", defaut: !!opts.basculeDefaut },
     select: opts.select || null });
   return { ok: !!ok, mail: !!ok && dlgBasculeVal, mode: ok ? dlgSelectVal : null };
 }
@@ -2939,6 +3022,8 @@ async function loadProfile(user){
   $("#tabExpenses").hidden = !isTreso();
   if($("#tabReprise")) $("#tabReprise").hidden = !isTreso();
   if($("#tabExtraits")) $("#tabExtraits").hidden = !isTreso();
+  if($("#tabDocs")) $("#tabDocs").hidden = !isTreso();
+  if($("#tabPreuves")) $("#tabPreuves").hidden = !isTreso();
   $("#tabIncomes").hidden = !isTreso();
   $("#tabMembers").hidden = !isTreso();
   $("#tabMessages").hidden = !isTreso();
@@ -3020,6 +3105,7 @@ async function refresh(){
   renderMessagesUI();
   verifierLienRecu();
   verifierLienReexamen();
+  verifierLienDemande();
   try{ feVerifierLien(); }catch(_){}
   try{ majHoraire(); }catch(_){}   // horaires chargés depuis la base : on réévalue l'ouverture
   if(state.view==="budget"){ try{ renderBudget(); }catch(_){} }
@@ -3272,7 +3358,7 @@ $("#d_body").addEventListener("click", async e => {
 });
 
 /* ---------- pièces jointes multiples ---------- */
-const staged = { exp:[], inc:[], req:[], fix:[], dir:[] , msg: [], pj: [], ed: [], pres: [] };
+const staged = { exp:[], inc:[], req:[], fix:[], dir:[] , msg: [], pj: [], ed: [], pres: [], prv: [] };
 const PREUVE_ACHAT   = ["Facture","Ticket de caisse","Bon de commande"];
 const PREUVE_PAIEMENT = ["Extrait de compte","Preuve de virement","Reçu de paiement par carte","Reçu signé du commerçant"];
 
@@ -3330,7 +3416,7 @@ function majControle(){
 }
 
 function renderStaged(cle){
-  const el = $({exp:"#e_staged", inc:"#i_staged", req:"#r_staged", fix:"#d_staged", dir:"#fd_staged", pj:"#pj_staged", ed:"#ed_staged", pres:"#p_staged"}[cle]);
+  const el = $({exp:"#e_staged", inc:"#i_staged", req:"#r_staged", fix:"#d_staged", dir:"#fd_staged", pj:"#pj_staged", ed:"#ed_staged", pres:"#p_staged", prv:"#prv_staged"}[cle]);
   if(!el) return;
   el.innerHTML = staged[cle].map((p,n) => `<div class="stitem">
     <span class="k">${esc(p.kind)}</span>
@@ -4386,6 +4472,336 @@ if($("#exList")) $("#exList").addEventListener("click", async e => {
   if(error) return toast("Suppression impossible : " + error.message);
   await renderExtraits(); toast("Extrait supprimé.");
 });
+
+/* ---------- documents : factures de vente et bons de commande ----------
+   Archive seule. Les fichiers vont dans le stockage (dossier documents/), les champs
+   (date, numéro, client ou fournisseur, montant, commentaire) dans caisse_config.compta.documents.
+   Aucune table, aucun SQL, aucun effet sur le solde, la compta ou la TVA. */
+const DOSSIER_DOCS = "documents";
+const docsListe = () => Array.isArray(comptaCfg().documents) ? comptaCfg().documents : [];
+const docLib = c => c === "commande" ? "Bon de commande" : "Facture de vente";
+
+// relit la config juste avant d'écrire, pour ne pas écraser une autre modification
+async function docsSauver(modifier){
+  const r = await sb.from("caisse_config").select("compta").eq("id",1).maybeSingle();
+  if(r.error) throw r.error;
+  const c = (r.data && r.data.compta && typeof r.data.compta === "object") ? r.data.compta : {};
+  c.documents = Array.isArray(c.documents) ? c.documents : [];
+  modifier(c.documents);
+  const { error } = await sb.from("caisse_config").upsert({ id:1, compta:c, updated_at:new Date().toISOString() });
+  if(error) throw error;
+  state.compta = c;
+}
+
+function majLibTiers(){
+  const v = $("#doc_cat") ? $("#doc_cat").value : "vente";
+  if($("#doc_tiersLbl")) $("#doc_tiersLbl").textContent = v === "commande" ? "Fournisseur" : "Client";
+  if($("#doc_tiers")) $("#doc_tiers").placeholder = v === "commande" ? "Ex. Imprimerie Dupont" : "Ex. Cabinet Dupont";
+}
+if($("#doc_cat")) $("#doc_cat").onchange = majLibTiers;
+
+function renderDocs(){
+  if(!$("#docList") || !isTreso()) return;
+  const all = docsListe();
+  const ventes = all.filter(d => d.cat === "vente"), cmd = all.filter(d => d.cat === "commande");
+  const tot = a => a.reduce((s,d) => s + (Number(d.montant) || 0), 0);
+  $("#doc_kV").textContent = ventes.length;
+  $("#doc_kVt").textContent = euro(tot(ventes));
+  $("#doc_kC").textContent = cmd.length;
+  $("#doc_kCt").textContent = euro(tot(cmd));
+
+  const f = $("#docFiltre").value, q = slug($("#docSearch").value.trim());
+  const liste = all.filter(d => f === "tous" || d.cat === f).filter(d => {
+    if(!q) return true;
+    const m = d.montant != null && d.montant !== "" ? Number(d.montant).toFixed(2) : "";
+    return slug([d.numero, d.tiers, d.note, docLib(d.cat), fdate(d.date), m, m.replace(".", ","),
+      (d.fichiers || []).map(x => x.name).join(" ")].filter(Boolean).join(" ")).includes(q);
+  }).sort((a,b) => String(b.date).localeCompare(String(a.date)) || String(b.created_at).localeCompare(String(a.created_at)));
+
+  $("#docList").innerHTML = liste.length ? liste.map(d => {
+    const fic = d.fichiers || [];
+    const boutons = fic.map((x, n) => `<button class="btn ghost sm" data-docopen="${esc(d.id)}" data-n="${n}" title="${esc(x.name)}">${fic.length > 1 ? "Fichier " + (n+1) : "Ouvrir"}</button>`).join("");
+    return `<div class="row" style="cursor:default">
+      <div class="date mono" style="font-size:13px">${fdate(d.date)}</div>
+      <div><div class="obj">${esc(d.tiers || "—")}${d.numero ? ` · <span class="mono" style="font-size:13px">${esc(d.numero)}</span>` : ""}</div>
+        <div class="meta">${d.note ? esc(d.note) + " · " : ""}${fic.length} fichier(s) · déposé le ${fstamp(d.created_at)}</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px">${boutons}
+          <button class="btn no sm" data-docdel="${esc(d.id)}">Supprimer</button></div></div>
+      <div><span class="tag ${d.cat === "commande" ? "t-attente" : "t-valide"}">${esc(docLib(d.cat))}</span></div>
+      <div class="amt">${d.montant != null && d.montant !== "" ? euro(d.montant) : "—"}</div><div class="chev"></div></div>`;
+  }).join("") : emptyHTML("Aucun document", q || f !== "tous" ? "Rien ne correspond à ce filtre." : "Déposez ci-dessus vos factures de vente et vos bons de commande.");
+}
+if($("#docFiltre")) $("#docFiltre").onchange = renderDocs;
+if($("#docSearch")) $("#docSearch").oninput = renderDocs;
+if($("#docCancel")) $("#docCancel").onclick = () => { $("#docForm").reset(); $("#doc_date").value = dateLocale(); majLibTiers(); erreurForm("#docErr", null); };
+
+if($("#docForm")) $("#docForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  if(!isTreso()) return;
+  erreurForm("#docErr", null);
+  const cat = $("#doc_cat").value, date = $("#doc_date").value, tiers = $("#doc_tiers").value.trim();
+  const brut = String($("#doc_montant").value).trim();
+  const montant = brut === "" ? null : Math.round(Number(brut.replace(",", ".")) * 100) / 100;
+  const fichiers = [...($("#doc_files").files || [])];
+  if(!date) return erreurForm("#docErr", "Indiquez la date du document.");
+  if(!tiers) return erreurForm("#docErr", cat === "commande" ? "Indiquez le fournisseur." : "Indiquez le client.");
+  if(montant !== null && !(montant >= 0)) return erreurForm("#docErr", "Montant invalide.");
+  if(!fichiers.length) return erreurForm("#docErr", "Joignez au moins un fichier.");
+  const trop = fichiers.find(f => f.size > 15 * 1024 * 1024);
+  if(trop) return erreurForm("#docErr", "« " + trop.name + " » dépasse 15 Mo.");
+
+  const btn = $("#docBtn"); btn.disabled = true;
+  const envoyes = [];
+  try{
+    for(const [n, f] of fichiers.entries()){
+      btn.textContent = `Envoi ${n+1}/${fichiers.length}…`;
+      const propre = f.name.replace(/[^\w.\-]+/g, "_").slice(-90);
+      const path = `${DOSSIER_DOCS}/${cat}/${Date.now()}-${n}-${propre}`;
+      const up = await sb.storage.from("justificatifs").upload(path, f, { contentType: f.type || "application/octet-stream" });
+      if(up.error) throw up.error;
+      envoyes.push({ path, name: f.name, type: f.type || "", size: f.size });
+    }
+    btn.textContent = "Enregistrement…";
+    const doc = {
+      id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)),
+      cat, date, numero: $("#doc_num").value.trim(), tiers, montant,
+      note: $("#doc_note").value.trim(), fichiers: envoyes,
+      created_at: new Date().toISOString(), author: state.profile.name || ""
+    };
+    await docsSauver(liste => liste.push(doc));
+    $("#docForm").reset(); $("#doc_date").value = dateLocale(); $("#doc_cat").value = cat; majLibTiers();
+    renderDocs();
+    toast(docLib(cat) + " enregistré(e).");
+  }catch(err){
+    // pas de fichier orphelin si l'enregistrement des champs échoue
+    if(envoyes.length){ try{ await sb.storage.from("justificatifs").remove(envoyes.map(x => x.path)); }catch(_){} }
+    erreurForm("#docErr", "Enregistrement impossible : " + (err.message || err));
+  }finally{ btn.disabled = false; btn.textContent = "Enregistrer le document"; }
+});
+
+if($("#docList")) $("#docList").addEventListener("click", async e => {
+  const o = e.target.closest("[data-docopen]");
+  if(o){
+    const d = docsListe().find(x => x.id === o.dataset.docopen);
+    const x = d && (d.fichiers || [])[Number(o.dataset.n)];
+    if(!x) return toast("Fichier introuvable.");
+    const w = window.open("", "_blank");
+    const { data } = await sb.storage.from("justificatifs").createSignedUrl(x.path, 3600);
+    if(!data || !data.signedUrl){ if(w) w.close(); return toast("Ouverture impossible."); }
+    if(w) w.location = data.signedUrl; else window.location.href = data.signedUrl;
+    return;
+  }
+  const b = e.target.closest("[data-docdel]"); if(!b) return;
+  const d = docsListe().find(x => x.id === b.dataset.docdel); if(!d) return;
+  if(!await demander("Supprimer ce document",
+      docLib(d.cat) + " — " + (d.tiers || "") + (d.numero ? " (" + d.numero + ")" : "")
+      + "\n\nLa fiche et ses " + (d.fichiers || []).length + " fichier(s) seront supprimés définitivement.",
+      { bouton:"Supprimer", danger:true })) return;
+  b.disabled = true;
+  try{
+    await docsSauver(liste => { const i = liste.findIndex(x => x.id === d.id); if(i >= 0) liste.splice(i, 1); });
+  }catch(err){ b.disabled = false; return toast("Suppression impossible : " + (err.message || err)); }
+  const ch = (d.fichiers || []).map(x => x.path);
+  if(ch.length){ try{ await sb.storage.from("justificatifs").remove(ch); }catch(_){} }
+  renderDocs(); toast("Document supprimé.");
+});
+
+/* ---------- preuves à déposer ----------
+   Une demande « sans preuve » = aucune pièce jointe, quel que soit son statut (sauf refusée).
+   Le trésorier relance ; le membre ne peut qu'AJOUTER des pièces, via la fonction serveur
+   ajouter_preuves (security definer) : ni montant, ni objet, ni IBAN, ni suppression. */
+const sansPreuve = it => it && it.status !== "Refusée" && piecesDe(it).length === 0;
+const demandesSansPreuve = () => ouvert(state.items || []).filter(sansPreuve);
+
+function renderPreuves(){
+  const liste = demandesSansPreuve();
+  const pill = $("#pillPreuves");
+  if(pill){ pill.textContent = liste.length; pill.hidden = !liste.length || !isTreso(); }
+  if(!$("#prvList") || !isTreso() || state.view !== "preuves") return;
+  const somme = a => a.reduce((s,i) => s + Number(i.amount||0), 0);
+  const parId = {};
+  liste.forEach(i => { const k = i.user_id || i.requester_name || "?"; (parId[k] = parId[k] || []).push(i); });
+  $("#prv_k").textContent = liste.length;
+  $("#prv_kAmt").textContent = euro(somme(liste));
+  $("#prv_kPers").textContent = Object.keys(parId).length;
+  $("#prv_kPaye").textContent = liste.filter(i => i.status === "Remboursée").length;
+  $("#prvTous").disabled = !liste.length;
+
+  const q = slug(($("#prvSearch").value || "").trim());
+  const groupes = Object.entries(parId).map(([uid, its]) => ({ uid, its, nom: its[0].requester_name || "(sans nom)",
+    poste: its[0].requester_position || "" }))
+    .filter(g => !q || slug(g.nom).includes(q) || g.its.some(i => champsCherchables(i).includes(q)))
+    .sort((a,b) => a.nom.localeCompare(b.nom, "fr"));
+
+  $("#prvList").innerHTML = groupes.length ? groupes.map(g => {
+    const its = g.its.slice().sort((a,b) => String(a.expense_date).localeCompare(String(b.expense_date)));
+    const lignes = its.map(i => {
+      const dernier = i.preuve_relance_at ? "rappel le " + fstamp(i.preuve_relance_at) : "jamais relancé";
+      return `<div class="row" style="cursor:default">
+        <div class="date mono" style="font-size:13px">${fdate(i.expense_date)}</div>
+        <div><div class="obj">${esc(i.object||"")}</div>
+          <div class="meta">${esc(refOf(i))} · ${i.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${i.beneficiary?" → "+esc(i.beneficiary):""}`:"Remboursement"} · ${esc(dernier)}</div>
+          <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn sm" data-prv-rappel="${esc(i.id)}">Rappel</button>
+            <button class="btn ghost sm" data-prv-ouvrir="${esc(i.id)}">Ouvrir</button></div></div>
+        <div><span class="tag ${tagClass(i.status)}">${esc(i.status)}</span></div>
+        <div class="amt">${euro(i.amount)}</div><div class="chev"></div></div>`;
+    }).join("");
+    return `<div class="card" style="overflow:hidden">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:13px 16px;border-bottom:1px solid var(--line);background:var(--bg2)">
+        <div style="flex:1;min-width:180px"><b>${esc(g.nom)}</b>${g.poste?` <span class="hint">· ${esc(g.poste)}</span>`:""}
+          <div class="hint" style="margin:2px 0 0">${its.length} demande(s) sans preuve · ${euro(somme(its))}</div></div>
+        <button class="btn ghost sm" data-prv-personne="${esc(g.uid)}">Rappeler tout (${its.length})</button>
+      </div>${lignes}</div>`;
+  }).join("") : `<div class="card">${emptyHTML(liste.length ? "Aucun résultat" : "Tout est justifié 🎉",
+      liste.length ? "Aucune demande ne correspond à cette recherche." : "Toutes les demandes ont au moins une pièce.")}</div>`;
+}
+if($("#prvSearch")) $("#prvSearch").oninput = renderPreuves;
+
+async function mailRappelPreuves(its){
+  const it0 = its[0];
+  const to = await emailDuDemandeur(it0);
+  if(!to){ dernierEchecMail = "adresse e-mail du membre introuvable"; return false; }
+  const lignes = its.map(i => `<tr>
+    <td style="padding:7px 8px;border-bottom:1px solid #eee">${mailEsc(refOf(i))}</td>
+    <td style="padding:7px 8px;border-bottom:1px solid #eee">${mailEsc(i.object||"")}</td>
+    <td style="padding:7px 8px;border-bottom:1px solid #eee;text-align:right">${euro(i.amount)}</td>
+    <td style="padding:7px 8px;border-bottom:1px solid #eee;text-align:center"><a href="${lienDemande(i)}" style="color:#2d6a4f;font-weight:bold">Déposer</a></td></tr>`).join("");
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Preuve${its.length>1?"s":""} à déposer</h2>
+    <p>Bonjour ${mailEsc(prenomDe(it0))},</p>
+    <p>${its.length>1 ? "Ces demandes n'ont" : "Cette demande n'a"} encore <b>aucun justificatif</b> (facture, ticket, preuve de paiement…). La comptabilité de l'association doit pouvoir justifier chaque dépense : merci de ${its.length>1?"les":"le"} déposer dès que possible.</p>
+    <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:14px">
+      <tr style="background:#f4f6f8"><th style="padding:7px 8px;text-align:left">Réf.</th><th style="padding:7px 8px;text-align:left">Objet</th><th style="padding:7px 8px;text-align:right">Montant</th><th style="padding:7px 8px"></th></tr>
+      ${lignes}</table>
+    <p style="color:#555;font-size:13px">Le lien ouvre la demande dans l'application. Vous pourrez seulement y ajouter la pièce : rien d'autre n'est modifiable, même si elle est déjà payée.</p>
+    <p style="text-align:center;margin:22px 0"><a href="${lienDemande(it0)}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Déposer ma preuve</a></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+  return envoyerMail(to, (its.length>1 ? its.length + " preuves à déposer" : "Preuve à déposer — " + refOf(it0)), html, emailTreso());
+}
+
+async function rappelerPreuves(its){
+  if(!its.length) return false;
+  const ok = await mailRappelPreuves(its);
+  if(!ok){ toast("Rappel non envoyé à " + (its[0].requester_name||"ce membre") + " : " + (dernierEchecMail || "raison inconnue")); return false; }
+  const quand = new Date().toISOString();
+  let colonneOk = true;
+  for(const i of its){
+    try{ const r = await sb.from("requests").update({ preuve_relance_at: quand }).eq("id", i.id);
+         if(r.error) colonneOk = false; else i.preuve_relance_at = quand; }catch(_){ colonneOk = false; }
+    try{ await sb.from("events").insert({ request_id:i.id, who:state.profile.name, what:"Rappel envoyé : preuve à déposer" }); }catch(_){}
+  }
+  if(!colonneOk) console.warn("preuve_relance_at : colonne absente, passez le script SQL.");
+  return true;
+}
+
+if($("#prvList")) $("#prvList").addEventListener("click", async e => {
+  const o = e.target.closest("[data-prv-ouvrir]");
+  if(o) return openDrawer(o.dataset.prvOuvrir);
+  const b = e.target.closest("[data-prv-rappel],[data-prv-personne]"); if(!b) return;
+  const liste = demandesSansPreuve();
+  const its = b.dataset.prvRappel ? liste.filter(i => i.id === b.dataset.prvRappel)
+           : liste.filter(i => (i.user_id || i.requester_name || "?") === b.dataset.prvPersonne);
+  if(!its.length) return toast("Plus rien à rappeler : la preuve vient peut-être d'arriver.");
+  const deja = its.filter(i => i.preuve_relance_at && joursDepuis(i.preuve_relance_at) < 1);
+  if(deja.length && !await demander("Déjà relancé aujourd'hui",
+      (its[0].requester_name||"Ce membre") + " a déjà reçu un rappel aujourd'hui pour " + deja.length + " demande(s). Renvoyer quand même ?",
+      { bouton:"Renvoyer" })) return;
+  b.disabled = true; const t = b.textContent; b.textContent = "Envoi…";
+  const ok = await rappelerPreuves(its);
+  b.disabled = false; b.textContent = t;
+  if(ok){ renderPreuves(); toast("Rappel envoyé à " + (its[0].requester_name||"ce membre") + "."); }
+});
+
+if($("#prvTous")) $("#prvTous").onclick = async () => {
+  const liste = demandesSansPreuve();
+  const groupes = {};
+  liste.forEach(i => { const k = i.user_id || i.requester_name || "?"; (groupes[k] = groupes[k] || []).push(i); });
+  const n = Object.keys(groupes).length;
+  if(!n) return;
+  if(!await demander("Rappeler tout le monde",
+      n + " personne(s) recevront un e-mail listant leurs " + liste.length + " demande(s) sans preuve (un seul e-mail par personne).",
+      { bouton:"Envoyer les rappels" })) return;
+  const btn = $("#prvTous"); btn.disabled = true;
+  let ok = 0, k = 0;
+  for(const its of Object.values(groupes)){
+    k++; btn.textContent = `Envoi ${k}/${n}…`;
+    if(await rappelerPreuves(its)) ok++;
+  }
+  btn.disabled = false; btn.textContent = "Rappeler tout le monde";
+  renderPreuves();
+  toast(ok + " rappel(s) envoyé(s)" + (ok < n ? ", " + (n-ok) + " échec(s)." : "."));
+};
+
+/* côté membre */
+function blocPreuve(it){
+  return `<div class="fixbox" style="border-color:var(--amber)">
+    <b>Ajouter ma preuve</b>
+    <p>Cette demande n'a encore aucun justificatif. Joignez la facture, le ticket ou la preuve de paiement. Seule la pièce peut être ajoutée : le reste de la demande ne change pas${it.status==="Remboursée"?", même si elle est déjà payée":""}.</p>
+    <div class="attach">
+      <select id="prv_kind">
+        <option>Facture</option><option>Ticket de caisse</option><option>Extrait de compte</option>
+        <option>Preuve de virement</option><option>Reçu de paiement par carte</option>
+        <option>Reçu signé du commerçant</option><option>Bon de commande</option><option>Autre pièce</option>
+      </select>
+      <input type="file" id="prv_file" accept="image/*,application/pdf,.pdf">
+      <button type="button" class="btn ghost sm" id="prv_add">Joindre</button>
+    </div>
+    <div id="prv_staged" class="staged"></div>
+    <div class="err" id="prvErr" hidden></div>
+    <div class="actions"><button class="btn ok" data-prv-envoyer="${esc(it.id)}">Envoyer ma preuve</button></div>
+  </div>`;
+}
+$("#d_body").addEventListener("click", async e => {
+  if(e.target.closest("#prv_add")){
+    const f = $("#prv_file") && $("#prv_file").files[0];
+    if(!f) return toast("Choisissez d'abord un fichier.");
+    if(staged.prv.length >= 6) return toast("Six pièces maximum.");
+    staged.prv.push({ kind: $("#prv_kind").value, file: f });
+    $("#prv_file").value = ""; renderStaged("prv"); erreurForm("#prvErr", null);
+    return;
+  }
+  const b = e.target.closest("[data-prv-envoyer]"); if(!b) return;
+  const it = state.items.find(x => x.id === b.dataset.prvEnvoyer); if(!it) return;
+  // fichier choisi sans cliquer « Joindre »
+  const f0 = $("#prv_file") && $("#prv_file").files[0];
+  if(f0 && !staged.prv.some(p => p.file === f0)){ staged.prv.push({ kind: $("#prv_kind").value, file: f0 }); $("#prv_file").value = ""; renderStaged("prv"); }
+  if(!staged.prv.length) return erreurForm("#prvErr", "Joignez au moins une pièce.");
+  b.disabled = true; b.textContent = "Envoi…";
+  let pieces = [];
+  try{
+    pieces = await envoyerPieces("prv", "preuve", bandeauRef(it));
+    const { error } = await sb.rpc("ajouter_preuves", { p_id: it.id, p_pieces: pieces });
+    if(error) throw error;
+    staged.prv = [];
+    try{ await sb.from("events").insert({ request_id:it.id, who:state.profile.name, what: pieces.length + " preuve(s) déposée(s) par le demandeur" }); }catch(_){}
+    try{ mailContactTreso(it, "Preuve déposée suite au rappel.", pieces.length, state.profile.email); }catch(_){}
+    await refresh();
+    const maj = state.items.find(x => x.id === it.id);
+    if(maj){ state.proofUrls[it.id] = await afficherPieces(maj, null); renderDrawer(maj); }
+    toast("Merci ! Votre preuve a été envoyée au trésorier.");
+  }catch(err){
+    if(pieces.length){ try{ await sb.storage.from("justificatifs").remove(pieces.map(p => p.path)); }catch(_){} }
+    const m = String(err.message || err);
+    erreurForm("#prvErr", /ajouter_preuves|function|schema cache/i.test(m)
+      ? "L'envoi n'est pas encore activé côté serveur. Prévenez le trésorier (script SQL à passer)."
+      : "Envoi impossible : " + m);
+    b.disabled = false; b.textContent = "Envoyer ma preuve";
+  }
+});
+function majBandeauPreuves(){
+  const box = $("#m_preuves"); if(!box || !state.profile) return;
+  const miennes = ouvert(state.items).filter(i => i.user_id === state.profile.id && sansPreuve(i)
+    && !["En attente","À corriger"].includes(i.status));
+  if(!miennes.length){ box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = `<b>${miennes.length} demande(s) attendent votre preuve</b>
+    <p>Elles n'ont aucun justificatif. Ouvrez-la et utilisez « Ajouter ma preuve ».</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${miennes.map(i =>
+      `<button class="btn ghost sm" data-prv-ouvrir-m="${esc(i.id)}">${esc(i.object||refOf(i))} · ${euro(i.amount)}</button>`).join("")}</div>`;
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-prv-ouvrir-m]"); if(b) openDrawer(b.dataset.prvOuvrirM); });
 
 /* ---------- confirmation par saisie (actions irréversibles) ---------- */
 // Un simple confirm() se clique par réflexe. Ici il faut recopier une phrase exacte.
@@ -6022,9 +6438,10 @@ $("#directForm")?.addEventListener("submit", async (e) => {
 /* ---------- rendu ---------- */
 function estIncomplet(it){
   if(it.kind==="direct"){
-    // IBAN facultatif : absent = pas incomplet ; rempli mais faux = incomplet
-    if(it.pay_mode==="virement") return (it.status==="En attente"||it.status==="Validée"||it.status==="À corriger") && !!String(it.iban||"").trim() && !ibanValide(it.iban);
-    return false;
+    // IBAN facultatif : absent = pas incomplet ; rempli mais faux = incomplet. Aucune pièce = incomplet.
+    const actif = (it.status==="En attente"||it.status==="Validée"||it.status==="À corriger");
+    const ibanFaux = it.pay_mode==="virement" && !!String(it.iban||"").trim() && !ibanValide(it.iban);
+    return actif && (piecesDe(it).length === 0 || ibanFaux);
   }
   const sansPiece = piecesDe(it).length === 0;
   const sansIban = !ibanValide(it.iban);
@@ -6076,6 +6493,12 @@ function setView(v){
   if($("#viewReprise")) $("#viewReprise").hidden = v!=="reprise";
   if($("#viewExtraits")) $("#viewExtraits").hidden = v!=="extraits";
   if(v==="extraits") renderExtraits();
+  if($("#tabDocs")) $("#tabDocs").setAttribute("aria-pressed", v==="docs");
+  if($("#viewDocs")) $("#viewDocs").hidden = v!=="docs";
+  if(v==="docs"){ if(!$("#doc_date").value) $("#doc_date").value = dateLocale(); renderDocs(); }
+  if($("#tabPreuves")) $("#tabPreuves").setAttribute("aria-pressed", v==="preuves");
+  if($("#viewPreuves")) $("#viewPreuves").hidden = v!=="preuves";
+  if(v==="preuves") renderPreuves();
   $("#viewMembers").hidden = v!=="members";
   $("#viewMessages").hidden = v!=="messages";
   if($("#viewBudget")) $("#viewBudget").hidden = v!=="budget";
@@ -6112,6 +6535,8 @@ if($("#tabPres")) $("#tabPres").onclick = () => choisirVue("pres");
 $("#tabIncomes").onclick = () => choisirVue("incomes");
 if($("#tabReprise")) $("#tabReprise").onclick = () => choisirVue("reprise");
 if($("#tabExtraits")) $("#tabExtraits").onclick = () => choisirVue("extraits");
+if($("#tabDocs")) $("#tabDocs").onclick = () => choisirVue("docs");
+if($("#tabPreuves")) $("#tabPreuves").onclick = () => choisirVue("preuves");
 $("#tabMembers").onclick = () => choisirVue("members");
 $("#tabMessages").onclick = () => choisirVue("messages");
 if($("#tabBudget")) $("#tabBudget").onclick = () => choisirVue("budget");
@@ -8599,6 +9024,7 @@ function render(){
   try{ renderFactures(); }catch(eF){ console.error("factures", eF); }
   try{ renderNovelles(); }catch(eN){ console.error("novelles", eN); }
   try{ majHoraire(); }catch(_){}   // banderole ouvert/fermé et verrou du formulaire toujours à jour
+  try{ majBandeauPreuves(); renderPreuves(); }catch(ePr){ console.error("preuves", ePr); }
   const mineAll = ouvert(state.items).filter(i => i.user_id === state.profile.id);
   const mine = mineAll.filter(i => i.kind !== "direct");
   const mineDirect = mineAll.filter(i => i.kind === "direct");
@@ -8676,6 +9102,8 @@ function render(){
     renderExpenses();
     renderIncomes();
     renderClosures();
+    try{ renderDocs(); }catch(_){}
+    try{ renderPreuves(); }catch(_){}
     if(state.view==="compta"){ try{ renderCompta(); }catch(_){} }
     if(state.view==="tva"){ try{ renderTva(); }catch(_){} }
     majReset();
@@ -8713,6 +9141,7 @@ function tiroirOccupe(){
   // une pièce préparée mais pas encore envoyée ne doit pas disparaître sur une synchro
   if(staged.pj && staged.pj.length) return true;
   if(staged.ed && staged.ed.length) return true;
+  if(staged.prv && staged.prv.length) return true;
   if(state.edDrop && state.edDrop.size) return true;
   const ez = $("#editZone"); if(ez && !ez.hidden) return true;
   if(document.activeElement && body.contains(document.activeElement)) return true;
@@ -8913,7 +9342,7 @@ async function openDrawer(id){
   }
   if(isTreso()) loadEvents(id);
 }
-function closeDrawer(){ staged.fix = []; staged.ed = []; staged.pj = []; state.edDrop = new Set(); state.selected=null; state.drawerDirty=false; state.tiroirStatut=null; $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); }
+function closeDrawer(){ staged.fix = []; staged.ed = []; staged.pj = []; staged.prv = []; state.edDrop = new Set(); state.selected=null; state.drawerDirty=false; state.tiroirStatut=null; $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); }
 $("#d_body").addEventListener("input", () => { state.drawerDirty = true; });
 
 function stampHTML(it){
@@ -9062,6 +9491,7 @@ function renderDrawer(it){
     <b>Dépense attribuée</b>
     <p>Ce paiement direct vient de l'onglet Dépenses${estPresidente(it.origin_expense) ? ` (dépense introduite par ${esc(it.origin_expense.author_name||"la présidente")}, présidente, le ${fstamp(it.origin_expense.created_at)})` : ""}. Erreur de membre ou de ligne ? Remettez-le en dépense : il quitte cette fiche et retourne dans Dépenses.</p>
     <button type="button" class="btn ghost sm" data-desattrib="${esc(it.id)}">Remettre en dépense</button></div>`;
+  if(sienne && !isTreso() && !modifiable && sansPreuve(it)) actions += blocPreuve(it);
   if(sienne && !isTreso() && !modifiable) actions += blocContact(it);
   if(isTreso() && sienne && it.status === "En attente"){
     actions += `<div class="callout"><b>Votre propre demande</b>
@@ -9549,7 +9979,9 @@ $("#d_body").addEventListener("click", async e => {
         { value:"carte_asbl", label:"Carte bancaire de l'ASBL" }
       ]
     } : null;
-    const c = await confirmerAvecMail(T[0], T[2], T[1], { danger:T[3], select: modePaiementOpts });
+    // renvoi pour correction : le membre doit être prévenu, l'e-mail est donc activé d'office (désactivable)
+    const c = await confirmerAvecMail(T[0], T[2], T[1], { danger:T[3], select: modePaiementOpts,
+      basculeDefaut: act === "corriger" });
     if(!c.ok) return;
     mailMembre = c.mail;
     if(act === "valider" && c.mode) patch.pay_mode = c.mode;
