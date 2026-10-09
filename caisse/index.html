@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="09.10.2026 · 3">
+<meta name="app-build" content="09.10.2026 · 4">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -680,7 +680,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 09.10.2026 · 3</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 09.10.2026 · 4</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -1648,9 +1648,6 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     </div>
     <div class="card pad stack" style="gap:12px">
       <div class="eyebrow">Réglages</div>
-      <label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text)">
-        <input type="checkbox" id="prv_auto" class="tgl">
-        <span><b>Rappels automatiques</b> — une fois par semaine au maximum par demande, dès 3 jours sans preuve. Ils partent quand un trésorier ouvre l'appli.</span></label>
       <label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text)">
         <input type="checkbox" id="prv_bloc" class="tgl">
         <span><b>Bloquer les nouvelles demandes</b> d'un membre qui a une preuve en retard de plus de 30 jours, tant qu'il ne l'a pas déposée.</span></label>
@@ -3133,8 +3130,9 @@ async function refresh(){
     state.closures = c.data || [];
     try{ await chargerDocuments(); }catch(eD){ state.docErr = eD.message || String(eD); }
     try{ await loadBudgetsCaisse(); }catch(_){}   // budgets de l'app CA (même base)
-    if(!state.relanceAutoFaite){ state.relanceAutoFaite = true; relancerIncompletes(true); alerterDormantes(true);
-      setTimeout(() => { try{ rappelsAutoPreuves(); }catch(_){} }, 4000); }
+    // Aucun e-mail n'est envoyé aux membres sans clic du trésorier. Seule reste l'alerte
+    // hebdomadaire des paiements en souffrance, adressée au trésorier lui-même.
+    if(!state.relanceAutoFaite){ state.relanceAutoFaite = true; alerterDormantes(true); }
   }
   try{ await chargerFactures(); }catch(eF){ state.feErr = eF.message || String(eF); }
   try{ await chargerNovelles(); }catch(eN){ state.nvErr = eN.message || String(eN); }
@@ -5207,7 +5205,6 @@ function renderPreuves(){
   if(pill){ pill.textContent = tout.length; pill.hidden = !tout.length || !isTreso(); }
   if(!$("#prvList") || !isTreso() || state.view !== "preuves") return;
   const cfg = comptaCfg();
-  $("#prv_auto").checked = cfg.prvAuto !== false;
   $("#prv_bloc").checked = !!cfg.prvBlocage;
   const vieux = tout.filter(i => ageDe(i) > 30).length;
   $("#prv_k").textContent = a.length;
@@ -5227,9 +5224,9 @@ function renderPreuves(){
     b.length ? "Aucune demande ne correspond à cette recherche." : "Aucune demande n'a de preuve partielle.")}</div>`;
 }
 $("#prvSearch").oninput = renderPreuves;
-["#prv_auto", "#prv_bloc"].forEach(sel => $(sel).addEventListener("change", async () => {
-  const auto = $("#prv_auto").checked, bloc = $("#prv_bloc").checked;
-  try{ await comptaMaj(c => { c.prvAuto = auto; c.prvBlocage = bloc; }); toast("Réglage enregistré."); }
+$("#prv_bloc").addEventListener("change", (async () => {
+  const bloc = $("#prv_bloc").checked;
+  try{ await comptaMaj(c => { delete c.prvAuto; c.prvBlocage = bloc; }); toast("Réglage enregistré."); }
   catch(err){ toast("Réglage non enregistré : " + (err.message || err)); renderPreuves(); }
 }));
 
@@ -5269,17 +5266,6 @@ async function rappelerPreuves(its, auto){
       what: auto ? "Rappel automatique : preuve à déposer" : "Rappel envoyé : preuve à déposer" }); }catch(_){}
   }
   return true;
-}
-
-async function rappelsAutoPreuves(){
-  if(!isTreso() || comptaCfg().prvAuto === false) return;
-  const cands = ouvert(state.items || []).filter(i => preuveManquante(i) && ageDe(i) >= 3
-    && (!i.preuve_relance_at || joursDepuis(i.preuve_relance_at) >= 7));
-  if(!cands.length) return;
-  const g = {}; cands.forEach(i => (g[cleMembre(i)] = g[cleMembre(i)] || []).push(i));
-  let ok = 0;
-  for(const its of Object.values(g).slice(0, 40)) if(await rappelerPreuves(its, true)) ok++;
-  if(ok){ toast(ok + " rappel(s) automatique(s) de preuve envoyé(s)."); renderPreuves(); }
 }
 
 /* PDF d'attestation (déclaration de perte du membre, ou attestation du trésorier) */
