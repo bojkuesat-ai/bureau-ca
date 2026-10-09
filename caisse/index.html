@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="09.10.2026 · 4">
+<meta name="app-build" content="10.10.2026 · 1">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -680,7 +680,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 09.10.2026 · 4</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 10.10.2026 · 1</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -1662,6 +1662,10 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     <div id="prvList" class="stack" style="gap:12px"></div>
     <div class="section-title" style="margin-top:8px"><h2 style="font-size:19px">Preuve incomplète</h2><span class="hint" id="prv_nbB"></span></div>
     <div id="prvListInc" class="stack" style="gap:12px"></div>
+    <details id="prvValWrap" style="margin-top:8px">
+      <summary style="cursor:pointer;font-weight:700;padding:6px 2px">Validées par le trésorier <span class="hint" id="prv_nbV"></span></summary>
+      <div class="card" style="overflow:hidden;margin-top:10px"><div id="prvListVal"></div></div>
+    </details>
   </section>
 
   <!-- documents : factures de vente et bons de commande -->
@@ -3717,12 +3721,17 @@ async function afficherPieces(o, retirable){
     const btnDel = peutRetirer
       ? ` <button type="button" class="btn no sm" data-pjdel="${retirable.id}" data-pjdeltype="${retirable.type}" data-pjdeln="${n}">Retirer</button>`
       : "";
+    // le trésorier peut changer le type de n'importe quelle pièce, à tout moment
+    const typeHtml = peutRetirer
+      ? `<select data-pjkind="${retirable.id}" data-pjkindtype="${retirable.type}" data-pjkindn="${n}" title="Changer le type de pièce"
+           style="width:auto;padding:5px 28px 5px 9px;font-size:12px;font-weight:700">${optsHtml(typesPieces(p.kind), p.kind || "Justificatif")}</select>`
+      : `<span class="k">${esc(p.kind)}</span>`;
     const { data } = await sb.storage.from("justificatifs").createSignedUrl(p.path, 3600);
     const url = data?.signedUrl;
-    if(!url) return `<div class="piece"><div class="ph"><span class="k">${esc(p.kind)}</span>
+    if(!url) return `<div class="piece"><div class="ph">${typeHtml}
       <span style="color:var(--red)">pièce introuvable</span>${btnDel}</div></div>`;
     const corps = p.type?.startsWith("image/") ? `<img src="${url}" alt="${esc(p.kind)}">` : "";
-    return `<div class="piece"><div class="ph"><span class="k">${esc(p.kind)}</span>
+    return `<div class="piece"><div class="ph">${typeHtml}
       <span style="color:var(--ink-2);font-size:12px">${esc(p.name||"")}</span>
       <a href="${url}" target="_blank" rel="noopener">Ouvrir ↗</a>${btnDel}</div>${corps}</div>`;
   }));
@@ -5144,7 +5153,8 @@ $("#docZip").onclick = async () => {
    par une attestation. Rappels manuels, rappels automatiques hebdomadaires, blocage optionnel.
    ============================================================ */
 const KINDS_NEUTRES = ["Justificatif","Autre pièce","Document","Déclaration de perte","Attestation du trésorier"];
-const sansPreuve = it => !!it && it.status !== "Refusée" && piecesDe(it).length === 0;
+const preuveValidee = it => !!(it && it.preuve_validee_at);
+const sansPreuve = it => !!it && it.status !== "Refusée" && !preuveValidee(it) && piecesDe(it).length === 0;
 function manqueDe(it){
   if(!it || it.status === "Refusée") return [];
   const ps = piecesDe(it);
@@ -5157,7 +5167,7 @@ function manqueDe(it){
     out.push("la preuve de paiement (extrait, preuve de virement ou reçu de carte)");
   return out;
 }
-const preuveIncomplete = it => !sansPreuve(it) && manqueDe(it).length > 0;
+const preuveIncomplete = it => !!it && !preuveValidee(it) && !sansPreuve(it) && manqueDe(it).length > 0;
 const preuveManquante = it => sansPreuve(it) || preuveIncomplete(it);
 const ageDe = it => joursDepuis(it.created_at || it.expense_date);
 const demandesSansPreuve = () => ouvert(state.items || []).filter(sansPreuve);
@@ -5183,7 +5193,10 @@ function groupesHTML(liste, q){
         <div><div class="obj">${esc(i.object||"")}</div>
           <div class="meta">${esc(refOf(i))} · ${i.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${i.beneficiary?" → "+esc(i.beneficiary):""}`:"Remboursement"}
             · <span style="${vieux ? "color:var(--red);font-weight:700" : ""}">depuis ${age} j</span> · ${esc(dernier)}${esc(manque)}</div>
+          ${piecesDe(i).length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${piecesDe(i).map((pc, n) =>
+            `<button class="btn ghost sm" data-prv-voir="${esc(i.id)}" data-n="${n}" title="${esc(pc.name||"")}">👁 ${esc(pc.kind||"Pièce")}</button>`).join("")}</div>` : ""}
           <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn ok sm" data-prv-valider="${esc(i.id)}">Valider</button>
             <button class="btn sm" data-prv-rappel="${esc(i.id)}">Rappel</button>
             <button class="btn ghost sm" data-prv-ouvrir="${esc(i.id)}">Ouvrir</button>
             <button class="btn ghost sm" data-prv-perdue="${esc(i.id)}">Preuve perdue</button></div></div>
@@ -5194,6 +5207,7 @@ function groupesHTML(liste, q){
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:13px 16px;border-bottom:1px solid var(--line);background:var(--bg2)">
         <div style="flex:1;min-width:180px"><b>${esc(g.nom)}</b>${g.poste?` <span class="hint">· ${esc(g.poste)}</span>`:""}
           <div class="hint" style="margin:2px 0 0">${g.its.length} demande(s) · ${euro(somme(g.its))} · la plus ancienne depuis ${ageDe(g.its[0])} j</div></div>
+        <button class="btn ok sm" data-prv-valider-pers="${esc(g.uid)}" data-ids="${esc(g.its.map(i => i.id).join(","))}">Tout valider (${g.its.length})</button>
         <button class="btn ghost sm" data-prv-personne="${esc(g.uid)}">Rappeler tout (${g.its.length})</button>
       </div>${lignes}</div>`;
   }).join("");
@@ -5222,6 +5236,20 @@ function renderPreuves(){
     a.length ? "Aucune demande ne correspond à cette recherche." : "Toutes les demandes ont au moins une pièce.")}</div>`;
   $("#prvListInc").innerHTML = groupesHTML(b, q) || `<div class="card">${emptyHTML(b.length ? "Aucun résultat" : "Rien d'incomplet",
     b.length ? "Aucune demande ne correspond à cette recherche." : "Aucune demande n'a de preuve partielle.")}</div>`;
+  const val = ouvert(state.items || []).filter(preuveValidee)
+    .filter(i => !q || slug(i.requester_name || "").includes(q) || champsCherchables(i).includes(q))
+    .sort((x,y) => String(y.preuve_validee_at).localeCompare(String(x.preuve_validee_at)));
+  $("#prv_nbV").textContent = val.length ? "(" + val.length + ")" : "";
+  $("#prvListVal").innerHTML = val.length ? val.slice(0, 200).map(i => `<div class="row" style="cursor:default">
+      <div class="date mono" style="font-size:13px">${fdate(i.expense_date)}</div>
+      <div><div class="obj">${esc(i.requester_name||"")} · ${esc(i.object||"")}</div>
+        <div class="meta">${esc(refOf(i))} · ${piecesDe(i).length} pièce(s) · validée le ${fstamp(i.preuve_validee_at)}</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px">
+          <button class="btn ghost sm" data-prv-ouvrir="${esc(i.id)}">Ouvrir</button>
+          <button class="btn ghost sm" data-prv-devalider="${esc(i.id)}">Annuler la validation</button></div></div>
+      <div><span class="tag ${tagClass(i.status)}">${esc(i.status)}</span></div>
+      <div class="amt">${euro(i.amount)}</div><div class="chev"></div></div>`).join("")
+    : emptyHTML("Aucune", "Les demandes que vous validez ici apparaissent dans cette liste.");
 }
 $("#prvSearch").oninput = renderPreuves;
 $("#prv_bloc").addEventListener("change", (async () => {
@@ -5320,6 +5348,43 @@ async function tresoPreuvePerdue(it){
 $("#viewPreuves").addEventListener("click", async e => {
   const o = e.target.closest("[data-prv-ouvrir]");
   if(o) return openDrawer(o.dataset.prvOuvrir);
+  const vv = e.target.closest("[data-prv-voir]");
+  if(vv){
+    const it = state.items.find(x => x.id === vv.dataset.prvVoir);
+    const pc = it && piecesDe(it)[Number(vv.dataset.n)];
+    if(!pc) return toast("Pièce introuvable.");
+    const w = window.open("", "_blank");
+    const { data } = await sb.storage.from("justificatifs").createSignedUrl(pc.path, 3600);
+    if(!data || !data.signedUrl){ if(w) w.close(); return toast("Ouverture impossible."); }
+    if(w) w.location = data.signedUrl; else window.location.href = data.signedUrl;
+    return;
+  }
+  const bv = e.target.closest("[data-prv-valider],[data-prv-valider-pers],[data-prv-devalider]");
+  if(bv){
+    const annuler = !!bv.dataset.prvDevalider;
+    const ids = bv.dataset.prvValider ? [bv.dataset.prvValider]
+              : bv.dataset.prvDevalider ? [bv.dataset.prvDevalider]
+              : String(bv.dataset.ids || "").split(",").filter(Boolean);
+    if(!ids.length) return;
+    if(bv.dataset.prvValiderPers && !await demander("Tout valider",
+        ids.length + " demande(s) de " + ((state.items.find(x => x.id === ids[0]) || {}).requester_name || "ce membre")
+        + " sortiront de la liste. Personne n'est prévenu.", { bouton:"Valider" })) return;
+    bv.disabled = true;
+    const champs = annuler ? { preuve_validee_at: null, preuve_validee_par: null }
+                           : { preuve_validee_at: new Date().toISOString(), preuve_validee_par: state.profile.name || "" };
+    const { data, error } = await sb.from("requests").update(champs).in("id", ids).select("id");
+    if(error || !data || !data.length){
+      bv.disabled = false;
+      const m = error ? String(error.message) : "";
+      return toast(/preuve_validee/i.test(m) ? "Passez d'abord la ligne SQL (colonne preuve_validee_at)."
+        : "Validation non enregistrée" + (m ? " : " + m : " : refusée par la base."));
+    }
+    ids.forEach(id => { const it = state.items.find(x => x.id === id); if(it) Object.assign(it, champs); });
+    renderPreuves();
+    toast(annuler ? "Validation annulée : la demande revient dans la liste."
+                  : data.length + " demande(s) validée(s).");
+    return;
+  }
   const pp = e.target.closest("[data-prv-perdue]");
   if(pp){ const it = state.items.find(x => x.id === pp.dataset.prvPerdue); if(it) await tresoPreuvePerdue(it); return; }
   const b = e.target.closest("[data-prv-rappel],[data-prv-personne]"); if(!b) return;
@@ -6548,6 +6613,39 @@ async function ouvrirRecette(id){
     ${blocEditerEcriture(rec, "inc")}`;
   $("#drawer").classList.add("open"); $("#scrim").classList.add("open"); $("#closeDrawer").focus();
 }
+
+/* Changement du type d'une pièce (trésorier) : seule l'étiquette change, le fichier reste. */
+function typesPieces(actuel){
+  const tous = ["Facture","Ticket de caisse","Extrait de compte","Preuve de virement","Reçu de paiement par carte",
+    "Reçu signé du commerçant","Bon de commande","Devis","Facture émise","Convention de subside","Reçu",
+    "Attestation de don","Décompte d'événement","Déclaration de perte","Attestation du trésorier","Justificatif","Autre pièce"];
+  if(actuel && !tous.includes(actuel)) tous.unshift(actuel);
+  return tous;
+}
+$("#d_body").addEventListener("change", async e => {
+  const s = e.target.closest("[data-pjkind]"); if(!s) return;
+  if(!isTreso()) return;
+  const quoi = s.dataset.pjkindtype;
+  const table = quoi === "exp" ? "expenses" : quoi === "inc" ? "incomes" : "requests";
+  const source = quoi === "exp" ? state.expenses : quoi === "inc" ? state.incomes : state.items;
+  const o = source.find(x => x.id === s.dataset.pjkind);
+  const n = Number(s.dataset.pjkindn);
+  const liste = o ? piecesDe(o).map(x => ({ ...x })) : [];
+  if(!liste[n]){ return toast("Pièce introuvable : rouvrez la fiche."); }
+  const ancien = liste[n].kind;
+  liste[n].kind = s.value;
+  s.disabled = true;
+  const { data, error } = await sb.from(table).update({ attachments: liste }).eq("id", o.id).select("id");
+  s.disabled = false;
+  if(error || !data || !data.length){
+    s.value = ancien || "Justificatif";
+    return toast("Type non enregistré" + (error ? " : " + error.message : " : refusé par la base."));
+  }
+  o.attachments = liste;
+  if(o.proof_path){ o.proof_path = null; try{ await sb.from(table).update({ proof_path:null, proof_type:null }).eq("id", o.id); }catch(_){} }
+  toast("Type de pièce : « " + s.value + " ».");
+  refresh();
+});
 
 /* Retrait d'une pièce déjà envoyée. Réservé au trésorier : la ligne sort de la
    liste des pièces, puis le fichier est effacé du stockage. Si l'effacement du
@@ -10028,7 +10126,7 @@ function stampHTML(it){
   return "";
 }
 
-function blocEditer(it, sansMail){
+function blocEditer(it, sansMail, modeTreso){
   const direct = it.kind === "direct";
   const cats = (() => {
     const base = ["Fournitures","Transport","Repas & réception","Matériel","Communication","Frais bancaires"];
@@ -10036,10 +10134,12 @@ function blocEditer(it, sansMail){
     base.push("Autre"); return base;
   })();
   return `<div class="fixbox">
-    <b>${sansMail ? "Modifier ou retirer ce paiement direct" : "Modifier ou retirer ma demande"}</b>
-    <p>Tant que la demande n'a pas été validée ou remboursée, vous pouvez corriger les informations ou la supprimer complètement.${
+    <b>${modeTreso ? "Modifier la demande (trésorier)" : sansMail ? "Modifier ou retirer ce paiement direct" : "Modifier ou retirer ma demande"}</b>
+    <p>${modeTreso
+      ? "Corrigez l'objet, le montant, la date, la catégorie ou le commentaire, même si la demande est validée, payée ou dans un exercice clôturé. Le statut ne change pas et aucun e-mail n'est envoyé au membre. Les pièces (et leur type) se gèrent juste en dessous."
+      : "Tant que la demande n'a pas été validée ou remboursée, vous pouvez corriger les informations ou la supprimer complètement." + (
       sansMail ? " Aucun e-mail n'est envoyé au membre pour cette modification ou suppression."
-      : (it.status==="Refusée"||it.status==="À corriger")?" Après modification, elle repartira automatiquement en attente de décision du trésorier." : ""}</p>
+      : (it.status==="Refusée"||it.status==="À corriger")?" Après modification, elle repartira automatiquement en attente de décision du trésorier." : "")}</p>
     <div id="editZone" hidden class="stack" style="gap:12px;margin-top:10px">
       <div class="field"><label for="ed_object">Objet</label>
         <input type="text" id="ed_object" maxlength="90" value="${esc(it.object||"")}"></div>
@@ -10097,7 +10197,7 @@ function blocEditer(it, sansMail){
     </div>
     <div class="actions" id="editBtns">
       <button class="btn" data-act="edit-open">Modifier la demande</button>
-      <button class="btn no" data-act="edit-delete">Supprimer la demande</button>
+      ${modeTreso ? "" : `<button class="btn no" data-act="edit-delete">Supprimer la demande</button>`}
     </div>
   </div>`;
 }
@@ -10148,7 +10248,9 @@ function renderDrawer(it){
   let actions = "";
   const modifiable = (sienne || gereParTreso) && (it.status === "En attente" || it.status === "Refusée" || it.status === "À corriger");
   if(modifiable && !isTreso()) actions += blocComplement(it);
-  if(modifiable) actions += blocEditer(it, gereParTreso && !sienne);   // propriétaire (membre OU trésorier) : modifier/supprimer sa demande tant qu'elle n'est ni validée ni remboursée
+  if(modifiable) actions += blocEditer(it, gereParTreso && !sienne);
+  // Le trésorier peut corriger toute autre demande : membre, validée, payée, exercice clôturé.
+  else if(isTreso()) actions += blocEditer(it, true, true);   // propriétaire (membre OU trésorier) : modifier/supprimer sa demande tant qu'elle n'est ni validée ni remboursée
   // Le trésorier gère les pièces de n'importe quelle demande, y compris celles d'un membre
   // et celles déjà validées ou remboursées : un contrôle réclame souvent une pièce manquante.
   if(isTreso()) actions += blocPieces(it, "req");
@@ -10379,8 +10481,11 @@ $("#d_body").addEventListener("click", async e => {
   }
 
   if(act === "edit-save"){
-    const gereParTreso = isTreso() && it.kind === "direct" && it.user_id !== state.profile.id;
-    if((it.user_id !== state.profile.id && !gereParTreso) || !["En attente","Refusée","À corriger"].includes(it.status)){ return toast("Cette demande n'est plus modifiable."); }
+    const statutOuvert = ["En attente","Refusée","À corriger"].includes(it.status);
+    // modeTreso : le trésorier corrige une demande qui n'est pas « la sienne en cours » — statut inchangé, aucun mail
+    const modeTreso = isTreso() && (!statutOuvert || (it.user_id !== state.profile.id && it.kind !== "direct"));
+    const gereParTreso = modeTreso || (isTreso() && it.kind === "direct" && it.user_id !== state.profile.id);
+    if(!isTreso() && (it.user_id !== state.profile.id || !statutOuvert)){ return toast("Cette demande n'est plus modifiable."); }
     const obj = $("#ed_object").value.trim();
     const mnt = Number($("#ed_amount").value);
     const dte = $("#ed_date").value;
@@ -10388,13 +10493,20 @@ $("#d_body").addEventListener("click", async e => {
     if(!obj) return erreurForm("#editErr", "Indiquez l'objet de la demande.");
     if(!(mnt > 0)) return erreurForm("#editErr", "Le montant doit être supérieur à 0.");
     if(!dte) return erreurForm("#editErr", "Indiquez la date.");
-    if(estClos(dte)) return erreurForm("#editErr", "L'exercice " + exerciceLabel(exerciceDe(dte)) + " est clôturé : cette date n'est plus acceptée.");
+    if(!isTreso() && estClos(dte)) return erreurForm("#editErr", "L'exercice " + exerciceLabel(exerciceDe(dte)) + " est clôturé : cette date n'est plus acceptée.");
+    if(isTreso() && (estClos(dte) || estClos(it.expense_date))){
+      const changeChiffres = Math.abs(Number(it.amount) - Math.round(mnt*100)/100) >= 0.005 || dte !== it.expense_date;
+      if(changeChiffres && !await demander("Exercice clôturé",
+          "Cette demande appartient à un exercice clôturé. Changer le montant ou la date modifie des comptes déjà arrêtés.\n\nEnregistrer quand même ?",
+          { bouton:"Enregistrer quand même", danger:true })) return;
+    }
     // un IBAN erroné saisi ici partait tel quel dans le fichier de virements
     if(iban && !ibanValide(iban)) return erreurForm("#editErr", messageIban(iban));
     const mntArrondi = Math.round(mnt * 100) / 100;   // jamais plus de 2 décimales (fichier SEPA)
     const maj = { object: obj, amount: mntArrondi, expense_date: dte, note: $("#ed_note").value.trim() };
     let versReexamen = false;
-    if(it.status === "Refusée"){
+    if(modeTreso){ /* statut inchangé */ }
+    else if(it.status === "Refusée"){
       // demande refusée modifiée → part dans l'onglet Réexamens (reste "Refusée" + signalée), trésorier prévenu par mail
       maj.reexamen_at = new Date().toISOString();
       maj.reexamen_msg = "Demande modifiée par le demandeur après refus.";
@@ -10412,7 +10524,8 @@ $("#d_body").addEventListener("click", async e => {
       if($("#ed_tvaAffect"))   maj.tva_affectation = $("#ed_tvaAffect").value;
     } else {
       maj.category = $("#ed_cat") ? $("#ed_cat").value : it.category;
-      maj.iban = iban;
+      // le trésorier ne vide jamais l'IBAN du membre par accident
+      maj.iban = (modeTreso && !iban) ? it.iban : iban;
     }
     // --- pièces jointes : retraits demandés + nouveaux fichiers ---
     const pjAvant  = piecesDe(it);
@@ -10432,8 +10545,9 @@ $("#d_body").addEventListener("click", async e => {
     }
     const avant = { object: it.object, amount: it.amount, expense_date: it.expense_date };
     b.disabled = true; b.textContent = "Enregistrement…";
-    const { error } = await sb.from("requests").update(maj).eq("id", it.id);
+    const { data: majOk, error } = await sb.from("requests").update(maj).eq("id", it.id).select("id");
     if(error){ b.disabled = false; b.textContent = "Enregistrer les modifications"; return toast("Échec : " + error.message); }
+    if(!majOk || !majOk.length){ b.disabled = false; b.textContent = "Enregistrer les modifications"; return toast("Modification refusée par la base : rien n'a changé."); }
     // Les fichiers ne sont effacés du stockage qu'une fois la demande enregistrée sans erreur.
     // Si cet effacement échoue, la demande est déjà à jour : il ne reste qu'un fichier orphelin.
     if(pjRetire.length){
