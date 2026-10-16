@@ -609,7 +609,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-17 \u00b7 01h40";
+const CA_VERSION="2026-10-17 \u00b7 02h00";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1142,6 +1142,7 @@ async function refreshSession(){
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
 }
 const ONGLETS_OPTIONNELS=[["taches","Tâches"],["planning","Planning"],["evenements","Événements"],["contacts","Contacts"]];
+function ongletActif(k){ return ongletsOff().indexOf(k)<0; }
 function ongletsOff(){ return (S.meta&&Array.isArray(S.meta.ongletsOff))?S.meta.ongletsOff:[]; }
 /* Notes d'un point : le secrétariat partout, chaque membre seulement sous son propre point. */
 function peutNoterPoint(pt){ const me=S.session; if(!me||!pt) return false; return estSecretaire() || (!!pt.parId && pt.parId===me.id); }
@@ -1160,7 +1161,7 @@ async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").
 async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
 async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,lieu:m.lieu||"",ordre:m.ordre||[],presences:m.presences||{},pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } }
 async function loadCreneaux(){ try{ const c=await sb.from("ca_creneaux").select("*").order("date",{ascending:true}); const d=await sb.from("ca_dispos").select("*"); const dl=(d&&d.data)||[]; S.creneaux=(((c&&c.data))||[]).map(x=>({id:x.id,titre:x.titre,date:x.date,lieu:x.lieu,creePar:x.cree_par,dispos:dl.filter(y=>y.creneau_id===x.id).map(y=>({nom:y.nom,statut:y.statut,membreId:y.membre_id}))})); }catch(e){ S.creneaux=[]; } }
-async function loadOrg(){ try{ const {data}=await sb.from("ca_org").select("*"); const o={}; (data||[]).forEach(r=>{ o[r.poste_id]={missions:r.missions,contact:r.contact}; }); S.org=o; }catch(e){} }
+async function loadOrg(){ try{ const {data}=await sb.from("ca_org").select("*"); const o={}; (data||[]).forEach(r=>{ o[r.poste_id]={missions:r.missions,contact:r.contact,qui:r.qui||""}; }); S.org=o; }catch(e){} }
 async function loadTaches(){ try{ const {data}=await sb.from("ca_taches").select("*").order("created_at",{ascending:false}); S.taches=(data||[]).map(t=>({id:t.id,titre:t.titre,posteId:t.poste_id,statut:t.statut,echeance:t.echeance,priorite:t.priorite,creePar:t.cree_par})); }catch(e){ S.taches=[]; } }
 async function loadContacts(){ try{ const {data}=await sb.from("ca_contacts").select("*").order("nom",{ascending:true}); S.contacts=(data||[]).map(c=>({id:c.id,nom:c.nom,type:c.type,email:c.email,tel:c.tel,notes:c.notes})); }catch(e){ S.contacts=[]; } }
 
@@ -1253,7 +1254,7 @@ async function traiterRappels(){
   const demain=new Date(today.getTime()+86400000);
   const isDay=(dstr,d)=>{ if(!dstr) return false; const x=new Date(String(dstr).slice(0,10)+"T00:00"); return x.getFullYear()===d.getFullYear()&&x.getMonth()===d.getMonth()&&x.getDate()===d.getDate(); };
   const jobs=[];
-  (S.taches||[]).forEach(t=>{ if(t.statut!=="done" && isDay(t.echeance,demain)){
+  if(ongletActif("taches")) (S.taches||[]).forEach(t=>{ if(t.statut!=="done" && isDay(t.echeance,demain)){
     const d=destinatairesTache(t);
     if(d.length) jobs.push({cle:"tache:"+t.id+":"+t.echeance, sujet:"Rappel : échéance demain", corps:"Rappel : la tâche « "+(t.titre||"")+" » arrive à échéance demain.", dest:d});
   } });
@@ -1326,7 +1327,7 @@ function bandeauRappels(){
   const dansXjours=d=>{ if(!d) return 999; const x=new Date(String(d).slice(0,10)+"T00:00"); return Math.round((x-now)/86400000); };
   const items=[];
   (S.reunions||[]).forEach(m=>{ const n=dansXjours(m.date); if(n>=0&&n<=2) items.push({q:n,t:"Réunion « "+(m.titre||"")+" »"+(m.lieu?(" — "+m.lieu):""),n}); });
-  (S.taches||[]).forEach(t=>{ if(t.statut==="done") return; const n=dansXjours(t.echeance); if(n>=0&&n<=2) items.push({q:n,t:"Tâche « "+(t.titre||"")+" »",n}); });
+  if(ongletActif("taches")) (S.taches||[]).forEach(t=>{ if(t.statut==="done") return; const n=dansXjours(t.echeance); if(n>=0&&n<=2) items.push({q:n,t:"Tâche « "+(t.titre||"")+" »",n}); });
   if(!items.length) return "";
   items.sort((a,b)=>a.n-b.n);
   const quand=n=>n===0?"aujourd'hui":n===1?"demain":"dans "+n+" jours";
@@ -1340,8 +1341,8 @@ function bandeauRappels(){
 function evenementsCalendrier(){
   const items=[];
   (S.reunions||[]).forEach(m=>{ if(m.date) items.push({date:String(m.date).slice(0,10),type:"Réunion",titre:m.titre||"Réunion",lieu:m.lieu||"",cls:"cal-reu"}); });
-  (S.evenements||[]).forEach(e=>{ if(e.date) items.push({date:String(e.date).slice(0,10),type:"Événement",titre:e.titre||"Événement",lieu:e.lieu||"",cls:"cal-ev"}); });
-  (S.taches||[]).forEach(t=>{ if(t.echeance && t.statut!=="done") items.push({date:String(t.echeance).slice(0,10),type:"Échéance tâche",titre:t.titre||"Tâche",lieu:"",cls:"cal-tache"}); });
+  if(ongletActif("evenements")) (S.evenements||[]).forEach(e=>{ if(e.date) items.push({date:String(e.date).slice(0,10),type:"Événement",titre:e.titre||"Événement",lieu:e.lieu||"",cls:"cal-ev"}); });
+  if(ongletActif("taches")) (S.taches||[]).forEach(t=>{ if(t.echeance && t.statut!=="done") items.push({date:String(t.echeance).slice(0,10),type:"Échéance tâche",titre:t.titre||"Tâche",lieu:"",cls:"cal-tache"}); });
   return items;
 }
 function icsDate(d){ return String(d).slice(0,10).replace(/-/g,""); }
@@ -1811,17 +1812,17 @@ function tabOrg(){
   return GROUPES.map(g=>`<section class="grp">
     <div class="grp-h"><h2 class="serif">${g.nom}</h2><span class="c">${g.postes.length} poste${g.postes.length>1?"s":""}</span><span class="l"></span></div>
     <div class="grid">${g.postes.map(p=>{
-      const o=S.org[p.id]||{}; const missions=o.missions??p.missions; const contact=o.contact??"";
+      const o=S.org[p.id]||{}; const missions=o.missions??p.missions; const contact=o.contact??""; const qui=(o.qui&&String(o.qui).trim())||p.qui;
       if(S.editPoste===p.id){ return `<article class="card">
         <span class="ref">Poste N°${NUM[p.id]}</span><h3 class="poste serif">${esc(p.titre)}</h3>
-        <p class="qui"><span class="av">${esc(initials(p.qui))}</span>${esc(p.qui)}</p>
+        ${(S.session&&S.session.role==="owner")?`<input class="f" id="q_${p.id}" value="${esc(qui)}" placeholder="Nom du ou des titulaires">`:`<p class="qui"><span class="av">${esc(initials(qui))}</span>${esc(qui)}</p>`}
         <textarea id="m_${p.id}" placeholder="Missions du poste">${esc(missions)}</textarea>
         <input class="f" id="c_${p.id}" value="${esc(contact)}" placeholder="Contact (e-mail, Insta…)">
         <div class="row-btn"><button class="btn sm" data-action="save-org" data-id="${p.id}">Enregistrer</button>
           <button class="btn ghost sm" data-action="cancel-edit">Annuler</button></div></article>`; }
       return `<article class="card">
         <span class="ref">Poste N°${NUM[p.id]}</span><h3 class="poste serif">${esc(p.titre)}</h3>
-        <p class="qui"><span class="av">${esc(initials(p.qui))}</span>${esc(p.qui)}</p>
+        <p class="qui"><span class="av">${esc(initials(qui))}</span>${esc(qui)}</p>
         <p class="miss">${esc(missions)}</p>
         <p class="contact${contact?"":" empty"}">${contact?esc(contact):"— contact non renseigné"}</p>
         <div class="card-foot"><button class="link" data-action="edit-poste" data-id="${p.id}">Modifier</button></div></article>`;
@@ -2743,7 +2744,7 @@ function tabReunions(){
         <button class="link" ${estSecretaire()?"":"disabled style=\"opacity:.5;cursor:default\""} data-action="reu-togglepoint" data-pt="${pt.id}" style="font-size:17px;text-decoration:none">${pt.fait?"☑":"☐"}</button>
         <span style="flex:1"><span class="serif" style="font-size:15px;display:block;${pt.fait?"opacity:.55;text-decoration:line-through":""}">${esc(pt.texte)}</span>${pt.par?`<span class="du" style="font-size:11.5px;color:var(--slate)">proposé par ${esc(pt.par)}</span>`:""}</span>
         ${(!pt.parId || (S.session && (S.session.id===pt.parId || S.session.role==="owner"))) ? `<button class="link" data-action="reu-delpoint" data-pt="${pt.id}">✕</button>` : ""}</div>
-      ${(estSecretaire()&&pt.fait&&pt.notes)?`<button class="link" data-action="pt-tache" data-pt="${pt.id}" style="font-size:12px">➕ Cr\u00e9er une t\u00e2che depuis cette d\u00e9cision</button>`:""}
+      ${(estSecretaire()&&ongletActif("taches")&&pt.fait&&pt.notes)?`<button class="link" data-action="pt-tache" data-pt="${pt.id}" style="font-size:12px">➕ Cr\u00e9er une t\u00e2che depuis cette d\u00e9cision</button>`:""}
       <textarea id="reunote_${pt.id}" data-change="reunote" data-pt="${pt.id}" ${peutNoterPoint(pt)?"":"readonly style=\"opacity:.75\""} placeholder="${estSecretaire()?"Notes / décisions (pour le PV)…":peutNoterPoint(pt)?"Vos notes sur ce point…":"Notes réservées à l'auteur du point et au secrétariat"}">${esc(pt.notes||"")}</textarea>
       ${peutNoterPoint(pt)?`<div class="row-btn" style="align-items:center;margin-top:4px"><button class="btn sm" data-action="reu-savenote" data-pt="${pt.id}">💾 Enregistrer</button><span class="du" id="reunote_st_${pt.id}"></span></div>`:""}</div>`).join(""):`<div class="empty">Aucun point à l'ordre du jour.</div>`;
   const presRows=membresActifs().map(a=>{const v=pres[a.id]; const nom=((a.prenom||"")+" "+(a.nom||"")).trim()||a.email;
@@ -3095,7 +3096,7 @@ function mesPostesIds(){
   const parFonction=(TOUS_POSTES||[]).filter(po=>String(po.titre||"").trim().toLowerCase()===f).map(po=>po.id);
   if(parFonction.length) return parFonction;
   const n=((S.session&&S.session.nom)||"").trim().toLowerCase();
-  return (TOUS_POSTES||[]).filter(po=>{ const q=(po.qui||"").trim().toLowerCase(); return q && q===n; }).map(po=>po.id);
+  return (TOUS_POSTES||[]).filter(po=>{ const q=(((S.org&&S.org[po.id]&&S.org[po.id].qui)||po.qui)||"").trim().toLowerCase(); return q && q===n; }).map(po=>po.id);
 }
 function tabAccueil(){
   const prenom=(S.session&&S.session.prenom)||"";
@@ -3113,10 +3114,10 @@ function tabAccueil(){
     <h3 class="serif" style="margin:0">Bonjour ${esc(prenom||"")} \ud83d\udc4b</h3>
     <p style="color:var(--ink-soft);font-size:13px;margin:4px 0 0">Voici votre semaine en un coup d'\u0153il.${posteTitres.length?` Vous \u00eates rattach\u00e9\u00b7e \u00e0 : <b>${esc(posteTitres.join(", "))}</b>.`:""}</p>
   </div>
-  <div class="compose">
+  ${ongletActif("taches")?`<div class="compose">
     <h3 class="serif">Mes t\u00e2ches</h3>
     ${taches.length?`<div class="mail-hist">${taches.map(tacheLigne).join("")}</div>`:`<div class="empty">Aucune t\u00e2che en cours pour vous.</div>`}
-  </div>
+  </div>`:""}
   <div class="compose">
     <h3 class="serif">Prochaines r\u00e9unions</h3>
     ${reus.length?`<div class="mail-hist">${reus.map(m=>`<div class="mail-hist-row"><span class="mail-hist-txt">${esc(m.titre)}${m.lieu?` <span style="color:var(--slate)">\u00b7 ${esc(m.lieu)}</span>`:""}</span><span class="mail-hist-meta">${esc(fmtDateLong(m.date))}</span></div>`).join("")}</div>`:`<div class="empty">Aucune r\u00e9union \u00e0 venir.</div>`}
@@ -3511,7 +3512,7 @@ function tabNotifs(){
   const owner=S.session.role==="owner";
   const pend=owner?(S.admins||[]).filter(a=>a.statut==="attente"):[];
   const budVote=(S.budgets||[]).filter(b=>b.statut==="vote" && !monVoteBudget(b));
-  const overdue=(S.taches||[]).filter(t=>t.echeance&&t.statut!=="done"&&t.echeance<todayISO());
+  const overdue=ongletActif("taches")?(S.taches||[]).filter(t=>t.echeance&&t.statut!=="done"&&t.echeance<todayISO()):[];
   const rows=[];
   if(owner&&pend.length) rows.push(`<button class="msg-row" data-action="set-tab" data-tab="admin"><span class="msg-av">${pend.length}</span><span><span class="nm">Inscription(s) à valider</span><br><span class="fn">Ouvrir l'espace admin →</span></span></button>`);
   if(budVote.length) rows.push(`<button class="msg-row" data-action="set-tab" data-tab="budgets"><span class="msg-av">${budVote.length}</span><span><span class="nm">Demande(s) de budget à voter</span><br><span class="fn">Aller aux budgets →</span></span></button>`);
@@ -3536,6 +3537,7 @@ function tabSearch(){
   (S.budgets||[]).forEach(b=>{ if([b.titre,b.desc].some(x=>(x||"").toLowerCase().includes(q))) add(b.titre,"Budget & projet","budgets"); });
   (S.docs||[]).forEach(d=>{ if([d.titre,d.cat].some(x=>(x||"").toLowerCase().includes(q))) add(d.titre,"Document","docs"); });
   PERSONNES.forEach(p=>{ if((p.prenom+" "+p.nom+" "+p.fonction).toLowerCase().includes(q)) add(p.prenom+" "+p.nom,"Membre · "+p.fonction,"org"); });
+  for(let i=res.length-1;i>=0;i--){ if(!ongletActif(res[i].tab)) res.splice(i,1); }
   if(res.length===0) return compose+`<div class="empty">Aucun résultat pour « ${esc(S.searchQ)} ».</div>`;
   const rows=res.slice(0,50).map(r=>`<button class="msg-row" data-action="set-tab" data-tab="${r.tab}"><span><span class="nm">${esc(r.label)}</span><br><span class="fn">${esc(r.sub)}</span></span></button>`).join("");
   return compose+`<div class="msg-list">${rows}</div>`;
@@ -3680,7 +3682,7 @@ document.addEventListener("click", async e=>{
     case "mail-attach-clear": { if(S.mailUI){ S.mailUI.pieceFile=null; S.mailUI.pieceName=""; } render(); break; }
     case "mail-group-save": { captureMailFields(); const emails=[...new Set([...listeEmails(S.mailUI.to),...listeEmails(S.mailUI.cc),...listeEmails(S.mailUI.cci)])];
       if(!emails.length){ if(window.alert) window.alert("Ajoutez d'abord des destinataires (À, CC ou CCI) avant d'enregistrer un groupe."); break; }
-      const nom=window.prompt? window.prompt("Nom du groupe :",""):""; if(!nom||!nom.trim()) break;
+      const nom=await modaleChamp("Donnez un nom à ce groupe d'envoi.","Enregistrer un groupe",{placeholder:"Ex. Sponsors 2026",bouton:"Enregistrer"}); if(!nom||!nom.trim()) break;
       if(sb){ try{ await sb.from("ca_mail_groupes").insert({nom:nom.trim(),emails:emails}); await loadGroupes(); }catch(e){ if(window.alert) window.alert("Impossible d'enregistrer le groupe (table manquante ?)."); } }
       render(); break; }
     case "mail-group-load": { const g=(S.groupes||[]).find(x=>x.id===el.dataset.id); if(!g) break; captureMailFields(); const tgt=(S.mailUI&&S.mailUI.target)||"to"; ajouterEmailsChamp(tgt, g.emails||[]); persistMailDraft(); render(); break; }
@@ -3778,13 +3780,15 @@ document.addEventListener("click", async e=>{
     case "pt-tache": { if(!estSecretaire()||!sb) break;
       const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
       const pt=(m.ordre||[]).find(p=>p.id===el.dataset.pt); if(!pt) break;
-      const titre=window.prompt?window.prompt("Intitul\u00e9 de la t\u00e2che :", pt.texte):pt.texte;
-      if(!titre) break;
-      const ech=window.prompt?window.prompt("\u00c9ch\u00e9ance (AAAA-MM-JJ, laisser vide si aucune) :",""):"";
+      const titre=await modaleChamp("Intitul\u00e9 de la t\u00e2che (d\u00e9cision : \u00ab "+pt.texte+" \u00bb).","Cr\u00e9er une t\u00e2che",{placeholder:pt.texte,bouton:"Suivant"});
+      if(titre===null) break;
+      const titreT=String(titre).trim()||pt.texte;
+      const ech=await modaleChamp("\u00c9ch\u00e9ance de la t\u00e2che. Laissez vide s'il n'y en a pas.","Cr\u00e9er une t\u00e2che",{type:"date",bouton:"Cr\u00e9er la t\u00e2che"});
+      if(ech===null) break;
       const monPoste=(mesPostesIds()[0])||(TOUS_POSTES[0]&&TOUS_POSTES[0].id)||null;
-      await sb.from("ca_taches").insert({titre:titre,poste_id:monPoste,statut:"todo",echeance:(ech&&/^\d{4}-\d{2}-\d{2}$/.test(ech))?ech:null,priorite:"normale",cree_par:(me&&me.sig)||""});
+      await sb.from("ca_taches").insert({titre:titreT,poste_id:monPoste,statut:"todo",echeance:(ech&&/^\d{4}-\d{2}-\d{2}$/.test(ech))?ech:null,priorite:"normale",cree_par:(me&&me.sig)||""});
       await loadTaches(); logAct("T\u00e2che cr\u00e9\u00e9e depuis une d\u00e9cision"); render();
-      if(window.alert) window.alert("T\u00e2che cr\u00e9\u00e9e."); break; }
+      modaleInfo("T\u00e2che cr\u00e9\u00e9e."); break; }
     case "toggle-onglet": {
       if(!(S.session&&S.session.role==="owner")||!sb) break;
       const k=el.dataset.id; const cur=ongletsOff().slice(); const i=cur.indexOf(k);
@@ -4173,7 +4177,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       break; }
     case "reu-pv-approuver": {
       if(!estSecretaire()||!sb) break;
-      const note = window.prompt ? window.prompt("Approuvé lors de quelle réunion ? (ex. « réunion du 12/09/2026 »)","") : "";
+      const note = await modaleChamp("Approuvé lors de quelle réunion ? (facultatif)","Approuver le PV",{placeholder:"Ex. réunion du 12/09/2026",bouton:"Approuver"});
       if(note===null) break;
       const quand=new Date().toISOString();
       const r=await sb.from("ca_reunions").update({pv_statut:"approuve",pv_approuve_le:quand,pv_approuve_note:String(note||"").trim()}).eq("id",id);
@@ -4421,7 +4425,7 @@ ${sections||"<p>Aucun retour.</p>"}
     /* organigramme */
     case "edit-poste": S.editPoste=id; render(); break;
     case "cancel-edit": S.editPoste=null; render(); break;
-    case "save-org": { if(!sb) break; const missions=val("m_"+id).trim(), contact=val("c_"+id).trim(); const r=await sb.from("ca_org").upsert({poste_id:id,missions:missions,contact:contact},{onConflict:"poste_id"}); if(r&&r.error){ if(window.alert) window.alert("Enregistrement impossible : "+r.error.message); break; } S.org[id]={missions:missions,contact:contact}; S.editPoste=null; logAct("Fiche de poste modifiée : "+((POSTE_PAR_ID[id]||{}).titre||id)); render(); break; }
+    case "save-org": { if(!sb) break; const missions=val("m_"+id).trim(), contact=val("c_"+id).trim(); const ligne={poste_id:id,missions:missions,contact:contact}; const estProp=!!(S.session&&S.session.role==="owner"); if(estProp) ligne.qui=val("q_"+id).trim(); const r=await sb.from("ca_org").upsert(ligne,{onConflict:"poste_id"}); if(r&&r.error){ modaleInfo("Enregistrement impossible : "+r.error.message+(/qui/.test(r.error.message)?"\n\nLa colonne « qui » n'existe pas encore : exécutez le script SQL.":"")); break; } S.org[id]={missions:missions,contact:contact,qui:estProp?ligne.qui:((S.org[id]||{}).qui||"")}; S.editPoste=null; logAct("Fiche de poste modifiée : "+((POSTE_PAR_ID[id]||{}).titre||id)); render(); break; }
     /* tâches */
     case "add-tache": { const t=val("t_titre").trim(); if(!t) return; if(!sb) break; await sb.from("ca_taches").insert({titre:t,poste_id:val("t_poste"),statut:"todo",echeance:val("t_ech")||null,priorite:val("t_prio"),cree_par:me.sig}); { const n=document.getElementById("t_notify"); if(n&&n.checked) notifCreationCA("Nouvelle tâche", t, ""); } await loadTaches(); render(); break; }
     case "move-tache": if(!sb) break; await sb.from("ca_taches").update({statut:el.dataset.to}).eq("id",id); await loadTaches(); render(); break;
