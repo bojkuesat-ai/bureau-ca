@@ -609,7 +609,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-08-25 \u00b7 03h20";
+const CA_VERSION="2026-10-17 \u00b7 01h30";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1141,7 +1141,11 @@ async function refreshSession(){
   if(S.session.role==="coopte"){ ["docs","messages","taches","contacts","annonces","reunions","creneaux","budgets","votes","bilans","journal","mailing","procurations"].forEach(k=>{ S[k]=[]; }); }
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
 }
-async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; } }catch(e){} }
+const ONGLETS_OPTIONNELS=[["taches","Tâches"],["planning","Planning"],["evenements","Événements"],["contacts","Contacts"]];
+function ongletsOff(){ return (S.meta&&Array.isArray(S.meta.ongletsOff))?S.meta.ongletsOff:[]; }
+/* Notes d'un point : le secrétariat partout, chaque membre seulement sous son propre point. */
+function peutNoterPoint(pt){ const me=S.session; if(!me||!pt) return false; return estSecretaire() || (!!pt.parId && pt.parId===me.id); }
+async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; S.meta.ongletsOff=Array.isArray(data.onglets_off)?data.onglets_off:[]; } }catch(e){} }
 async function loadBilans(){
   /* Aucun tri : l'ordre de lecture ne doit rien laisser deviner de l'ordre de dépôt.
      La base ne renvoie ces lignes qu'au secrétariat, et seulement après clôture. */
@@ -1185,6 +1189,16 @@ async function majReunion(id, transforme){
   const loc=(S.reunions||[]).find(x=>x.id===id);
   if(loc){ if(patch.ordre) loc.ordre=patch.ordre; if(patch.presences) loc.presences=patch.presences; }
   return true;
+}
+/* Notes d'un point de l'ordre du jour : enregistrées au clic sur « Enregistrer »
+   et aussi automatiquement quand on quitte le champ. L'état est affiché à côté du bouton. */
+async function reuSauverNote(reuId, pid, txt){
+  const st=()=>document.getElementById("reunote_st_"+pid);
+  const e0=st(); if(e0){ e0.style.color="var(--slate)"; e0.textContent="Enregistrement…"; }
+  const ok=await majReunion(reuId, f=>({ordre:f.ordre.map(p=>p.id===pid?{...p,notes:txt}:p)}));
+  const e=st(); if(e){ e.style.color=ok?"var(--green)":"var(--red)";
+    e.textContent=ok?("✓ Enregistré à "+new Date().toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"})):"⚠ Non enregistré"; }
+  return ok;
 }
 /* Supprimer un événement efface aussi sa checklist, ses budgets et ses notes :
    réservé à la direction, au secrétariat et à la personne qui le pilote.
@@ -1587,6 +1601,11 @@ function viewAdmin(){
       <label class="fld" style="margin-top:10px">Points r\u00e9currents (un par ligne) \u2014 pr\u00e9-remplissage des nouvelles r\u00e9unions</label>
       <textarea id="cfg_modele" placeholder="Ex. Approbation du PV pr\u00e9c\u00e9dent">${esc((S.meta.modeleOdj||[]).join("\n"))}</textarea>
       <div class="row-btn"><button class="btn" data-action="save-secr-cfg">Enregistrer</button></div></div>`:""}
+    ${S.session&&S.session.role==="owner"?`<div class="card2"><h3 class="serif">Onglets</h3>
+      <p class="du">Un onglet désactivé disparaît pour tous les membres. Vous seul le voyez encore, marqué « désactivé ».</p>
+      ${ONGLETS_OPTIONNELS.map(([k,l])=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
+        <input type="checkbox" class="sw" role="switch" ${ongletsOff().indexOf(k)<0?"checked":""} data-action="toggle-onglet" data-id="${k}"> ${l}</label>`).join("")}
+    </div>`:""}
     ${S.session&&S.session.role==="owner"?`<div class="card2"><h3 class="serif">Droits secrétariat</h3>
       <p class="du">Réunions, PV, ordre du jour, bilans moraux et code de cooptation. Ces droits ne découlent plus de la fonction déclarée à l'inscription : cochez qui les exerce.</p>
       ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte").map(a=>{
@@ -1747,6 +1766,11 @@ function viewDash(){
   if(S.tab==="admin" && !estProprio) S.tab="accueil";
   if(bilanOnglet() && !estCoopte()) tabs.push(["bilan","13","Bilans moraux"]);
   if(S.tab==="bilan" && !bilanOnglet()) S.tab="org";
+  /* Onglets désactivés dans Admin : cachés pour tous, visibles (marqués) pour le propriétaire. */
+  if(!estCoopte()){ const OFF=ongletsOff();
+    for(let i=tabs.length-1;i>=0;i--){ if(OFF.indexOf(tabs[i][0])>=0){
+      if(estProprio) tabs[i]=[tabs[i][0],tabs[i][1],tabs[i][2]+" (désactivé)"]; else tabs.splice(i,1); } }
+    if(!estProprio && OFF.indexOf(S.tab)>=0) S.tab="accueil"; }
   const notifOwner = S.session.role==="owner" ? (S.admins||[]).filter(a=>a.statut==="attente").length : 0;
   const notifBud = (S.budgets||[]).filter(b=>b.statut==="vote" && !(b.votes||[]).some(v=>(v.nom||"").toLowerCase()===(S.session.sig||"").toLowerCase())).length;
   const notifTot = notifOwner + notifBud;
@@ -2721,7 +2745,8 @@ function tabReunions(){
         <span style="flex:1"><span class="serif" style="font-size:15px;display:block;${pt.fait?"opacity:.55;text-decoration:line-through":""}">${esc(pt.texte)}</span>${pt.par?`<span class="du" style="font-size:11.5px;color:var(--slate)">proposé par ${esc(pt.par)}</span>`:""}</span>
         ${(!pt.parId || (S.session && (S.session.id===pt.parId || S.session.role==="owner"))) ? `<button class="link" data-action="reu-delpoint" data-pt="${pt.id}">✕</button>` : ""}</div>
       ${(estSecretaire()&&pt.fait&&pt.notes)?`<button class="link" data-action="pt-tache" data-pt="${pt.id}" style="font-size:12px">➕ Cr\u00e9er une t\u00e2che depuis cette d\u00e9cision</button>`:""}
-      <textarea data-change="reunote" data-pt="${pt.id}" ${estSecretaire()?"":"readonly style=\"opacity:.75\""} placeholder="${estSecretaire()?"Notes / décisions (pour le PV)…":"Notes rédigées par le secrétariat"}">${esc(pt.notes||"")}</textarea></div>`).join(""):`<div class="empty">Aucun point à l'ordre du jour.</div>`;
+      <textarea id="reunote_${pt.id}" data-change="reunote" data-pt="${pt.id}" ${peutNoterPoint(pt)?"":"readonly style=\"opacity:.75\""} placeholder="${estSecretaire()?"Notes / décisions (pour le PV)…":peutNoterPoint(pt)?"Vos notes sur ce point…":"Notes réservées à l'auteur du point et au secrétariat"}">${esc(pt.notes||"")}</textarea>
+      ${peutNoterPoint(pt)?`<div class="row-btn" style="align-items:center;margin-top:4px"><button class="btn sm" data-action="reu-savenote" data-pt="${pt.id}">💾 Enregistrer</button><span class="du" id="reunote_st_${pt.id}"></span></div>`:""}</div>`).join(""):`<div class="empty">Aucun point à l'ordre du jour.</div>`;
   const presRows=membresActifs().map(a=>{const v=pres[a.id]; const nom=((a.prenom||"")+" "+(a.nom||"")).trim()||a.email;
     return `<div class="doc" style="cursor:default;padding:9px 13px">
       <span class="meta"><p class="dt" style="font-size:13.5px">${esc(nom)}</p><p class="du">${esc(a.fonction||"")}</p></span>
@@ -3555,7 +3580,7 @@ document.addEventListener("change", async e=>{
       if(!r||!r.data||!r.data.length){ ev[champ]=avant; modaleInfo("Modification refus\u00e9e par le serveur : elle n'a pas \u00e9t\u00e9 enregistr\u00e9e."); render(); return; }
     })();
     return; }
-  if(el.dataset.change==="reunote"){ if(!estSecretaire()) return; const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(m&&sb){ const pid=el.dataset.pt, txt=el.value; majReunion(m.id, f=>({ordre:f.ordre.map(p=>p.id===pid?{...p,notes:txt}:p)})); } return; }
+  if(el.dataset.change==="reunote"){ const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(!m||!peutNoterPoint((m.ordre||[]).find(p=>p.id===el.dataset.pt))) return; if(sb){ reuSauverNote(m.id, el.dataset.pt, el.value); } return; }
   if(el.dataset.change==="msgfile"){ S.msgUI=S.msgUI||{sel:null,draft:"",file:null}; S.msgUI.draft=val("msg_txt"); const fl=el.files&&el.files[0]; S.msgUI.file=fl||null; render(); return; }
   if(el.dataset.change==="mailfield"){ S.mailUI=S.mailUI||{to:"",cc:"",cci:"",objet:"",corps:"",target:"to"}; S.mailUI[el.dataset.k]=el.value; S.mailFlash=null; persistMailDraft(); return; }
   if(el.dataset.change==="mailattach"){ const fl=el.files&&el.files[0]; if(!fl) return; captureMailFields(); if(fl.size>15*1024*1024){ if(window.alert) window.alert("Fichier trop volumineux (max 15 Mo)."); el.value=""; return; } S.mailUI.pieceFile=fl; S.mailUI.pieceName=fl.name; S.mailFlash=null; render(); return; }
@@ -3761,6 +3786,15 @@ document.addEventListener("click", async e=>{
       await sb.from("ca_taches").insert({titre:titre,poste_id:monPoste,statut:"todo",echeance:(ech&&/^\d{4}-\d{2}-\d{2}$/.test(ech))?ech:null,priorite:"normale",cree_par:(me&&me.sig)||""});
       await loadTaches(); logAct("T\u00e2che cr\u00e9\u00e9e depuis une d\u00e9cision"); render();
       if(window.alert) window.alert("T\u00e2che cr\u00e9\u00e9e."); break; }
+    case "toggle-onglet": {
+      if(!(S.session&&S.session.role==="owner")||!sb) break;
+      const k=el.dataset.id; const cur=ongletsOff().slice(); const i=cur.indexOf(k);
+      if(i>=0) cur.splice(i,1); else cur.push(k);
+      const r=await sb.from("ca_meta").update({onglets_off:cur}).eq("id",1).select();
+      if(r&&r.error){ modaleInfo("Réglage non enregistré : "+r.error.message+(/onglets_off/.test(r.error.message)?"\n\nLa colonne onglets_off n'existe pas encore : exécutez le script SQL dans Supabase.":"")); render(); break; }
+      if(!r||!r.data||!r.data.length){ modaleInfo("Le serveur a refusé la modification."); render(); break; }
+      S.meta.ongletsOff=cur; logAct("Onglet "+k+(i>=0?" activé":" désactivé")); render(); break; }
+    case "reu-savenote": { const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); const t=document.getElementById("reunote_"+el.dataset.pt); if(!m||!peutNoterPoint((m.ordre||[]).find(p=>p.id===el.dataset.pt))) break; if(t&&sb) await reuSauverNote(m.id, el.dataset.pt, t.value); break; }
     case "reu-togglepoint": { if(!estSecretaire()) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break; const pid=el.dataset.pt; await majReunion(m.id, f=>({ordre:f.ordre.map(p=>p.id===pid?{...p,fait:!p.fait}:p)})); render(); break; }
     case "reu-delpoint": { const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break;
       const pid=el.dataset.pt; const _pt=(m.ordre||[]).find(p=>p.id===pid);
