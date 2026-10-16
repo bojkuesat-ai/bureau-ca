@@ -609,7 +609,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-17 \u00b7 01h30";
+const CA_VERSION="2026-10-17 \u00b7 01h40";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1602,7 +1602,7 @@ function viewAdmin(){
       <textarea id="cfg_modele" placeholder="Ex. Approbation du PV pr\u00e9c\u00e9dent">${esc((S.meta.modeleOdj||[]).join("\n"))}</textarea>
       <div class="row-btn"><button class="btn" data-action="save-secr-cfg">Enregistrer</button></div></div>`:""}
     ${S.session&&S.session.role==="owner"?`<div class="card2"><h3 class="serif">Onglets</h3>
-      <p class="du">Un onglet désactivé disparaît pour tous les membres. Vous seul le voyez encore, marqué « désactivé ».</p>
+      <p class="du">Un onglet désactivé disparaît pour tout le monde, vous compris. Réactivez-le ici pour le faire revenir.</p>
       ${ONGLETS_OPTIONNELS.map(([k,l])=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
         <input type="checkbox" class="sw" role="switch" ${ongletsOff().indexOf(k)<0?"checked":""} data-action="toggle-onglet" data-id="${k}"> ${l}</label>`).join("")}
     </div>`:""}
@@ -1766,11 +1766,10 @@ function viewDash(){
   if(S.tab==="admin" && !estProprio) S.tab="accueil";
   if(bilanOnglet() && !estCoopte()) tabs.push(["bilan","13","Bilans moraux"]);
   if(S.tab==="bilan" && !bilanOnglet()) S.tab="org";
-  /* Onglets désactivés dans Admin : cachés pour tous, visibles (marqués) pour le propriétaire. */
+  /* Onglets désactivés dans Admin : cachés pour tout le monde, propriétaire compris. */
   if(!estCoopte()){ const OFF=ongletsOff();
-    for(let i=tabs.length-1;i>=0;i--){ if(OFF.indexOf(tabs[i][0])>=0){
-      if(estProprio) tabs[i]=[tabs[i][0],tabs[i][1],tabs[i][2]+" (désactivé)"]; else tabs.splice(i,1); } }
-    if(!estProprio && OFF.indexOf(S.tab)>=0) S.tab="accueil"; }
+    for(let i=tabs.length-1;i>=0;i--){ if(OFF.indexOf(tabs[i][0])>=0) tabs.splice(i,1); }
+    if(OFF.indexOf(S.tab)>=0) S.tab="accueil"; }
   const notifOwner = S.session.role==="owner" ? (S.admins||[]).filter(a=>a.statut==="attente").length : 0;
   const notifBud = (S.budgets||[]).filter(b=>b.statut==="vote" && !(b.votes||[]).some(v=>(v.nom||"").toLowerCase()===(S.session.sig||"").toLowerCase())).length;
   const notifTot = notifOwner + notifBud;
