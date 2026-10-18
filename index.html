@@ -609,7 +609,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-18 \u00b7 23h55";
+const CA_VERSION="2026-10-19 \u00b7 00h05";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -4507,16 +4507,11 @@ ${sections||"<p>Aucun retour.</p>"}
       if(!sb){ rapport("Suppression impossible","connexion",null,"Client Supabase absent"); break; }
       if(!peutSupprimerBudget(bd)){ rapport("Suppression non autorisée dans l'app","contrôle app",null,"Seul le propriétaire, ou l'auteur tant que personne n'a voté, peut supprimer."); break; }
       if(!(await modaleConfirm("Supprimer la demande « "+((bd&&bd.titre)||"")+" » ?\n\nSes votes seront aussi effacés. Action irréversible.","Supprimer le budget"))) break;
-      let rd;
-      try{ rd=await sb.from("ca_budgets").delete().eq("id",id).select(); }
-      catch(e){ rapport("Suppression impossible","envoi suppression",{message:String(e&&e.message||e)}); break; }
-      if(rd&&rd.error&&/foreign key|violates|23503/i.test(rd.error.message+" "+(rd.error.code||""))){
-        const rv=await sb.from("ca_budget_votes").delete().eq("budget_id",id);
-        if(rv&&rv.error){ rapport("Suppression impossible","effacement des votes",rv.error); await loadBudgets(); render(); break; }
-        rd=await sb.from("ca_budgets").delete().eq("id",id).select();
-      }
-      if(rd&&rd.error){ rapport("Suppression refusée","suppression du budget",rd.error); await loadBudgets(); render(); break; }
-      if(!rd||!rd.data||!rd.data.length){ rapport("Suppression refusée par le serveur","suppression du budget",null,"0 ligne supprimée sans message d'erreur : la règle RLS de suppression sur ca_budgets bloque (script SQL non exécuté, ou fonction propriétaire différente)."); await loadBudgets(); render(); break; }
+      let rr;
+      try{ rr=await sb.rpc("ca_budget_supprimer",{p_id:id}); }
+      catch(e){ rapport("Suppression impossible","fonction serveur",{message:String(e&&e.message||e)}); break; }
+      if(rr&&rr.error){ rapport("Suppression refusée","fonction serveur ca_budget_supprimer",rr.error,/Could not find|does not exist|schema cache/i.test(rr.error.message||"")?"La fonction n'existe pas encore : exécutez le script SQL budgets_suppression.sql dans Supabase.":null); await loadBudgets(); render(); break; }
+      if(!rr||rr.data!==true){ rapport("Budget introuvable","fonction serveur ca_budget_supprimer",null,"Le serveur n'a trouvé aucun budget avec cet id (déjà supprimé ?)."); await loadBudgets(); render(); break; }
       if(bd&&bd.pdfPath){ try{ await sb.storage.from("ca-documents").remove([bd.pdfPath]); }catch(_){ } }
       logAct("Budget supprimé : "+((bd&&bd.titre)||""));
       await loadBudgets(); render();
