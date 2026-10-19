@@ -6761,11 +6761,31 @@ function majErrCA(){
   }
   document.documentElement.style.visibility="";
 }
+var ERR_DEBUG = /debugerr/.test(location.search+location.hash), ERR_DBG = [];
+function errDbg(t){ if(!ERR_DEBUG) return; ERR_DBG.push(new Date().toLocaleTimeString()+" "+t); var d=document.getElementById("errDbgBox");
+  if(!d){ d=document.createElement("pre"); d.id="errDbgBox"; d.style.cssText="position:fixed;left:8px;bottom:8px;z-index:2147483647;max-width:94vw;max-height:40vh;overflow:auto;background:#111;color:#0f0;font-size:11px;padding:8px;border-radius:6px;white-space:pre-wrap"; document.body.appendChild(d); }
+  d.textContent=ERR_DBG.join("\n"); }
+/* Lecture directe (GET) : ne dépend ni de la session ni du client Supabase. */
+async function lireErrDirect(app){
+  var u = "https://mlgzdfyqjhvyubrywuim.supabase.co/rest/v1/rpc/ca_page_erreur?p_app="+app;
+  var h = { "apikey": "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s" };
+  try{ var se = sb && (await sb.auth.getSession()); var at = se && se.data && se.data.session && se.data.session.access_token; if(at) h["Authorization"]="Bearer "+at; }catch(e){}
+  var r = await fetch(u, { headers: h, cache: "no-store" });
+  var t = await r.text(); errDbg("GET "+r.status+" → "+t.slice(0,120));
+  if(!r.ok) return null;
+  try{ return String(JSON.parse(t)||""); }catch(e){ return null; }
+}
 async function verifierErrCA(){
   try{
-    if(typeof sb==="undefined" || !sb) return;
-    var r = await sb.rpc("ca_page_erreur",{p_app:"ca"});
-    if(r && !r.error){ ERR_SRV = (ERR_TXT[String(r.data||"")] ? String(r.data) : ""); try{ localStorage.setItem("be-err-ca", ERR_SRV); }catch(e){} }
+    var v = null;
+    try{ v = await lireErrDirect("ca"); }catch(e){ errDbg("GET échec : "+e); }
+    if(v===null && typeof sb!=="undefined" && sb){
+      var r = await sb.rpc("ca_page_erreur",{p_app:"ca"});
+      errDbg("RPC → "+JSON.stringify(r && (r.error||r.data)));
+      if(r && !r.error) v = String(r.data||"");
+    }
+    if(v!==null){ ERR_SRV = ERR_TXT[v] ? v : ""; try{ localStorage.setItem("be-err-ca", ERR_SRV); }catch(e){} }
+    errDbg("code="+ERR_SRV+" admin="+ERR_ADMIN+" session="+(S.session?S.session.role:"aucune"));
     /* Propriétaire connecté : la fonction renvoie "", l'entrée #admin n'est plus utile. */
     if(ERR_ADMIN && S.session && S.session.role!=="owner"){ ERR_ADMIN=false; }   // connecté mais pas propriétaire : l'erreur revient
   }catch(e){}
