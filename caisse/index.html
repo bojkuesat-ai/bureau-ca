@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="10.10.2026 · 1">
+<meta name="app-build" content="19.10.2026 · 2">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -680,7 +680,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 10.10.2026 · 1</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 19.10.2026 · 2</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -2292,6 +2292,7 @@ async function mailAlerteTreso(it, isDirect){
       <tr><td style="padding:6px 0;color:#666">Justificatifs</td><td style="padding:6px 0">${nbPieces ? nbPieces+" pièce(s) jointe(s)" : "aucune pièce"}</td></tr>
     </table>
     ${it.note ? `<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(it.note)}</p>` : ""}
+    ${attesteDoublon(it) ? `<p style="background:#fdf6ec;border:1px solid #e8d3ab;border-radius:8px;padding:12px"><b>⚠ Doublon possible.</b> L'app a signalé que cette demande ressemblait à une autre. Le demandeur a confirmé qu'il ne s'agit pas d'un doublon et a signé avec son mot de passe — attestation PDF jointe à la demande.</p>` : ""}
     <p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Traiter la demande</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant</p></div>`;
@@ -6618,7 +6619,7 @@ async function ouvrirRecette(id){
 function typesPieces(actuel){
   const tous = ["Facture","Ticket de caisse","Extrait de compte","Preuve de virement","Reçu de paiement par carte",
     "Reçu signé du commerçant","Bon de commande","Devis","Facture émise","Convention de subside","Reçu",
-    "Attestation de don","Décompte d'événement","Déclaration de perte","Attestation du trésorier","Justificatif","Autre pièce"];
+    "Attestation de don","Décompte d'événement","Déclaration de perte","Attestation du trésorier","Attestation absence de doublon","Justificatif","Autre pièce"];
   if(actuel && !tous.includes(actuel)) tous.unshift(actuel);
   return tous;
 }
@@ -6886,23 +6887,172 @@ function messageIban(v){
   return "Cet IBAN est incorrect : vérifiez les chiffres, une erreur de saisie s'est glissée.";
 }
 
-/* ---------- doublon : demande similaire ce mois-ci ---------- */
-function chercherDoublon(objet, montant, dateStr, exclureId, userId){
-  const mois = String(dateStr||"").slice(0,7);
-  const obj = slug(objet||"");
-  return (state.items||[]).find(i =>
-    i.id !== exclureId &&
-    i.user_id === (userId || state.profile.id) &&
-    i.status !== "Refusée" &&
-    String(i.expense_date||"").slice(0,7) === mois &&
-    (slug(i.object||"") === obj || Math.abs(Number(i.amount||0) - Number(montant||0)) < 0.01)
-  );
+/* ---------- doublon : détection, déclaration signée, attestation PDF ----------
+   Doublon possible = même montant à 7 jours près pour le même demandeur, ou même
+   fichier justificatif déjà utilisé (y compris chez un autre membre, via la fonction
+   serveur doublons_piece). Le membre doit confirmer sur l'honneur et signer en retapant
+   son mot de passe ; une attestation PDF est alors jointe à sa demande. */
+const KIND_DOUBLON = "Attestation absence de doublon";
+const attesteDoublon = it => piecesDe(it).some(p => p.kind === KIND_DOUBLON);
+const JOURS_DOUBLON = 7;
+
+async function detecterDoublons({ montant, date, userId, hashes }){
+  const out = [];
+  const j0 = Date.parse(String(date||"") + "T12:00:00Z");
+  const mt = Math.round(Number(montant||0) * 100) / 100;
+  for(const i of (state.items||[])){
+    if(i.status === "Refusée") continue;
+    const raisons = [];
+    const ji = Date.parse(String(i.expense_date||"") + "T12:00:00Z");
+    if(i.user_id === userId && Math.abs(Number(i.amount||0) - mt) < 0.01
+       && !isNaN(j0) && !isNaN(ji) && Math.abs(ji - j0) <= JOURS_DOUBLON * 864e5)
+      raisons.push("même montant, dates proches");
+    if(hashes.length && piecesDe(i).some(p => p.hash && hashes.includes(p.hash)))
+      raisons.push("même justificatif");
+    if(!raisons.length) continue;
+    const autre = i.user_id !== userId;
+    out.push({ titre: refOf(i) + " — " + (i.object || ""),
+      detail: euro(i.amount) + " · dépense du " + fdate(i.expense_date) + " · " + i.status
+        + (autre ? " · demande de " + (isTreso() ? (i.requester_name || "un autre membre") : "un autre membre") : "")
+        + " · " + raisons.join(", ") });
+  }
+  // la même dépense figure peut-être déjà dans le relevé bancaire (payée par l'ASBL)
+  if(isTreso()){
+    for(const e of (state.expenses||[])){
+      const memePiece = hashes.length && piecesDe(e).some(p => p.hash && hashes.includes(p.hash));
+      if(memePiece || depenseCorrespond(e, mt, j0))
+        out.push({ titre: "Déjà dans les dépenses de l'ASBL — " + (e.object || e.payee || ""),
+          detail: euro(e.amount) + " · " + fdate(e.expense_date) + " · " + (e.payee || "") + " · " + (e.method || "")
+            + (memePiece ? " · même justificatif" : " · même montant, dates proches") });
+    }
+  } else {
+    try{
+      const { data, error } = await sb.rpc("doublons_releve", { p_montant: mt, p_date: date });
+      if(!error) (data||[]).forEach(r => out.push({
+        titre: "Déjà payée par l'ASBL ? — " + (r.payee || "dépense du compte"),
+        detail: euro(r.amount) + " · " + fdate(String(r.expense_date||"").slice(0,10)) + " · " + (r.method || "")
+          + " · une dépense du même montant, à une date proche, figure déjà sur le compte de l'association" }));
+    }catch(_){}
+  }
+  // un membre ne voit que ses propres demandes : le serveur regarde chez les autres
+  if(!isTreso() && hashes.length){
+    try{
+      const { data, error } = await sb.rpc("doublons_piece", { p_hashes: hashes });
+      if(!error) (data||[]).filter(r => !r.meme_membre).forEach(r => out.push({
+        titre: "Justificatif déjà utilisé dans la demande d'un autre membre",
+        detail: euro(r.amount) + " · dépense du " + fdate(String(r.expense_date||"").slice(0,10)) + " · même justificatif" }));
+    }catch(_){}
+  }
+  return out;
 }
-async function confirmerDoublon(d){
-  return await demander("Demande similaire ce mois-ci",
-    "« " + (d.object||"") + " » — " + euro(d.amount) + " (" + fdate(d.expense_date) + ") · " + d.status
-    + "\n\nSouhaitez-vous quand même envoyer cette nouvelle demande ?",
-    { bouton:"Envoyer quand même" });
+
+/* Dépense du registre (relevé bancaire, carte de l'ASBL…) qui pourrait être la même
+   que la demande : même montant, à 7 jours près. */
+function depenseCorrespond(e, mt, j0){
+  const je = Date.parse(String(e.expense_date||"") + "T12:00:00Z");
+  return Math.abs(Number(e.amount||0) - mt) < 0.01 && !isNaN(j0) && !isNaN(je)
+    && Math.abs(je - j0) <= JOURS_DOUBLON * 864e5;
+}
+function depensesSimilaires(it){
+  if(!isTreso() || !it || it.status === "Refusée") return [];
+  const mt = Math.round(Number(it.amount||0) * 100) / 100;
+  const j0 = Date.parse(String(it.expense_date||"") + "T12:00:00Z");
+  const hs = piecesDe(it).map(p => p.hash).filter(Boolean);
+  return (state.expenses||[]).filter(e => depenseCorrespond(e, mt, j0)
+    || (hs.length && piecesDe(e).some(p => p.hash && hs.includes(p.hash))));
+}
+
+// client séparé : vérifie le mot de passe sans toucher à la session en cours
+const sbSignature = createClient(SUPABASE_URL, SUPABASE_ANON_KEY,
+  { auth:{ persistSession:false, autoRefreshToken:false, detectSessionInUrl:false, storageKey:"caisse-signature" } });
+async function verifierMotDePasse(mdp){
+  let email = "";
+  try{ const { data:{ session } } = await sb.auth.getSession(); email = (session && session.user && session.user.email) || ""; }catch(_){}
+  if(!email) email = (state.profile && state.profile.email) || "";
+  if(!email) return { ok:false, msg:"Adresse e-mail du compte introuvable." };
+  const { data, error } = await sbSignature.auth.signInWithPassword({ email, password: mdp });
+  if(error) return { ok:false, msg: /Invalid login/i.test(error.message) ? "Mot de passe incorrect." : traduire(error.message) };
+  const ok = !!(data && data.user && data.user.id === state.profile.id);
+  try{ await sbSignature.auth.signOut({ scope:"local" }); }catch(_){}
+  return ok ? { ok:true, email } : { ok:false, msg:"Ce mot de passe ne correspond pas à votre compte." };
+}
+
+/* Fenêtre d'avertissement. signature = true : interrupteur + mot de passe obligatoires.
+   Renvoie null (annulé) ou { similaires, signeAt, email }. */
+function validerDoublon(similaires, signature){
+  if(_dlgFermer) _dlgFermer(null);
+  return new Promise(resolve => {
+    const ov = document.createElement("div");
+    ov.className = "overlay open";
+    ov.innerHTML = `<div class="sheetd" style="max-width:540px"><div class="sb" style="padding:24px">
+      <div style="font-size:34px;line-height:1;text-align:center;margin-bottom:10px">⚠️</div>
+      <h2 style="font-size:21px;margin:0 0 10px;text-align:center">Doublon possible</h2>
+      <p style="color:var(--muted);font-size:13.5px;margin:0;line-height:1.55">Cette demande ressemble à ${similaires.length > 1 ? "des demandes déjà enregistrées" : "une demande déjà enregistrée"}. Vérifiez avant d'envoyer : une même dépense ne peut être remboursée qu'une seule fois.</p>
+      <div class="stack" style="gap:8px;margin:14px 0">${similaires.slice(0,6).map(x => `<div style="background:var(--amber-bg);border:1px solid #7a561b;border-radius:11px;padding:10px 13px">
+        <b style="font-size:13.5px">${esc(x.titre)}</b><div class="hint" style="margin:3px 0 0">${esc(x.detail)}</div></div>`).join("")}
+        ${similaires.length > 6 ? `<div class="hint">… et ${similaires.length - 6} autre(s)</div>` : ""}</div>
+      <div style="background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:13px 14px">
+        <label class="check" style="display:flex;align-items:center;gap:11px;cursor:pointer;margin:0;text-transform:none;letter-spacing:0;font-size:13.5px;font-weight:600;color:var(--text)">
+          <input type="checkbox" class="tgl" data-dbl-ok>
+          <span>Je confirme qu'il ne s'agit pas d'un doublon et que les informations fournies sont correctes.</span></label>
+      </div>
+      ${signature ? `<div class="field" style="margin-top:14px"><label for="dbl_mdp">Votre mot de passe, pour signer</label>
+        <input type="password" id="dbl_mdp" data-dbl-mdp autocomplete="current-password">
+        <span class="hint">Votre déclaration est signée par ce mot de passe. Une attestation PDF est jointe à votre demande, et le trésorier la verra.</span></div>` : ""}
+      <div class="err" data-dbl-err hidden style="margin-top:10px"></div>
+      <div style="display:flex;gap:10px;margin-top:18px">
+        <button class="btn" data-dbl-go style="flex:1" disabled>${signature ? "Signer et envoyer" : "Envoyer quand même"}</button>
+        <button class="btn ghost" data-dbl-non>Annuler</button></div>
+    </div></div>`;
+    document.body.appendChild(ov);
+    const ok = ov.querySelector("[data-dbl-ok]"), mdp = ov.querySelector("[data-dbl-mdp]");
+    const go = ov.querySelector("[data-dbl-go]"), err = ov.querySelector("[data-dbl-err]");
+    let fini = false;
+    const fin = v => { if(fini) return; fini = true; document.removeEventListener("keydown", clavier, true); ov.remove(); resolve(v); };
+    const maj = () => { go.disabled = !(ok.checked && (!signature || (mdp && mdp.value.length > 0))); };
+    function clavier(e){
+      if(e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); fin(null); }
+      else if(e.key === "Enter" && !go.disabled){ e.preventDefault(); e.stopPropagation(); go.click(); }
+    }
+    ok.onchange = maj; if(mdp) mdp.oninput = maj;
+    ov.querySelector("[data-dbl-non]").onclick = () => fin(null);
+    ov.addEventListener("click", e => { if(e.target === ov) fin(null); });
+    document.addEventListener("keydown", clavier, true);
+    go.onclick = async () => {
+      if(go.disabled) return;
+      err.hidden = true;
+      if(!signature) return fin({ similaires });
+      go.disabled = true; go.textContent = "Vérification…";
+      let r;
+      try{ r = await verifierMotDePasse(mdp.value); }catch(eV){ r = { ok:false, msg: eV.message || String(eV) }; }
+      if(!r.ok){
+        err.textContent = r.msg; err.hidden = false;
+        go.textContent = "Signer et envoyer"; mdp.value = ""; maj(); mdp.focus();
+        return;
+      }
+      fin({ similaires, signeAt: maintenant().toISOString(), email: r.email });
+    };
+    setTimeout(() => ok.focus(), 60);
+  });
+}
+
+// attestation PDF jointe à la demande quand le membre écarte un doublon possible
+async function attestationDoublon(it, sig){
+  const blob = await attestationPdf({
+    titre: "Attestation — absence de doublon",
+    champs: champsDemande(it).concat([["Compte", sig.email || ""], ["Signée le", fstamp(sig.signeAt)]]),
+    texte: "Au moment d'envoyer cette demande, " + (it.requester_name || "le demandeur")
+      + " a été averti qu'elle pouvait faire double emploi avec :\n"
+      + sig.similaires.map(x => "- " + x.titre + " (" + x.detail + ")").join("\n")
+      + "\n\nIl déclare sur l'honneur qu'il ne s'agit pas d'un doublon et que les informations fournies sont correctes. "
+      + "Il a signé cette déclaration en saisissant le mot de passe de son compte.",
+    pied: "Signature électronique par authentification, le " + fstamp(sig.signeAt)
+      + " depuis le compte " + (sig.email || "") + "." });
+  const nom = "attestation-absence-doublon-" + refOf(it) + ".pdf";
+  let f;
+  try{ f = new File([blob], nom, { type:"application/pdf" }); }
+  catch(_){ f = blob; f.name = nom; }
+  return f;
 }
 
 /* ---------- brouillon automatique ---------- */
@@ -7005,17 +7155,8 @@ $("#reqForm").addEventListener("submit", async e => {
         + _blq.slice(0,3).map(i => refOf(i)).join(", ") + "). Déposez d'abord vos preuves (bandeau en haut de « Mes demandes »).");
     }
     refusSiClos($("#f_date").value);
-    // même fichier déjà joint à une de ses demandes ?
-    const _hs = await Promise.all(staged.req.map(p => empreinte(p.file)));
-    const _deja = state.items.filter(x => piecesDe(x).some(p => p.hash && _hs.includes(p.hash)));
-    if(_deja.length && !await demander("Justificatif déjà utilisé",
-      "Vous avez déjà joint ce même fichier à :\n\n"
-      + _deja.slice(0,4).map(x => "· " + refOf(x) + " — " + (x.object||"") + " — " + euro(x.amount)).join("\n"),
-      { bouton:"Envoyer quand même" })) throw new Error("__annule__");
     const _ibanR = String(state.profile.iban || "").trim();
     if(_ibanR && !ibanValide(_ibanR)) throw new Error("Votre IBAN enregistré est incorrect. " + messageIban(_ibanR) + "\nCorrigez-le avec le bouton « Modifier ».");
-    const _dbl = chercherDoublon($("#f_object").value.trim(), parseFloat($("#f_amount").value), $("#f_date").value);
-    if(_dbl && !await confirmerDoublon(_dbl)) throw new Error("__annule__");
     rattraperFichier("req", "#r_kind", "#f_proof");
     if(!staged.req.length) throw new Error("Joignez au moins une pièce justificative avec le bouton « Joindre ».");
     const kinds = staged.req.map(p => p.kind);
@@ -7029,6 +7170,16 @@ $("#reqForm").addEventListener("submit", async e => {
       throw new Error("Cochez la case confirmant que la pièce jointe fait apparaître le paiement en espèces.");
     if(!state.profile.iban)
       throw new Error("Renseignez d'abord votre IBAN avec le bouton Modifier.");
+    // doublon possible : avertissement, déclaration et signature avant l'envoi
+    let sigDbl = null;
+    { const _hs = (await Promise.all(staged.req.map(p => empreinte(p.file)))).filter(Boolean);
+      const _sim = await detecterDoublons({ montant: parseFloat($("#f_amount").value), date: $("#f_date").value,
+        userId: state.profile.id, hashes: _hs });
+      if(_sim.length){
+        const _v = await validerDoublon(_sim, !isTreso());
+        if(!_v) throw new Error("__annule__");
+        if(_v.signeAt) sigDbl = _v;
+      } }
     const { data, error } = await sb.from("requests").insert({
       attachments: [],
       user_id: state.profile.id, requester_name: state.profile.name || "",
@@ -7043,7 +7194,9 @@ $("#reqForm").addEventListener("submit", async e => {
     if(error) throw error;
     // L'échec d'envoi des pièces était avalé : la demande partait sans justificatif
     // et le membre lisait « Demande envoyée ». On le lui dit maintenant.
-    let piecesOk = true, piecesErr = "";
+    let piecesOk = true, piecesErr = "", attestOk = true;
+    if(sigDbl){ try{ staged.req.push({ kind: KIND_DOUBLON, file: await attestationDoublon(data, sigDbl) }); }
+                catch(_){ attestOk = false; } }
     try{ const _att = await envoyerPieces("req", "dem", bandeauRef(data));
          if(_att.length){ await sb.from("requests").update({ attachments:_att }).eq("id", data.id); data.attachments=_att; }
          else piecesOk = false; }
@@ -7051,6 +7204,9 @@ $("#reqForm").addEventListener("submit", async e => {
     await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
       what: !piecesOk ? "Demande envoyée SANS justificatif (échec de l'envoi des pièces)"
           : especes() ? "Demande envoyée · paiement en espèces confirmé sur la pièce jointe" : "Demande envoyée" });
+    if(sigDbl){ try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
+      what: "Doublon possible écarté par le demandeur — déclaration signée par mot de passe le " + fstamp(sigDbl.signeAt)
+        + (attestOk && piecesOk ? " (attestation PDF jointe)" : " (attestation PDF non jointe)") }); }catch(_){} }
     mailAccuse(data, false);
     mailAlerteTreso(data, false);
     effacerBrouillon("req");
@@ -7142,9 +7298,15 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       if(dateDem > dateLocale()) throw new Error("La date de la demande ne peut pas être dans le futur.");
       if(estClos(dateDem)) throw new Error("L'exercice " + exerciceLabel(exerciceDe(dateDem)) + " est clôturé : cette date n'est plus acceptée.");
     }
-    const _dblD = chercherDoublon(object, amount, dateDem, null, pour ? pour.id : null);
-    if(_dblD && !await confirmerDoublon(_dblD)) throw new Error("__annule__");
     rattraperFichier("dir", "#fd_kind", "#fd_proof");
+    let sigDblD = null;
+    { const _hs = (await Promise.all(staged.dir.map(p => empreinte(p.file)))).filter(Boolean);
+      const _sim = await detecterDoublons({ montant: amount, date: dateDem, userId: pour ? pour.id : state.profile.id, hashes: _hs });
+      if(_sim.length){
+        const _v = await validerDoublon(_sim, !isTreso());
+        if(!_v) throw new Error("__annule__");
+        if(_v.signeAt) sigDblD = _v;
+      } }
     const { data, error } = await sb.from("requests").insert({
       user_id: pour ? pour.id : state.profile.id,
       requester_name: (pour ? pour.name : state.profile.name) || "",
@@ -7163,7 +7325,9 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       status: "En attente"
     }).select().single();
     if(error) throw error;
-    let dirPiecesOk = true, dirErr = "";
+    let dirPiecesOk = true, dirErr = "", dirAttestOk = true;
+    if(sigDblD){ try{ staged.dir.push({ kind: KIND_DOUBLON, file: await attestationDoublon(data, sigDblD) }); }
+                 catch(_){ dirAttestOk = false; } }
     if(staged.dir.length){
       try{ const _att = await envoyerPieces("dir", "dir", bandeauRef(data));
            if(_att.length){ await sb.from("requests").update({ attachments:_att }).eq("id", data.id); data.attachments=_att; }
@@ -7181,6 +7345,9 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       const r = await sb.from("events").insert(evDir);
       if(r && r.error && evDir.at){ delete evDir.at; await sb.from("events").insert(evDir); }  // colonne non modifiable : on garde l'heure réelle
     }catch(_){}
+    if(sigDblD){ try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
+      what: "Doublon possible écarté par le demandeur — déclaration signée par mot de passe le " + fstamp(sigDblD.signeAt)
+        + (dirAttestOk && dirPiecesOk ? " (attestation PDF jointe)" : " (attestation PDF non jointe)") }); }catch(_){} }
     if(pour){
       // Saisie par le trésorier : jamais d'alerte au trésorier ; accusé au membre uniquement si la bascule est activée
       if(accuse) avertirMail(mailAccuse(data, true, true), "accusé de réception");
@@ -7230,7 +7397,7 @@ const barreAvancement = it => {
 };
 const rowHTML = (it, showWho) => `<div class="row" data-id="${it.id}" tabindex="0" role="button">
   <div class="date mono" style="font-size:13px">${showWho?`<input type="checkbox" class="tgl sm" data-selchk data-id="${it.id}" ${state.sel&&state.sel.has(it.id)?"checked":""} style="margin-right:9px;vertical-align:middle;cursor:pointer">`:""}${fdate(it.expense_date)}</div>
-  <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div><div style="margin-top:4px">${barreAvancement(it)}</div></div>
+  <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}${showWho && it.status!=="Remboursée" && depensesSimilaires(it).length?` <span title="Une dépense du même montant, à une date proche, figure déjà dans les dépenses de l'ASBL" style="color:var(--red);font-weight:700;font-size:12px">\u26a0 déjà payée ?</span>`:""}${showWho && attesteDoublon(it)?` <span title="Doublon possible écarté par le demandeur — attestation signée jointe" style="color:var(--amber);font-weight:700;font-size:12px">\u26a0 doublon ?</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div><div style="margin-top:4px">${barreAvancement(it)}</div></div>
   <div><span class="tag ${tagClass(it.status)}">${it.status}</span></div>
   <div class="amt">${euro(it.amount)}</div><div class="chev">›</div></div>`;
 const emptyHTML = (t,m) => `<div class="empty"><strong>${t}</strong>${m}</div>`;
@@ -10270,6 +10437,17 @@ function renderDrawer(it){
     <button type="button" class="btn ghost sm" data-desattrib="${esc(it.id)}">Remettre en dépense</button></div>`;
   if(sienne && !isTreso() && !modifiable && preuveManquante(it)) actions += blocPreuve(it);
   if(sienne && !isTreso() && !modifiable) actions += blocContact(it);
+  if(isTreso() && it.status !== "Remboursée"){
+    const _dsim = depensesSimilaires(it);
+    if(_dsim.length) actions += `<div class="callout" style="border-color:var(--red)"><b style="color:var(--red)">Peut-être déjà payée par l'ASBL</b>
+      <p>Une dépense du même montant, à une date proche (ou avec le même justificatif), figure déjà dans l'onglet Dépenses. Vérifie que ce n'est pas le même achat — par exemple payé avec la carte de l'association — avant de valider :</p>
+      <p class="hint" style="margin-top:6px">${_dsim.slice(0,5).map(e => esc(fdate(e.expense_date) + " · " + (e.payee||"") + " · " + (e.object||"") + " · " + euro(e.amount) + " · " + (e.method||""))).join("<br>")}</p>
+      <p>Si c'est bien la même dépense : refuse la demande, ou ouvre la dépense et utilise « Attribuer à un membre ».</p></div>`;
+  }
+  if(isTreso() && attesteDoublon(it)){
+    actions += `<div class="callout" style="border-color:var(--amber)"><b>Doublon possible écarté par le demandeur</b>
+      <p>À l'envoi, l'app a signalé que cette demande ressemblait à une autre. Le demandeur a confirmé sur l'honneur qu'il ne s'agit pas d'un doublon et a signé avec son mot de passe. L'attestation PDF se trouve dans les pièces justificatives ci-dessus.</p></div>`;
+  }
   if(isTreso() && sienne && it.status === "En attente"){
     actions += `<div class="callout"><b>Votre propre demande</b>
       <p>Vous vous apprêtez à valider une avance que vous avez engagée vous-même. C'est autorisé, mais la décision sera signalée comme telle dans le bilan, à l'attention du vérificateur aux comptes.</p></div>`;
