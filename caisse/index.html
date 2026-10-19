@@ -11947,6 +11947,63 @@ setTimeout(verifierMaj, 15000);                                       // premier
 try{ if(sessionStorage.getItem("caisse.majFaite")){ sessionStorage.removeItem("caisse.majFaite"); setTimeout(() => toast("Appli mise à jour."), 1500); } }catch(_){}
 if($("#appVersion") && BUILD_ACTUEL) $("#appVersion").textContent = "version " + BUILD_ACTUEL;
 
+/* ---------- Page d'erreur (réglée dans l'app CA par le propriétaire) ----------
+   ca_page_erreur('caisse') renvoie le code à afficher, ou "" pour le propriétaire
+   connecté (jamais bloqué). Entrée depuis un appareil non connecté : adresse + #admin. */
+const ERR_TXT = {
+  "400": ["400","Requête incorrecte","Le serveur n'a pas pu comprendre la requête.","ERR_BAD_REQUEST"],
+  "401": ["401","Authentification requise","Vous devez être authentifié pour accéder à cette ressource.","ERR_UNAUTHORIZED"],
+  "403": ["403","Accès refusé","Vous n'avez pas l'autorisation d'accéder à cette page.","ERR_ACCESS_DENIED"],
+  "404": ["404","Page introuvable","La page demandée n'existe pas.","ERR_NOT_FOUND"],
+  "408": ["408","Délai d'attente dépassé","Le serveur a mis trop de temps à répondre.","ERR_REQUEST_TIMEOUT"],
+  "429": ["429","Trop de requêtes","Trop de requêtes ont été envoyées. Réessayez plus tard.","ERR_TOO_MANY_REQUESTS"],
+  "500": ["500","Erreur serveur","Une erreur interne est survenue. Réessayez plus tard.","ERR_INTERNAL_SERVER_ERROR"],
+  "502": ["502","Passerelle incorrecte","Le serveur a reçu une réponse invalide.","ERR_BAD_GATEWAY"],
+  "503": ["503","Service indisponible","Le service est temporairement indisponible.","ERR_SERVICE_UNAVAILABLE"],
+  "504": ["504","Délai de la passerelle dépassé","Le serveur n'a pas répondu à temps.","ERR_GATEWAY_TIMEOUT"]
+};
+let ERR_ADMIN = /admin/.test(location.hash||""), ERR_SRV = "", ERR_AFFICHE = "";
+const ERR_TITRE0 = document.title;
+try{ const c0 = localStorage.getItem("be-err-caisse")||""; if(ERR_TXT[c0]) ERR_SRV = c0; }catch(e){}
+const errRef = () => { const h="0123456789ABCDEF"; let r=""; for(let i=0;i<8;i++){ r+=h[Math.floor(Math.random()*16)]; if(i===3) r+="-"; } return r; };
+const errOv = document.createElement("div");
+errOv.id = "errOverlay";
+errOv.style.cssText = "display:none;position:fixed;inset:0;z-index:2147483000;background:#fff;color:#222;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;align-items:center;justify-content:center;text-align:center;padding:24px";
+errOv.innerHTML = '<div><div id="errCode" style="font-size:96px;font-weight:300;line-height:1;color:#333"></div>'
+  + '<div id="errTxt" style="font-size:22px;margin-top:14px;color:#555"></div>'
+  + '<div id="errSub" style="font-size:14px;margin-top:10px;color:#999"></div>'
+  + '<div id="errTech" style="font-size:12px;margin-top:22px;color:#bbb;font-family:ui-monospace,Menlo,Consolas,monospace"></div></div>';
+document.body.appendChild(errOv);
+function majErrCaisse(){
+  const c = ERR_SRV, montrer = !!c && !ERR_ADMIN && !!ERR_TXT[c];
+  if(montrer){
+    const t = ERR_TXT[c];
+    document.getElementById("errCode").textContent = t[0];
+    document.getElementById("errTxt").textContent = t[1];
+    document.getElementById("errSub").textContent = t[2];
+    if(ERR_AFFICHE !== c){ ERR_AFFICHE = c; document.getElementById("errTech").textContent = "Code d'erreur : "+t[3]+" · Réf. "+errRef(); }
+    errOv.style.display = "flex"; document.title = t[0]+" "+t[1];
+  } else {
+    ERR_AFFICHE = ""; errOv.style.display = "none"; if(/^\d{3} /.test(document.title)) document.title = ERR_TITRE0;
+  }
+}
+async function verifierErrCaisse(){
+  try{
+    const r = await sb.rpc("ca_page_erreur", { p_app: "caisse" });
+    if(r && !r.error){
+      ERR_SRV = ERR_TXT[String(r.data||"")] ? String(r.data) : "";
+      try{ localStorage.setItem("be-err-caisse", ERR_SRV); }catch(e){}
+      /* Connecté avec un compte qui n'est pas le propriétaire : l'entrée #admin ne vaut plus. */
+      if(ERR_ADMIN && ERR_SRV){ const { data:{ session:s2 } } = await sb.auth.getSession(); if(s2) ERR_ADMIN = false; }
+    }
+  }catch(e){}
+  majErrCaisse();
+}
+majErrCaisse();
+verifierErrCaisse();
+setInterval(verifierErrCaisse, 20000);
+sb.auth.onAuthStateChange(() => { setTimeout(verifierErrCaisse, 600); });
+
 /* ---------- démarrage ---------- */
 setMode("signin");
 majFormulaire();
