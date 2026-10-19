@@ -609,7 +609,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-19 \u00b7 00h05";
+const CA_VERSION="2026-10-19 \u00b7 16h15";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1570,6 +1570,7 @@ function viewAdmin(){
   return `<div>
     <h1 class="serif" style="font-size:26px;margin:0 0 6px">Validation des comptes</h1>
     <p style="color:var(--slate);font-size:11px;margin:0 0 16px">Version de l'application : <b>${esc(CA_VERSION)}</b></p>
+    ${S.session&&S.session.role==="owner"&&typeof carteErreurCA==="function"?carteErreurCA():""}
     <p style="color:var(--slate);font-size:12px;margin:2px 0 0">Mot de passe oublié d'un membre ? Le bouton « Réinitialiser le mot de passe » lui envoie un lien par e-mail ; chacun peut aussi le demander depuis l'écran de connexion.</p>
     <div class="compose"><h3 class="serif">Comptes en attente</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0">Vous seul validez les accès. Les comptes validés peuvent entrer dans l\'espace CA.</p></div>
@@ -1607,7 +1608,6 @@ function viewAdmin(){
       ${ONGLETS_OPTIONNELS.map(([k,l])=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
         <input type="checkbox" class="sw" role="switch" ${ongletsOff().indexOf(k)<0?"checked":""} data-action="toggle-onglet" data-id="${k}"> ${l}</label>`).join("")}
     </div>`:""}
-    ${S.session&&S.session.role==="owner"&&typeof carteErreurCA==="function"?carteErreurCA():""}
     ${S.session&&S.session.role==="owner"?`<div class="card2"><h3 class="serif">Droits secrétariat</h3>
       <p class="du">Réunions, PV, ordre du jour, bilans moraux et code de cooptation. Ces droits ne découlent plus de la fonction déclarée à l'inscription : cochez qui les exerce.</p>
       ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte").map(a=>{
