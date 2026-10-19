@@ -609,7 +609,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-19 \u00b7 22h30";
+const CA_VERSION="2026-10-19 \u00b7 23h00";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1956,7 +1956,8 @@ function tabBudgets(){
       ${(b.statut!=="vote"&&b.statut!=="attente_tresorier")?`<div style="margin:8px 0 0"><button class="chip" data-action="budget-pdf-decision" data-id="${b.id}">📄 PDF de la décision</button></div>`:""}
       ${(budgetPresentiel(b)&&b.certifiePar)?`<p class="by" style="margin:6px 0 0;color:var(--green)">✓ ${esc(certifLibelle(b))}</p>`:""}
       ${String(b.decidePar||"").indexOf("CA physique")===0?"":`<div class="tallies">${CHOIX.map(ch=>`<span class="tally"><span class="sq" style="background:var(${ch.v})"></span><b>${count(ch.id)}</b> ${ch.label}</span>`).join("")}</div>`}
-      ${open?`<div class="foot-line" style="border-top:none;padding-top:0"><div class="mini">${CHOIX.map(ch=>`<button aria-pressed="${mien&&mien.choix===ch.id}" data-action="bvote" data-id="${b.id}" data-choix="${ch.id}">${ch.label}</button>`).join("")}</div></div>`:""}
+      ${open?`<div class="foot-line" style="border-top:none;padding-top:0"><div class="mini">${CHOIX.map(ch=>`<button aria-pressed="${mien&&mien.choix===ch.id}" data-action="bvote" data-id="${b.id}" data-choix="${ch.id}"${mien?' disabled style="opacity:'+(mien.choix===ch.id?'1':'.35')+';cursor:not-allowed"':''}>${ch.label}</button>`).join("")}</div></div>
+        ${mien?`<p class="du" style="margin:6px 0 0;color:var(--green)">✓ Vous avez voté : <b>${esc((CHOIX.find(c=>c.id===mien.choix)||{}).label||mien.choix)}</b> (définitif)</p>`:`<p class="du" style="margin:6px 0 0">Votre vote sera définitif : il ne pourra plus être modifié.</p>`}`:""}
       ${detailVoixBudget(b)}
       ${(open&&effectif)?`<p class="du" style="margin:8px 0 0">${count("pour")>=seuil?`✓ Majorité atteinte : ${count("pour")} voix pour sur ${effectif} membres (il en faut ${seuil}).`:`Majorité simple requise : ${seuil} voix pour sur ${effectif} membres — il en manque ${seuil-count("pour")}.`}</p>`:""}
       ${open?blocRappel("budget",b):""}
@@ -2237,7 +2238,7 @@ function tabVotes(){
     const max=Math.max(0,...v.options.map(o=>count(o.id))); const open=v.statut==="open";
     const mien=monVote(v);
     const opts=v.options.map(o=>{const c=count(o.id);const pct=total?Math.round(c/total*100):0;const picked=mien&&mien.optionId===o.id;
-      return `<div class="opt${c===max&&c>0?" lead":""}">${open?`<button class="pick" data-action="vpick" data-id="${v.id}" data-opt="${o.id}">${picked?"◉ ":"○ "}${esc(o.label)}</button>`:""}
+      return `<div class="opt${c===max&&c>0?" lead":""}">${open?`<button class="pick" data-action="vpick" data-id="${v.id}" data-opt="${o.id}"${mien?' disabled style="cursor:not-allowed;opacity:'+(picked?'1':'.45')+'"':''}>${picked?"◉ ":"○ "}${esc(o.label)}${picked?" — votre vote (définitif)":""}</button>`:""}
         ${(!open||total>0)?`<div class="opt-top"><span class="ol">${esc(o.label)}</span><span class="oc">${c} · ${pct}%</span></div><div class="bar"><span style="width:${pct}%"></span></div>`:""}</div>`;}).join("");
     return `<div class="vote"><div class="vote-h"><h4 class="serif">${esc(v.question)}</h4><span class="badge ${open?"open":"closed"}">${open?"Ouvert":"Clos"}</span></div>
       ${(v.docs&&v.docs.length)?`<div style="margin:10px 0;display:flex;flex-wrap:wrap;gap:7px">${v.docs.map(d=>`<button class="chip" data-action="vdoc" data-path="${esc(d.path)}">📎 ${esc(d.name)}</button>`).join("")}</div>`:""}
@@ -4696,7 +4697,12 @@ ${sections||"<p>Aucun retour.</p>"}
     case "pr-envoyer": { await prEnvoyer(); break; }
     case "pr-annuler": { await prAnnuler(id); break; }
     case "pr-pdf": { await prOuvrirPDF(id); break; }
-    case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break; const r=await sb.from("ca_budget_votes").upsert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix},{onConflict:"budget_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadBudgets(); render(); break; }
+    case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break;
+      if(monVoteBudget(b)){ modaleInfo("Vous avez déjà voté pour ce budget. Votre vote est définitif."); break; }
+      { const lib=(CHOIX.find(c=>c.id===el.dataset.choix)||{}).label||el.dataset.choix;
+        if(!(await modaleConfirm("Votre vote sera définitif : il ne pourra plus être modifié.\n\nConfirmer votre vote « "+lib+" » pour « "+(b.titre||"")+" » ?","Confirmer mon vote"))) break; }
+      const r=await sb.from("ca_budget_votes").insert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix});
+      if(!(r&&r.error)) logAct("Vote budget enregistré (définitif) : "+(b.titre||"")); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadBudgets(); render(); break; }
     case "bdecide": { if(!(S.session&&S.session.role==="owner")||!sb) break; const st=el.dataset.st; const md=await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id).select(); if(md&&md.error){ modaleInfo("Enregistrement impossible : "+md.error.message); break; } if(!md||!md.data||!md.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 la modification (aucune ligne chang\u00e9e) \u2014 il s'agit d'une r\u00e8gle de droits (RLS) sur ca_budgets.","Action non enregistr\u00e9e"); break; } await loadBudgets(); render(); break; }
     case "bcloture": { await cloturerBudget(id, el.dataset.force==="1"); break; }
     case "del-budget": {
@@ -4752,7 +4758,12 @@ ${sections||"<p>Aucun retour.</p>"}
         }
       }
       const {data,error}=await sb.from("ca_votes").insert({question:q,statut:"open",cree_par:S.session.id,docs:vdocs}).select().single(); if(error||!data) break; await sb.from("ca_vote_options").insert(opts.map(l=>({vote_id:data.id,label:l}))); await loadVotes(); { const vn=document.getElementById("v_notify"); if(vn&&vn.checked){ notifVoteCA(q); } } render(); break; }
-    case "vpick": { if(!sb) break; const v=(S.votes||[]).find(x=>x.id===id); if(!v||v.statut!=="open") break; const r=await sb.from("ca_vote_ballots").upsert({vote_id:id,membre_id:S.session.id,option_id:el.dataset.opt,nom:me.sig},{onConflict:"vote_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadVotes(); render(); break; }
+    case "vpick": { if(!sb) break; const v=(S.votes||[]).find(x=>x.id===id); if(!v||v.statut!=="open") break;
+      if(monVote(v)){ modaleInfo("Vous avez déjà voté. Votre vote est définitif."); break; }
+      { const o=(v.options||[]).find(x=>x.id===el.dataset.opt);
+        if(!(await modaleConfirm("Votre vote sera définitif : il ne pourra plus être modifié.\n\nConfirmer votre choix « "+((o&&o.label)||"")+" » ?\n\n"+(v.question||""),"Confirmer mon vote"))) break; }
+      const r=await sb.from("ca_vote_ballots").insert({vote_id:id,membre_id:S.session.id,option_id:el.dataset.opt,nom:me.sig});
+      if(!(r&&r.error)) logAct("Vote enregistré (définitif) : "+(v.question||"")); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadVotes(); render(); break; }
     case "vdoc": { if(!sb) break; const nomVd=String(el.dataset.path||""); const nomVdc=nomVd.substring(nomVd.indexOf("-")+1);
       const {data,error}=await sb.storage.from("ca-documents").createSignedUrl(el.dataset.path,3600,{download:nomVdc||true});
       if(error||!data){ if(window.alert) window.alert("Document introuvable."); break; }
