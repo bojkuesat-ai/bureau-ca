@@ -11987,10 +11987,27 @@ function majErrCaisse(){
     ERR_AFFICHE = ""; errOv.style.display = "none"; if(/^\d{3} /.test(document.title)) document.title = ERR_TITRE0;
   }
 }
+const ERR_DEBUG = /debugerr/.test(location.search+location.hash), ERR_DBG = [];
+function errDbg(t){ if(!ERR_DEBUG) return; ERR_DBG.push(new Date().toLocaleTimeString()+" "+t); let d=document.getElementById("errDbgBox");
+  if(!d){ d=document.createElement("pre"); d.id="errDbgBox"; d.style.cssText="position:fixed;left:8px;bottom:8px;z-index:2147483647;max-width:94vw;max-height:40vh;overflow:auto;background:#111;color:#0f0;font-size:11px;padding:8px;border-radius:6px;white-space:pre-wrap"; document.body.appendChild(d); }
+  d.textContent=ERR_DBG.join("\n"); }
+async function lireErrDirect(app){
+  const u = SUPABASE_URL+"/rest/v1/rpc/ca_page_erreur?p_app="+app;
+  const h = { "apikey": SUPABASE_ANON_KEY };
+  try{ const { data:{ session:se } } = await sb.auth.getSession(); if(se && se.access_token) h["Authorization"]="Bearer "+se.access_token; }catch(e){}
+  const r = await fetch(u, { headers: h, cache: "no-store" });
+  const t = await r.text(); errDbg("GET "+r.status+" → "+t.slice(0,120));
+  if(!r.ok) return null;
+  try{ return String(JSON.parse(t)||""); }catch(e){ return null; }
+}
 async function verifierErrCaisse(){
   try{
-    const r = await sb.rpc("ca_page_erreur", { p_app: "caisse" });
-    if(r && !r.error){
+    let v = null;
+    try{ v = await lireErrDirect("caisse"); }catch(e){ errDbg("GET échec : "+e); }
+    if(v===null){ const r = await sb.rpc("ca_page_erreur", { p_app: "caisse" }); errDbg("RPC → "+JSON.stringify(r && (r.error||r.data))); if(r && !r.error) v = String(r.data||""); }
+    errDbg("code="+v+" admin="+ERR_ADMIN);
+    if(v!==null){
+      const r = { data: v };
       ERR_SRV = ERR_TXT[String(r.data||"")] ? String(r.data) : "";
       try{ localStorage.setItem("be-err-caisse", ERR_SRV); }catch(e){}
       /* Connecté avec un compte qui n'est pas le propriétaire : l'entrée #admin ne vaut plus. */
