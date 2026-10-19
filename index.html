@@ -6772,6 +6772,8 @@ async function verifierErrCA(){
   majErrCA();
 }
 setTimeout(verifierErrCA, 0);
+/* La carte des réglages est définie après le premier affichage : on redessine une fois. */
+setTimeout(function(){ try{ if(S.session && S.session.role==="owner") rendreEnPreservant(); }catch(e){} }, 0);
 setInterval(verifierErrCA, 20000);
 try{ sb && sb.auth.onAuthStateChange(function(){ setTimeout(verifierErrCA, 600); }); }catch(e){}
 
