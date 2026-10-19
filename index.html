@@ -1146,7 +1146,7 @@ function ongletActif(k){ return ongletsOff().indexOf(k)<0; }
 function ongletsOff(){ return (S.meta&&Array.isArray(S.meta.ongletsOff))?S.meta.ongletsOff:[]; }
 /* Notes d'un point : le secrétariat partout, chaque membre seulement sous son propre point. */
 function peutNoterPoint(pt){ const me=S.session; if(!me||!pt) return false; return estSecretaire() || (!!pt.parId && pt.parId===me.id); }
-async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; S.meta.ongletsOff=Array.isArray(data.onglets_off)?data.onglets_off:[]; } }catch(e){} }
+async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; S.meta.ongletsOff=Array.isArray(data.onglets_off)?data.onglets_off:[]; S.meta.erreurCa=data.erreur_ca||""; S.meta.erreurCaisse=data.erreur_caisse||""; } }catch(e){} }
 async function loadBilans(){
   /* Aucun tri : l'ordre de lecture ne doit rien laisser deviner de l'ordre de dépôt.
      La base ne renvoie ces lignes qu'au secrétariat, et seulement après clôture. */
@@ -1607,6 +1607,7 @@ function viewAdmin(){
       ${ONGLETS_OPTIONNELS.map(([k,l])=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
         <input type="checkbox" class="sw" role="switch" ${ongletsOff().indexOf(k)<0?"checked":""} data-action="toggle-onglet" data-id="${k}"> ${l}</label>`).join("")}
     </div>`:""}
+    ${S.session&&S.session.role==="owner"&&typeof carteErreurCA==="function"?carteErreurCA():""}
     ${S.session&&S.session.role==="owner"?`<div class="card2"><h3 class="serif">Droits secrétariat</h3>
       <p class="du">Réunions, PV, ordre du jour, bilans moraux et code de cooptation. Ces droits ne découlent plus de la fonction déclarée à l'inscription : cochez qui les exerce.</p>
       ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte").map(a=>{
@@ -6704,6 +6705,134 @@ document.addEventListener("click", async e=>{
 
 boot();
 
+</script>
+<script>
+/* ==========================================================================
+   Page d'erreur (400 … 504) — réglée par le compte propriétaire, pour l'app CA
+   et pour la Caisse. Stockée dans ca_meta (erreur_ca, erreur_caisse).
+   La fonction ca_page_erreur(app) renvoie le code à afficher, ou "" pour le
+   propriétaire connecté : il n'est donc jamais bloqué. Entrée ailleurs : #admin.
+   ========================================================================== */
+var ERR_TXT = {
+  "400": ["400","Requête incorrecte","Le serveur n'a pas pu comprendre la requête.","ERR_BAD_REQUEST"],
+  "401": ["401","Authentification requise","Vous devez être authentifié pour accéder à cette ressource.","ERR_UNAUTHORIZED"],
+  "403": ["403","Accès refusé","Vous n'avez pas l'autorisation d'accéder à cette page.","ERR_ACCESS_DENIED"],
+  "404": ["404","Page introuvable","La page demandée n'existe pas.","ERR_NOT_FOUND"],
+  "408": ["408","Délai d'attente dépassé","Le serveur a mis trop de temps à répondre.","ERR_REQUEST_TIMEOUT"],
+  "429": ["429","Trop de requêtes","Trop de requêtes ont été envoyées. Réessayez plus tard.","ERR_TOO_MANY_REQUESTS"],
+  "500": ["500","Erreur serveur","Une erreur interne est survenue. Réessayez plus tard.","ERR_INTERNAL_SERVER_ERROR"],
+  "502": ["502","Passerelle incorrecte","Le serveur a reçu une réponse invalide.","ERR_BAD_GATEWAY"],
+  "503": ["503","Service indisponible","Le service est temporairement indisponible.","ERR_SERVICE_UNAVAILABLE"],
+  "504": ["504","Délai de la passerelle dépassé","Le serveur n'a pas répondu à temps.","ERR_GATEWAY_TIMEOUT"]
+};
+var ERR_CODES = Object.keys(ERR_TXT);
+var ERR_ADMIN = /admin/.test(location.hash||"");
+var ERR_TITRE0 = document.title, ERR_APERCU = "", ERR_AFFICHE = "", ERR_SRV = "";
+var ERR_DRAFT = null, ERR_SAVING = false;
+try{ var _c=localStorage.getItem("be-err-ca")||""; if(ERR_TXT[_c]) ERR_SRV=_c; }catch(e){}   // dernier état connu : affichage immédiat
+function errRef(){ var h="0123456789ABCDEF",r=""; for(var i=0;i<8;i++){ r+=h[Math.floor(Math.random()*16)]; if(i===3) r+="-"; } return r; }
+function errEsc(x){ return String(x==null?"":x).replace(/[&<>"]/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+(function(){
+  var o=document.createElement("div"); o.id="errOverlay";
+  o.style.cssText="display:none;position:fixed;inset:0;z-index:2147483000;background:#fff;color:#222;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;align-items:center;justify-content:center;text-align:center;padding:24px";
+  o.innerHTML='<div><div id="errCode" style="font-size:96px;font-weight:300;line-height:1;color:#333"></div>'
+    +'<div id="errTxt" style="font-size:22px;margin-top:14px;color:#555"></div>'
+    +'<div id="errSub" style="font-size:14px;margin-top:10px;color:#999"></div>'
+    +'<div id="errTech" style="font-size:12px;margin-top:22px;color:#bbb;font-family:ui-monospace,Menlo,Consolas,monospace"></div></div>'
+    +'<div id="errApercu" style="display:none;position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#222;color:#fff;font-size:13px;padding:8px 14px;border-radius:999px;cursor:pointer">Aperçu — touche pour fermer</div>';
+  o.addEventListener("click",function(){ if(ERR_APERCU){ ERR_APERCU=""; majErrCA(); } });
+  document.body.appendChild(o);
+  setTimeout(function(){ try{ majErrCA(); }catch(e){} }, 0);
+})();
+function majErrCA(){
+  var o=document.getElementById("errOverlay"); if(!o) return;
+  var c = ERR_APERCU || ERR_SRV;
+  var montrer = !!ERR_APERCU || (!!c && !ERR_ADMIN);
+  document.getElementById("errApercu").style.display = ERR_APERCU ? "" : "none";
+  if(montrer && ERR_TXT[c]){
+    var t=ERR_TXT[c];
+    document.getElementById("errCode").textContent=t[0];
+    document.getElementById("errTxt").textContent=t[1];
+    document.getElementById("errSub").textContent=t[2];
+    if(ERR_AFFICHE!==c){ ERR_AFFICHE=c; document.getElementById("errTech").textContent="Code d'erreur : "+t[3]+" · Réf. "+errRef(); }
+    o.style.display="flex"; document.title=t[0]+" "+t[1];
+  } else {
+    ERR_AFFICHE=""; o.style.display="none"; if(/^\d{3} /.test(document.title)) document.title=ERR_TITRE0;
+  }
+  document.documentElement.style.visibility="";
+}
+async function verifierErrCA(){
+  try{
+    if(typeof sb==="undefined" || !sb) return;
+    var r = await sb.rpc("ca_page_erreur",{p_app:"ca"});
+    if(r && !r.error){ ERR_SRV = (ERR_TXT[String(r.data||"")] ? String(r.data) : ""); try{ localStorage.setItem("be-err-ca", ERR_SRV); }catch(e){} }
+    /* Propriétaire connecté : la fonction renvoie "", l'entrée #admin n'est plus utile. */
+    if(ERR_ADMIN && S.session && S.session.role!=="owner"){ ERR_ADMIN=false; }   // connecté mais pas propriétaire : l'erreur revient
+  }catch(e){}
+  majErrCA();
+}
+setTimeout(verifierErrCA, 0);
+setInterval(verifierErrCA, 20000);
+try{ sb && sb.auth.onAuthStateChange(function(){ setTimeout(verifierErrCA, 600); }); }catch(e){}
+
+/* ---------- Carte des réglages (propriétaire) ---------- */
+function errValeurs(){ return { ca: S.meta.erreurCa||"", caisse: S.meta.erreurCaisse||"" }; }
+function errLib(v){ return v ? (v+" · "+ERR_TXT[v][1]) : "désactivée"; }
+function carteErreurCA(){
+  if(!ERR_DRAFT) ERR_DRAFT = errValeurs();
+  var act = errValeurs();
+  function ligne(app, titre){
+    return '<p class="fld" style="margin:12px 0 6px;font-weight:600">'+titre+'</p><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">'
+      + [["","Désactivée"]].concat(ERR_CODES.map(function(k){ return [k, k+" · "+ERR_TXT[k][1]]; })).map(function(x){
+          var sel = ERR_DRAFT[app]===x[0], modif = sel && x[0]!==act[app];
+          return '<button type="button" class="btn '+(sel?'':'ghost')+' sm" style="'+(sel&&x[0]?'background:#7a1f1f;border-color:#e05555;color:#fff':'')+'" data-erract="choix" data-app="'+app+'" data-v="'+x[0]+'">'
+            + (sel?'● ':'')+errEsc(x[1])+(modif?' · modifié':'')+'</button>';
+        }).join("")
+      + '</div>';
+  }
+  return '<div class="card2"><h3 class="serif">🚫 Page d\'erreur</h3>'
+    + '<p class="du">Choisis l\'erreur à afficher, puis « Enregistrer ». Activée : tout le monde voit cette page à la place de l\'app, sauf toi quand tu es connecté avec ce compte. Pour entrer depuis un appareil non connecté : l\'adresse de l\'app suivie de <b>#admin</b>.</p>'
+    + ligne("ca","App CA") + ligne("caisse","Caisse")
+    + '<div class="row-btn" style="margin-top:12px"><button class="btn" type="button" data-erract="save">Enregistrer</button>'
+    + '<button class="btn ghost" type="button" data-erract="apercu" data-app="ca">👁 Aperçu App CA</button>'
+    + '<button class="btn ghost" type="button" data-erract="apercu" data-app="caisse">👁 Aperçu Caisse</button></div></div>';
+}
+document.addEventListener("click", async function(ev){
+  var el = ev.target && ev.target.closest ? ev.target.closest("[data-erract]") : null;
+  if(!el) return;
+  ev.preventDefault(); ev.stopPropagation();
+  if(!(S.session && S.session.role==="owner")) return;
+  var a = el.getAttribute("data-erract");
+  if(!ERR_DRAFT) ERR_DRAFT = errValeurs();
+  if(a==="choix"){ ERR_DRAFT[el.getAttribute("data-app")] = el.getAttribute("data-v"); try{ rendreEnPreservant(); }catch(e){ render(); } return; }
+  if(a==="apercu"){ ERR_APERCU = ERR_DRAFT[el.getAttribute("data-app")] || "404"; majErrCA(); return; }
+  if(a==="save"){
+    if(ERR_SAVING) return;
+    var act = errValeurs(), lignes=[];
+    if(ERR_DRAFT.ca!==act.ca) lignes.push("App CA : "+(ERR_DRAFT.ca?"ACTIVÉE ("+errLib(ERR_DRAFT.ca)+")":"DÉSACTIVÉE"));
+    if(ERR_DRAFT.caisse!==act.caisse) lignes.push("Caisse : "+(ERR_DRAFT.caisse?"ACTIVÉE ("+errLib(ERR_DRAFT.caisse)+")":"DÉSACTIVÉE"));
+    if(!lignes.length){ modaleInfo("Aucun changement à enregistrer."); return; }
+    var recap = lignes.join("\n");
+    if(!(await modaleConfirm("Confirmer ce changement ?\n\n"+recap))) return;
+    ERR_SAVING=true; el.disabled=true; el.textContent="Enregistrement…";
+    var ok=false, souci="";
+    try{
+      var r = await sb.from("ca_meta").update({ erreur_ca: ERR_DRAFT.ca||null, erreur_caisse: ERR_DRAFT.caisse||null }).eq("id",1).select();
+      if(r && r.error){ souci = r.error.message + (/erreur_c/.test(r.error.message) ? " — le script SQL n'a pas encore été exécuté dans Supabase" : ""); }
+      else if(!r || !r.data || !r.data.length){ souci = "le serveur a refusé la modification"; }
+      else {
+        var d2 = await sb.from("ca_meta").select("erreur_ca,erreur_caisse").eq("id",1).maybeSingle();   // relecture
+        var v = d2 && d2.data;
+        ok = !!v && (v.erreur_ca||"")===ERR_DRAFT.ca && (v.erreur_caisse||"")===ERR_DRAFT.caisse;
+        if(ok){ S.meta.erreurCa=v.erreur_ca||""; S.meta.erreurCaisse=v.erreur_caisse||""; } else souci="la relecture ne correspond pas";
+      }
+    }catch(e){ souci="pas de connexion"; }
+    ERR_SAVING=false;
+    if(ok){ ERR_DRAFT=null; try{ logAct("Page d'erreur — "+lignes.join(" · ")); }catch(e){} }
+    try{ rendreEnPreservant(); }catch(e){ render(); }
+    modaleInfo(ok ? ("✅ Enregistré.\n\n"+recap) : ("❌ PROBLÈME : rien n'a été enregistré ("+souci+").\n\nRéessaie dans un instant."));
+  }
+}, true);
 </script>
 <script>
 if("serviceWorker" in navigator){ window.addEventListener("load",function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }
