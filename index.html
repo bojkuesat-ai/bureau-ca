@@ -493,7 +493,7 @@ function fmtDateLong(d){ try{ return new Date(d+"T00:00").toLocaleDateString("fr
 function fmtQuand(ts){ try{ return new Date(ts).toLocaleString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
 function todayISO(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
 function dShort(d){ try{ return new Date(d+"T00:00").toLocaleDateString("fr-BE",{day:"2-digit",month:"short"}); }catch(e){ return d; } }
-function logAct(txt,who){ const w=who||((S.session&&S.session.sig)||"\u2014"); try{ if(typeof sb!=="undefined" && sb) sb.from("ca_journal").insert({who:w,txt:txt}); }catch(e){} const j=(S.journal||[]).slice(); j.unshift({ts:new Date().toISOString(),who:w,txt:txt}); S.journal=j.slice(0,200); }
+function logAct(txt,who){ const w=who||((S.session&&S.session.sig)||"\u2014"); try{ if(typeof sb!=="undefined" && sb) sb.from("ca_journal").insert({who:w,txt:txt}).then(function(){},function(){}); }catch(e){}   /* .then() : sans lui, la requête Supabase n'est jamais envoyée */ const j=(S.journal||[]).slice(); j.unshift({ts:new Date().toISOString(),who:w,txt:txt}); S.journal=j.slice(0,200); }
 const eur = n => new Intl.NumberFormat("fr-BE",{style:"currency",currency:"EUR"}).format(n||0);
 const normId = s => s.trim().toLowerCase();
 const initials = name => (name||"?").split(/[ &-]/).filter(Boolean).slice(0,2).map(w=>w[0]).join("").toUpperCase();
@@ -609,7 +609,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-19 \u00b7 21h15";
+const CA_VERSION="2026-10-19 \u00b7 22h30";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1184,7 +1184,7 @@ async function loadBilans(){
   try{ const f=await sb.from("ca_bilan_faits").select("membre_id"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){ S.meta.bilanSubmitters=[]; }
   try{ const c=await sb.rpc("ca_bilans_nb_deposes"); S.meta.bilanNbDeposes=(c&&typeof c.data==="number")?c.data:(S.meta.bilanSubmitters||[]).length; }catch(e){ S.meta.bilanNbDeposes=(S.meta.bilanSubmitters||[]).length; } }
 async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").select("*").order("created_at",{ascending:false}); S.journal=(data||[]).map(j=>({ts:j.created_at,who:j.who,txt:j.txt})); }catch(e){} }
-async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,pdfPath:b.pdf_path||"",reserve:(b.reserve_tresorier==null?null:String(b.reserve_tresorier)),motifForce:String(b.motif_force||""),votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id}))})); }catch(e){ S.budgets=[]; } }
+async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,pdfPath:b.pdf_path||"",reserve:(b.reserve_tresorier==null?null:String(b.reserve_tresorier)),motifForce:String(b.motif_force||""),certifiePar:String(b.certifie_par||""),certifieId:b.certifie_id||null,certifieLe:b.certifie_le||null,seanceLe:b.seance_le||null,origineCertif:String(b.origine_certif||""),votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id}))})); }catch(e){ S.budgets=[]; } }
 async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,rappelLe:v.rappel_le,rappelProg:v.rappel_prog_at,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
 async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
 async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,lieu:m.lieu||"",ordre:m.ordre||[],presences:m.presences||{},pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } }
@@ -1940,20 +1940,21 @@ function tabBudgets(){
       <input class="f" id="b_cout" inputmode="decimal" placeholder="Coût estimé (€)"></div>
     <textarea id="b_desc" placeholder="Description : à quoi sert ce budget, ce que ça finance…"></textarea>
     <p class="du" style="margin:6px 0 0">Un budget soumis au vote est toujours notifié par e-mail — ${destinatairesCA().length} destinataire(s) actuellement.</p>
-    <div class="row-btn"><button class="btn" data-action="add-budget">Soumettre au vote</button>${owner?`<button class="btn ghost" data-action="add-budget-ca" style="border-color:var(--green);color:var(--green)">✓ Voté en CA physique</button>`:""}<button class="btn ghost" data-action="budgets-pdf">⬇ Export PDF</button></div></div>`;
-  const badge={vote:["open","En vote"],approuve:["ok","Approuvé"],refuse:["no","Refusé"]};
+    <div class="row-btn"><button class="btn" data-action="add-budget">Soumettre au vote</button>${(owner||!estCoopte())?`<button class="btn ghost" data-action="add-budget-ca" style="border-color:var(--green);color:var(--green)">✓ Voté en CA physique</button>`:""}<button class="btn ghost" data-action="budgets-pdf">⬇ Export PDF</button></div></div>`;
+  const badge={vote:["open","En vote"],approuve:["ok","Approuvé"],refuse:["no","Refusé"],attente_tresorier:["open","⏳ En attente du trésorier"]};
   if(S.budgets.length===0) return stats+compose+`<div class="empty">Aucune demande. Soumettez un budget ou un projet au vote.</div>`;
   const list=S.budgets.map(b=>{
     const count=ch=>b.votes.filter(x=>x.choix===ch).length; const open=b.statut==="vote";
     const [cls,label]=badge[b.statut]; const mien=monVoteBudget(b);
     return `<div class="vote"><div class="vote-h"><div><h4 class="serif">${esc(b.titre)}</h4>
       <p class="b-meta"><span class="b-type">${esc(b.type)}</span>${b.cout>0?`<span class="b-cost">${eur(b.cout)}</span>`:""}${b.demandeur?`<span class="by" style="margin:0">par ${esc(b.demandeur)}</span>`:""}</p></div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span class="badge ${cls}">${label}</span>${b.statut!=="vote"?`<span class="badge" style="background:transparent;border:1px solid ${budgetPresentiel(b)?"var(--green)":"var(--slate)"};color:${budgetPresentiel(b)?"var(--green)":"var(--slate)"};white-space:nowrap">${budgetPresentiel(b)?"🏛 Voté en séance présentielle":"💻 Voté en ligne"}</span>`:""}</div></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span class="badge ${cls}">${label}</span>${(b.statut!=="vote"&&b.statut!=="attente_tresorier")?`<span class="badge" style="background:transparent;border:1px solid ${budgetPresentiel(b)?"var(--green)":"var(--slate)"};color:${budgetPresentiel(b)?"var(--green)":"var(--slate)"};white-space:nowrap">${budgetPresentiel(b)?"🏛 Voté en séance présentielle":"💻 Voté en ligne"}</span>`:""}</div></div>
       ${(b.statut!=="vote" && b.decidePar)?`<p class="by" style="margin:8px 0 0">${String(b.decidePar).indexOf("CA physique")===0?`<b style="color:var(--green)">✓ Approuvé à la majorité simple en CA physique</b> — enregistré par ${esc(String(b.decidePar).replace(/^CA physique · /,""))} — séance`:`${b.statut==="approuve"?"✓ Approuvé":"✕ Refusé"} par ${esc(b.decidePar)}`}${b.decideLe?" le "+dateFR(b.decideLe):""}</p>`:""}
       ${reserveInfo(b)?`<p class="by" style="margin:6px 0 0;${reserveInfo(b).reserve?"color:var(--stamp)":"color:var(--green)"}">${reserveInfo(b).reserve?"⚠":"✓"} ${esc(reserveLibelle(b))}</p>`:""}
       ${(budgetForce(b)&&motifForceLibelle(b))?`<p class="by" style="margin:6px 0 0;color:var(--stamp)">⚠ ${esc(motifForceLibelle(b))}</p>`:""}
       ${b.desc?`<p class="b-desc">${esc(b.desc)}</p>`:""}
-      ${b.statut!=="vote"?`<div style="margin:8px 0 0"><button class="chip" data-action="budget-pdf-decision" data-id="${b.id}">📄 PDF de la décision</button></div>`:""}
+      ${(b.statut!=="vote"&&b.statut!=="attente_tresorier")?`<div style="margin:8px 0 0"><button class="chip" data-action="budget-pdf-decision" data-id="${b.id}">📄 PDF de la décision</button></div>`:""}
+      ${(budgetPresentiel(b)&&b.certifiePar)?`<p class="by" style="margin:6px 0 0;color:var(--green)">✓ ${esc(certifLibelle(b))}</p>`:""}
       ${String(b.decidePar||"").indexOf("CA physique")===0?"":`<div class="tallies">${CHOIX.map(ch=>`<span class="tally"><span class="sq" style="background:var(${ch.v})"></span><b>${count(ch.id)}</b> ${ch.label}</span>`).join("")}</div>`}
       ${open?`<div class="foot-line" style="border-top:none;padding-top:0"><div class="mini">${CHOIX.map(ch=>`<button aria-pressed="${mien&&mien.choix===ch.id}" data-action="bvote" data-id="${b.id}" data-choix="${ch.id}">${ch.label}</button>`).join("")}</div></div>`:""}
       ${detailVoixBudget(b)}
@@ -1961,7 +1962,8 @@ function tabBudgets(){
       ${open?blocRappel("budget",b):""}
       ${(open&&peutCloturer&&effectif)?`<div class="foot-line"><button class="btn sm" data-action="bcloture" data-id="${b.id}">🔒 Clôturer le vote</button>
         ${(owner&&count("pour")<seuil)?`<button class="link" data-action="bcloture" data-id="${b.id}" data-force="1" style="color:var(--stamp)">⚠ Forcer l'approbation</button>`:""}</div>`:""}
-      ${(open&&owner)?`<div class="foot-line"><button class="btn sm ghost" data-action="bca-physique" data-id="${b.id}" style="border-color:var(--green);color:var(--green)">✓ Voté en CA physique</button></div>`:""}
+      ${(open&&(owner||!estCoopte()))?`<div class="foot-line"><button class="btn sm ghost" data-action="bca-physique" data-id="${b.id}" style="border-color:var(--green);color:var(--green)">✓ Voté en CA physique</button></div>`:""}
+      ${b.statut==="attente_tresorier"?blocCertifBudget(b, owner):""}
       ${owner?`<div class="foot-line"><button class="link" data-action="edit-cout" data-id="${b.id}">✏ Modifier le montant (propriétaire)</button></div>`:""}
       ${(!owner && peutSupprimerBudget(b))?`<div class="foot-line"><button class="link" data-action="del-budget" data-id="${b.id}" style="margin-left:auto;color:var(--red)">Supprimer ma demande</button></div>`:""}
       ${peutDecider?`<div class="foot-line">${open?`${(effectif&&count("pour")>=seuil)?`<button class="chip" data-action="bdecide" data-id="${b.id}" data-st="approuve">✓ Approuver</button>`:""}<button class="chip" data-action="bdecide" data-id="${b.id}" data-st="refuse">✕ Refuser</button>`:`<button class="link" data-action="bdecide" data-id="${b.id}" data-st="vote">Rouvrir le vote</button>`}
@@ -2104,12 +2106,14 @@ async function prAuthentifier(email){
   let err="";
   for(let essai=0; essai<3; essai++){
     const mdp=await modaleChamp("Pour signer, retapez le mot de passe de votre compte ("+email+").","Signer la procuration",{type:"password",placeholder:"Mot de passe",bouton:"\ud83d\udd12 Signer",erreur:err});
-    if(mdp===null) return false;
+    if(mdp===null){ logAct("Procuration \u2014 signature abandonn\u00e9e"); return false; }
     if(!mdp){ err="Saisissez votre mot de passe."; essai--; continue; }
     let r=null; try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }catch(e){ r={error:e}; }
-    if(!(r&&r.error)) return true;
+    if(!(r&&r.error)){ logAct("Procuration \u2014 mot de passe v\u00e9rifi\u00e9 (signature)"); return true; }
     err="Mot de passe incorrect.";
+    logAct("Procuration \u2014 mot de passe incorrect (essai "+(essai+1)+"/3)");
   }
+  logAct("Procuration \u2014 signature refus\u00e9e apr\u00e8s 3 essais");
   modaleInfo("Mot de passe incorrect (3 essais). La procuration n'a pas \u00e9t\u00e9 sign\u00e9e.");
   return false;
 }
@@ -2138,7 +2142,7 @@ async function prEnvoyer(){
   if(ins&&ins.error){ modaleInfo("La procuration n'a pas pu être enregistrée : "+ins.error.message+(/ca_procurations/.test(ins.error.message)?"\n\nLa table ca_procurations n'existe pas encore dans Supabase.":"")); return; }
   if(!ins||!ins.data||!ins.data.length){ modaleInfo("Le serveur a refusé l'enregistrement (règle de droits RLS sur ca_procurations). Rien n'a été envoyé."); return; }
   const row=ins.data[0];
-  logAct("Procuration donnée à "+mNom+" — réunion du "+prDateCourte(date));
+  logAct("Procuration donnée à "+mNom+" — réunion du "+prDateCourte(date)+" — code "+prEmpreinteCourte(empreinte));
   const p={id:row.id, mandantId:me.id, mandantNom:contenu.mandant_nom, mandantFonction:contenu.mandant_fonction, mandantEmail:contenu.mandant_email,
     mandataireId:m.id, mandataireNom:mNom, mandataireEmail:contenu.mandataire_email, dateReunion:date, portee:portee, points:points, clause:clause,
     signature:methode, signeLe:signeLe, empreinte:empreinte, statut:"active"};
@@ -2166,6 +2170,7 @@ async function prEnvoyer(){
     +`<p style="font-size:12px;color:#666">Signée électroniquement le ${caMailEsc(new Date(signeLe).toLocaleString("fr-BE"))} — code de vérification ${caMailEsc(prEmpreinteCourte(empreinte))}</p>`
     +(lien?`<p><a href="${lien}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Télécharger la procuration (PDF)</a></p>`:"");
   const res=await envoyerAvecPiece(prDestinataires(p), "Procuration — réunion du "+prDateCourte(date)+" — "+p.mandantNom, corps, piece, {sansInvitation:true, tous:true});
+  logAct("Procuration — PDF "+(blob?"généré":"non généré")+(lien?" et déposé":"")+" — "+res.ok+" mail(s) envoyé(s)"+(res.err?", "+res.err+" échec(s)":"")+" (secrétaire, mandant, "+mNom+")");
   if(!blob) modaleInfo("Procuration enregistrée, mais le PDF n'a pas pu être généré. "+(res.ok?res.ok+" mail(s) envoyé(s) sans pièce jointe.":"Aucun mail envoyé."),"Procuration");
   else modaleInfo("✓ Procuration signée.\n"+res.ok+" mail(s) envoyé(s) : secrétaire, vous et "+mNom+"."+(res.err?"\n⚠ "+res.err+" échec(s).":"")+((res.sansPiece&&res.ok)?"\n⚠ Pièce jointe refusée par le serveur : le mail contient le lien de téléchargement.":""),"Procuration envoyée");
 }
@@ -2185,10 +2190,12 @@ async function prAnnuler(id){
     +`<p><b>${caMailEsc(p.mandantNom)}</b> annule la procuration donnée à <b>${caMailEsc(p.mandataireNom)}</b> pour la réunion de l'Organe d'Administration du <b>${caMailEsc(prDateLongue(p.dateReunion))}</b>.</p>`
     +`<p style="font-size:12px;color:#666">Annulée le ${caMailEsc(new Date(quand).toLocaleString("fr-BE"))} — procuration d'origine : code ${caMailEsc(prEmpreinteCourte(p.empreinte))}</p>`;
   const res=await envoyerAvecPiece(prDestinataires(p), "Annulation de procuration — réunion du "+prDateCourte(p.dateReunion)+" — "+p.mandantNom, corps, piece, {sansInvitation:true, tous:true});
+  logAct("Procuration annulée — "+res.ok+" mail(s) d'annulation envoyé(s)"+(res.err?", "+res.err+" échec(s)":""));
   modaleInfo("✓ Procuration annulée. "+res.ok+" mail(s) envoyé(s)."+(res.err?"\n⚠ "+res.err+" échec(s).":""),"Annulation");
 }
 async function prOuvrirPDF(id){
   const p=(S.procurations||[]).find(x=>x.id===id); if(!p||!sb) return;
+  logAct("Procuration — PDF consulté ("+(p.mandantNom||"")+" → "+(p.mandataireNom||"")+", réunion du "+prDateCourte(p.dateReunion)+")");
   if(p.pdfPath && p.statut!=="annulee"){
     try{ const su=await sb.storage.from("ca-documents").createSignedUrl(p.pdfPath, 600, {download:prNomFichier(p)});
       if(su&&su.data&&su.data.signedUrl){ window.open(su.data.signedUrl,"_blank"); return; } }catch(_){ }
@@ -3231,7 +3238,7 @@ function ouvrirDocImprimable(titre, corpsHTML){
 function genererBudgetsPDF(){
   const B=S.budgets||[];
   const euro=n=>{ const x=parseFloat(n); return isNaN(x)?"\u2014":x.toFixed(2).replace(".",",")+" \u20ac"; };
-  const stLabel={vote:"En vote",approuve:"Approuv\u00e9",refuse:"Refus\u00e9"};
+  const stLabel={vote:"En vote",approuve:"Approuv\u00e9",refuse:"Refus\u00e9",attente_tresorier:"En attente du tr\u00e9sorier"};
   const total=B.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(parseFloat(b.cout)||0),0);
   const rows=B.map(b=>{ const pour=(b.votes||[]).filter(v=>v.choix==="pour").length; const contre=(b.votes||[]).filter(v=>v.choix==="contre").length; const abst=(b.votes||[]).filter(v=>v.choix==="abst").length;
     return `<tr><td><b>${esc(b.titre||"\u2014")}</b>${b.desc?`<br><span style="color:#6a7182">${esc(b.desc)}</span>`:""}</td><td>${esc(b.type||"\u2014")}</td><td>${euro(b.cout)}</td><td>${esc(stLabel[b.statut]||b.statut||"\u2014")}</td><td>${esc(b.demandeur||"\u2014")}</td><td>${budgetPresentiel(b)?"En s\u00e9ance":pour+" / "+contre+" / "+abst}</td></tr>`; }).join("");
@@ -3328,6 +3335,7 @@ function corpsPDFBudget(b){
     <h2>R\u00e9sultat</h2>
     <p style="font-size:15px"><b>${esc(mentionPresentiel(b))}</b></p>
     <p>D\u00e9cision prise en s\u00e9ance, sans vote en ligne. Enregistr\u00e9e dans l'espace CA par ${esc(String(b.decidePar||"").replace(/^CA physique \u00b7 /,""))}.</p>
+    ${b.certifiePar?`<p style="border-left:3px solid #2e7d4f;padding:6px 10px;background:#f2faf5"><b>Certification</b> \u2014 ${esc(certifLibelle(b))}.</p>`:""}
     ${reservePDF(b)}`;
   const n=effectifCA(), seuil=seuilMajorite();
   const pour=prenomsParChoix(b,"pour"), contre=prenomsParChoix(b,"contre"), abst=prenomsParChoix(b,"abst");
@@ -3454,7 +3462,7 @@ async function cloturerBudget(id, force){
    id = null → nouveau budget (formulaire) ; id = budget en vote → clôture en présentiel. */
 async function voteCAPhysique(id){
   if(!sb) return;
-  if(!(S.session && S.session.role==="owner")){ modaleInfo("Seul le propri\u00e9taire peut enregistrer une d\u00e9cision du CA."); return; }
+  if(!(S.session && S.session.role==="owner")){ await certifierPresentiel(id); return; }   // membre : certification + confirmation du trésorier
   let b=null, donnees=null;
   if(id){ b=(S.budgets||[]).find(x=>x.id===id); if(!b || b.statut!=="vote") return; }
   else{
@@ -3479,6 +3487,163 @@ async function voteCAPhysique(id){
   const bf=Object.assign({}, (S.budgets||[]).find(x=>x.id===ligne.id)||(b||{titre:ligne.titre,type:ligne.type,cout:ligne.cout,desc:ligne.description,demandeur:ligne.demandeur,votes:[]}),
     {statut:"approuve",decidePar:decidePar,decideLe:decideLe,reserve:reserve});
   await diffuserDecisionBudget(bf,"approuve",false,sig,effectifCA(),seuilMajorite());
+}
+
+/* ==========================================================================
+   Budget voté en CA présentiel, introduit par un MEMBRE (pas le trésorier) :
+   case de certification + mot de passe → statut « attente_tresorier », mail au
+   trésorier. Le trésorier confirme (avis / réserve) → PDF + mail au CA, mail au
+   membre. Le membre peut retirer sa certification tant que ce n'est pas confirmé.
+   Rappel au trésorier tous les 3 jours. Chaque étape est notée dans le journal.
+   ========================================================================== */
+function certifLibelle(b){
+  const quand=b.certifieLe?new Date(b.certifieLe).toLocaleString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"";
+  return "Certifié exact par "+(b.certifiePar||"—")+(quand?" le "+quand:"")+" (mot de passe vérifié)"+(b.statut==="approuve"?" · Confirmé par le trésorier":"");
+}
+function seanceLongue(iso){ if(!iso) return "—"; return new Date(String(iso).slice(0,10)+"T12:00:00").toLocaleDateString("fr-BE",{day:"numeric",month:"long",year:"numeric"}); }
+function emailsTresorier(){ return [...new Set((S.admins||[]).filter(a=>a.role==="owner"&&a.statut==="actif"&&a.email).map(a=>String(a.email).toLowerCase().trim()))]; }
+function blocCertifBudget(b, owner){
+  const moi=S.session&&S.session.id;
+  const jours=b.certifieLe?Math.floor((Date.now()-new Date(b.certifieLe).getTime())/86400000):0;
+  return `<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--stamp);border-radius:10px">
+    <p class="by" style="margin:0;color:var(--stamp)"><b>⏳ Voté en CA présentiel le ${esc(seanceLongue(b.seanceLe))}</b> — en attente de confirmation du trésorier${jours>0?" (depuis "+jours+" jour"+(jours>1?"s":"")+")":""}.</p>
+    <p class="by" style="margin:4px 0 0">${esc(certifLibelle(b))}</p>
+    <div class="row-btn" style="margin-top:8px">
+      ${owner?`<button class="btn sm" data-action="bcertif-confirmer" data-id="${b.id}" style="background:var(--green);border-color:var(--green)">✓ Confirmer</button>`:""}
+      ${(b.certifieId&&b.certifieId===moi)?`<button class="btn ghost sm" data-action="bcertif-retirer" data-id="${b.id}">↩ Retirer ma certification</button>`:""}
+    </div></div>`;
+}
+/* Popup maison : case de certification obligatoire. */
+function modaleCertif(titre, jour){
+  return new Promise(resolve=>{
+    const anc=document.getElementById("ca_modal_certif"); if(anc) anc.remove();
+    const d=document.createElement("div");
+    d.id="ca_modal_certif"; d.className="ca-mod";
+    d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true">'
+      +'<h3>Certification</h3>'
+      +'<p style="color:var(--ink);font-size:14px">'+esc("« "+(titre||"")+" » — séance du "+seanceLongue(jour))+'</p>'
+      +'<label style="display:flex;gap:10px;align-items:flex-start;margin:6px 0 14px;font-size:14px;cursor:pointer;color:var(--ink)">'
+      +'<input type="checkbox" id="ca_certif_cb" style="margin-top:3px;width:18px;height:18px">'
+      +'<span>Je certifie que ce budget a été voté en présentiel par le CA et que cette information est exacte.</span></label>'
+      +'<p style="color:var(--slate);font-size:12px;margin:0 0 12px">Le budget ne sera approuvé qu\'après confirmation du trésorier. Votre mot de passe vous sera demandé.</p>'
+      +'<div class="ca-mod-btns">'
+      +'<button class="btn ghost sm" id="ca_certif_no">Annuler</button>'
+      +'<button class="btn sm" id="ca_certif_ok" disabled style="opacity:.5">Continuer</button>'
+      +'</div></div>';
+    document.body.appendChild(d);
+    let fini=false;
+    const rep=v=>{ if(fini) return; fini=true; d.remove(); document.removeEventListener("keydown",k); resolve(v); };
+    function k(e){ if(e.key==="Escape") rep(false); }
+    document.addEventListener("keydown",k);
+    d.addEventListener("click",e=>{ if(e.target===d) rep(false); });
+    const cb=d.querySelector("#ca_certif_cb"), ok=d.querySelector("#ca_certif_ok");
+    cb.addEventListener("change",()=>{ ok.disabled=!cb.checked; ok.style.opacity=cb.checked?"1":".5"; });
+    ok.addEventListener("click",()=>{ if(cb.checked) rep(true); });
+    d.querySelector("#ca_certif_no").addEventListener("click",()=>rep(false));
+  });
+}
+/* Mot de passe du compte, vérifié par le serveur (même méthode que les procurations). */
+async function certifAuthentifier(email, titre){
+  if(!email){ modaleInfo("Votre compte n'a pas d'adresse e-mail : certification impossible."); return false; }
+  let err="";
+  for(let essai=0; essai<3; essai++){
+    const mdp=await modaleChamp("Pour certifier, retapez le mot de passe de votre compte ("+email+").","Confirmer avec votre mot de passe",{type:"password",placeholder:"Mot de passe",bouton:"🔒 Certifier",erreur:err});
+    if(mdp===null){ logAct("Budget présentiel — certification abandonnée : "+(titre||"")); return false; }
+    if(!mdp){ err="Saisissez votre mot de passe."; essai--; continue; }
+    let r=null; try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }catch(e){ r={error:e}; }
+    if(!(r&&r.error)){ logAct("Budget présentiel — mot de passe vérifié : "+(titre||"")); return true; }
+    err="Mot de passe incorrect.";
+    logAct("Budget présentiel — mot de passe incorrect (essai "+(essai+1)+"/3) : "+(titre||""));
+  }
+  modaleInfo("Mot de passe incorrect (3 essais). Rien n'a été enregistré.");
+  return false;
+}
+async function certifierPresentiel(id){
+  if(!sb||!S.session) return;
+  if(estCoopte()){ modaleInfo("Ce bouton est réservé aux membres du CA."); return; }
+  let b=null, donnees=null;
+  if(id){ b=(S.budgets||[]).find(x=>x.id===id); if(!b || b.statut!=="vote") return; }
+  else{
+    const t=val("b_titre").trim(); if(!t){ modaleInfo("Indiquez au moins un titre."); return; }
+    donnees={titre:t,type:val("b_type"),cout:parseFloat(String(val("b_cout")).replace(",","."))||0,description:val("b_desc").trim()};
+  }
+  const titre=id?b.titre:donnees.titre;
+  const jour=await modaleDate("Date de la séance du CA qui a approuvé « "+(titre||"")+" » à la majorité simple.","Voté en CA physique");
+  if(!jour) return;
+  if(!(await modaleCertif(titre, jour))) return;
+  if(!(await certifAuthentifier(S.session.email, titre))) return;
+  const r=await sb.rpc("ca_budget_certifier",{p_id:id?String(id):null, p_titre:id?null:donnees.titre, p_type:id?null:donnees.type, p_cout:id?null:donnees.cout, p_desc:id?null:donnees.description, p_seance:jour});
+  if(r&&r.error){ modaleInfo("La certification n'a pas pu être enregistrée : "+r.error.message+(/ca_budget_certifier|schema cache/i.test(r.error.message)?"\n\nLe script SQL n'a pas encore été exécuté dans Supabase.":"")); return; }
+  logAct("Budget présentiel certifié (séance du "+seanceLongue(jour)+") — en attente du trésorier : "+(titre||""));
+  if(!id){ ["b_titre","b_cout","b_desc"].forEach(k=>{ const e=document.getElementById(k); if(e) e.value=""; }); }
+  await loadBudgets(); render();
+  /* Mail au trésorier */
+  const dest=emailsTresorier(); let okMail=false;
+  if(dest.length){
+    const corps=`<h2 style="margin:0 0 10px">Budget à confirmer</h2>`
+      +`<p><b>${caMailEsc(S.session.sig||"")}</b> certifie que le budget <b>« ${caMailEsc(titre||"")} »</b>${(!id&&donnees.cout>0)||(id&&b.cout>0)?" ("+caMailEsc(eur(id?b.cout:donnees.cout))+")":""} a été voté en CA présentiel le <b>${caMailEsc(seanceLongue(jour))}</b>.</p>`
+      +`<p>Mot de passe vérifié le ${caMailEsc(new Date().toLocaleString("fr-BE"))}.</p>`
+      +`<p>Aucun PDF ni mail n'a encore été envoyé au CA. Ouvre l'onglet <b>Budgets &amp; projets</b> de l'espace CA pour <b>confirmer</b> (avec ou sans réserve).</p>`;
+    try{ await envoyerNotifCAListe(dest, "Budget à confirmer — "+(titre||""), corps, true); okMail=true; logAct("Mail envoyé au trésorier (budget à confirmer) : "+(titre||"")); }catch(e){ okMail=false; }
+  }
+  modaleInfo("✓ Certification enregistrée.\n\nLe budget est en attente de confirmation du trésorier"+(okMail?", qui a été prévenu par mail.":".")+"\nTant qu'il n'est pas confirmé, tu peux retirer ta certification.","Voté en CA physique");
+}
+async function retirerCertif(id){
+  const b=(S.budgets||[]).find(x=>x.id===id); if(!b||!sb||!S.session) return;
+  if(b.statut!=="attente_tresorier" || b.certifieId!==S.session.id) return;
+  if(!(await modaleConfirm("Retirer ta certification pour « "+(b.titre||"")+" » ?\n\n"+(b.origineCertif==="vote"?"Le budget repasse en vote en ligne.":"La demande sera supprimée."),"Retirer ma certification"))) return;
+  const r=await sb.rpc("ca_budget_retirer",{p_id:String(id)});
+  if(r&&r.error){ modaleInfo("Impossible de retirer la certification : "+r.error.message); return; }
+  logAct("Certification retirée (budget présentiel) : "+(b.titre||""));
+  const dest=emailsTresorier();
+  if(dest.length){ try{ await envoyerNotifCAListe(dest, "Certification retirée — "+(b.titre||""), `<p><b>${caMailEsc(S.session.sig||"")}</b> a retiré sa certification pour le budget <b>« ${caMailEsc(b.titre||"")} »</b>. Il n'y a plus rien à confirmer.</p>`, true); }catch(_){ } }
+  await loadBudgets(); render();
+  modaleInfo("✓ Certification retirée."+(b.origineCertif==="vote"?" Le budget est de nouveau en vote.":" La demande a été supprimée."));
+}
+async function confirmerCertif(id){
+  if(!sb) return;
+  if(!(S.session && S.session.role==="owner")){ modaleInfo("Seul le trésorier peut confirmer."); return; }
+  const b=(S.budgets||[]).find(x=>x.id===id); if(!b || b.statut!=="attente_tresorier") return;
+  if(!(await modaleConfirm("Confirmer « "+(b.titre||"")+" », voté en CA présentiel le "+seanceLongue(b.seanceLe)+" ?\n\n"+certifLibelle(b)+".\n\nLe PDF de la décision sera envoyé à tout le CA.","Confirmer le budget"))) return;
+  const reserve=await modaleReserve(b.titre||""); if(reserve===null) return;
+  const sig=(S.session&&S.session.sig)||"—";
+  const decidePar="CA physique · "+sig, decideLe=new Date(String(b.seanceLe||todayISO()).slice(0,10)+"T12:00:00").toISOString();
+  const r=await sb.from("ca_budgets").update({statut:"approuve",decide_par:decidePar,decide_le:decideLe}).eq("id",id).eq("statut","attente_tresorier").select();
+  if(r&&r.error){ modaleInfo("Confirmation impossible : "+r.error.message); return; }
+  if(!r||!r.data||!r.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refusé la confirmation (aucune ligne modifiée). Le budget a peut-être été retiré entre-temps. Rien n'a été envoyé."); return; }
+  await enregistrerReserve(id, reserve);
+  logAct("Budget présentiel confirmé par le trésorier"+(reserve!=="aucune"?" (réserve du trésorier)":" (aucune réserve)")+" : "+(b.titre||""));
+  await loadBudgets(); render();
+  const bf=Object.assign({}, (S.budgets||[]).find(x=>x.id===id)||b, {statut:"approuve",decidePar:decidePar,decideLe:decideLe,reserve:reserve});
+  await diffuserDecisionBudget(bf,"approuve",false,sig,effectifCA(),seuilMajorite());
+  /* Mail au membre qui a certifié */
+  const m=(S.admins||[]).find(a=>a.id===b.certifieId);
+  if(m && m.email){
+    const ri=reserveInfo(bf);
+    const corps=`<h2 style="margin:0 0 10px">✓ Budget confirmé par le trésorier</h2>`
+      +`<p>Le budget <b>« ${caMailEsc(b.titre||"")} »</b>, que tu as certifié voté en CA présentiel le ${caMailEsc(seanceLongue(b.seanceLe))}, a été <b>confirmé</b>. Le PDF de la décision a été envoyé au CA.</p>`
+      +(ri?(ri.reserve?`<p style="background:#fff8ec;border:1px solid #ecd3a6;border-radius:8px;padding:10px;color:#7a4a12"><b>⚠ Réserve du trésorier</b>${ri.texte?" : "+caMailEsc(ri.texte):""}</p>`:`<p><b>✓ Aucune réserve du trésorier.</b></p>`):"");
+    try{ await envoyerNotifCAListe([m.email], "Budget confirmé — "+(b.titre||""), corps, true); logAct("Mail de confirmation envoyé à "+(b.certifiePar||"")+" : "+(b.titre||"")); }catch(_){ }
+  }
+}
+/* Rappel au trésorier : un budget attend depuis 3 jours ou plus (puis tous les 3 jours). */
+async function traiterRappelsCertif(){
+  if(!sb||!S.session) return;
+  const dest=emailsTresorier(); if(!dest.length) return;
+  for(const b of (S.budgets||[])){
+    if(b.statut!=="attente_tresorier" || !b.certifieLe) continue;
+    const jours=Math.floor((Date.now()-new Date(b.certifieLe).getTime())/86400000);
+    if(jours<3) continue;
+    const cle="budget-attente:"+b.id+":"+Math.floor(jours/3);
+    try{
+      const ins=await sb.from("ca_rappels_envoyes").insert({cle:cle}).select();
+      if(ins&&ins.error) continue;
+      if(!ins||!ins.data||!ins.data.length) continue;
+      await envoyerNotifCAListe(dest, "Rappel : budget à confirmer — "+(b.titre||""),
+        `<p>Le budget <b>« ${caMailEsc(b.titre||"")} »</b>, certifié voté en CA présentiel par <b>${caMailEsc(b.certifiePar||"")}</b>, attend ta confirmation depuis <b>${jours} jours</b>.</p><p>Ouvre l'onglet <b>Budgets &amp; projets</b> de l'espace CA.</p>`, true);
+      logAct("Rappel envoyé au trésorier (budget en attente depuis "+jours+" j) : "+(b.titre||""));
+    }catch(_){ }
+  }
 }
 /* Ouvre le PDF de décision envoyé ; à défaut (anciens budgets), le régénère. */
 async function ouvrirPDFDecision(id){
@@ -3527,7 +3692,7 @@ async function diffuserDecisionBudget(bf, st, force, sig, n, seuil){
   const titreMail=(st==="approuve"?"Budget approuv\u00e9 \u2014 ":"Budget refus\u00e9 \u2014 ")+(bf.titre||"");
   const corps=`<h2 style="margin:0 0 10px">${st==="approuve"?"Budget approuv\u00e9":"Budget refus\u00e9"}</h2>`
     +`<p style="font-size:16px"><b>${caMailEsc(bf.titre||"")}</b>${bf.cout>0?" \u2014 "+caMailEsc(eur(bf.cout)):""}</p>`
-    +(presentiel?`<p><b>${caMailEsc(mentionPresentiel(bf))}</b></p>`:`<p>${caMailEsc(pourL.length+" voix pour sur "+n+" membres (majorit\u00e9 simple : "+seuil+").")}</p>`)
+    +(presentiel?`<p><b>${caMailEsc(mentionPresentiel(bf))}</b></p>`+(bf.certifiePar?`<p style="background:#f2faf5;border-left:3px solid #2e7d4f;padding:8px 10px">${caMailEsc(certifLibelle(bf))}.</p>`:""):`<p>${caMailEsc(pourL.length+" voix pour sur "+n+" membres (majorit\u00e9 simple : "+seuil+").")}</p>`)
     +(force?`<p style="background:#fff4f4;border:1px solid #e8c4c4;border-radius:8px;padding:10px;color:#8a2b2b"><b>Approbation hors seuil</b> \u2014 la majorit\u00e9 simple n'\u00e9tait pas atteinte. D\u00e9cision prise par ${caMailEsc(sig)}.</p>`:"")
     +((force&&bf.motifForce)?`<p style="background:#fff6f6;border-left:3px solid #8a2b2b;padding:8px 10px;color:#5a1c1c"><b>Motif du tr\u00e9sorier</b> (${caMailEsc(sig)}) : ${caMailEsc(bf.motifForce)}</p>`:"")
     +(presentiel?"":`<p><b>Pour (${pourL.length}) :</b> ${caMailEsc(listePrenoms(pourL))}<br>`
@@ -4522,6 +4687,8 @@ ${sections||"<p>Aucun retour.</p>"}
       break; }
     case "add-budget-ca": { await voteCAPhysique(null); break; }
     case "bca-physique": { await voteCAPhysique(id); break; }
+    case "bcertif-confirmer": { await confirmerCertif(id); break; }
+    case "bcertif-retirer": { await retirerCertif(id); break; }
     case "budget-pdf-decision": { await ouvrirPDFDecision(id); break; }
     case "pr-portee": { prDraft().portee=el.dataset.v==="points"?"points":"tous"; rendreEnPreservant(); break; }
     case "pr-add-point": { const d=prDraft(); if(d.nbPts<20){ d.nbPts++; rendreEnPreservant(); const n=document.getElementById("pr_pt_"+(d.nbPts-1)); if(n) try{ n.focus(); }catch(_){ } } break; }
@@ -4679,7 +4846,7 @@ async function boot(){
   if(!sb){ render(); return; }
   try{ const h=String(location.hash||""); if(/type=recovery/.test(h)||/[?&]type=recovery/.test(location.search)){ S.recovery=true; } }catch(e){}
   try{ await refreshSession(); }catch(e){} render();
-  if(S.session && S.session.role!=="coopte"){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") rendreEnPreservant(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterRecapIdees().catch(()=>{}); traiterInscriptions().catch(()=>{}); traiterRetardsMediation().catch(()=>{}); }
+  if(S.session && S.session.role!=="coopte"){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") rendreEnPreservant(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterRappelsCertif().catch(()=>{}); traiterRecapIdees().catch(()=>{}); traiterInscriptions().catch(()=>{}); traiterRetardsMediation().catch(()=>{}); }
   try{ sb.auth.onAuthStateChange(async (evt)=>{
     if(evt==="PASSWORD_RECOVERY"){ S.recovery=true; render(); return; }
     if(S.recovery) return;
