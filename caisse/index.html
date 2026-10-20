@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="20.10.2026 · 1">
+<meta name="app-build" content="20.10.2026 · 2">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -687,7 +687,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 20.10.2026 · 1</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 20.10.2026 · 2</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -726,6 +726,10 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
       <div class="kpi done"><div class="eyebrow">Déjà remboursé</div><div class="n" id="m_paid">0 €</div></div>
     </div>
     <p class="hint" id="m_detail" style="margin:-8px 0 0"></p>
+    <div class="card pad" id="m_budgets" hidden>
+      <div class="eyebrow">Mes budgets</div>
+      <div id="m_budgetsList" class="stack" style="gap:14px;margin-top:10px"></div>
+    </div>
     <div class="callout" id="m_preuves" hidden style="border-left:4px solid var(--amber)"></div>
     <div class="card pad">
       <div class="eyebrow">Nouvelle demande</div>
@@ -7200,6 +7204,19 @@ if($("#fd_pour")) $("#fd_pour").addEventListener("change", () => majBudgetForm("
 ["#reqForm","#directForm"].forEach(id => { const f = $(id); if(f) f.addEventListener("reset", () => setTimeout(() => {
   const px = id === "#reqForm" ? "f" : "fd"; const u = $("#" + px + "_urg"); if(u) u.checked = false; majBudgetForm(px); }, 0)); });
 
+// carte « Mes budgets » dans Mes demandes (membres seulement : le trésorier a l'onglet Budget)
+function renderMesBudgets(){
+  const box = $("#m_budgets"); if(!box || !state.profile) return;
+  const liste = isTreso() || state.budErr ? [] : budgetsDe(state.profile.id);
+  box.hidden = !liste.length;
+  if(!liste.length) return;
+  $("#m_budgetsList").innerHTML = liste.map(b => {
+    const nb = (state.items||[]).filter(i => i.budget_id === b.id && i.status !== "Refusée").length;
+    const partage = (b.membres||[]).length > 1 ? " · budget partagé à deux" : "";
+    return `<div>${jaugeHTML(b, 0)}<div class="bud-txt">${nb} de vos demande(s) rattachée(s)${partage}</div></div>`;
+  }).join("");
+}
+
 // contrôle à l'envoi : renvoie les champs à enregistrer, ou lève une erreur lisible
 function controleBudget(px, montant){
   const vide = { budget_id:null, hors_budget:false, urgence_motif:null };
@@ -10301,6 +10318,7 @@ function render(){
   try{ renderNovelles(); }catch(eN){ console.error("novelles", eN); }
   try{ majHoraire(); }catch(_){}   // banderole ouvert/fermé et verrou du formulaire toujours à jour
   try{ majBandeauPreuves(); renderPreuves(); }catch(ePr){ console.error("preuves", ePr); }
+  try{ renderMesBudgets(); }catch(eMb){ console.error("budgets", eMb); }
   const mineAll = ouvert(state.items).filter(i => i.user_id === state.profile.id);
   const mine = mineAll.filter(i => i.kind !== "direct");
   const mineDirect = mineAll.filter(i => i.kind === "direct");
