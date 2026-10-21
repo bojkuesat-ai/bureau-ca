@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="21.10.2026 · 4">
+<meta name="app-build" content="21.10.2026 · 10">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -687,7 +687,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 21.10.2026 · 4</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 21.10.2026 · 10</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -10421,6 +10421,27 @@ function retourEtat(bc){
   const etat = pct >= 80 ? "tenu" : !echu ? "attente" : (bc.recettes || 0) < 0.005 ? "zero" : "partiel";
   return { pct, echu, etat, recu: bc.recettes || 0, promis: bc.retourMontant, date: bc.retourDate, alerte: bc.retourAlerte };
 }
+// saisie en cours du retour promis : survit aux rafraîchissements automatiques de l'écran
+function retSaisie(id, k, defaut){
+  const s0 = (state.retSaisie || {})[id];
+  return s0 && s0[k] != null ? s0[k] : defaut;
+}
+["input","change"].forEach(ev => document.addEventListener(ev, e => {
+  const t = e.target; if(!t || !t.closest) return;
+  const m = t.closest("[data-bret]"), d = t.closest("[data-bretd]"); if(!m && !d) return;
+  const id = m ? m.dataset.bret : d.dataset.bretd;
+  state.retSaisie = state.retSaisie || {}; state.retSaisie[id] = state.retSaisie[id] || {};
+  state.retSaisie[id][m ? "mt" : "d"] = t.value;
+}));
+// « 1500 », « 1 500 € », « 1.500,50 », « 1500 EUR » → 1500 / 1500.5 ; null si vide ; NaN si illisible
+function lireMontantLibre(v){
+  let x = String(v == null ? "" : v).replace(/[\s\u00a0\u202f€]/g, "").replace(/eur(os?)?/ig, "");
+  if(x === "") return null;
+  if(x.includes(",") && x.includes(".")) x = x.lastIndexOf(",") > x.lastIndexOf(".") ? x.replace(/\./g, "").replace(",", ".") : x.replace(/,/g, "");
+  else if(x.includes(",")) x = x.replace(",", ".");
+  else if(/^\d{1,3}(\.\d{3})+$/.test(x)) x = x.replace(/\./g, "");
+  return /^\d+(\.\d+)?$/.test(x) ? Math.round(Number(x) * 100) / 100 : NaN;
+}
 const retoursAAlerter = () => (state.budCaisse||[]).filter(b => { const r = retourEtat(b); return r && (r.etat === "zero" || r.etat === "partiel") && !r.alerte; });
 
 function blocGestionBudget(b, bc){
@@ -10437,9 +10458,10 @@ function blocGestionBudget(b, bc){
     ${compl.length ? `<div class="bud-txt"><b>Compléments :</b> ${compl.map(x => esc(euro(x.cout)) + " (" + esc(lib[x.statut] || x.statut) + ")").join(" · ")}</div>` : ""}
     <div class="bud-txt" style="margin-top:6px"><b>Retour promis</b> (sponsoring, entrées…)${r ? ` : <b>${euro(r.recu)}</b> reçus sur <b>${euro(r.promis)}</b> promis · ${badgeR}` : " : aucun"}</div>
     <div class="attach">
-      <input type="number" step="0.01" min="0" data-bret="${esc(b.id)}" value="${bc.retourMontant != null ? esc(Number(bc.retourMontant).toFixed(2)) : ""}" placeholder="Montant promis (€)" style="width:150px">
-      <input type="date" data-bretd="${esc(b.id)}" value="${esc(bc.retourDate || "")}" style="width:auto">
+      <label class="hint" style="margin:0">Montant promis (€)<br><input type="text" inputmode="decimal" autocomplete="off" data-bret="${esc(b.id)}" value="${esc(retSaisie(b.id, "mt", bc.retourMontant != null ? String(Number(bc.retourMontant)) : ""))}" placeholder="ex. 1500" style="width:150px"></label>
+      <label class="hint" style="margin:0">Date limite<br><input type="date" data-bretd="${esc(b.id)}" value="${esc(retSaisie(b.id, "d", bc.retourDate || ""))}" style="width:auto"></label>
       <button class="btn ghost sm" data-baction="retour" data-id="${esc(b.id)}">Enregistrer le retour promis</button>
+      <button class="btn ghost sm" data-baction="retourinfo" data-id="${esc(b.id)}">Informer le CA</button>
       ${r && (r.etat === "zero" || r.etat === "partiel") ? `<button class="btn sm" data-baction="retourCA" data-id="${esc(b.id)}">${r.alerte ? "Prévenir à nouveau le CA" : "Prévenir le CA"}</button>` : ""}
     </div>
     ${r && r.alerte ? `<div class="hint" style="margin:0">CA prévenu le ${fstamp(r.alerte)}.</div>` : ""}
@@ -10451,6 +10473,10 @@ function blocGestionBudget(b, bc){
       ${bc.cloture ? `<span class="bud-txt" style="margin:0">Clôturé le ${fdate(String(bc.cloture).slice(0,10))}</span><button class="btn ghost sm" data-baction="rouvrirbud" data-id="${esc(b.id)}">Rouvrir le budget</button>`
                    : `<button class="btn ghost sm" data-baction="cloturerbud" data-id="${esc(b.id)}">Clôturer le budget</button>`}
     </div>
+    ${bc.retourMontant != null && bc.retourMontant > 0
+      ? `<div class="attach" data-retour-ok="${esc(b.id)}" style="margin-top:6px;align-items:center"><span class="bud-txt" style="margin:0;color:var(--green)">✅ <b>Retour promis enregistré : ${euro(bc.retourMontant)} pour le ${bc.retourDate ? fdate(bc.retourDate) : "—"}</b></span>
+          <button class="btn ghost sm" data-baction="retourannul" data-id="${esc(b.id)}">Annuler</button></div>`
+      : `<div class="bud-txt" data-retour-ok="${esc(b.id)}" style="margin-top:6px"><b>Aucun retour promis</b>, donc pas de mail au CA.</div>`}
     ${hist.length ? `<details style="margin-top:6px"><summary class="bud-txt" style="cursor:pointer"><b>Historique</b> (${hist.length})</summary>
       ${hist.slice(0,50).map(h => `<div class="bud-txt">${fstamp(h.quand)} — ${esc(h.qui || "")} : ${esc(h.quoi)}</div>`).join("")}</details>` : ""}`;
 }
@@ -10459,6 +10485,43 @@ async function majMetaBudget(id, champs){
     .upsert({ budget_id:String(id), ...champs, updated_at:new Date().toISOString() }, { onConflict:"budget_id" }).select("*");
   if(error || !data || !data.length) throw new Error(error ? error.message : "la base a refusé l'enregistrement");
   return data[0];
+}
+function mailInfoRetourCA(bc){
+  const nomT = id => { const m = (state.members||[]).find(x => x.id === id); return m ? m.name : ""; };
+  const tit = (bc.membres||[]).map(nomT).filter(Boolean).join(" et ") || "—";
+  const depense = (bc.paye||0) + (bc.valide||0);
+  const sujet = "« " + bc.titre + " » — aucun sponsor ni aucune recette à ce jour";
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a1a">
+    <p>Chères et chers membres du CA,</p>
+    <p>Pour le budget <b>« ${mailEsc(bc.titre)} »</b>, un retour en sponsoring et/ou en recettes avait été annoncé.</p>
+    <p>À ce jour, <b>aucun sponsor et aucune recette (ventes, entrées…) n'ont été récoltés ou enregistrés</b> pour ce budget.</p>
+    <table style="border-collapse:collapse;margin:12px 0;font-size:14px">
+      <tr><td style="padding:4px 14px 4px 0;color:#666">Budget approuvé</td><td><b>${euro(bc.cout)}</b></td></tr>
+      <tr><td style="padding:4px 14px 4px 0;color:#666">Déjà dépensé</td><td><b>${euro(depense)}</b></td></tr>
+      <tr><td style="padding:4px 14px 4px 0;color:#666">Titulaire du budget</td><td><b>${mailEsc(tit)}</b></td></tr>
+    </table>
+    <p>Le titulaire est invité à faire le point avec la présidente, le vice-président, le trésorier et les autres membres du CA sur les sponsors et recettes attendus.</p>
+    <p>Le conseil d'administration du Bureau étudiant</p></div>`;
+  return { sujet, html };
+}
+async function informerCARetour(id){
+  const bc = budgetParId(id); if(!bc) return;
+  const dest = [...new Set((state.caMembres||[]).filter(a => a.email && a.statut === "actif").map(a => String(a.email).trim().toLowerCase()))];
+  if(!dest.length) return dire("Erreur : mail non envoyé", "La liste des membres du CA n'est pas chargée, ou aucun membre actif n'a d'e-mail.");
+  const mail = mailInfoRetourCA(bc);
+  const ok0 = await demander("Informer le CA", "Envoyer ce mail aux " + dest.length + " membre(s) actif(s) du CA ?\n\nObjet : " + mail.sujet
+    + "\n\nLe mail dit qu'aucun sponsor et aucune recette (ventes, entrées…) n'ont été récoltés ou enregistrés pour « " + bc.titre + " ».", { bouton:"Envoyer au CA" });
+  if(!ok0) return;
+  let ok = 0; const rates = [];
+  for(const to of dest){
+    let bon = false; try{ bon = await envoyerMail(to, mail.sujet, mail.html, emailTreso()); }catch(_){}
+    if(bon) ok++; else rates.push(to + " (" + (dernierEchecMail || "raison inconnue") + ")");
+    await new Promise(r => setTimeout(r, 120));
+  }
+  if(ok) await histoBudget(id, "CA informé : aucun sponsor ni aucune recette à ce jour (" + ok + "/" + dest.length + " envoyés)");
+  if(!ok) return dire("Erreur : aucun mail envoyé", "Aucun des " + dest.length + " mails n'est parti.\n\nErreur : " + (dernierEchecMail || "raison inconnue"));
+  if(rates.length) return dire("Envoi partiel", "⚠ " + ok + "/" + dest.length + " mails envoyés.\n\nNon envoyés :\n" + rates.join("\n"));
+  return dire("Mails envoyés", "✅ Mail envoyé à " + ok + "/" + dest.length + " membres du CA.");
 }
 function mailRetourCA(bc, motPerso){
   const r = retourEtat(bc);
@@ -10469,7 +10532,7 @@ function mailRetourCA(bc, motPerso){
   const sujet = zero ? "« " + bc.titre + " » — aucune recette à ce jour" : "« " + bc.titre + " » — retour partiel (" + r.pct + " %)";
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a1a">
     <h2 style="margin:0 0 10px">${zero ? "Aucune recette à ce jour" : "Retour partiel"}</h2>
-    <p>Bonjour à tous,</p>
+    <p>Chères et chers membres du CA,</p>
     <p>Le budget <b>« ${mailEsc(bc.titre)} »</b> a été approuvé avec un retour promis de <b>${euro(r.promis)}</b> (sponsoring, entrées…), attendu au plus tard le <b>${fdate(r.date)}</b>.</p>
     <p>${zero ? "À ce jour, <b>aucune recette</b> n'a été enregistrée pour ce budget."
              : "À ce jour, il a rapporté <b>" + euro(r.recu) + "</b> sur les <b>" + euro(r.promis) + "</b> promis (<b>" + r.pct + " %</b>). Il manque <b>" + euro(Math.max(0, r.promis - r.recu)) + "</b>."}</p>
@@ -10479,7 +10542,7 @@ function mailRetourCA(bc, motPerso){
       <tr><td style="padding:4px 14px 4px 0;color:#666">Recettes reçues</td><td><b>${euro(r.recu)}</b></td></tr>
       <tr><td style="padding:4px 14px 4px 0;color:#666">Titulaire du budget</td><td><b>${mailEsc(tit)}</b></td></tr>
     </table>
-    <p>Le titulaire est invité à faire le point avec le trésorier et les membres du CA sur les sponsors et recettes attendus.</p>
+    <p>Le titulaire est invité à faire le point avec la présidente, le vice-président, le trésorier et les autres membres du CA sur les sponsors et recettes attendus.</p>
     ${String(motPerso||"").trim() ? `<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(String(motPerso).trim()).replace(/\n/g,"<br>")}</p>` : ""}
     <p>Le conseil d'administration du Bureau étudiant</p></div>`;
   return { sujet, html, zero, tit };
@@ -10620,22 +10683,46 @@ async function budgetAction(action, ds){
       (bc ? "« " + bc.titre + " » : " : "") + (noms.length ? noms.join(" et ") : "aucun titulaire trouvé automatiquement — attribue-le à la main"));
   }
   if(action === "retourCA") return prevenirCARetour(ds.id);
+  if(action === "retourinfo") return informerCARetour(String(ds.id));
+  if(action === "retourannul"){
+    const id = String(ds.id), bc = budgetParId(id);
+    if(!bc || bc.retourMontant == null) return dire("Rien à supprimer", "Aucun retour promis n'est enregistré sur ce budget.");
+    const ancienMt = bc.retourMontant, ancienD = bc.retourDate, titreB = bc.titre;
+    const ok = await demander("Annuler le retour promis", "Supprimer le retour promis de " + euro(ancienMt) + " pour le " + fdate(ancienD) + " sur « " + titreB + " » ?\n\nPlus aucune alerte ni mail au CA pour ce budget.", { bouton:"Annuler le retour promis" });
+    if(!ok) return;
+    try{
+      const lu = await majMetaBudget(id, { retour_montant:null, retour_date:null, retour_alerte_at:null });
+      if(lu.retour_montant != null) throw new Error("la base a gardé l'ancien montant");
+    }catch(err){ return dire("Erreur : retour promis non supprimé", "Le retour promis de " + euro(ancienMt) + " est toujours enregistré.\n\nErreur : " + (err.message || String(err))); }
+    if(state.retSaisie) delete state.retSaisie[id];
+    await histoBudget(id, "Retour promis annulé (" + euro(ancienMt) + " pour le " + fdate(ancienD) + ")");
+    await chargerBudgetsCaisse(); renderBudget();
+    const apres = budgetParId(id);
+    if(apres && apres.retourMontant != null) return dire("Annulation non confirmée", "La base indique encore un retour promis de " + euro(apres.retourMontant) + " sur « " + titreB + " ». Réessaie ou recharge la page.");
+    return dire("Retour promis supprimé", "✅ Le retour promis de " + euro(ancienMt) + " pour le " + fdate(ancienD) + " sur « " + titreB + " » est bien supprimé.\n\nPlus aucune alerte ni mail au CA pour ce budget.");
+  }
   if(action === "retour"){
     const id = String(ds.id);
     const mtEl = document.querySelector(`[data-bret="${CSS.escape(id)}"]`), dEl = document.querySelector(`[data-bretd="${CSS.escape(id)}"]`);
-    const brut = String(mtEl ? mtEl.value : "").replace(",", ".").trim();
-    const mt = brut === "" ? null : Math.round(Number(brut) * 100) / 100;
-    const d = dEl ? dEl.value : "";
+    const brut = mtEl ? mtEl.value : retSaisie(id, "mt", "");
+    const mt = lireMontantLibre(brut);
+    const d = (dEl ? dEl.value : "") || retSaisie(id, "d", "");
+    const bcAvant = budgetParId(id);
+    if(Number.isNaN(mt)) return dire("Retour non enregistré", "Je ne comprends pas le montant « " + String(brut).trim() + " ». Tape seulement le nombre, par exemple 1500.");
     if(mt != null && !(mt > 0)) return dire("Retour non enregistré", "Indique un montant supérieur à 0, ou vide le champ pour retirer le retour promis.");
-    if(mt != null && !d) return dire("Retour non enregistré", "Choisis la date limite à laquelle le retour doit être atteint.");
+    if(mt == null && d) return dire("Retour non enregistré", "Date limite choisie : " + fdate(d) + ", mais le montant promis est vide. Tape le montant (par exemple 1500) puis clique à nouveau sur « Enregistrer le retour promis ».");
+    if(mt != null && !d) return dire("Retour non enregistré", "Montant : " + euro(mt) + ". Choisis aussi la date limite à laquelle ce retour doit être atteint.");
+    if(mt == null && !(bcAvant && bcAvant.retourMontant != null)) return dire("Retour non enregistré", "Tape le montant promis (par exemple 1500) et choisis la date limite.");
     try{
       const lu = await majMetaBudget(id, { retour_montant:mt, retour_date: mt == null ? null : d, retour_alerte_at:null });
       if((lu.retour_montant == null ? null : Number(lu.retour_montant)) !== mt) throw new Error("la base n'a pas gardé le montant");
+      if(mt != null && String(lu.retour_date || "").slice(0,10) !== d) throw new Error("la base n'a pas gardé la date");
     }catch(err){ return dire("Retour non enregistré", err.message || String(err)); }
+    if(state.retSaisie) delete state.retSaisie[id];
     await histoBudget(id, mt == null ? "Retour promis retiré" : "Retour promis : " + euro(mt) + " pour le " + fdate(d));
     if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
     await chargerBudgetsCaisse(); renderBudget();
-    return dire("Retour promis enregistré", mt == null ? "Plus de retour promis sur ce budget." : euro(mt) + " attendus au plus tard le " + fdate(d) + ". Rattache les recettes à ce budget dans l'onglet Recettes.");
+    return dire("Retour promis enregistré", mt == null ? "Plus de retour promis sur ce budget." : "« " + ((bcAvant && bcAvant.titre) || "Budget") + " » : " + euro(mt) + " attendus au plus tard le " + fdate(d) + ". Rattache les recettes à ce budget dans l'onglet Recettes.");
   }
   if(action === "cloturerbud" || action === "rouvrirbud"){
     const id = String(ds.id), bc = budgetParId(id); if(!bc) return;
