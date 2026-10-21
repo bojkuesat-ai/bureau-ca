@@ -544,6 +544,9 @@ async function loadMailing(){ try{ const {data}=await sb.from("ca_mailing").sele
 
 /* ===== Notifications par e-mail (Amazon SES via Edge Function) ===== */
 const CA_SEND_FN = SB_URL + "/functions/v1/send-email";
+/* Nom affiché de l'expéditeur selon le type de mail (l'adresse d'envoi reste celle du bureau) */
+const EXP_BUDGET = "Budget-BE <noreply@bureauetuidant.xyz>", EXP_ANNONCE = "Annonces-BE <noreply@bureauetuidant.xyz>",
+      EXP_DOCS = "Documents-BE <noreply@bureauetuidant.xyz>", EXP_MEDIATION = "Médiation-BE <noreply@bureauetuidant.xyz>";
 /* Relance des bilans : la liste des retardataires est calculée côté serveur et n'arrive jamais ici. */
 const CA_RELANCE_FN = SB_URL + "/functions/v1/relance-bilans";
 /* En dessous de ce nombre de manquants, relancer reviendrait à désigner les personnes. */
@@ -609,7 +612,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-22 \u00b7 01h30";
+const CA_VERSION="2026-10-22 \u00b7 02h00";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -981,7 +984,7 @@ const MAIL_TEMPLATES = [
   { nom:"Demande / partenariat", objet:"Demande — [objet]",
     corps:"Bonjour,\n\nDans le cadre de nos activités, nous nous permettons de vous contacter concernant [objet de la demande].\n\n[Présentation de la demande / proposition de partenariat.]\n\nNous restons à votre disposition pour en discuter.\n\nBien à vous," },
 ];
-async function envoyerNotifCA(subject, corpsHtml, avecCaisse){
+async function envoyerNotifCA(subject, corpsHtml, avecCaisse, exp){
   /* Liste brute (membres actifs + diffusion externe) avant filtrage des désabonnés,
      pour pouvoir dire à l'expéditeur combien d'adresses ont été écartées. */
   const brut=new Set();
@@ -994,27 +997,27 @@ async function envoyerNotifCA(subject, corpsHtml, avecCaisse){
   const headers=await caSendHeaders();
   let ok=0, err=0;
   for(const to of dest){
-    try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html})}); if(r && r.ok===false) err++; else ok++; }catch(e){ err++; }
+    try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify(exp?{to,subject,html,from:exp}:{to,subject,html})}); if(r && r.ok===false) err++; else ok++; }catch(e){ err++; }
     await new Promise(r=>setTimeout(r,120));
   }
   return {ok, err, total:dest.length, desabonnes:nbDesab};
 }
-async function envoyerNotifCAListe(dest, subject, corpsHtml, sansInvitation){
+async function envoyerNotifCAListe(dest, subject, corpsHtml, sansInvitation, exp){
   const liste=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))].filter(e=>!estDesabonne(e));
   if(!liste.length) return {ok:0,err:0};
   const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corpsHtml}${sansInvitation?"":blocInvitationCA()}${blocNoReplyCA()}</div>`;
   const headers=await caSendHeaders();
   let ok=0,err=0;
-  for(const to of liste){ try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html})}); if(r&&r.ok===false) err++; else ok++; }catch(e){ err++; } await new Promise(r=>setTimeout(r,120)); }
+  for(const to of liste){ try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify(exp?{to,subject,html,from:exp}:{to,subject,html})}); if(r&&r.ok===false) err++; else ok++; }catch(e){ err++; } await new Promise(r=>setTimeout(r,120)); }
   return {ok,err};
 }
 function notifDocCA(titre, cat, avecCaisse){
   const corps=`<h2 style="margin:0 0 10px">Nouveau document</h2><p>Un nouveau document vient d'être déposé sur l'espace CA :</p><p style="font-size:16px"><b>${caMailEsc(titre)}</b>${cat?` <span style="color:#888">(${caMailEsc(cat)})</span>`:""}</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-  return envoyerNotifCA("Nouveau document — "+titre, corps, avecCaisse);
+  return envoyerNotifCA("Nouveau document — "+titre, corps, avecCaisse, EXP_DOCS);
 }
 function notifAnnonceCA(texte){
   const corps=`<h2 style="margin:0 0 10px">Nouvelle annonce</h2><p style="white-space:pre-wrap;background:#f7f7fb;border-radius:8px;padding:12px">${caMailEsc(texte)}</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-  return envoyerNotifCA("Nouvelle annonce du bureau étudiant", corps, false);
+  return envoyerNotifCA("Nouvelle annonce du bureau étudiant", corps, false, EXP_ANNONCE);
 }
 /* ---- Rappel de réunion, envoyé à la main (secrétariat ou propriétaire) ---- */
 function peutRappelerReunion(){ return estSecretaire() || !!(S.session && S.session.role==="owner"); }
@@ -1071,9 +1074,9 @@ async function notifEvenementCA(titre, quand){
     await new Promise(r=>setTimeout(r,120));
   }
 }
-function notifCreationCA(type, titre, extra){
+function notifCreationCA(type, titre, extra, exp){
   const corps=`<h2 style="margin:0 0 10px">${caMailEsc(type)}</h2><p>${caMailEsc(type)} : <b>${caMailEsc(titre)}</b>${extra?` — ${caMailEsc(extra)}`:""}</p><p>Connectez-vous à l'espace CA pour voir le détail.</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-  return envoyerNotifCA(type+" — "+titre, corps, false);
+  return envoyerNotifCA(type+" — "+titre, corps, false, exp);
 }
 /* ============ RAPPELS DE VOTE / DE PRÉSENCE ============
    Un bouton « Rappeler » sur les budgets en vote, les votes ouverts et les
@@ -1174,7 +1177,7 @@ function ongletActif(k){ return ongletsOff().indexOf(k)<0; }
 function ongletsOff(){ return (S.meta&&Array.isArray(S.meta.ongletsOff))?S.meta.ongletsOff:[]; }
 /* Notes d'un point : le secrétariat partout, chaque membre seulement sous son propre point. */
 function peutNoterPoint(pt){ const me=S.session; if(!me||!pt) return false; return estSecretaire() || (!!pt.parId && pt.parId===me.id); }
-async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; S.meta.ongletsOff=Array.isArray(data.onglets_off)?data.onglets_off:[]; S.meta.erreurCa=data.erreur_ca||""; S.meta.erreurCaisse=data.erreur_caisse||""; } }catch(e){} }
+async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; S.meta.ongletsOff=Array.isArray(data.onglets_off)?data.onglets_off:[]; S.meta.cesActif=(data.ces_actif!==false); S.meta.erreurCa=data.erreur_ca||""; S.meta.erreurCaisse=data.erreur_caisse||""; } }catch(e){} }
 async function loadBilans(){
   /* Aucun tri : l'ordre de lecture ne doit rien laisser deviner de l'ordre de dépôt.
      La base ne renvoie ces lignes qu'au secrétariat, et seulement après clôture. */
@@ -1659,6 +1662,12 @@ function viewAdmin(){
       }).join("")}
       <div class="row-btn"><button class="btn sm" data-action="save-mediateurs">Enregistrer</button></div>
       ${directionExtra().length?`<p class="du">${directionExtra().length} médiateur(s) enregistré(s).</p>`:`<p class="du" style="color:var(--red)">Aucun médiateur enregistré : vous ne pourrez attribuer aucun dossier.</p>`}
+    </div>
+    <div class="card2"><h3 class="serif">Commission Entraide Sociale (CES)</h3>
+      <p class="du">Activez ou désactivez l'onglet « Soutien social — CES » de Waled Buzzian, quand vous le voulez. Désactivé, l'onglet disparaît pour lui (vous le gardez). Ses dossiers ne sont ni modifiés ni effacés.</p>
+      <label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:15px;font-weight:700;cursor:pointer">
+        <input type="checkbox" class="sw" role="switch" id="ces_actif_chk" ${cesActif()?"checked":""}> ${cesActif()?"CES activée":"CES désactivée"} <span class="du">(état enregistré)</span></label>
+      <div class="row-btn"><button class="btn sm" data-action="save-ces-actif">Enregistrer</button></div>
     </div>`:""}
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Liste e-mail (invités externes)</h2><span class="l"></span></div>
     <div class="compose">
@@ -1931,7 +1940,7 @@ function tabBudgets(){
   const effectif = effectifCA(), seuil = seuilMajorite();
   const totalApp=S.budgets.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(b.cout||0),0);
   const enVote=S.budgets.filter(b=>b.statut==="vote").length;
-  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v29 — bandeau des réserves</p><div class="stat-row">
+  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v30 — expéditeurs et interrupteur CES</p><div class="stat-row">
     <div class="stat"><p class="k">Demandes en vote</p><p class="v">${enVote}</p></div>
     <div class="stat"><p class="k">Budget approuvé</p><p class="v" style="color:var(--green)">${eur(totalApp)}</p></div>
     <div class="stat"><p class="k">Total demandes</p><p class="v">${S.budgets.length}</p></div></div>`;
@@ -3407,7 +3416,7 @@ async function leverReserveCA(resId){
   let dest=[]; try{ const t=await sb.rpc("caisse_titulaires_budget",{p_budget:String(r.budget_id)}); dest=((t&&!t.error&&t.data)||[]).map(x=>x.email).filter(Boolean); }catch(_){ }
   let res={ok:0,err:0};
   if(dest.length) res=await envoyerNotifCAListe(dest, "Budget « "+(b.titre||"")+" » maintenant utilisable",
-    `<h2 style="margin:0 0 10px">Budget disponible</h2><p>La réserve du trésorier sur le budget <b>${caMailEsc(b.titre||"")}</b> a été levée. Le budget est maintenant utilisable : vous pouvez y rattacher vos demandes dans la Caisse.</p>${String(note||"").trim()?`<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px"><b>Message du trésorier :</b><br>${caMailEsc(String(note).trim())}</p>`:""}<p>Le conseil d'administration du Bureau étudiant</p>`, true);
+    `<h2 style="margin:0 0 10px">Budget disponible</h2><p>La réserve du trésorier sur le budget <b>${caMailEsc(b.titre||"")}</b> a été levée. Le budget est maintenant utilisable : vous pouvez y rattacher vos demandes dans la Caisse.</p>${String(note||"").trim()?`<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px"><b>Message du trésorier :</b><br>${caMailEsc(String(note).trim())}</p>`:""}<p>Le conseil d'administration du Bureau étudiant</p>`, true, EXP_BUDGET);
   modaleInfo("Le budget « "+(b.titre||"")+" » est de nouveau utilisable."+(dest.length?" "+res.ok+"/"+dest.length+" titulaire(s) prévenu(s) par e-mail.":b.statut==="approuve"?" Aucun titulaire à prévenir.":" (Le budget n'est pas encore approuvé.)"),"Réserve levée");
 }
 /* Avant toute approbation : rappel des réserves actives. Renvoie true pour continuer. */
@@ -3513,12 +3522,12 @@ async function envoyerAvecPiece(dest, subject, corpsHtml, piece, opts){
   for(const to of liste){
     let bon=false;
     if(avec){
-      try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html,attachments:[piece]})}); bon=!(r&&r.ok===false); }catch(e){ bon=false; }
+      try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify(opts.exp?{to,subject,html,attachments:[piece],from:opts.exp}:{to,subject,html,attachments:[piece]})}); bon=!(r&&r.ok===false); }catch(e){ bon=false; }
       if(bon) okAvecPiece++;
     }
     if(!bon){
       /* Second essai sans la pièce : le lien signé suffit à ne rien perdre. */
-      try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html})}); bon=!(r&&r.ok===false); }catch(e){ bon=false; }
+      try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify(opts.exp?{to,subject,html,from:opts.exp}:{to,subject,html})}); bon=!(r&&r.ok===false); }catch(e){ bon=false; }
       /* Si aucune pièce jointe n'est jamais passée, c'est le serveur qui la refuse :
          inutile de la retenter pour les suivants. Après un premier envoi réussi avec
          pièce, un échec isolé est un incident réseau : on garde la pièce. */
@@ -3705,7 +3714,7 @@ async function certifierPresentiel(id){
       +`<p><b>${caMailEsc(S.session.sig||"")}</b> certifie que le budget <b>« ${caMailEsc(titre||"")} »</b>${(!id&&donnees.cout>0)||(id&&b.cout>0)?" ("+caMailEsc(eur(id?b.cout:donnees.cout))+")":""} a été voté en CA présentiel le <b>${caMailEsc(seanceLongue(jour))}</b>.</p>`
       +`<p>Mot de passe vérifié le ${caMailEsc(new Date().toLocaleString("fr-BE"))}.</p>`
       +`<p>Aucun PDF ni mail n'a encore été envoyé au CA. Ouvre l'onglet <b>Budgets &amp; projets</b> de l'espace CA pour <b>confirmer</b> (avec ou sans réserve).</p>`;
-    try{ await envoyerNotifCAListe(dest, "Budget à confirmer — "+(titre||""), corps, true); okMail=true; logAct("Mail envoyé au trésorier (budget à confirmer) : "+(titre||"")); }catch(e){ okMail=false; }
+    try{ await envoyerNotifCAListe(dest, "Budget à confirmer — "+(titre||""), corps, true, EXP_BUDGET); okMail=true; logAct("Mail envoyé au trésorier (budget à confirmer) : "+(titre||"")); }catch(e){ okMail=false; }
   }
   modaleInfo("✓ Certification enregistrée.\n\nLe budget est en attente de confirmation du trésorier"+(okMail?", qui a été prévenu par mail.":".")+"\nTant qu'il n'est pas confirmé, tu peux retirer ta certification.","Voté en CA physique");
 }
@@ -3717,7 +3726,7 @@ async function retirerCertif(id){
   if(r&&r.error){ modaleInfo("Impossible de retirer la certification : "+r.error.message); return; }
   logAct("Certification retirée (budget présentiel) : "+(b.titre||""));
   const dest=emailsTresorier();
-  if(dest.length){ try{ await envoyerNotifCAListe(dest, "Certification retirée — "+(b.titre||""), `<p><b>${caMailEsc(S.session.sig||"")}</b> a retiré sa certification pour le budget <b>« ${caMailEsc(b.titre||"")} »</b>. Il n'y a plus rien à confirmer.</p>`, true); }catch(_){ } }
+  if(dest.length){ try{ await envoyerNotifCAListe(dest, "Certification retirée — "+(b.titre||""), `<p><b>${caMailEsc(S.session.sig||"")}</b> a retiré sa certification pour le budget <b>« ${caMailEsc(b.titre||"")} »</b>. Il n'y a plus rien à confirmer.</p>`, true, EXP_BUDGET); }catch(_){ } }
   await loadBudgets(); render();
   modaleInfo("✓ Certification retirée."+(b.origineCertif==="vote"?" Le budget est de nouveau en vote.":" La demande a été supprimée."));
 }
@@ -3745,7 +3754,7 @@ async function confirmerCertif(id){
     const corps=`<h2 style="margin:0 0 10px">✓ Budget confirmé par le trésorier</h2>`
       +`<p>Le budget <b>« ${caMailEsc(b.titre||"")} »</b>, que tu as certifié voté en CA présentiel le ${caMailEsc(seanceLongue(b.seanceLe))}, a été <b>confirmé</b>. Le PDF de la décision a été envoyé au CA.</p>`
       +(ri?(ri.reserve?`<p style="background:#fff8ec;border:1px solid #ecd3a6;border-radius:8px;padding:10px;color:#7a4a12"><b>⚠ Réserve du trésorier</b>${ri.texte?" : "+caMailEsc(ri.texte):""}</p>`:`<p><b>✓ Aucune réserve du trésorier.</b></p>`):"");
-    try{ await envoyerNotifCAListe([m.email], "Budget confirmé — "+(b.titre||""), corps, true); logAct("Mail de confirmation envoyé à "+(b.certifiePar||"")+" : "+(b.titre||"")); }catch(_){ }
+    try{ await envoyerNotifCAListe([m.email], "Budget confirmé — "+(b.titre||""), corps, true, EXP_BUDGET); logAct("Mail de confirmation envoyé à "+(b.certifiePar||"")+" : "+(b.titre||"")); }catch(_){ }
   }
 }
 /* Rappel au trésorier : un budget attend depuis 3 jours ou plus (puis tous les 3 jours). */
@@ -3762,7 +3771,7 @@ async function traiterRappelsCertif(){
       if(ins&&ins.error) continue;
       if(!ins||!ins.data||!ins.data.length) continue;
       await envoyerNotifCAListe(dest, "Rappel : budget à confirmer — "+(b.titre||""),
-        `<p>Le budget <b>« ${caMailEsc(b.titre||"")} »</b>, certifié voté en CA présentiel par <b>${caMailEsc(b.certifiePar||"")}</b>, attend ta confirmation depuis <b>${jours} jours</b>.</p><p>Ouvre l'onglet <b>Budgets &amp; projets</b> de l'espace CA.</p>`, true);
+        `<p>Le budget <b>« ${caMailEsc(b.titre||"")} »</b>, certifié voté en CA présentiel par <b>${caMailEsc(b.certifiePar||"")}</b>, attend ta confirmation depuis <b>${jours} jours</b>.</p><p>Ouvre l'onglet <b>Budgets &amp; projets</b> de l'espace CA.</p>`, true, EXP_BUDGET);
       logAct("Rappel envoyé au trésorier (budget en attente depuis "+jours+" j) : "+(b.titre||""));
     }catch(_){ }
   }
@@ -3826,7 +3835,7 @@ async function diffuserDecisionBudget(bf, st, force, sig, n, seuil){
     +(reservesBudActives(bf.id).length?`<p style="background:#fff8ec;border:1px solid #ecd3a6;border-radius:8px;padding:10px;color:#7a4a12"><b>\u26a0 R\u00e9serves du tr\u00e9sorier</b><br>${reservesBudActives(bf.id).map(r=>caMailEsc(resLigneTxt(r))).join("<br>")}</p>`:"")
     +(lien?`<p><a href="${lien}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">T\u00e9l\u00e9charger le PDF de la d\u00e9cision</a></p>`:"")
     +(presentiel?`<p>Le PDF de la d\u00e9cision est joint \u00e0 ce message.</p>`:`<p>Le d\u00e9tail complet, non-votants compris, figure dans le PDF de la d\u00e9cision.</p>`);
-  const res=await envoyerAvecPiece(destinatairesDecision(), titreMail, corps, piece);
+  const res=await envoyerAvecPiece(destinatairesDecision(), titreMail, corps, piece, {exp:EXP_BUDGET});
   const tete=presentiel?"Vot\u00e9 en CA physique \u2014 approuv\u00e9":"Vote cl\u00f4tur\u00e9 \u2014 "+(st==="approuve"?"approuv\u00e9":"refus\u00e9");
   if(!res.total) modaleInfo("D\u00e9cision enregistr\u00e9e, mais aucun destinataire disponible.",tete);
   else modaleInfo("\u2713 "+res.ok+" membre(s) pr\u00e9venu(s)"+(res.err?", "+res.err+" \u00e9chec(s)":"")+"."
@@ -4460,7 +4469,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
           '<h2 style="margin:0 0 10px">Nouveau message dans un signalement</h2>'
           +"<p>Une personne a ajout\u00e9 un message \u00e0 un \u00e9change de m\u00e9diation en cours.</p>"
           +"<p>Le contenu est consultable uniquement dans l'espace CA, onglet M\u00e9diation.</p>"
-          +'<p><a href="'+caAppUrl()+'" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l\'espace CA</a></p>'); }
+          +'<p><a href="'+caAppUrl()+'" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l\'espace CA</a></p>', undefined, EXP_MEDIATION); }
       break; }
     case "guide-ok": { try{ localStorage.setItem("ca:guide:"+el.dataset.guide,"1"); }catch(e){} render(); break; }
     case "rgpd-export-moi": {
@@ -4605,6 +4614,18 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       S.meta.clotureOdj=h; S.meta.modeleOdj=mo;
       logAct("R\u00e9glages secr\u00e9tariat modifi\u00e9s"); render();
       if(window.alert) window.alert("Enregistr\u00e9."); break; }
+    case "save-ces-actif": {
+      if(!(S.session&&S.session.role==="owner")||!sb) break;
+      const chk=document.getElementById("ces_actif_chk"); const voulu=!!(chk&&chk.checked);
+      let r; try{ r=await sb.from("ca_meta").update({ces_actif:voulu}).eq("id",1).select(); }catch(e){ r={error:{message:String(e&&e.message||e)}}; }
+      if(r&&r.error){ modaleInfo("Le réglage CES n'a PAS été enregistré.\n\nErreur : "+r.error.message+(/ces_actif/.test(r.error.message||"")?"\n\nPasse d'abord le script SQL « CA v6 »."/*colonne absente*/:""),"Erreur"); break; }
+      if(!r||!r.data||!r.data.length){ modaleInfo("Le serveur a refusé l'enregistrement (aucune ligne modifiée). Le réglage CES n'a PAS été enregistré.","Erreur"); break; }
+      if(r.data[0].ces_actif!==voulu){ modaleInfo("La base n'a pas gardé le réglage demandé. Rechargez l'app et réessayez.","Erreur"); break; }
+      S.meta.cesActif=voulu; logAct("CES "+(voulu?"activée":"désactivée"));
+      render();
+      modaleInfo(voulu?"✅ Enregistré : la CES est ACTIVÉE. Waled Buzzian voit son onglet « Soutien social — CES »."
+                      :"✅ Enregistré : la CES est DÉSACTIVÉE. L'onglet « Soutien social — CES » a disparu pour Waled Buzzian (vous le gardez).","Enregistré");
+      break; }
     case "save-mediateurs": {
       if(!(S.session&&S.session.role==="owner")||!sb) break;
       const ids=[...document.querySelectorAll(".med-chk")].filter(c=>c.checked).map(c=>c.value);
@@ -4800,7 +4821,7 @@ ${sections||"<p>Aucun retour.</p>"}
       await loadBudgets(); render();
       /* Un budget soumis au vote est toujours notifié : ce n'est pas une info facultative. */
       let res=null;
-      try{ res=await notifCreationCA("Nouveau budget/projet soumis au vote", t, cout?(cout.toFixed(2)+" €"):""); }
+      try{ res=await notifCreationCA("Nouveau budget/projet soumis au vote", t, cout?(cout.toFixed(2)+" €"):"", EXP_BUDGET); }
       catch(e){ res=null; }
       const exclus = (res&&res.desabonnes)? " "+res.desabonnes+" adresse(s) désabonnée(s) ont été écartées." : "";
       if(!res || res.total===0){ modaleInfo("Demande enregistrée, mais aucun e-mail n'a pu être envoyé : aucun destinataire disponible."+exclus, "Budget soumis au vote"); }
@@ -6583,7 +6604,10 @@ function cesREtat(){ const uidMe=(S.session&&S.session.id)||null;
   return S.cesR; }
 function cesRCleLocale(){ return "ces:resp:"+((S.session&&S.session.id)||""); }
 function cesNonLus(){ const r=S.cesR; if(!r||!r.info||!r.info.est_resp) return 0; return (r.liste||[]).filter(d=>d.non_lu).length; }
-function cesOngletVisible(){ const r=S.cesR; return !!(r&&r.info&&(r.info.est_resp||r.info.est_successeur||r.info.est_owner)); }
+const cesActif=()=>!(S.meta&&S.meta.cesActif===false);
+/* Interrupteur du propriétaire : désactivé, l'onglet CES disparaît pour tous sauf pour lui */
+function cesOngletVisible(){ const r=S.cesR; const proprio=!!(S.session&&S.session.role==="owner");
+  return !!(r&&r.info&&(r.info.est_resp||r.info.est_successeur||r.info.est_owner)&&(cesActif()||proprio)); }
 async function loadCes(){
   try{ const r=cesREtat(); if(!S.session) return; r.info=await cesRpcR("ces_resp_info");
     if(r.info.est_resp){ r.liste=(await cesRpcR("ces_resp_liste"))||[]; } }catch(e){}
