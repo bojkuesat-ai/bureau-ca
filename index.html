@@ -609,7 +609,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-21 \u00b7 21h45";
+const CA_VERSION="2026-10-22 \u00b7 01h30";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1931,7 +1931,7 @@ function tabBudgets(){
   const effectif = effectifCA(), seuil = seuilMajorite();
   const totalApp=S.budgets.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(b.cout||0),0);
   const enVote=S.budgets.filter(b=>b.statut==="vote").length;
-  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v28 — gel bloque aussi les urgences</p><div class="stat-row">
+  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v29 — bandeau des réserves</p><div class="stat-row">
     <div class="stat"><p class="k">Demandes en vote</p><p class="v">${enVote}</p></div>
     <div class="stat"><p class="k">Budget approuvé</p><p class="v" style="color:var(--green)">${eur(totalApp)}</p></div>
     <div class="stat"><p class="k">Total demandes</p><p class="v">${S.budgets.length}</p></div></div>`;
@@ -1947,7 +1947,7 @@ function tabBudgets(){
   const list=S.budgets.map(b=>{
     const count=ch=>b.votes.filter(x=>x.choix===ch).length; const open=b.statut==="vote";
     const [cls,label]=badge[b.statut]; const mien=monVoteBudget(b);
-    return `<div class="vote"><div class="vote-h"><div><h4 class="serif">${esc(b.titre)}</h4>
+    return `<div class="vote">${banniereReserveCA(b)}<div class="vote-h"><div><h4 class="serif">${esc(b.titre)}</h4>
       <p class="b-meta"><span class="b-type">${esc(b.type)}</span>${b.cout>0?`<span class="b-cost">${eur(b.cout)}</span>`:""}${b.demandeur?`<span class="by" style="margin:0">par ${esc(b.demandeur)}</span>`:""}</p>${b.parent?`<p class="by" style="margin:4px 0 0;color:var(--stamp)"><b>Complément du budget « ${esc(((S.budgets||[]).find(x=>String(x.id)===String(b.parent))||{}).titre||"?")} »</b> — s'il est approuvé, ce montant s'ajoute au budget d'origine dans la Caisse.</p>`:""}</div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span class="badge ${cls}">${label}</span>${(b.statut!=="vote"&&b.statut!=="attente_tresorier")?`<span class="badge" style="background:transparent;border:1px solid ${budgetPresentiel(b)?"var(--green)":"var(--slate)"};color:${budgetPresentiel(b)?"var(--green)":"var(--slate)"};white-space:nowrap">${budgetPresentiel(b)?"🏛 Voté en séance présentielle":"💻 Voté en ligne"}</span>`:""}</div></div>
       ${(b.statut!=="vote" && b.decidePar)?`<p class="by" style="margin:8px 0 0">${String(b.decidePar).indexOf("CA physique")===0?`<b style="color:var(--green)">✓ Approuvé à la majorité simple en CA physique</b> — enregistré par ${esc(String(b.decidePar).replace(/^CA physique · /,""))} — séance`:`${b.statut==="approuve"?"✓ Approuvé":"✕ Refusé"} par ${esc(b.decidePar)}`}${b.decideLe?" le "+dateFR(b.decideLe):""}</p>`:""}
@@ -3321,6 +3321,16 @@ const RES_NIV={remarque:["Remarque","var(--slate)"],reserve:["Réserve","var(--s
 function reservesBud(id){ return (S.resBud||[]).filter(r=>String(r.budget_id)===String(id)); }
 function reservesBudActives(id){ return reservesBud(id).filter(r=>!r.levee_at); }
 function resLigneTxt(r){ return ((RES_NIV[r.niveau]||[r.niveau])[0])+(r.suspensive?" suspensive":"")+" : "+r.texte+(r.suspensive&&r.condition?" (condition de levée : "+r.condition+")":""); }
+/* Bandeau très visible en haut de la carte : réserve active du trésorier */
+function banniereReserveCA(b){
+  if(S.resBudErr) return "";
+  const act=reservesBudActives(b.id); if(!act.length) return "";
+  const susp=act.some(r=>r.suspensive), def=act.some(r=>r.niveau==="defavorable");
+  const bg=(susp||def)?"#a4161a":"#8f4a00";
+  return `<div role="alert" style="background:${bg};color:#fff;border-radius:10px;padding:12px 14px;margin:0 0 12px;font-size:15px;line-height:1.45">
+    <b style="font-size:16px">${susp?"⛔ RÉSERVE SUSPENSIVE DU TRÉSORIER — budget gelé":def?"🔴 AVIS DÉFAVORABLE DU TRÉSORIER":"⚠ RÉSERVE DU TRÉSORIER"}</b>
+    ${act.map(r=>`<div style="margin-top:6px">• ${esc(resLigneTxt(r))}</div>`).join("")}</div>`;
+}
 function blocReservesCA(b, owner){
   if(S.resBudErr) return "";
   const L=reservesBud(b.id);
