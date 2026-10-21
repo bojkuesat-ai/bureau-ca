@@ -609,7 +609,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-19 \u00b7 23h00";
+const CA_VERSION="2026-10-21 \u00b7 18h45";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1184,7 +1184,8 @@ async function loadBilans(){
   try{ const f=await sb.from("ca_bilan_faits").select("membre_id"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){ S.meta.bilanSubmitters=[]; }
   try{ const c=await sb.rpc("ca_bilans_nb_deposes"); S.meta.bilanNbDeposes=(c&&typeof c.data==="number")?c.data:(S.meta.bilanSubmitters||[]).length; }catch(e){ S.meta.bilanNbDeposes=(S.meta.bilanSubmitters||[]).length; } }
 async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").select("*").order("created_at",{ascending:false}); S.journal=(data||[]).map(j=>({ts:j.created_at,who:j.who,txt:j.txt})); }catch(e){} }
-async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,pdfPath:b.pdf_path||"",reserve:(b.reserve_tresorier==null?null:String(b.reserve_tresorier)),motifForce:String(b.motif_force||""),certifiePar:String(b.certifie_par||""),certifieId:b.certifie_id||null,certifieLe:b.certifie_le||null,seanceLe:b.seance_le||null,origineCertif:String(b.origine_certif||""),votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id}))})); }catch(e){ S.budgets=[]; } }
+async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,pdfPath:b.pdf_path||"",reserve:(b.reserve_tresorier==null?null:String(b.reserve_tresorier)),motifForce:String(b.motif_force||""),certifiePar:String(b.certifie_par||""),certifieId:b.certifie_id||null,certifieLe:b.certifie_le||null,seanceLe:b.seance_le||null,origineCertif:String(b.origine_certif||""),votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id}))})); }catch(e){ S.budgets=[]; }
+  try{ const rr=await sb.from("ca_budget_reserves").select("*").order("created_at",{ascending:true}); S.resBud=(rr&&!rr.error&&rr.data)||[]; S.resBudErr=(rr&&rr.error)?rr.error.message:null; }catch(e){ S.resBud=[]; S.resBudErr=String(e); } }
 async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,rappelLe:v.rappel_le,rappelProg:v.rappel_prog_at,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
 async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
 async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,lieu:m.lieu||"",ordre:m.ordre||[],presences:m.presences||{},pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } }
@@ -1930,7 +1931,7 @@ function tabBudgets(){
   const effectif = effectifCA(), seuil = seuilMajorite();
   const totalApp=S.budgets.filter(b=>b.statut==="approuve").reduce((s,b)=>s+(b.cout||0),0);
   const enVote=S.budgets.filter(b=>b.statut==="vote").length;
-  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v25 — procuration signée par mot de passe</p><div class="stat-row">
+  const stats=`<p class="du" style="margin:0 0 10px;font-weight:700;color:var(--stamp)">● Version v26 — réserves du trésorier</p><div class="stat-row">
     <div class="stat"><p class="k">Demandes en vote</p><p class="v">${enVote}</p></div>
     <div class="stat"><p class="k">Budget approuvé</p><p class="v" style="color:var(--green)">${eur(totalApp)}</p></div>
     <div class="stat"><p class="k">Total demandes</p><p class="v">${S.budgets.length}</p></div></div>`;
@@ -1951,6 +1952,7 @@ function tabBudgets(){
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span class="badge ${cls}">${label}</span>${(b.statut!=="vote"&&b.statut!=="attente_tresorier")?`<span class="badge" style="background:transparent;border:1px solid ${budgetPresentiel(b)?"var(--green)":"var(--slate)"};color:${budgetPresentiel(b)?"var(--green)":"var(--slate)"};white-space:nowrap">${budgetPresentiel(b)?"🏛 Voté en séance présentielle":"💻 Voté en ligne"}</span>`:""}</div></div>
       ${(b.statut!=="vote" && b.decidePar)?`<p class="by" style="margin:8px 0 0">${String(b.decidePar).indexOf("CA physique")===0?`<b style="color:var(--green)">✓ Approuvé à la majorité simple en CA physique</b> — enregistré par ${esc(String(b.decidePar).replace(/^CA physique · /,""))} — séance`:`${b.statut==="approuve"?"✓ Approuvé":"✕ Refusé"} par ${esc(b.decidePar)}`}${b.decideLe?" le "+dateFR(b.decideLe):""}</p>`:""}
       ${reserveInfo(b)?`<p class="by" style="margin:6px 0 0;${reserveInfo(b).reserve?"color:var(--stamp)":"color:var(--green)"}">${reserveInfo(b).reserve?"⚠":"✓"} ${esc(reserveLibelle(b))}</p>`:""}
+      ${blocReservesCA(b, owner)}
       ${(budgetForce(b)&&motifForceLibelle(b))?`<p class="by" style="margin:6px 0 0;color:var(--stamp)">⚠ ${esc(motifForceLibelle(b))}</p>`:""}
       ${b.desc?`<p class="b-desc">${esc(b.desc)}</p>`:""}
       ${(b.statut!=="vote"&&b.statut!=="attente_tresorier")?`<div style="margin:8px 0 0"><button class="chip" data-action="budget-pdf-decision" data-id="${b.id}">📄 PDF de la décision</button></div>`:""}
@@ -3312,13 +3314,120 @@ function reserveInfo(b){
   if(r==="aucune") return {reserve:false,texte:""};
   return {reserve:true,texte:String(r).replace(/^reserve\|/,"").trim()};
 }
+/* ---- Réserves du trésorier (table ca_budget_reserves, partagée avec la Caisse) ----
+   Plusieurs par budget ; informative ou suspensive (le budget reste gelé dans la Caisse
+   tant qu'elle n'est pas levée) ; jamais supprimées, on les lève. */
+const RES_NIV={remarque:["Remarque","var(--slate)"],reserve:["Réserve","var(--stamp)"],defavorable:["Avis défavorable","var(--red)"]};
+function reservesBud(id){ return (S.resBud||[]).filter(r=>String(r.budget_id)===String(id)); }
+function reservesBudActives(id){ return reservesBud(id).filter(r=>!r.levee_at); }
+function resLigneTxt(r){ return ((RES_NIV[r.niveau]||[r.niveau])[0])+(r.suspensive?" suspensive":"")+" : "+r.texte+(r.suspensive&&r.condition?" (condition de levée : "+r.condition+")":""); }
+function blocReservesCA(b, owner){
+  if(S.resBudErr) return "";
+  const L=reservesBud(b.id);
+  if(!L.length && !owner) return "";
+  const gele=L.some(r=>r.suspensive&&!r.levee_at);
+  return `<div style="margin:10px 0 0;padding:10px 12px;border:1px solid var(--line,#ddd);border-radius:10px">
+    <p class="by" style="margin:0"><b>Réserves du trésorier</b>${gele?` · <span style="color:var(--red)">budget gelé dans la Caisse tant que la réserve suspensive n'est pas levée</span>`:""}</p>
+    ${L.map(r=>{ const [lib,coul]=RES_NIV[r.niveau]||[r.niveau,"var(--slate)"]; const lev=!!r.levee_at;
+      return `<div style="border-left:3px solid ${coul};padding:4px 10px;margin:8px 0 0${lev?";opacity:.6":""}">
+        <p class="by" style="margin:0"><b style="color:${coul}">${esc(lib)}</b> · ${r.suspensive?"<b>suspensive</b>":"informative"} — ${esc(r.auteur||"Trésorier")}, ${esc(dateFR(r.created_at))}</p>
+        <p style="margin:3px 0 0;font-size:14px${lev?";text-decoration:line-through":""}">${esc(r.texte)}</p>
+        ${r.suspensive&&r.condition?`<p class="du" style="margin:3px 0 0">Condition de levée : ${esc(r.condition)}</p>`:""}
+        ${lev?`<p class="du" style="margin:3px 0 0;color:var(--green)">Levée le ${esc(dateFR(r.levee_at))} par ${esc(r.levee_par||"")}${r.levee_note?" — "+esc(r.levee_note):""}</p>`
+             :(owner?`<button class="link" data-action="res-lever" data-id="${esc(r.id)}">Lever la réserve</button>`:"")}</div>`; }).join("")||`<p class="du" style="margin:6px 0 0">Aucune réserve.</p>`}
+    ${owner?`<div style="margin:8px 0 0"><button class="chip" data-action="res-nouv" data-id="${esc(b.id)}">⚠ Émettre une réserve</button></div>`:""}</div>`;
+}
+/* Fenêtre « Émettre une réserve ». Renvoie {niveau,texte,suspensive,condition} ou null. */
+function modaleNouvelleReserve(titre){
+  return new Promise(resolve=>{
+    const anc=document.getElementById("ca_modal_nres"); if(anc) anc.remove();
+    const d=document.createElement("div"); d.id="ca_modal_nres"; d.className="ca-mod";
+    d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true">'
+      +'<h3>Émettre une réserve</h3>'
+      +'<p style="color:var(--ink);font-size:14px">'+esc(titre?("« "+titre+" »"):"")+'</p>'
+      +'<select class="f" id="ca_nres_niv" style="width:100%;margin:0 0 10px"><option value="remarque">Remarque</option><option value="reserve" selected>Réserve</option><option value="defavorable">Avis défavorable</option></select>'
+      +'<textarea class="f" id="ca_nres_txt" rows="4" placeholder="Ex. trésorerie insuffisante avant le subside de janvier" style="width:100%;margin:0 0 10px"></textarea>'
+      +'<label style="display:flex;gap:9px;align-items:center;font-size:14px;margin:0 0 10px"><input type="checkbox" id="ca_nres_susp"> Suspensive : le budget reste gelé tant que je ne l\'ai pas levée</label>'
+      +'<input class="f" id="ca_nres_cond" placeholder="Condition de levée (ex. deux devis reçus)" style="width:100%;margin:0 0 10px;display:none">'
+      +'<p id="ca_nres_err" style="color:var(--red);font-size:13px;margin:0 0 8px;display:none"></p>'
+      +'<div class="ca-mod-btns"><button class="btn ghost sm" id="ca_nres_no">Annuler</button><button class="btn sm" id="ca_nres_ok">Émettre la réserve</button></div></div>';
+    document.body.appendChild(d);
+    let fini=false;
+    const rep=v=>{ if(fini) return; fini=true; d.remove(); document.removeEventListener("keydown",k); resolve(v); };
+    function k(e){ if(e.key==="Escape") rep(null); }
+    document.addEventListener("keydown",k);
+    d.addEventListener("click",e=>{ if(e.target===d) rep(null); });
+    const susp=d.querySelector("#ca_nres_susp"), cond=d.querySelector("#ca_nres_cond"), err=d.querySelector("#ca_nres_err");
+    susp.addEventListener("change",()=>{ cond.style.display=susp.checked?"":"none"; });
+    d.querySelector("#ca_nres_no").addEventListener("click",()=>rep(null));
+    d.querySelector("#ca_nres_ok").addEventListener("click",()=>{
+      const t=String(d.querySelector("#ca_nres_txt").value||"").trim(), c=String(cond.value||"").trim();
+      if(t.length<3){ err.textContent="Écris le texte de la réserve."; err.style.display=""; return; }
+      if(susp.checked&&c.length<3){ err.textContent="Indique la condition de levée d'une réserve suspensive."; err.style.display=""; return; }
+      rep({niveau:d.querySelector("#ca_nres_niv").value, texte:t, suspensive:susp.checked, condition:susp.checked?c:null});
+    });
+    try{ d.querySelector("#ca_nres_txt").focus(); }catch(_){ }
+  });
+}
+async function emettreReserveCA(id){
+  if(!sb) return;
+  const b=(S.budgets||[]).find(x=>String(x.id)===String(id)); if(!b) return;
+  const v=await modaleNouvelleReserve(b.titre||""); if(!v) return;
+  const r=await sb.from("ca_budget_reserves").insert(Object.assign({budget_id:String(id), auteur:(S.session&&S.session.sig)||"Trésorier", auteur_id:S.session&&S.session.id}, v)).select("id");
+  if(r&&r.error){ modaleInfo("Réserve non enregistrée : "+r.error.message+(/does not exist|schema cache/i.test(r.error.message||"")?"\n\nPasse d'abord le script SQL « budgets v2 » de la Caisse.":""),"Réserve non enregistrée"); return; }
+  if(!r||!r.data||!r.data.length){ modaleInfo("Le serveur a refusé l'enregistrement : seul le trésorier peut émettre une réserve.","Réserve non enregistrée"); return; }
+  logAct("Réserve du trésorier émise ("+((RES_NIV[v.niveau]||[v.niveau])[0])+(v.suspensive?", suspensive":"")+") : "+(b.titre||""));
+  await loadBudgets(); render();
+  modaleInfo(v.suspensive?"Réserve suspensive émise : le budget reste gelé dans la Caisse jusqu'à sa levée (« "+v.condition+" »).":"Réserve émise : elle est visible par tout le CA et figurera dans le PDF de la décision.","Réserve émise");
+}
+async function leverReserveCA(resId){
+  if(!sb) return;
+  const r=(S.resBud||[]).find(x=>String(x.id)===String(resId)); if(!r) return;
+  const note=await modaleSaisie("« "+r.texte+" »"+(r.condition?" — condition : "+r.condition:"")+". Commentaire (facultatif) :","Lever la réserve",""); if(note===null) return;
+  const sig=(S.session&&S.session.sig)||"Trésorier";
+  const u=await sb.from("ca_budget_reserves").update({levee_at:new Date().toISOString(), levee_par:sig, levee_note:String(note||"").trim()||null}).eq("id",r.id).is("levee_at",null).select("id");
+  if(u&&u.error){ modaleInfo("Levée impossible : "+u.error.message,"Levée non enregistrée"); return; }
+  if(!u||!u.data||!u.data.length){ modaleInfo("Le serveur a refusé la levée (seul le trésorier peut lever une réserve, ou elle l'a déjà été).","Levée non enregistrée"); return; }
+  const b=(S.budgets||[]).find(x=>String(x.id)===String(r.budget_id))||{};
+  logAct("Réserve du trésorier levée : "+(b.titre||""));
+  await loadBudgets(); render();
+  const encore=reservesBudActives(r.budget_id).some(x=>x.suspensive);
+  if(!r.suspensive || encore){ modaleInfo(encore?"Réserve levée. Une autre réserve suspensive gèle encore ce budget.":"Réserve levée.","Réserve levée"); return; }
+  // budget dégelé : on prévient ses titulaires (ceux de la Caisse)
+  let dest=[]; try{ const t=await sb.rpc("caisse_titulaires_budget",{p_budget:String(r.budget_id)}); dest=((t&&!t.error&&t.data)||[]).map(x=>x.email).filter(Boolean); }catch(_){ }
+  let res={ok:0,err:0};
+  if(dest.length) res=await envoyerNotifCAListe(dest, "Budget « "+(b.titre||"")+" » maintenant utilisable",
+    `<h2 style="margin:0 0 10px">Budget disponible</h2><p>La réserve du trésorier sur le budget <b>${caMailEsc(b.titre||"")}</b> a été levée. Le budget est maintenant utilisable : vous pouvez y rattacher vos demandes dans la Caisse.</p>${String(note||"").trim()?`<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px"><b>Message du trésorier :</b><br>${caMailEsc(String(note).trim())}</p>`:""}`, true);
+  modaleInfo("Le budget « "+(b.titre||"")+" » est de nouveau utilisable."+(dest.length?" "+res.ok+"/"+dest.length+" titulaire(s) prévenu(s) par e-mail.":b.statut==="approuve"?" Aucun titulaire à prévenir.":" (Le budget n'est pas encore approuvé.)"),"Réserve levée");
+}
+/* Avant toute approbation : rappel des réserves actives. Renvoie true pour continuer. */
+async function confirmerMalgreReserves(id){
+  const act=reservesBudActives(id); if(!act.length) return true;
+  return await modaleConfirm("Le trésorier a émis "+(act.length>1?act.length+" réserves actives":"une réserve active")+" sur ce budget :\n\n"
+    +act.map(r=>"• "+resLigneTxt(r)).join("\n")
+    +"\n\nApprouver quand même ?"+(act.some(r=>r.suspensive)?" Le budget restera gelé dans la Caisse tant que la réserve suspensive n'est pas levée.":""),
+    act.some(r=>r.niveau==="defavorable")?"Avis défavorable du trésorier":"Réserve du trésorier active");
+}
 function reserveLibelle(b){ const i=reserveInfo(b); if(!i) return ""; return i.reserve?("R\u00e9serve du tr\u00e9sorier"+(i.texte?" : "+i.texte:"")):"Aucune r\u00e9serve du tr\u00e9sorier"; }
-function reservePDF(b){ const i=reserveInfo(b); if(!i) return "";
+function reservePDF(b){ const L=reservesBud(b&&b.id); const liste=L.length?`<h2>Réserves du trésorier</h2>${L.map(r=>`<p${r.levee_at?' style="color:#888"':' style="color:#8a2b2b"'}><b>${esc((RES_NIV[r.niveau]||[r.niveau])[0])}${r.suspensive?" suspensive":""}</b> : ${esc(r.texte)}${r.suspensive&&r.condition?` (condition de levée : ${esc(r.condition)})`:""}${r.levee_at?` — <i>levée le ${esc(dateFR(r.levee_at))}${r.levee_note?" : "+esc(r.levee_note):""}</i>`:""}</p>`).join("")}`:"";
+  return reservePDFAvis(b)+liste; }
+function reservePDFAvis(b){ const i=reserveInfo(b); if(!i) return "";
   return i.reserve
     ? `<h2>Avis du tr\u00e9sorier</h2><p style="color:#8a2b2b"><b>\u26a0 R\u00e9serve du tr\u00e9sorier</b>${i.texte?` : ${esc(i.texte)}`:""}</p>`
     : `<h2>Avis du tr\u00e9sorier</h2><p><b>\u2713 Aucune r\u00e9serve du tr\u00e9sorier.</b></p>`; }
 /* Enregistre la réserve. Si la colonne reserve_tresorier n'existe pas encore, on continue sans bloquer. */
-async function enregistrerReserve(id, valeur){ try{ const r=await sb.from("ca_budgets").update({reserve_tresorier:valeur}).eq("id",id); return !(r&&r.error); }catch(_){ return false; } }
+async function enregistrerReserve(id, valeur){
+  let ok=false; try{ const r=await sb.from("ca_budgets").update({reserve_tresorier:valeur}).eq("id",id); ok=!(r&&r.error); }catch(_){ ok=false; }
+  // une réserve donnée à la décision apparaît aussi dans la liste des réserves (Caisse, rapport, PDF)
+  if(String(valeur||"").indexOf("reserve|")===0 && !S.resBudErr){
+    const txt=String(valeur).replace(/^reserve\|/,"").trim()||"Réserve du trésorier émise lors de la décision.";
+    if(!reservesBud(id).some(r=>!r.levee_at && r.texte===txt)){
+      try{ await sb.from("ca_budget_reserves").insert({budget_id:String(id), niveau:"reserve", texte:txt, suspensive:false, auteur:(S.session&&S.session.sig)||"Trésorier", auteur_id:S.session&&S.session.id}); }catch(_){ }
+      try{ await loadBudgets(); }catch(_){ }
+    }
+  }
+  return ok;
+}
 function budgetForce(b){ return /hors seuil/i.test(String(b.decidePar||"")); }
 function listePrenoms(l){ return l.length?l.join(", "):"\u2014"; }
 /* Corps du PDF d'un budget clôturé. */
@@ -3429,6 +3538,7 @@ async function cloturerBudget(id, force){
     ? "Approuver « "+(b.titre||"")+" » alors que la majorit\u00e9 n'est pas atteinte ("+pour+" voix pour sur "+n+", il en faut "+seuil+") ?\n\nLa mention « hors seuil » figurera dans le PDF et dans le mail envoy\u00e9 \u00e0 tout le CA."
     : "Cl\u00f4turer « "+(b.titre||"")+" » ?\n\nR\u00e9sultat : "+(st==="approuve"?"APPROUV\u00c9":"REFUS\u00c9")+" ("+pour+" voix pour sur "+n+", majorit\u00e9 simple : "+seuil+").\nLe PDF de la d\u00e9cision sera envoy\u00e9 \u00e0 tous les membres du CA.";
   if(!(await modaleConfirm(question, force?"Approuver hors seuil":"Cl\u00f4turer le vote"))) return;
+  if(st==="approuve" && !(await confirmerMalgreReserves(id))) return;
   let motif="";
   if(force){
     motif=await modaleMotif("Pourquoi approuves-tu ce budget hors seuil ?\n\nFacultatif : laisse vide si tu ne veux pas de motif. S'il est rempli, il figurera dans le PDF, dans le mail envoyé au CA et sur la fiche du budget.","Motif de l'approbation hors seuil",{placeholder:"Ex. Urgence : la salle doit être réservée avant vendredi.",bouton:"Valider"});
@@ -3465,7 +3575,7 @@ async function voteCAPhysique(id){
   if(!sb) return;
   if(!(S.session && S.session.role==="owner")){ await certifierPresentiel(id); return; }   // membre : certification + confirmation du trésorier
   let b=null, donnees=null;
-  if(id){ b=(S.budgets||[]).find(x=>x.id===id); if(!b || b.statut!=="vote") return; }
+  if(id){ b=(S.budgets||[]).find(x=>x.id===id); if(!b || b.statut!=="vote") return; if(!(await confirmerMalgreReserves(id))) return; }
   else{
     const t=val("b_titre").trim(); if(!t){ modaleInfo("Indiquez au moins un titre."); return; }
     donnees={titre:t,type:val("b_type"),cout:parseFloat(String(val("b_cout")).replace(",","."))||0,description:val("b_desc").trim()};
@@ -3606,6 +3716,7 @@ async function confirmerCertif(id){
   if(!(S.session && S.session.role==="owner")){ modaleInfo("Seul le trésorier peut confirmer."); return; }
   const b=(S.budgets||[]).find(x=>x.id===id); if(!b || b.statut!=="attente_tresorier") return;
   if(!(await modaleConfirm("Confirmer « "+(b.titre||"")+" », voté en CA présentiel le "+seanceLongue(b.seanceLe)+" ?\n\n"+certifLibelle(b)+".\n\nLe PDF de la décision sera envoyé à tout le CA.","Confirmer le budget"))) return;
+  if(!(await confirmerMalgreReserves(id))) return;
   const reserve=await modaleReserve(b.titre||""); if(reserve===null) return;
   const sig=(S.session&&S.session.sig)||"—";
   const decidePar="CA physique · "+sig, decideLe=new Date(String(b.seanceLe||todayISO()).slice(0,10)+"T12:00:00").toISOString();
@@ -3702,6 +3813,7 @@ async function diffuserDecisionBudget(bf, st, force, sig, n, seuil){
     +(reserveInfo(bf)?(reserveInfo(bf).reserve
         ?`<p style="background:#fff8ec;border:1px solid #ecd3a6;border-radius:8px;padding:10px;color:#7a4a12"><b>\u26a0 R\u00e9serve du tr\u00e9sorier</b>${reserveInfo(bf).texte?" : "+caMailEsc(reserveInfo(bf).texte):""}</p>`
         :`<p><b>\u2713 Aucune r\u00e9serve du tr\u00e9sorier.</b></p>`):"")
+    +(reservesBudActives(bf.id).length?`<p style="background:#fff8ec;border:1px solid #ecd3a6;border-radius:8px;padding:10px;color:#7a4a12"><b>\u26a0 R\u00e9serves du tr\u00e9sorier</b><br>${reservesBudActives(bf.id).map(r=>caMailEsc(resLigneTxt(r))).join("<br>")}</p>`:"")
     +(lien?`<p><a href="${lien}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">T\u00e9l\u00e9charger le PDF de la d\u00e9cision</a></p>`:"")
     +(presentiel?`<p>Le PDF de la d\u00e9cision est joint \u00e0 ce message.</p>`:`<p>Le d\u00e9tail complet, non-votants compris, figure dans le PDF de la d\u00e9cision.</p>`);
   const res=await envoyerAvecPiece(destinatairesDecision(), titreMail, corps, piece);
@@ -4703,8 +4815,10 @@ ${sections||"<p>Aucun retour.</p>"}
         if(!(await modaleConfirm("Votre vote sera définitif : il ne pourra plus être modifié.\n\nConfirmer votre vote « "+lib+" » pour « "+(b.titre||"")+" » ?","Confirmer mon vote"))) break; }
       const r=await sb.from("ca_budget_votes").insert({budget_id:id,membre_id:S.session.id,nom:me.sig,choix:el.dataset.choix});
       if(!(r&&r.error)) logAct("Vote budget enregistré (définitif) : "+(b.titre||"")); if(r&&r.error){ if(window.alert) window.alert("Vote non enregistré : "+r.error.message); break; } await loadBudgets(); render(); break; }
-    case "bdecide": { if(!(S.session&&S.session.role==="owner")||!sb) break; const st=el.dataset.st; const md=await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id).select(); if(md&&md.error){ modaleInfo("Enregistrement impossible : "+md.error.message); break; } if(!md||!md.data||!md.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 la modification (aucune ligne chang\u00e9e) \u2014 il s'agit d'une r\u00e8gle de droits (RLS) sur ca_budgets.","Action non enregistr\u00e9e"); break; } await loadBudgets(); render(); break; }
+    case "bdecide": { if(!(S.session&&S.session.role==="owner")||!sb) break; const st=el.dataset.st; if(st==="approuve" && !(await confirmerMalgreReserves(id))) break; const md=await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id).select(); if(md&&md.error){ modaleInfo("Enregistrement impossible : "+md.error.message); break; } if(!md||!md.data||!md.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 la modification (aucune ligne chang\u00e9e) \u2014 il s'agit d'une r\u00e8gle de droits (RLS) sur ca_budgets.","Action non enregistr\u00e9e"); break; } await loadBudgets(); render(); break; }
     case "bcloture": { await cloturerBudget(id, el.dataset.force==="1"); break; }
+    case "res-nouv": { await emettreReserveCA(id); break; }
+    case "res-lever": { await leverReserveCA(id); break; }
     case "del-budget": {
       const bd=(S.budgets||[]).find(x=>x.id===id);
       const diag=[];
