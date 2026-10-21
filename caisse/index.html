@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="21.10.2026 · 2">
+<meta name="app-build" content="21.10.2026 · 4">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -687,7 +687,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 21.10.2026 · 2</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 21.10.2026 · 4</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -1828,6 +1828,9 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
             <select id="i_cat"><option>Solde d'ouverture</option><option>Cotisations</option><option>Subsides</option><option>Dons</option><option>Sponsoring</option><option>Événements</option><option>Ventes</option><option>Intérêts bancaires</option><option>Remboursement reçu</option><option>Autre</option></select>
             <input type="text" id="i_catNew" maxlength="40" placeholder="Nom de la nouvelle catégorie" style="display:none;margin-top:8px"></div>
         </div>
+        <div class="field" id="i_budgetBox" hidden><label for="i_budget">Budget concerné (retour promis)</label>
+          <select id="i_budget"><option value="">— Aucun budget —</option></select>
+          <span class="hint">Pour un sponsor ou les entrées d'une soirée : la recette compte dans le retour promis de ce budget.</span></div>
         <div class="tva-box">
           <div class="eyebrow" style="margin-bottom:8px">TVA — vente</div>
           <div class="field"><label for="i_tvaRegime">Régime TVA de cette recette</label>
@@ -3096,6 +3099,7 @@ async function start(){
       .on("postgres_changes",{event:"*",schema:"public",table:"profiles"}, async () => { await loadProfile(user); await refresh(); })
       .on("postgres_changes",{event:"*",schema:"public",table:"ca_budgets"}, async () => { try{ await loadBudgetsCaisse(); if(state.view==="budget") renderBudget(); }catch(_){} })
       .on("postgres_changes",{event:"*",schema:"public",table:"ca_budget_votes"}, async () => { try{ await loadBudgetsCaisse(); if(state.view==="budget") renderBudget(); }catch(_){} })
+      .on("postgres_changes",{event:"*",schema:"public",table:"caisse_budget_reservations"}, async () => { try{ await chargerBudgetsCaisse(); majBudgetForm("f"); majBudgetForm("fd"); renderMesBudgets(); if(state.view==="budget") renderBudget(); }catch(_){} })
       .on("postgres_changes",{event:"*",schema:"public",table:"ca_budget_reserves"}, async () => { try{ await chargerBudgetsCaisse(); majBudgetForm("f"); majBudgetForm("fd"); renderMesBudgets(); if(state.view==="budget") renderBudget(); }catch(_){} })
       .subscribe();
   }
@@ -3201,6 +3205,7 @@ async function refresh(){
     if(!state.relanceAutoFaite){ state.relanceAutoFaite = true; alerterDormantes(true); }
   }
   try{ await chargerBudgetsCaisse(); }catch(eB){ state.budErr = eB.message || String(eB); }
+  if(isTreso() && !state.tachesBudgetFaites && !state.budErr && !state.budMetaErr){ state.tachesBudgetFaites = true; tachesBudgetTreso(); }
   try{ majBudgetForm("f"); majBudgetForm("fd"); }catch(_){}
   try{ await chargerFactures(); }catch(eF){ state.feErr = eF.message || String(eF); }
   try{ await chargerNovelles(); }catch(eN){ state.nvErr = eN.message || String(eN); }
@@ -5764,6 +5769,8 @@ function blocEditerEcriture(o, type){
         <select id="ec_method">${opts(modes, o.method)}</select></div>
       <div class="field"><label for="ec_note">Commentaire</label>
         <textarea id="ec_note" maxlength="400">${esc(o.note||"")}</textarea></div>
+      ${!dep && !$("#i_budgetBox").hidden ? `<div class="field"><label for="ec_budget">Budget concerné (retour promis)</label>
+        <select id="ec_budget">${optionsBudgetsRecette(o.budget_id)}</select></div>` : ""}
       ${dep ? `<div class="tva-box">
         <div class="eyebrow" style="margin-bottom:8px">TVA — achat</div>
         <div class="field"><label for="ec_tvaAffect">Affectation de cette dépense</label>
@@ -5873,7 +5880,7 @@ $("#d_body").addEventListener("click", async e => {
     if($("#ec_supplierVat")) patch.supplier_vat    = $("#ec_supplierVat").value.trim();
     if($("#ec_tvaAffect"))   patch.tva_affectation = $("#ec_tvaAffect").value;
   }
-  else   { patch.income_date  = dte; patch.source = tiers; }
+  else   { patch.income_date  = dte; patch.source = tiers; if($("#ec_budget")) patch.budget_id = $("#ec_budget").value || null; }
 
   b.disabled = true; b.textContent = "Enregistrement…";
   const { error } = await sb.from(dep ? "expenses" : "incomes").update(patch).eq("id", b.dataset.ec);
@@ -6635,7 +6642,8 @@ $("#incForm").addEventListener("submit", async e => {
       source: $("#i_source").value.trim(), method: $("#i_method").value,
       vat_rate: $("#i_vatRate").value, client_type: $("#i_tvaRegime").value==="taxable" ? $("#i_clientType").value : "non",
       client_vat: $("#i_clientVat").value.trim(), tva_regime: $("#i_tvaRegime").value,
-      note: $("#i_note").value.trim()
+      note: $("#i_note").value.trim(),
+      ...(!$("#i_budgetBox").hidden ? { budget_id: $("#i_budget").value || null } : {})
     });
     if(error) throw error;
     await ajouterCategorie("rec", catFinale("#i_cat","#i_catNew"));
@@ -6669,6 +6677,7 @@ async function ouvrirRecette(id){
       <dt>Date</dt><dd>${fdate(rec.income_date)}</dd>
       <dt>Catégorie</dt><dd>${esc(rec.category)}</dd>
       <dt>Encaissement</dt><dd>${esc(rec.method)}</dd>
+      ${rec.budget_id ? `<dt>Budget</dt><dd>${esc((budgetParId(rec.budget_id)||{}).titre || "Budget introuvable")}</dd>` : ""}
       <dt>Enregistré par</dt><dd>${esc(rec.author_name)} le ${fstamp(rec.created_at)}</dd>
       ${rec.note?`<dt>Commentaire</dt><dd>${esc(rec.note)}</dd>`:""}
     </dl>
@@ -7178,9 +7187,28 @@ async function chargerBudgetsCaisse(){
     const m = new Map((r.data || []).map(x => [String(x.id), x]));
     state.budCaisse.forEach(b => { const x = m.get(b.id); if(!x) return;
       b.paye = Number(x.paye||0); b.valide = Number(x.valide||0); b.attente = Number(x.attente||0);
-      b.consomme = b.paye + b.valide + b.attente;
+      b.reserve = Number(x.reserve||0);
+      b.consomme = b.paye + b.valide + b.attente + b.reserve;
+      b.coutInitial = b.cout; b.complement = Number(x.complement||0); b.cout = b.coutInitial + b.complement;
+      b.parent = x.parent || null;
+      b.cloture = x.cloture_at || null;
+      b.recettes = Number(x.recettes||0);
+      b.retourMontant = x.retour_montant == null ? null : Number(x.retour_montant);
+      b.retourDate = x.retour_date ? String(x.retour_date).slice(0,10) : null;
+      b.retourAlerte = x.retour_alerte_at || null;
+      b.rappelFin = x.rappel_fin_at || null;
       b.nbUrg = Number(x.nb_urgences||0); b.fin = x.date_fin ? String(x.date_fin).slice(0,10) : null; b.gel = x.gel || null; });
+    // un complément s'ajoute à son budget d'origine : il n'apparaît pas comme budget à part
+    state.budCaisse = state.budCaisse.filter(b => !b.parent);
+    setTimeout(() => { try{ majBudgetRecette(); }catch(_){} }, 0);
+    state.budV3 = (r.data||[]).length ? ("reserve" in r.data[0]) : state.budV3;
   }catch(eM){ state.budMetaErr = eM.message || String(eM); }
+  // réservations : les siennes pour un membre, toutes pour le trésorier
+  try{
+    const r = await sb.from("caisse_budget_reservations").select("*").eq("statut","active").order("created_at",{ ascending:true });
+    if(r.error) throw r.error;
+    state.resas = r.data || []; state.resaErr = null;
+  }catch(eRs){ state.resas = []; state.resaErr = eRs.message || String(eRs); }
   if(isTreso()){
     try{
       const r = await sb.from("ca_budget_reserves").select("*").order("created_at", { ascending:true });
@@ -7191,7 +7219,82 @@ async function chargerBudgetsCaisse(){
       const r = await sb.from("caisse_budget_meta").select("budget_id,date_fin");
       if(!r.error){ state.finManuel = {}; (r.data||[]).forEach(x => { if(x.date_fin) state.finManuel[String(x.budget_id)] = String(x.date_fin).slice(0,10); }); }
     }catch(_){}
+    try{
+      const r = await sb.from("caisse_budget_histo").select("*").order("quand",{ ascending:false }).limit(2000);
+      state.histo = (!r.error && r.data) || []; state.histoErr = r.error ? r.error.message : null;
+    }catch(eH){ state.histo = []; state.histoErr = String(eH); }
   }
+}
+function optionsBudgetsRecette(choisi){
+  const liste = (state.budCaisse||[]).slice().sort((a,b) => String(a.titre||"").localeCompare(String(b.titre||""), "fr"));
+  const opts = liste.map(b => { const r = retourEtat(b);
+    return `<option value="${esc(b.id)}"${String(choisi||"") === b.id ? " selected" : ""}>${esc(b.titre)}${r ? " · retour " + esc(euro(r.recu)) + " / " + esc(euro(r.promis)) : ""}</option>`; }).join("");
+  const perdu = choisi && !liste.some(b => b.id === String(choisi)) ? `<option value="${esc(choisi)}" selected>Budget introuvable</option>` : "";
+  return `<option value="">— Aucun budget —</option>${perdu}${opts}`;
+}
+function majBudgetRecette(){
+  const box = $("#i_budgetBox"), sel = $("#i_budget"); if(!box || !sel) return;
+  const actif = isTreso() && !state.budErr && !state.budMetaErr && (state.budCaisse||[]).length && state.budV3 !== false;
+  box.hidden = !actif;
+  if(!actif || document.activeElement === sel) return;
+  const cur = sel.value; sel.innerHTML = optionsBudgetsRecette(cur);
+}
+/* ---------- tâches automatiques à l'ouverture de la Caisse par le trésorier ----------
+   (il n'y a pas de serveur planifié : elles tournent quand le trésorier ouvre l'app)
+   1. rappel 7 jours avant la date de fin d'un budget → titulaires + trésorier, une seule fois
+   2. récapitulatif hebdomadaire au trésorier
+   Les retours promis non tenus ne partent jamais seuls : le trésorier clique « Prévenir le CA ». */
+const joursAvant = iso => Math.round((new Date(iso + "T12:00:00") - new Date(dateLocale() + "T12:00:00")) / 86400000);
+async function tachesBudgetTreso(){
+  const lien = window.location.origin + window.location.pathname;
+  // 1. rappel de fin (nécessite le script SQL « budgets v3 »)
+  for(const b of (state.budV3 ? (state.budCaisse||[]) : [])){
+    if(!b.fin || b.cloture || b.rappelFin) continue;
+    const j = joursAvant(b.fin);
+    if(j < 0 || j > 7) continue;
+    const reste = b.cout - b.consomme;
+    const dest = (b.membres||[]).map(id => (state.members||[]).find(m => m.id === id)).filter(m => m && m.email);
+    const corps = nom => `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+      <h2 style="margin:0 0 10px">Budget bientôt clôturé</h2><p>Bonjour ${mailEsc(nom)},</p>
+      <p>Le budget <b>${mailEsc(b.titre)}</b> n'est utilisable que pour les dépenses jusqu'au <b>${fdate(b.fin)}</b> (${j === 0 ? "aujourd'hui" : "dans " + j + " jour(s)"}).</p>
+      <p>Il reste <b>${euro(Math.max(0, reste))}</b> sur ${euro(b.cout)}. Pensez à envoyer vos demandes de remboursement à temps.</p>
+      <p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
+      <p>Le conseil d'administration du Bureau étudiant</p></div>`;
+    const sujet = "Budget « " + b.titre + " » utilisable jusqu'au " + fdate(b.fin);
+    for(const m of dest){ try{ await envoyerMail(m.email, sujet, corps(m.first_name || String(m.name||"").split(" ")[0])); }catch(_){} }
+    try{ await envoyerMail(emailTreso(), sujet, corps("trésorier")); }catch(_){}
+    try{ await majMetaBudget(b.id, { rappel_fin_at:new Date().toISOString() }); }catch(_){}
+    await histoBudget(b.id, "Rappel de fin envoyé (" + dest.length + " titulaire(s))");
+  }
+  // 2. récapitulatif hebdomadaire
+  const dernier = comptaCfg().recapBudgetAt ? new Date(comptaCfg().recapBudgetAt).getTime() : 0;
+  if(Date.now() - dernier >= 7 * 864e5){
+    const L = state.budCaisse || [];
+    const presque = L.filter(b => !b.cloture && b.cout > 0 && b.consomme / b.cout >= 0.8);
+    const expire = L.filter(b => !b.cloture && b.fin && joursAvant(b.fin) >= 0 && joursAvant(b.fin) <= 14);
+    const retours = L.filter(b => { const r = retourEtat(b); return r && (r.etat === "zero" || r.etat === "partiel"); });
+    const resas = (state.resas||[]).filter(x => joursDepuis(x.created_at) > 30);
+    if(presque.length || expire.length || retours.length || resas.length){
+      const sec = (t, l) => l.length ? `<h3 style="margin:18px 0 6px;font-size:15px">${t}</h3><ul style="margin:0;padding-left:18px">${l.join("")}</ul>` : "";
+      const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a1a">
+        <h2 style="margin:0 0 10px">Récapitulatif des budgets</h2>
+        ${sec("Budgets à 80 % ou plus", presque.map(b => `<li>${mailEsc(b.titre)} : ${euro(b.consomme)} sur ${euro(b.cout)} (${Math.round(b.consomme/b.cout*100)} %)</li>`))}
+        ${sec("Budgets qui se terminent dans les 14 jours", expire.map(b => `<li>${mailEsc(b.titre)} : jusqu'au ${fdate(b.fin)}, reste ${euro(Math.max(0, b.cout - b.consomme))}</li>`))}
+        ${sec("Retours promis non tenus", retours.map(b => { const r = retourEtat(b); return `<li>${mailEsc(b.titre)} : ${euro(r.recu)} sur ${euro(r.promis)} (échéance ${fdate(r.date)})${r.alerte ? " — CA prévenu" : " — <b>CA pas encore prévenu</b>"}</li>`; }))}
+        ${sec("Réservations de plus de 30 jours", resas.map(x => `<li>${mailEsc(x.user_name||"")} : ${euro(x.montant)} — ${mailEsc(x.objet)} (${mailEsc(((budgetParId(x.budget_id)||{}).titre)||"?")})</li>`))}
+        <p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'onglet Budget</a></p></div>`;
+      try{ await envoyerMail(emailTreso(), "Récapitulatif hebdomadaire des budgets", html); }catch(_){}
+    }
+    try{ await comptaMaj(c => { c.recapBudgetAt = new Date().toISOString(); }); }catch(_){}
+  }
+  const nb = retoursAAlerter().length;
+  if(nb) toast(nb + " retour(s) promis non tenu(s) : voir l'onglet Budget.");
+}
+const resasDe = (bid, uid) => (state.resas||[]).filter(x => String(x.budget_id) === String(bid) && (!uid || x.user_id === uid));
+const histoDe = bid => (state.histo||[]).filter(h => String(h.budget_id) === String(bid));
+async function histoBudget(bid, quoi){
+  if(!bid || state.histoErr || !isTreso()) return;
+  try{ await sb.from("caisse_budget_histo").insert({ budget_id:String(bid), qui:(state.profile && state.profile.name) || "Trésorier", quoi }); }catch(_){}
 }
 const budgetsDe = uid => (state.budCaisse||[]).filter(b => (b.membres||[]).includes(uid));
 const budgetParId = id => (state.budCaisse||[]).find(b => b.id === String(id));
@@ -7206,13 +7309,19 @@ function budgetObligatoire(uid){
 // budget utilisable pour une dépense à cette date ? (gel par réserve suspensive, date de fin)
 function budgetEtat(b, dateDep){
   if(!b) return { ok:false, raison:"budget introuvable ou plus approuvé" };
+  if(b.cloture) return { ok:false, raison:"budget clôturé le " + fdate(String(b.cloture).slice(0,10)) };
   if(b.gel) return { ok:false, gele:true, raison:"en attente de levée de la réserve du trésorier : " + b.gel };
   if(b.fin && dateDep && String(dateDep) > b.fin) return { ok:false, raison:"utilisable jusqu'au " + fdate(b.fin) + " seulement" };
   return { ok:true };
 }
 // urgences hors budget d'un membre
 const urgCfg = uid => ({ limite: Math.max(0, parseInt(comptaCfg().urgLimiteMois, 10) || 0),
-                        off: !!((comptaCfg().urgDesactive || {})[uid]) });
+                        off: !!((comptaCfg().urgDesactive || {})[uid]),
+                        geles: budgetsGelesDe(uid) });
+// budgets du membre gelés par une réserve suspensive : ils bloquent aussi ses demandes urgentes
+const budgetsGelesDe = uid => budgetsDe(uid).filter(b => b.gel && !b.cloture);
+const msgUrgGel = geles => "Les demandes urgentes sont bloquées : votre budget « " + geles.map(b => b.titre).join(" », « ")
+  + " » est suspendu par une réserve du trésorier (" + geles.map(b => b.gel).join(" · ") + "). Contactez le trésorier.";
 const moisCourant = () => dateLocale().slice(0,7);
 function urgencesDe(uid, duMois){
   return (state.items||[]).filter(i => i.user_id === uid && i.hors_budget && i.status !== "Refusée"
@@ -7224,8 +7333,8 @@ function jaugeHTML(b, ajout){
   const pct = cout > 0 ? Math.round(apres / cout * 100) : 0;
   const cls = apres > cout + 0.005 ? "ko" : pct >= 80 ? "warn" : "";
   const reste = cout - cons;
-  const detail = b.paye != null ? ` <span class="hint">(payé ${euro(b.paye)} · validé ${euro(b.valide)} · en attente ${euro(b.attente)})</span>` : "";
-  const etat = b.gel ? `<div class="bud-txt"><span class="ko">Gelé</span> — en attente de levée de la réserve du trésorier : ${esc(b.gel)}</div>`
+  const detail = b.paye != null ? ` <span class="hint">(payé ${euro(b.paye)} · validé ${euro(b.valide)} · en attente ${euro(b.attente)}${b.reserve ? " · réservé " + euro(b.reserve) : ""}${b.complement ? " · dont complément " + euro(b.complement) : ""})</span>` : "";
+  const etat = b.cloture ? `<div class="bud-txt"><span class="warn">Budget clôturé</span> le ${fdate(String(b.cloture).slice(0,10))}${Math.max(0, b.cout - (b.paye||0) - (b.valide||0) - (b.attente||0)) > 0.005 ? " — économie de " + euro(Math.max(0, b.cout - (b.paye||0) - (b.valide||0) - (b.attente||0))) : ""}.</div>` : b.gel ? `<div class="bud-txt"><span class="ko">Gelé</span> — en attente de levée de la réserve du trésorier : ${esc(b.gel)}</div>`
     : (b.fin && dateLocale() > b.fin ? `<div class="bud-txt"><span class="warn">Clôturé le ${fdate(b.fin)}</span> : il ne couvre plus les dépenses postérieures.</div>`
     : (b.fin ? `<div class="bud-txt">Utilisable jusqu'au ${fdate(b.fin)}.</div>` : ""));
   return `<div class="bud-bar ${cls}"><i style="width:${Math.min(100, Math.max(0, pct))}%"></i></div>
@@ -7272,12 +7381,14 @@ function majBudgetForm(px){
   const bloques = liste.filter(x => !budgetEtat(x, dDep).ok)
     .map(x => `<div class="bud-txt"><span class="warn">« ${esc(x.titre)} » indisponible</span> : ${esc(budgetEtat(x, dDep).raison)}.</div>`).join("");
   $("#" + px + "_budJauge").innerHTML = (b ? jaugeHTML(b, montant)
-    : (oblig && !isTreso() ? `<div class="bud-txt">${utilisables.length ? "Choisissez le budget de cette dépense." : "<span class=\"warn\">Aucun budget utilisable à votre nom.</span> Si la dépense est urgente, activez « Demande urgente — hors budget »."}</div>` : ""))
+    : (oblig && !isTreso() ? `<div class="bud-txt">${utilisables.length ? "Choisissez le budget de cette dépense." : "<span class=\"warn\">Aucun budget utilisable à votre nom.</span>" + (urgCfg(uid).geles.length ? "" : " Si la dépense est urgente, activez « Demande urgente — hors budget ».")}</div>` : ""))
     + bloques;
   const uc = urgCfg(uid);
-  $("#" + px + "_urgWrap").hidden = isTreso() || uc.off;
+  const urgBloque = uc.off || uc.geles.length > 0;
+  $("#" + px + "_urgWrap").hidden = isTreso() || urgBloque;
   const urg = $("#" + px + "_urg");
-  if(uc.off && urg) urg.checked = false;
+  if(urgBloque && urg) urg.checked = false;
+  if(!isTreso() && uc.geles.length) $("#" + px + "_budJauge").innerHTML += `<div class="bud-txt"><span class="ko">Demandes urgentes bloquées</span> tant que la réserve suspensive du trésorier n'est pas levée.</div>`;
   $("#" + px + "_urgBox").hidden = !(urg && urg.checked);
   const hint = $("#" + px + "_urgBox") && $("#" + px + "_urgBox").querySelector(".hint");
   if(hint) hint.textContent = "La demande arrive au trésorier marquée « URGENTE — hors budget ». C'est lui qui décide."
@@ -7301,9 +7412,102 @@ function renderMesBudgets(){
   $("#m_budgetsList").innerHTML = liste.map(b => {
     const nb = (state.items||[]).filter(i => i.budget_id === b.id && i.status !== "Refusée").length;
     const partage = (b.membres||[]).length > 1 ? " · budget partagé à deux" : "";
-    return `<div>${jaugeHTML(b, 0)}<div class="bud-txt">${nb} de vos demande(s) rattachée(s)${partage}</div></div>`;
+    const mes = resasDe(b.id, state.profile.id);
+    const et = budgetEtat(b, dateLocale());
+    const v3 = !state.budMetaErr && !state.resaErr;
+    return `<div>${jaugeHTML(b, 0)}<div class="bud-txt">${nb} de vos demande(s) rattachée(s)${partage}</div>
+      ${mes.length ? `<div class="bud-txt" style="margin-top:6px"><b>Vos réservations :</b></div>` + mes.map(x => `<div class="bud-txt">• ${euro(x.montant)} — ${esc(x.objet)}
+        <span class="hint">(${fstamp(x.created_at)})</span> <button class="btn ghost sm" data-resa-annul="${esc(x.id)}">Annuler</button></div>`).join("")
+        + `<div class="hint" style="margin:4px 0 0">Votre prochaine demande sur ce budget utilisera ces réservations.</div>` : ""}
+      ${v3 ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        ${et.ok ? `<button class="btn ghost sm" data-resa-nouv="${esc(b.id)}">Réserver un montant avant de dépenser</button>` : ""}
+        ${!b.cloture ? `<button class="btn ghost sm" data-compl="${esc(b.id)}">Demander un complément</button>` : ""}</div>` : ""}</div>`;
   }).join("");
 }
+
+/* ---------- réservation avant dépense (membre) ---------- */
+async function reserverMontant(bid){
+  const b = budgetParId(bid); if(!b) return;
+  const reste = b.cout - b.consomme;
+  const v = await fenetreForm("Réserver un montant", `
+    <p class="hint" style="margin:0">Budget « ${esc(b.titre)} » — reste ${euro(reste)}. Le montant est bloqué pour vous jusqu'à votre demande de remboursement, qui l'utilisera.</p>
+    <div class="field"><label>Montant (€)</label><input type="number" step="0.01" min="0.01" data-f="mt" placeholder="0,00"></div>
+    <div class="field"><label>Pour quoi ?</label><input type="text" maxlength="120" data-f="obj" placeholder="Ex. boissons de la soirée, devis Colruyt"></div>
+    <div class="field"><label>Devis (facultatif)</label><input type="file" data-f="devis" accept="image/*,application/pdf,.pdf"></div>`,
+    "Réserver", ov => {
+      const mt = Math.round(Number(String(ov.querySelector('[data-f="mt"]').value).replace(",", ".")) * 100) / 100;
+      const obj = ov.querySelector('[data-f="obj"]').value.trim();
+      if(!(mt > 0)) return "Indiquez un montant supérieur à 0.";
+      if(mt > reste + 0.005) return "Il ne reste que " + euro(Math.max(0, reste)) + " sur ce budget.";
+      if(obj.length < 3) return "Indiquez à quoi servira ce montant.";
+      return { mt, obj, file: ov.querySelector('[data-f="devis"]').files[0] || null };
+    });
+  if(!v) return;
+  let devis = [];
+  try{
+    if(v.file){ staged.devis = [{ kind:"Devis", file:v.file }]; devis = await envoyerPieces("devis", "devis"); staged.devis = []; }
+    const { error } = await sb.rpc("caisse_reserver", { p_budget:String(bid), p_montant:v.mt, p_objet:v.obj, p_devis:devis });
+    if(error) throw error;
+  }catch(err){
+    staged.devis = [];
+    if(devis.length){ try{ await sb.storage.from("justificatifs").remove(devis.map(d => d.path)); }catch(_){} }
+    return dire("Réservation impossible", messageBudgetServeur(err.message || String(err)));
+  }
+  await chargerBudgetsCaisse(); renderMesBudgets(); majBudgetForm("f"); majBudgetForm("fd");
+  alertesBudget(bid);
+  await dire("Montant réservé", euro(v.mt) + " sont bloqués pour vous sur « " + b.titre + " ». Ils seront utilisés par votre prochaine demande sur ce budget.");
+}
+async function annulerReservation(id){
+  const x = (state.resas||[]).find(r => String(r.id) === String(id)); if(!x) return;
+  if(!await demander("Annuler la réservation", euro(x.montant) + " — " + x.objet + "\n\nLe montant redevient disponible sur le budget.", { bouton:"Annuler la réservation", danger:true })) return;
+  const { data, error } = await sb.rpc("caisse_annuler_reservation", { p_id: x.id });
+  if(error || !data) return dire("Annulation impossible", error ? error.message : "Cette réservation n'est plus active.");
+  await chargerBudgetsCaisse(); renderMesBudgets(); if(state.view === "budget") renderBudget();
+  majBudgetForm("f"); majBudgetForm("fd");
+  toast("Réservation annulée.");
+}
+/* ---------- demande de complément (titulaire) : crée un vote dans l'app CA ---------- */
+async function demanderComplement(bid){
+  const b = budgetParId(bid); if(!b) return;
+  const v = await fenetreForm("Demander un complément", `
+    <p class="hint" style="margin:0">Budget « ${esc(b.titre)} » : ${euro(b.consomme)} engagés sur ${euro(b.cout)}. Le complément sera soumis au vote du CA ; une fois approuvé, il s'ajoute à ce budget.</p>
+    <div class="field"><label>Montant du complément (€)</label><input type="number" step="0.01" min="0.01" data-f="mt" placeholder="0,00"></div>
+    <div class="field"><label>Pourquoi ?</label><textarea data-f="motif" maxlength="600" placeholder="Ex. plus d'inscrits que prévu : 40 au lieu de 25"></textarea></div>`,
+    "Envoyer au CA", ov => {
+      const mt = Math.round(Number(String(ov.querySelector('[data-f="mt"]').value).replace(",", ".")) * 100) / 100;
+      const motif = ov.querySelector('[data-f="motif"]').value.trim();
+      if(!(mt > 0)) return "Indiquez le montant du complément.";
+      if(motif.length < 10) return "Expliquez pourquoi en quelques mots (10 caractères minimum).";
+      return { mt, motif };
+    });
+  if(!v) return;
+  const { error } = await sb.rpc("caisse_demander_complement", { p_budget:String(bid), p_montant:v.mt, p_motif:v.motif });
+  if(error) return dire("Demande impossible", messageBudgetServeur(error.message));
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Demande de complément de budget</h2>
+    <p><b>${mailEsc(state.profile.name || "Un membre")}</b> demande un complément de <b>${euro(v.mt)}</b> pour le budget <b>${mailEsc(b.titre)}</b>
+      (${euro(b.consomme)} engagés sur ${euro(b.cout)}).</p>
+    <p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(v.motif).replace(/\n/g,"<br>")}</p>
+    <p>Le vote est ouvert dans l'app CA, onglet Budgets &amp; projets.</p></div>`;
+  try{ await envoyerMail(emailTreso(), "Complément demandé — " + b.titre + " (" + euro(v.mt) + ")", html, state.profile.email || undefined); }catch(_){}
+  await chargerBudgetsCaisse(); renderMesBudgets();
+  await dire("Complément demandé", "Votre demande de " + euro(v.mt) + " pour « " + b.titre + " » est soumise au vote du CA. Le trésorier a été prévenu.");
+}
+document.addEventListener("click", async e => {
+  const dv = e.target.closest("[data-resa-devis]");
+  if(dv){
+    const x = (state.resas||[]).find(r => String(r.id) === dv.dataset.resaDevis); const pc = x && (x.devis||[])[0];
+    if(!pc) return;
+    const w = window.open("", "_blank");
+    const { data } = await sb.storage.from("justificatifs").createSignedUrl(pc.path, 3600);
+    if(!data || !data.signedUrl){ if(w) w.close(); return toast("Devis introuvable."); }
+    if(w) w.location = data.signedUrl; else window.location.href = data.signedUrl;
+    return;
+  }
+  const a = e.target.closest("[data-resa-nouv]"); if(a) return reserverMontant(a.dataset.resaNouv);
+  const c = e.target.closest("[data-resa-annul]"); if(c) return annulerReservation(c.dataset.resaAnnul);
+  const d = e.target.closest("[data-compl]"); if(d) return demanderComplement(d.dataset.compl);
+});
 
 // contrôle commun (envoi et modification) d'une demande d'un membre ; ancien = demande existante modifiée
 function verifierBudgetMembre(uid, bid, montant, dateDep, ancien){
@@ -7316,16 +7520,19 @@ function verifierBudgetMembre(uid, bid, montant, dateDep, ancien){
   const b = budgetParId(bid);
   const et = budgetEtat(b, dateDep);
   if(!et.ok) throw new Error("Budget « " + (b ? b.titre : "?") + " » indisponible : " + et.raison
-    + ". Si la dépense est urgente, utilisez une demande urgente hors budget.");
+    + (et.gele ? ". Les demandes urgentes sont aussi bloquées tant que la réserve n'est pas levée." : ". Si la dépense est urgente, utilisez une demande urgente hors budget."));
   // la demande modifiée compte déjà dans la consommation de son budget : on la retire du calcul
   const dejaDedans = ancien && compteBudget(ancien) && String(ancien.budget_id) === String(bid) ? Number(ancien.amount||0) : 0;
-  const reste = b.cout - b.consomme + dejaDedans;
+  // les réservations du membre sur ce budget sont consommées par sa demande
+  const mesResas = resasDe(bid, uid).reduce((t,x) => t + Number(x.montant||0), 0);
+  const reste = b.cout - b.consomme + dejaDedans + mesResas;
   if(montant > reste + 0.005) throw new Error("Budget atteint : il reste " + euro(Math.max(0, reste)) + " sur « " + b.titre
     + " » et votre demande fait " + euro(montant) + ". Si c'est urgent, faites une demande urgente hors budget.");
 }
 function verifierUrgence(uid, nouvelle){
   const uc = urgCfg(uid);
   if(uc.off) throw new Error("Les demandes urgentes hors budget ne sont pas ouvertes pour votre compte. Contactez le trésorier.");
+  if(nouvelle && uc.geles.length) throw new Error(msgUrgGel(uc.geles));
   if(nouvelle && uc.limite && urgencesDe(uid, true).length >= uc.limite)
     throw new Error("Limite atteinte : " + uc.limite + " demande(s) urgente(s) hors budget maximum par mois. Contactez le trésorier.");
 }
@@ -10108,7 +10315,7 @@ async function loadBudgetsCaisse(){
     state.caMe = state.caMembres.find(a => a.id === state.profile.id) || null;
     state.budgets = (((bs && bs.data)) || []).map(b => ({
       id:b.id, titre:b.titre, type:b.type, cout:b.cout, desc:b.description,
-      demandeur:b.demandeur, statut:b.statut, decidePar:b.decide_par, decideLe:b.decide_le,
+      demandeur:b.demandeur, statut:b.statut, decidePar:b.decide_par, decideLe:b.decide_le, parent:b.parent_budget_id || null,
       votes: vl.filter(v => v.budget_id === b.id).map(v => ({nom:v.nom, choix:v.choix, membreId:v.membre_id}))
     }));
   }catch(e){ state.budgets = []; }
@@ -10156,7 +10363,11 @@ function renderBudget(){
   const list = f==="tous" ? all : all.filter(b => b.statut===f);
   const eff = bEffectif(), seuil = bSeuil(), peutDec = bPeutDecider();
   if(!list.length){ box.innerHTML = `<div class="card pad"><p class="hint" style="margin:0">Aucun budget à afficher${f==="tous"?"":" dans ce filtre"}.</p></div>`; return; }
-  box.innerHTML = list.map(b => {
+  const aAlerter = retoursAAlerter();
+  const alerteHTML = aAlerter.length ? `<div class="callout" style="border-left:4px solid var(--red)"><b>Retour promis non tenu</b>
+    <p>${aAlerter.map(x => { const r = retourEtat(x); return "« " + esc(x.titre) + " » : " + euro(r.recu) + " reçus sur " + euro(r.promis) + " promis (échéance " + fdate(r.date) + ")"; }).join("<br>")}</p>
+    <p>Ouvre le budget concerné et clique « Prévenir le CA ».</p></div>` : "";
+  box.innerHTML = alerteHTML + list.map(b => {
     const count = ch => (b.votes||[]).filter(v => v.choix===ch).length;
     const open = b.statut==="vote";
     const [cls,label] = B_BADGE[b.statut] || ["bg-open", esc(b.statut||"")];
@@ -10168,7 +10379,8 @@ function renderBudget(){
     const decideBtns = peutDec ? `<div class="b-foot">${open ? `${(eff && count("pour")>=seuil)?`<button class="btn sm" data-baction="decide" data-id="${b.id}" data-st="approuve">✓ Approuver</button>`:""}<button class="btn ghost sm" data-baction="decide" data-id="${b.id}" data-st="refuse">✕ Refuser</button>` : `<button class="btn ghost sm" data-baction="decide" data-id="${b.id}" data-st="vote">Rouvrir le vote</button>`}</div>` : "";
     return `<div class="card pad b-card">
       <div class="b-head"><div><h3 style="margin:0;font-family:'Fraunces',serif;font-weight:600;font-size:18px">${esc(b.titre)}</h3>
-        <p class="b-meta">${esc(b.type||"")}${(Number(b.cout)>0)?` · <b>${euro(b.cout)}</b>`:""}${b.demandeur?` · par ${esc(b.demandeur)}`:""}</p></div>
+        <p class="b-meta">${esc(b.type||"")}${(Number(b.cout)>0)?` · <b>${euro(b.cout)}</b>`:""}${b.demandeur?` · par ${esc(b.demandeur)}`:""}${
+          b.parent ? ` · <b>complément du budget « ${esc(((state.budgets||[]).find(x => String(x.id) === String(b.parent))||{}).titre || "?")} »</b>` : ""}</p></div>
         <span class="b-badge ${cls}">${label}</span></div>
       ${b.desc?`<p style="margin:8px 0 0;color:var(--muted);line-height:1.5">${esc(b.desc)}</p>`:""}
       <div class="b-tallies">${tallies}</div>
@@ -10197,7 +10409,101 @@ function blocAttribution(b){
       <button class="btn ghost sm" data-baction="fin" data-id="${esc(b.id)}">Enregistrer la date</button>
       ${(state.finManuel||{})[b.id] ? `<button class="btn ghost sm" data-baction="findefaut" data-id="${esc(b.id)}">Revenir à la date par défaut</button>` : ""}
       <span class="hint" style="margin:0">${(state.finManuel||{})[b.id] ? "Date choisie par toi." : "Date par défaut : fin de l'exercice où le budget a été approuvé."}</span></div>`}
+    ${blocGestionBudget(b, bc)}
   </div>`;
+}
+
+/* ---------- retour promis (sponsoring, entrées…) ---------- */
+function retourEtat(bc){
+  if(!bc || bc.retourMontant == null || !(bc.retourMontant > 0)) return null;
+  const pct = Math.round((bc.recettes || 0) / bc.retourMontant * 100);
+  const echu = !!bc.retourDate && dateLocale() > bc.retourDate;
+  const etat = pct >= 80 ? "tenu" : !echu ? "attente" : (bc.recettes || 0) < 0.005 ? "zero" : "partiel";
+  return { pct, echu, etat, recu: bc.recettes || 0, promis: bc.retourMontant, date: bc.retourDate, alerte: bc.retourAlerte };
+}
+const retoursAAlerter = () => (state.budCaisse||[]).filter(b => { const r = retourEtat(b); return r && (r.etat === "zero" || r.etat === "partiel") && !r.alerte; });
+
+function blocGestionBudget(b, bc){
+  if(state.budMetaErr || !("cloture" in bc)) return "";
+  const compl = (state.budgets||[]).filter(x => String(x.parent||"") === String(b.id));
+  const lib = { vote:"en vote", approuve:"approuvé", refuse:"refusé" };
+  const r = retourEtat(bc);
+  const resas = resasDe(b.id);
+  const hist = histoDe(b.id);
+  const badgeR = !r ? "" : r.etat === "tenu" ? `<span style="color:var(--green);font-weight:700">retour tenu (${r.pct} %)</span>`
+    : r.etat === "attente" ? `<span class="hint" style="margin:0">en attente — échéance le ${fdate(r.date)}</span>`
+    : r.etat === "zero" ? `<span class="ko">aucune recette à l'échéance</span>` : `<span class="warn">retour partiel : ${r.pct} %</span>`;
+  return `
+    ${compl.length ? `<div class="bud-txt"><b>Compléments :</b> ${compl.map(x => esc(euro(x.cout)) + " (" + esc(lib[x.statut] || x.statut) + ")").join(" · ")}</div>` : ""}
+    <div class="bud-txt" style="margin-top:6px"><b>Retour promis</b> (sponsoring, entrées…)${r ? ` : <b>${euro(r.recu)}</b> reçus sur <b>${euro(r.promis)}</b> promis · ${badgeR}` : " : aucun"}</div>
+    <div class="attach">
+      <input type="number" step="0.01" min="0" data-bret="${esc(b.id)}" value="${bc.retourMontant != null ? esc(Number(bc.retourMontant).toFixed(2)) : ""}" placeholder="Montant promis (€)" style="width:150px">
+      <input type="date" data-bretd="${esc(b.id)}" value="${esc(bc.retourDate || "")}" style="width:auto">
+      <button class="btn ghost sm" data-baction="retour" data-id="${esc(b.id)}">Enregistrer le retour promis</button>
+      ${r && (r.etat === "zero" || r.etat === "partiel") ? `<button class="btn sm" data-baction="retourCA" data-id="${esc(b.id)}">${r.alerte ? "Prévenir à nouveau le CA" : "Prévenir le CA"}</button>` : ""}
+    </div>
+    ${r && r.alerte ? `<div class="hint" style="margin:0">CA prévenu le ${fstamp(r.alerte)}.</div>` : ""}
+    <div class="hint" style="margin:0">Les recettes comptent quand tu les rattaches à ce budget dans l'onglet Recettes.</div>
+    ${resas.length ? `<div class="bud-txt" style="margin-top:6px"><b>Réservations actives :</b></div>` + resas.map(x => `<div class="bud-txt">• ${euro(x.montant)} — ${esc(x.objet)} · ${esc(x.user_name || "")} <span class="hint">(${fstamp(x.created_at)})</span>
+        ${(x.devis||[]).length ? `<button class="btn ghost sm" data-resa-devis="${esc(x.id)}">Devis</button>` : ""}
+        <button class="btn ghost sm" data-resa-annul="${esc(x.id)}">Annuler</button></div>`).join("") : ""}
+    <div class="attach" style="margin-top:6px">
+      ${bc.cloture ? `<span class="bud-txt" style="margin:0">Clôturé le ${fdate(String(bc.cloture).slice(0,10))}</span><button class="btn ghost sm" data-baction="rouvrirbud" data-id="${esc(b.id)}">Rouvrir le budget</button>`
+                   : `<button class="btn ghost sm" data-baction="cloturerbud" data-id="${esc(b.id)}">Clôturer le budget</button>`}
+    </div>
+    ${hist.length ? `<details style="margin-top:6px"><summary class="bud-txt" style="cursor:pointer"><b>Historique</b> (${hist.length})</summary>
+      ${hist.slice(0,50).map(h => `<div class="bud-txt">${fstamp(h.quand)} — ${esc(h.qui || "")} : ${esc(h.quoi)}</div>`).join("")}</details>` : ""}`;
+}
+async function majMetaBudget(id, champs){
+  const { data, error } = await sb.from("caisse_budget_meta")
+    .upsert({ budget_id:String(id), ...champs, updated_at:new Date().toISOString() }, { onConflict:"budget_id" }).select("*");
+  if(error || !data || !data.length) throw new Error(error ? error.message : "la base a refusé l'enregistrement");
+  return data[0];
+}
+function mailRetourCA(bc, motPerso){
+  const r = retourEtat(bc);
+  const nomT = id => { const m = (state.members||[]).find(x => x.id === id); return m ? m.name : ""; };
+  const tit = (bc.membres||[]).map(nomT).filter(Boolean).join(" et ") || "—";
+  const depense = (bc.paye||0) + (bc.valide||0);
+  const zero = r.etat === "zero";
+  const sujet = zero ? "« " + bc.titre + " » — aucune recette à ce jour" : "« " + bc.titre + " » — retour partiel (" + r.pct + " %)";
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">${zero ? "Aucune recette à ce jour" : "Retour partiel"}</h2>
+    <p>Bonjour à tous,</p>
+    <p>Le budget <b>« ${mailEsc(bc.titre)} »</b> a été approuvé avec un retour promis de <b>${euro(r.promis)}</b> (sponsoring, entrées…), attendu au plus tard le <b>${fdate(r.date)}</b>.</p>
+    <p>${zero ? "À ce jour, <b>aucune recette</b> n'a été enregistrée pour ce budget."
+             : "À ce jour, il a rapporté <b>" + euro(r.recu) + "</b> sur les <b>" + euro(r.promis) + "</b> promis (<b>" + r.pct + " %</b>). Il manque <b>" + euro(Math.max(0, r.promis - r.recu)) + "</b>."}</p>
+    <table style="border-collapse:collapse;margin:12px 0;font-size:14px">
+      <tr><td style="padding:4px 14px 4px 0;color:#666">Budget approuvé</td><td><b>${euro(bc.cout)}</b></td></tr>
+      <tr><td style="padding:4px 14px 4px 0;color:#666">Déjà dépensé</td><td><b>${euro(depense)}</b></td></tr>
+      <tr><td style="padding:4px 14px 4px 0;color:#666">Recettes reçues</td><td><b>${euro(r.recu)}</b></td></tr>
+      <tr><td style="padding:4px 14px 4px 0;color:#666">Titulaire du budget</td><td><b>${mailEsc(tit)}</b></td></tr>
+    </table>
+    <p>Le titulaire est invité à faire le point avec le trésorier et les membres du CA sur les sponsors et recettes attendus.</p>
+    ${String(motPerso||"").trim() ? `<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(String(motPerso).trim()).replace(/\n/g,"<br>")}</p>` : ""}
+    <p>Le conseil d'administration du Bureau étudiant</p></div>`;
+  return { sujet, html, zero, tit };
+}
+async function prevenirCARetour(id){
+  const bc = budgetParId(id); if(!bc) return;
+  const r = retourEtat(bc); if(!r || !(r.etat === "zero" || r.etat === "partiel")) return toast("Ce budget n'a pas de retour en retard.");
+  const dest = [...new Set((state.caMembres||[]).filter(a => a.email && a.statut === "actif").map(a => String(a.email).trim().toLowerCase()))];
+  if(!dest.length) return dire("Envoi impossible", "La liste des membres du CA n'est pas chargée (ou aucun membre actif n'a d'e-mail).");
+  const apercu = mailRetourCA(bc, "");
+  const v = await fenetreForm(apercu.zero ? "Prévenir le CA : aucune recette" : "Prévenir le CA : retour partiel", `
+    <p class="hint" style="margin:0">Objet : ${esc(apercu.sujet)}<br>Destinataires : ${dest.length} membre(s) actif(s) du CA.</p>
+    <div style="border:1px solid var(--line);border-radius:11px;padding:12px;background:#fff;color:#1a1a1a;max-height:300px;overflow:auto">${apercu.html}</div>
+    <div class="field"><label>Mot personnel (facultatif)</label><textarea data-f="mot" maxlength="600"></textarea></div>`,
+    "Envoyer au CA", ov => ({ mot: ov.querySelector('[data-f="mot"]').value }));
+  if(!v) return;
+  const mail = mailRetourCA(bc, v.mot);
+  let ok = 0;
+  for(const to of dest){ try{ if(await envoyerMail(to, mail.sujet, mail.html, emailTreso())) ok++; }catch(_){} await new Promise(r2 => setTimeout(r2, 120)); }
+  if(!ok) return dire("Mail non envoyé", dernierEchecMail || "Aucun envoi n'a réussi.");
+  try{ await majMetaBudget(id, { retour_alerte_at:new Date().toISOString() }); }catch(_){}
+  await histoBudget(id, "CA prévenu : " + (mail.zero ? "aucune recette" : "retour partiel " + r.pct + " %") + " (" + ok + "/" + dest.length + " envoyés)");
+  await chargerBudgetsCaisse(); renderBudget();
+  dire("CA prévenu", ok + "/" + dest.length + " membre(s) du CA ont reçu le mail.");
 }
 
 /* ---------- réserves du trésorier sur un budget ---------- */
@@ -10245,7 +10551,7 @@ async function emettreReserve(budgetId){
       {v:"remarque", l:"Remarque"}, {v:"reserve", l:"Réserve"}, {v:"defavorable", l:"Avis défavorable"}], "reserve")}</select></div>
     <div class="field"><label>Texte</label><textarea data-f="txt" maxlength="600" placeholder="Ex. trésorerie insuffisante avant le subside de janvier"></textarea></div>
     <label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--text)">
-      <input type="checkbox" class="tgl" data-f="susp"><span>Suspensive : le budget reste gelé tant que je ne l'ai pas levée</span></label>
+      <input type="checkbox" class="tgl" data-f="susp"><span>Suspensive : le budget reste gelé tant que je ne l'ai pas levée (demandes urgentes du titulaire bloquées aussi)</span></label>
     <div class="field" data-fwrap="cond" hidden><label>Condition de levée</label>
       <input type="text" data-f="cond" maxlength="200" placeholder="Ex. deux devis reçus"></div>`,
     "Émettre la réserve", ov => {
@@ -10259,8 +10565,9 @@ async function emettreReserve(budgetId){
   const { data, error } = await sb.from("ca_budget_reserves").insert({ budget_id: String(budgetId), ...v,
     auteur: bSig(), auteur_id: state.profile.id }).select("id");
   if(error || !data || !data.length) return dire("Réserve non enregistrée", error ? error.message : "La base a refusé l'enregistrement.");
+  await histoBudget(budgetId, "Réserve émise (" + (RES_NIVEAU[v.niveau]||[v.niveau])[0] + (v.suspensive ? ", suspensive" : "") + ") : " + v.texte);
   await chargerBudgetsCaisse(); renderBudget();
-  await dire("Réserve émise", (RES_NIVEAU[v.niveau]||[v.niveau])[0] + (v.suspensive ? " suspensive : le budget est gelé jusqu'à la levée (« " + v.condition + " »)." : " informative : elle reste visible sur le budget et dans le rapport."));
+  await dire("Réserve émise", (RES_NIVEAU[v.niveau]||[v.niveau])[0] + (v.suspensive ? " suspensive : le budget est gelé jusqu'à la levée (« " + v.condition + " »). Ses titulaires ne peuvent plus faire de demande urgente non plus." : " informative : elle reste visible sur le budget et dans le rapport."));
 }
 async function leverReserve(resId){
   const r = (state.reserves||[]).find(x => String(x.id) === String(resId)); if(!r) return;
@@ -10270,6 +10577,7 @@ async function leverReserve(resId){
   const { data, error } = await sb.from("ca_budget_reserves").update({ levee_at: new Date().toISOString(), levee_par: bSig(),
     levee_note: String(note||"").trim() || null }).eq("id", r.id).is("levee_at", null).select("id");
   if(error || !data || !data.length) return dire("Levée non enregistrée", error ? error.message : "Cette réserve a peut-être déjà été levée.");
+  await histoBudget(r.budget_id, "Réserve levée : " + r.texte + (String(note||"").trim() ? " — " + String(note).trim() : ""));
   await chargerBudgetsCaisse(); renderBudget();
   const encore = reservesActives(r.budget_id).some(x => x.suspensive);
   if(r.suspensive && !encore){
@@ -10284,7 +10592,7 @@ async function leverReserve(resId){
         ${r.levee_note || String(note||"").trim() ? blocNote(String(note||"").trim()) : ""}
         <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
         <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-        <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+        <p>Le conseil d'administration du Bureau étudiant</p></div>`;
       if(await envoyerMail(m.email, "Budget « " + titre + " » maintenant utilisable", html, emailTreso())) n++;
     }
     return dire("Réserve levée", "Le budget « " + titre + " » est de nouveau utilisable." + (dest.length ? " " + n + "/" + dest.length + " titulaire(s) prévenu(s) par e-mail." : bc ? " Aucun titulaire avec e-mail à prévenir." : " (Le budget n'est pas encore approuvé.)"));
@@ -10304,11 +10612,54 @@ async function budgetAction(action, ds){
     const { data, error } = await sb.from("caisse_budget_attrib")
       .upsert({ budget_id: id, membres, updated_at: new Date().toISOString() }, { onConflict:"budget_id" }).select("budget_id");
     if(error || !data || !data.length) return dire("Attribution non enregistrée", error ? error.message : "La base a refusé l'enregistrement.");
+    await histoBudget(id, action === "attrib" ? "Titulaires : " + membres.map(x => ((state.members||[]).find(y => y.id === x)||{}).name || "?").join(" et ") : "Titulaires : retour à l'attribution automatique");
     await chargerBudgetsCaisse(); renderBudget();
     const bc = budgetParId(id);
     const noms = bc ? bc.membres.map(x => { const m = (state.members||[]).find(y => y.id === x); return m ? m.name : "?"; }) : [];
     return dire(action === "attrib" ? "Budget attribué" : "Attribution automatique rétablie",
       (bc ? "« " + bc.titre + " » : " : "") + (noms.length ? noms.join(" et ") : "aucun titulaire trouvé automatiquement — attribue-le à la main"));
+  }
+  if(action === "retourCA") return prevenirCARetour(ds.id);
+  if(action === "retour"){
+    const id = String(ds.id);
+    const mtEl = document.querySelector(`[data-bret="${CSS.escape(id)}"]`), dEl = document.querySelector(`[data-bretd="${CSS.escape(id)}"]`);
+    const brut = String(mtEl ? mtEl.value : "").replace(",", ".").trim();
+    const mt = brut === "" ? null : Math.round(Number(brut) * 100) / 100;
+    const d = dEl ? dEl.value : "";
+    if(mt != null && !(mt > 0)) return dire("Retour non enregistré", "Indique un montant supérieur à 0, ou vide le champ pour retirer le retour promis.");
+    if(mt != null && !d) return dire("Retour non enregistré", "Choisis la date limite à laquelle le retour doit être atteint.");
+    try{
+      const lu = await majMetaBudget(id, { retour_montant:mt, retour_date: mt == null ? null : d, retour_alerte_at:null });
+      if((lu.retour_montant == null ? null : Number(lu.retour_montant)) !== mt) throw new Error("la base n'a pas gardé le montant");
+    }catch(err){ return dire("Retour non enregistré", err.message || String(err)); }
+    await histoBudget(id, mt == null ? "Retour promis retiré" : "Retour promis : " + euro(mt) + " pour le " + fdate(d));
+    if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    await chargerBudgetsCaisse(); renderBudget();
+    return dire("Retour promis enregistré", mt == null ? "Plus de retour promis sur ce budget." : euro(mt) + " attendus au plus tard le " + fdate(d) + ". Rattache les recettes à ce budget dans l'onglet Recettes.");
+  }
+  if(action === "cloturerbud" || action === "rouvrirbud"){
+    const id = String(ds.id), bc = budgetParId(id); if(!bc) return;
+    const fermer = action === "cloturerbud";
+    const engageNonPaye = (bc.attente||0) + (bc.reserve||0);
+    const economie = Math.max(0, bc.cout - (bc.paye||0) - (bc.valide||0) - (bc.attente||0));
+    let note = "";
+    if(fermer){
+      const v = await fenetreForm("Clôturer le budget « " + bc.titre + " »", `
+        <p class="hint" style="margin:0">Approuvé : ${euro(bc.cout)} · payé : ${euro(bc.paye||0)} · validé non payé : ${euro(bc.valide||0)} · en attente : ${euro(bc.attente||0)}${bc.reserve ? " · réservé : " + euro(bc.reserve) : ""}</p>
+        <p style="margin:0"><b>Économie : ${euro(economie)}</b></p>
+        ${engageNonPaye > 0.005 ? `<p class="hint" style="margin:0;color:var(--amber)">⚠ Des demandes en attente ou des réservations existent encore : elles restent comptées, mais aucune nouvelle demande ne pourra être rattachée.</p>` : ""}
+        <div class="field"><label>Commentaire (facultatif)</label><textarea data-f="note" maxlength="400"></textarea></div>`,
+        "Clôturer", ov => ({ note: ov.querySelector('[data-f="note"]').value.trim() }));
+      if(!v) return;
+      note = v.note;
+    } else if(!await demander("Rouvrir le budget", "« " + bc.titre + " » pourra de nouveau recevoir des demandes.", { bouton:"Rouvrir" })) return;
+    try{
+      await majMetaBudget(id, fermer ? { cloture_at:new Date().toISOString(), cloture_par:(state.profile.name||""), cloture_note: note || null }
+                                     : { cloture_at:null, cloture_par:null, cloture_note:null });
+    }catch(err){ return dire("Non enregistré", err.message || String(err)); }
+    await histoBudget(id, fermer ? "Budget clôturé — économie de " + euro(economie) + (note ? " — " + note : "") : "Budget rouvert");
+    await chargerBudgetsCaisse(); renderBudget();
+    return dire(fermer ? "Budget clôturé" : "Budget rouvert", fermer ? "« " + bc.titre + " » est clôturé. Économie : " + euro(economie) + "." : "« " + bc.titre + " » peut de nouveau recevoir des demandes.");
   }
   if(action === "resnouv") return emettreReserve(ds.id);
   if(action === "reslever") return leverReserve(ds.id);
@@ -10324,6 +10675,7 @@ async function budgetAction(action, ds){
     const lu = data[0].date_fin ? String(data[0].date_fin).slice(0,10) : "";
     if(lu !== v) return dire("Date non enregistrée", "La base a renvoyé « " + (lu || "aucune date") + " » au lieu de « " + (v || "aucune date") + " ».");
     if(state.finSaisie) delete state.finSaisie[id];
+    await histoBudget(id, v ? "Date de fin fixée au " + fdate(v) : "Date de fin remise par défaut");
     if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
     await chargerBudgetsCaisse(); renderBudget();
     const bc = budgetParId(id);
@@ -10518,8 +10870,12 @@ function lignesRapportBudget(){
     const lies = (state.items||[]).filter(i => String(i.budget_id||"") === String(b.id));
     const som = st => lies.filter(i => st.includes(i.status)).reduce((t,i) => t + Number(i.amount||0), 0);
     const paye = som(["Remboursée"]), valide = som(["Validée"]), attente = som(["En attente","À corriger"]);
-    const engage = paye + valide + attente, cout = Number(b.cout||0);
-    return { b, titre:b.titre||"", statut:(B_BADGE[b.statut]||["",b.statut||""])[1], titulaires: bc ? bc.membres.map(nom).join(" et ") : "",
+    const reserve = bc ? Number(bc.reserve||0) : 0, complement = bc ? Number(bc.complement||0) : 0;
+    const engage = paye + valide + attente + reserve, cout = Number(b.cout||0) + complement;
+    const r = bc ? retourEtat(bc) : null;
+    return { b, titre:b.titre||"", statut:(B_BADGE[b.statut]||["",b.statut||""])[1] + (bc && bc.cloture ? " · clôturé" : ""), titulaires: bc ? bc.membres.map(nom).join(" et ") : "",
+      complement, reserve, retour:r, recettes: bc ? Number(bc.recettes||0) : 0, cloture: bc ? bc.cloture : null,
+      economie: bc && bc.cloture ? Math.max(0, cout - paye - valide - attente) : 0, histo: histoDe(b.id),
       cout, paye, valide, attente, engage, reste: cout - engage, pct: cout > 0 ? Math.round(engage / cout * 100) : 0,
       urg: lies.filter(i => i.hors_budget && i.status !== "Refusée").length, fin: bc && bc.fin ? bc.fin : "",
       reserves: reservesDe(b.id), nbDem: lies.filter(i => i.status !== "Refusée").length };
@@ -10530,12 +10886,14 @@ const resTexte = r => ((RES_NIVEAU[r.niveau]||[r.niveau])[0]) + (r.suspensive ? 
   + (r.suspensive && r.condition ? " (condition : " + r.condition + ")" : "")
   + (r.levee_at ? " — levée le " + fdate(String(r.levee_at).slice(0,10)) + (r.levee_note ? " (" + r.levee_note + ")" : "") : " — active");
 if($("#budRapportCsv")) $("#budRapportCsv").onclick = () => {
-  const L = lignesRapportBudget();
+  const L = lignesRapportBudget().filter(x => !x.b.parent);
   if(!L.length) return toast("Aucun budget à exporter.");
   const n = v => Number(v||0).toFixed(2).replace(".", ",");
-  const rows = [["Budget","Statut","Titulaires","Approuve","Paye","Valide","En attente","Engage","Reste","%","Demandes","Urgences","Utilisable jusqu'au","Reserves du tresorier"]];
-  L.forEach(x => rows.push([x.titre, x.statut, x.titulaires, n(x.cout), n(x.paye), n(x.valide), n(x.attente), n(x.engage), n(x.reste), x.pct,
-    x.nbDem, x.urg, x.fin ? fdate(x.fin) : "", x.reserves.map(resTexte).join(" | ")]));
+  const rows = [["Budget","Statut","Titulaires","Approuve (complements inclus)","dont complement","Paye","Valide","En attente","Reserve","Engage","Reste","%","Economie a la cloture","Recettes rattachees","Retour promis","Retour %","Echeance retour","Demandes","Urgences","Utilisable jusqu'au","Reserves du tresorier","Historique"]];
+  L.forEach(x => rows.push([x.titre, x.statut, x.titulaires, n(x.cout), n(x.complement), n(x.paye), n(x.valide), n(x.attente), n(x.reserve), n(x.engage), n(x.reste), x.pct,
+    x.cloture ? n(x.economie) : "", n(x.recettes), x.retour ? n(x.retour.promis) : "", x.retour ? x.retour.pct : "", x.retour && x.retour.date ? fdate(x.retour.date) : "",
+    x.nbDem, x.urg, x.fin ? fdate(x.fin) : "", x.reserves.map(resTexte).join(" | "),
+    x.histo.slice(0,20).map(h => fdate(String(h.quand).slice(0,10)) + " " + (h.qui||"") + " : " + h.quoi).join(" | ")]));
   const ua = urgencesAssumees();
   if(ua.length){
     rows.push([], ["Urgences hors budget (non imputées)","Statut","Demandeur","Montant","Classement","","","","","","","","","Motif"]);
@@ -10545,11 +10903,13 @@ if($("#budRapportCsv")) $("#budRapportCsv").onclick = () => {
     "\uFEFF" + rows.map(r => r.map(v => `"${String(v==null?"":v).replace(/"/g,'""')}"`).join(";")).join("\n"), "text/csv;charset=utf-8");
 };
 if($("#budRapportBtn")) $("#budRapportBtn").onclick = () => {
-  const L = lignesRapportBudget();
+  const L = lignesRapportBudget().filter(x => !x.b.parent);
   if(!L.length) return toast("Aucun budget à afficher.");
   const nomA = comptaCfg().nomAsbl || "Le bureau étudiant";
   const tot = k => L.filter(x => x.b.statut === "approuve").reduce((t,x) => t + x[k], 0);
-  const ligne = x => `<tr><td><b>${esc(x.titre)}</b><div class="s">${esc(x.statut)}${x.titulaires ? " · " + esc(x.titulaires) : ""}${x.fin ? " · jusqu'au " + esc(fdate(x.fin)) : ""}</div></td>
+  const ligne = x => `<tr><td><b>${esc(x.titre)}</b><div class="s">${esc(x.statut)}${x.titulaires ? " · " + esc(x.titulaires) : ""}${x.fin ? " · jusqu'au " + esc(fdate(x.fin)) : ""}${
+      x.complement ? " · dont complément " + esc(euro(x.complement)) : ""}${x.reserve ? " · réservé " + esc(euro(x.reserve)) : ""}${x.cloture ? " · économie " + esc(euro(x.economie)) : ""}${
+      x.retour ? " · retour " + esc(euro(x.retour.recu)) + " / " + esc(euro(x.retour.promis)) + " (" + x.retour.pct + " %" + (x.retour.etat === "tenu" ? ", tenu" : x.retour.etat === "attente" ? ", échéance " + esc(fdate(x.retour.date)) : ", non tenu") + ")" : ""}</div></td>
     <td class="n">${esc(euro(x.cout))}</td><td class="n">${esc(euro(x.paye))}</td><td class="n">${esc(euro(x.valide + x.attente))}</td>
     <td class="n${x.reste < -0.005 ? " ko" : ""}">${esc(euro(x.reste))}</td><td class="n${x.pct > 100 ? " ko" : ""}">${x.pct} %</td><td class="n">${x.urg || ""}</td></tr>
     ${x.reserves.length ? `<tr><td colspan="7" class="res">${x.reserves.map(r => `<div${r.levee_at ? ' class="lev"' : ""}>${esc(resTexte(r))} — ${esc(r.auteur||"")}, ${esc(fdate(String(r.created_at).slice(0,10)))}</div>`).join("")}</td></tr>` : ""}`;
@@ -10566,6 +10926,8 @@ tr.tot td{font-weight:bold;border-top:2px solid #333}.noprint{margin:14px 0}@med
 <table><thead><tr><th>Budget</th><th class="n">Approuvé</th><th class="n">Payé</th><th class="n">Engagé non payé</th><th class="n">Reste</th><th class="n">%</th><th class="n">Urgences</th></tr></thead>
 <tbody>${L.map(ligne).join("")}
 <tr class="tot"><td>Total des budgets approuvés</td><td class="n">${esc(euro(tot("cout")))}</td><td class="n">${esc(euro(tot("paye")))}</td><td class="n">${esc(euro(tot("valide")+tot("attente")))}</td><td class="n">${esc(euro(tot("reste")))}</td><td></td><td></td></tr></tbody></table>
+<h2>Historique des changements</h2>
+${L.some(x => x.histo.length) ? L.filter(x => x.histo.length).map(x => `<p style="margin:10px 0 2px"><b>${esc(x.titre)}</b></p>${x.histo.slice(0,30).map(h => `<div class="s">${esc(fstamp(h.quand))} — ${esc(h.qui||"")} : ${esc(h.quoi)}</div>`).join("")}`).join("") : `<p class="meta">Aucun changement enregistré.</p>`}
 <h2>Urgences hors budget non imputées</h2>
 ${ua.length ? `<table><thead><tr><th>Demande</th><th>Demandeur</th><th>Statut</th><th>Classement</th><th class="n">Montant</th></tr></thead><tbody>
 ${ua.map(i => `<tr><td>${esc(refOf(i))} — ${esc(i.object||"")}<div class="s">${esc(i.urgence_motif||"")}</div></td><td>${esc(i.requester_name||"")}</td><td>${esc(i.status)}</td><td>${i.hors_budget_assume ? "Hors budget assumé" : "<span class='ko'>À imputer</span>"}</td><td class="n">${esc(euro(i.amount))}</td></tr>`).join("")}
