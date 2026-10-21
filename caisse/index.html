@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="21.10.2026 · 10">
+<meta name="app-build" content="22.10.2026 · 2">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -687,7 +687,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 21.10.2026 · 10</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 22.10.2026 · 2</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -2198,11 +2198,14 @@ const mailEsc = x => String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&l
 const prenomDe = it => String(it && it.requester_name || "").split(" ")[0] || "";
 // Dernière raison d'échec d'un envoi, pour pouvoir la montrer au trésorier.
 let dernierEchecMail = "";
-async function envoyerMail(to, subject, html, reply_to){
+// Expéditeur affiché des mails envoyés au CA sur les budgets (l'adresse d'envoi reste celle du bureau)
+const EXP_CA_BUDGET = "Présidence du BE <noreply@bureauetuidant.xyz>";
+async function envoyerMail(to, subject, html, reply_to, from){
   if(!to){ dernierEchecMail = "adresse du destinataire introuvable"; return false; }
   try{
     const payload = { to, subject, html };
     if(reply_to) payload.reply_to = reply_to;
+    if(from) payload.from = from;
     // On présente le jeton de session de l'utilisateur connecté plutôt que la clé publique :
     // la fonction send-email peut ainsi refuser les appels anonymes (usurpation du domaine d'envoi).
     let jeton = SUPABASE_ANON_KEY;
@@ -10514,7 +10517,7 @@ async function informerCARetour(id){
   if(!ok0) return;
   let ok = 0; const rates = [];
   for(const to of dest){
-    let bon = false; try{ bon = await envoyerMail(to, mail.sujet, mail.html, emailTreso()); }catch(_){}
+    let bon = false; try{ bon = await envoyerMail(to, mail.sujet, mail.html, emailTreso(), EXP_CA_BUDGET); }catch(_){}
     if(bon) ok++; else rates.push(to + " (" + (dernierEchecMail || "raison inconnue") + ")");
     await new Promise(r => setTimeout(r, 120));
   }
@@ -10561,7 +10564,7 @@ async function prevenirCARetour(id){
   if(!v) return;
   const mail = mailRetourCA(bc, v.mot);
   let ok = 0;
-  for(const to of dest){ try{ if(await envoyerMail(to, mail.sujet, mail.html, emailTreso())) ok++; }catch(_){} await new Promise(r2 => setTimeout(r2, 120)); }
+  for(const to of dest){ try{ if(await envoyerMail(to, mail.sujet, mail.html, emailTreso(), EXP_CA_BUDGET)) ok++; }catch(_){} await new Promise(r2 => setTimeout(r2, 120)); }
   if(!ok) return dire("Mail non envoyé", dernierEchecMail || "Aucun envoi n'a réussi.");
   try{ await majMetaBudget(id, { retour_alerte_at:new Date().toISOString() }); }catch(_){}
   await histoBudget(id, "CA prévenu : " + (mail.zero ? "aucune recette" : "retour partiel " + r.pct + " %") + " (" + ok + "/" + dest.length + " envoyés)");
