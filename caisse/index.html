@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="22.10.2026 · 2">
+<meta name="app-build" content="22.10.2026 · 6">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -687,7 +687,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 22.10.2026 · 2</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 22.10.2026 · 6</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -2200,12 +2200,16 @@ const prenomDe = it => String(it && it.requester_name || "").split(" ")[0] || ""
 let dernierEchecMail = "";
 // Expéditeur affiché des mails envoyés au CA sur les budgets (l'adresse d'envoi reste celle du bureau)
 const EXP_CA_BUDGET = "Présidence du BE <noreply@bureauetuidant.xyz>";
+const EXP_TRESO = "Trésorerie du BE <noreply@bureauetuidant.xyz>";
+// mails reçus par le trésorier : demandes de remboursement, paiements directs, messages de la Caisse
+const EXP_REMB = "remboursement-caisse <noreply@bureauetuidant.xyz>";
+const envoyerRemb = (to, subject, html, reply_to) => envoyerMail(to, subject, html, reply_to, EXP_REMB);   // expéditeur de tous les autres mails
 async function envoyerMail(to, subject, html, reply_to, from){
   if(!to){ dernierEchecMail = "adresse du destinataire introuvable"; return false; }
   try{
     const payload = { to, subject, html };
     if(reply_to) payload.reply_to = reply_to;
-    if(from) payload.from = from;
+    payload.from = from || EXP_TRESO;
     // On présente le jeton de session de l'utilisateur connecté plutôt que la clé publique :
     // la fonction send-email peut ainsi refuser les appels anonymes (usurpation du domaine d'envoi).
     let jeton = SUPABASE_ANON_KEY;
@@ -2262,7 +2266,7 @@ async function mailRembourse(it, note){
     <p style="text-align:center;margin:26px 0"><a href="${lienRecu(it)}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir / télécharger mon reçu</a></p>
     <p style="color:#666;font-size:13px">Vous pourrez le consulter, le télécharger en PDF et l'imprimer.</p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+    <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
   return envoyerMail(to, "Remboursement effectué — "+refOf(it), html);
 }
 async function mailCorriger(it, motif){
@@ -2275,7 +2279,7 @@ async function mailCorriger(it, motif){
     <p>Ouvrez votre demande dans l'application : vous pouvez <b>ajouter de nouvelles pièces</b> et compléter, puis renvoyer. Elle repassera automatiquement en attente de décision.</p>
     <p style="text-align:center;margin:22px 0"><a href="${lienDemande(it)}" style="background:#c47f17;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Corriger ma demande</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+    <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
   return envoyerMail(to, "Demande à corriger — "+refOf(it), html);
 }
 
@@ -2289,7 +2293,7 @@ async function mailRefuse(it, motif){
     <p style="color:#666;font-size:13px">Si vous pensez que ce refus est une erreur (par exemple si vous avez ajouté le bon document depuis), vous pouvez demander un réexamen&nbsp;:</p>
     <p style="text-align:center;margin:22px 0"><a href="${lienReexamen(it)}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Demander un réexamen</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+    <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
   return envoyerMail(to, "Demande refusée — "+refOf(it), html);
 }
 async function mailModifiee(it, avant){
@@ -2319,7 +2323,7 @@ async function mailModifiee(it, avant){
     ${tab}
     <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
     <p style="text-align:center;margin:22px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir la demande</a></p></div>`;
-  return envoyerMail(emailTreso(), "Demande modifiée — "+mailEsc(it.requester_name||"")+" ("+euro(it.amount)+")", htmlT, to || undefined);
+  return envoyerRemb(emailTreso(), "Demande modifiée — "+mailEsc(it.requester_name||"")+" ("+euro(it.amount)+")", htmlT, to || undefined);
 }
 async function mailSupprimee(it){
   const to = (state.profile && state.profile.email) || await emailDuDemandeur(it);
@@ -2339,7 +2343,7 @@ async function mailSupprimee(it){
     <p><b>${mailEsc(it.requester_name||"")}</b> a supprimé sa demande <b>${mailEsc(it.object)}</b> (${euro(it.amount)}).</p>
     <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
     <p>Aucune action n'est requise de votre part.</p></div>`;
-  return envoyerMail(emailTreso(), "Demande supprimée — "+mailEsc(it.requester_name||"")+" ("+euro(it.amount)+")", htmlT, to || undefined);
+  return envoyerRemb(emailTreso(), "Demande supprimée — "+mailEsc(it.requester_name||"")+" ("+euro(it.amount)+")", htmlT, to || undefined);
 }
 async function mailAlerteTreso(it, isDirect){
   const quoi = isDirect ? "paiement direct" : "remboursement";
@@ -2362,7 +2366,7 @@ async function mailAlerteTreso(it, isDirect){
     <p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Traiter la demande</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant</p></div>`;
-  return envoyerMail(emailTreso(), "Nouvelle demande de "+quoi+" — "+mailEsc(dem)+" ("+euro(it.amount)+")", html, mailDem || undefined);
+  return envoyerRemb(emailTreso(), "Nouvelle demande de "+quoi+" — "+mailEsc(dem)+" ("+euro(it.amount)+")", html, mailDem || undefined);
 }
 async function mailAccuse(it, isDirect, parTreso){
   const to = parTreso ? await emailDuDemandeur(it) : ((state.profile && state.profile.email) || await emailDuDemandeur(it));
@@ -2429,7 +2433,7 @@ async function mailRelance(it){
     <p>Merci de la compléter dès que possible directement dans l'application. Sans cela, le remboursement ne pourra pas être effectué.</p>
     <p style="text-align:center;margin:24px 0"><a href="${lienDemande(it)}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Compléter ma demande</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+    <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
   return envoyerMail(to, "Demande incomplète — "+refOf(it), html);
 }
 
@@ -2465,7 +2469,7 @@ async function alerterDormantes(auto){
     ${dormantes.length>15?`<p style="color:#666;font-size:13px">… et ${dormantes.length-15} autre(s).</p>`:""}
     <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+    <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
   const ok = await envoyerMail(to, `${dormantes.length} demande(s) validée(s) en attente de paiement`, html);
   if(ok){
     try{ await sb.from("events").insert({ request_id: tri[0].id, who:"Système", what: MARQUEUR_ALERTE_PAIEMENT }); }catch(_){}
@@ -2534,7 +2538,7 @@ async function mailContactTreso(it, message, nbPieces, membreEmail){
     <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la demande</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Vous pouvez répondre directement à cet e-mail : votre réponse ira au membre. — Caisse du bureau étudiant</p></div>`;
-  return envoyerMail(emailTreso(), "Nouveau message d'un membre — "+refOf(it), html, membreEmail || undefined);
+  return envoyerRemb(emailTreso(), "Nouveau message d'un membre — "+refOf(it), html, membreEmail || undefined);
 }
 
 async function mailReexamenTreso(it, msg){
@@ -2548,7 +2552,7 @@ async function mailReexamenTreso(it, msg){
     <p style="color:#666;font-size:13px">Le dossier apparaît dans l'onglet <b>Réexamens</b>. Ouvrez-le pour le retraiter puis « Remettre en attente » si vous décidez de le réexaminer.</p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Vous pouvez répondre directement à cet e-mail : votre réponse ira au membre. — Caisse du bureau étudiant</p></div>`;
-  return envoyerMail(emailTreso(), "Demande de réexamen — "+refOf(it), html, membreEmail || undefined);
+  return envoyerRemb(emailTreso(), "Demande de réexamen — "+refOf(it), html, membreEmail || undefined);
 }
 
 async function mailInscriptionValidee(m){
@@ -2561,7 +2565,7 @@ async function mailInscriptionValidee(m){
     <p>Vous pouvez dès à présent vous connecter et <b>déposer vos demandes de remboursement</b>.</p>
     <p style="text-align:center;margin:26px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Accéder à l'application</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+    <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
   return envoyerMail(m.email, "Votre inscription est validée — Caisse du bureau étudiant", html);
 }
 
@@ -2638,7 +2642,7 @@ async function mailRecapTreso(){
     <ul style="line-height:1.7">${li.map(x=>`<li>${mailEsc(x)}</li>`).join("")}</ul>
     <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+    <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
   toast("Envoi du récap…");
   const ok = await envoyerMail(to, "Récapitulatif Caisse", html);
   toast(ok ? "Récap envoyé par mail." : "Envoi impossible.");
@@ -3208,7 +3212,7 @@ async function refresh(){
     if(!state.relanceAutoFaite){ state.relanceAutoFaite = true; alerterDormantes(true); }
   }
   try{ await chargerBudgetsCaisse(); }catch(eB){ state.budErr = eB.message || String(eB); }
-  if(isTreso() && !state.tachesBudgetFaites && !state.budErr && !state.budMetaErr){ state.tachesBudgetFaites = true; tachesBudgetTreso(); }
+  if(isTreso() && !state.tachesBudgetFaites && !state.budErr && !state.budMetaErr){ state.tachesBudgetFaites = true; tachesBudgetTreso().then(() => rappelRecettesTitulaires()).catch(() => {}); }
   try{ majBudgetForm("f"); majBudgetForm("fd"); }catch(_){}
   try{ await chargerFactures(); }catch(eF){ state.feErr = eF.message || String(eF); }
   try{ await chargerNovelles(); }catch(eN){ state.nvErr = eN.message || String(eN); }
@@ -7248,6 +7252,27 @@ function majBudgetRecette(){
    2. récapitulatif hebdomadaire au trésorier
    Les retours promis non tenus ne partent jamais seuls : le trésorier clique « Prévenir le CA ». */
 const joursAvant = iso => Math.round((new Date(iso + "T12:00:00") - new Date(dateLocale() + "T12:00:00")) / 86400000);
+async function rappelRecettesTitulaires(){
+  const L = (state.budCaisse||[]).filter(bc => !bc.cloture && bc.retourMontant > 0 && (bc.recettes||0) < 0.005 && bc.retourDate
+    && joursAvant(bc.retourDate) <= 7 && !histoDe(bc.id).some(h => /Rappel au titulaire/.test(h.quoi || "")));
+  let envoyes = 0;
+  for(const bc of L){
+    const dest = (bc.membres||[]).map(id => (state.members||[]).find(m => m.id === id)).filter(m => m && m.email);
+    if(!dest.length) continue;
+    const j = joursAvant(bc.retourDate), lien = window.location.origin + window.location.pathname;
+    let ok = 0;
+    for(const m of dest){
+      const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a"><p>Bonjour ${mailEsc(m.first_name || String(m.name||"").split(" ")[0])},</p>
+        <p>Pour le budget <b>« ${mailEsc(bc.titre)} »</b>, un retour en sponsoring et/ou en recettes de <b>${euro(bc.retourMontant)}</b> était annoncé pour le <b>${fdate(bc.retourDate)}</b> (${j < 0 ? "date dépassée" : j === 0 ? "aujourd'hui" : "dans " + j + " jour(s)"}).</p>
+        <p>À ce jour, <b>aucun sponsor ni aucune recette</b> n'est enregistré. Si vous en avez reçu, pensez à les transmettre au trésorier pour qu'ils soient rattachés au budget. Sinon, merci de faire le point avec le trésorier.</p>
+        <p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
+        <p>La trésorerie du Bureau étudiant</p></div>`;
+      try{ if(await envoyerMail(m.email, "« " + bc.titre + " » — sponsors et recettes à enregistrer", html, emailTreso())) ok++; }catch(_){}
+    }
+    if(ok){ envoyes++; await histoBudget(bc.id, "Rappel au titulaire : sponsors et recettes à enregistrer (" + ok + "/" + dest.length + " envoyés)"); }
+  }
+  if(envoyes) toast("Rappel envoyé aux titulaires de " + envoyes + " budget(s) sans sponsor ni recette.");
+}
 async function tachesBudgetTreso(){
   const lien = window.location.origin + window.location.pathname;
   // 1. rappel de fin (nécessite le script SQL « budgets v3 »)
@@ -7420,7 +7445,7 @@ function renderMesBudgets(){
     const v3 = !state.budMetaErr && !state.resaErr;
     return `<div>${jaugeHTML(b, 0)}<div class="bud-txt">${nb} de vos demande(s) rattachée(s)${partage}</div>
       ${mes.length ? `<div class="bud-txt" style="margin-top:6px"><b>Vos réservations :</b></div>` + mes.map(x => `<div class="bud-txt">• ${euro(x.montant)} — ${esc(x.objet)}
-        <span class="hint">(${fstamp(x.created_at)})</span> <button class="btn ghost sm" data-resa-annul="${esc(x.id)}">Annuler</button></div>`).join("")
+        <span class="hint">(${fstamp(x.created_at)})</span> <button class="btn ghost sm" data-resa-modif="${esc(x.id)}">Modifier</button> <button class="btn ghost sm" data-resa-annul="${esc(x.id)}">Annuler</button></div>`).join("")
         + `<div class="hint" style="margin:4px 0 0">Votre prochaine demande sur ce budget utilisera ces réservations.</div>` : ""}
       ${v3 ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         ${et.ok ? `<button class="btn ghost sm" data-resa-nouv="${esc(b.id)}">Réserver un montant avant de dépenser</button>` : ""}
@@ -7459,6 +7484,31 @@ async function reserverMontant(bid){
   await chargerBudgetsCaisse(); renderMesBudgets(); majBudgetForm("f"); majBudgetForm("fd");
   alertesBudget(bid);
   await dire("Montant réservé", euro(v.mt) + " sont bloqués pour vous sur « " + b.titre + " ». Ils seront utilisés par votre prochaine demande sur ce budget.");
+}
+async function modifierReservation(id){
+  const x = (state.resas||[]).find(r => String(r.id) === String(id)); if(!x) return;
+  const b = budgetParId(x.budget_id); if(!b) return;
+  const reste = b.cout - b.consomme + Number(x.montant||0);
+  const v = await fenetreForm("Modifier la réservation", `
+    <p class="hint" style="margin:0">Budget « ${esc(b.titre)} » — vous pouvez réserver jusqu'à ${euro(reste)} (votre réservation actuelle comprise).</p>
+    <div class="field"><label>Montant (€)</label><input type="text" inputmode="decimal" data-f="mt" value="${esc(String(Number(x.montant)))}"></div>
+    <div class="field"><label>Pour quoi ?</label><input type="text" maxlength="120" data-f="obj" value="${esc(x.objet || "")}"></div>`,
+    "Enregistrer", ov => {
+      const mt = lireMontantLibre(ov.querySelector('[data-f="mt"]').value), obj = ov.querySelector('[data-f="obj"]').value.trim();
+      if(mt == null || Number.isNaN(mt) || !(mt > 0)) return "Indiquez un montant supérieur à 0, par exemple 120.";
+      if(mt > reste + 0.005) return "Il ne reste que " + euro(Math.max(0, reste)) + " pour cette réservation.";
+      if(obj.length < 3) return "Indiquez à quoi servira ce montant.";
+      return { mt, obj };
+    });
+  if(!v) return;
+  if(Math.abs(v.mt - Number(x.montant)) < 0.005 && v.obj === x.objet) return dire("Rien à modifier", "Vous n'avez rien changé.");
+  const { data, error } = await sb.rpc("caisse_modifier_reservation", { p_id:x.id, p_montant:v.mt, p_objet:v.obj });
+  if(error || !data) return dire("Erreur : réservation non modifiée", error ? messageBudgetServeur(error.message) : "Cette réservation n'est plus active.");
+  await chargerBudgetsCaisse(); renderMesBudgets(); if(state.view === "budget") renderBudget();
+  majBudgetForm("f"); majBudgetForm("fd");
+  const nv = (state.resas||[]).find(r => String(r.id) === String(id));
+  if(!nv || Math.abs(Number(nv.montant) - v.mt) > 0.005) return dire("Erreur : modification non vérifiée", "La base n'affiche pas le nouveau montant. Recharge la page pour vérifier.");
+  await dire("Réservation modifiée", "✅ Enregistré : " + euro(v.mt) + " — " + v.obj);
 }
 async function annulerReservation(id){
   const x = (state.resas||[]).find(r => String(r.id) === String(id)); if(!x) return;
@@ -7509,6 +7559,7 @@ document.addEventListener("click", async e => {
   }
   const a = e.target.closest("[data-resa-nouv]"); if(a) return reserverMontant(a.dataset.resaNouv);
   const c = e.target.closest("[data-resa-annul]"); if(c) return annulerReservation(c.dataset.resaAnnul);
+  const mo = e.target.closest("[data-resa-modif]"); if(mo) return modifierReservation(mo.dataset.resaModif);
   const d = e.target.closest("[data-compl]"); if(d) return demanderComplement(d.dataset.compl);
 });
 
@@ -8407,7 +8458,7 @@ function feMailHtml(f, rappel){
     <p style="text-align:center;margin:24px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">${plan ? "Voir le plan de paiement" : "Voir la facture"}</a></p>
     <p style="color:#666;font-size:13px">Le PDF et l'état du paiement sont consultables à tout moment dans l'application, onglet « Factures à échéance ».</p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-    <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+    <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
 }
 function feMailSujet(f, rappel){
   const pro = feProchaine(f);
@@ -9185,7 +9236,7 @@ async function nvMailResponsables(sujet, titre, corpsHtml){
       ${corpsHtml}
       <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir l'onglet Novelles</a></p>
       <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-      <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+      <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
     if(!await envoyerMail(m.email, sujet, html, emailTreso())) ok = false;
   }
   return ok;
@@ -9262,7 +9313,7 @@ async function nvMailDepense(d){
     <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir l'onglet Novelles</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant. Répondre à ce mail écrit directement à ${mailEsc(qui)}.</p></div>`;
-  return envoyerMail(emailTreso(), "Dépense Novelles — " + qui + " (" + euro(d.montant) + ")", html,
+  return envoyerRemb(emailTreso(), "Dépense Novelles — " + qui + " (" + euro(d.montant) + ")", html,
     (state.profile && state.profile.email) || undefined);
 }
 
@@ -10336,6 +10387,51 @@ function bEffectif(){ return (state.caMembres||[]).filter(a => a.email && a.stat
 function bSeuil(){ const n = bEffectif(); return n ? Math.floor(n/2)+1 : 0; }
 function bMonVote(b){ const me = state.profile && state.profile.id; return (b.votes||[]).find(v => v.membreId === me); }
 
+/* ---------- tableau de bord : couleurs très contrastées + libellés en toutes lettres ---------- */
+const DASH = {
+  gele:   { rang:1, ico:"⛔", lib:"GELÉ",            bg:"#a4161a", fg:"#fff" },
+  depasse:{ rang:2, ico:"🔴", lib:"BUDGET ÉPUISÉ",   bg:"#a4161a", fg:"#fff" },
+  retour: { rang:3, ico:"⚠",  lib:"RETOUR NON TENU", bg:"#b3261e", fg:"#fff" },
+  fin:    { rang:4, ico:"⏰", lib:"FIN PROCHE",       bg:"#8f4a00", fg:"#fff" },
+  p80:    { rang:5, ico:"🟠", lib:"80 % ATTEINT",     bg:"#8f4a00", fg:"#fff" },
+  clos:   { rang:6, ico:"🔒", lib:"CLÔTURÉ",          bg:"#33414d", fg:"#fff" },
+  ok:     { rang:7, ico:"✅", lib:"TOUT VA BIEN",     bg:"#0f6b37", fg:"#fff" },
+};
+function statutsDash(bc){
+  if(bc.cloture) return ["clos"];
+  const r = [], pct = bc.cout > 0 ? bc.consomme / bc.cout * 100 : 0, rt = retourEtat(bc);
+  if(bc.gel) r.push("gele");
+  if(pct >= 100) r.push("depasse"); else if(pct >= 80) r.push("p80");
+  if(rt && (rt.etat === "zero" || rt.etat === "partiel")) r.push("retour");
+  if(bc.fin){ const j = joursAvant(bc.fin); if(j >= 0 && j <= 14) r.push("fin"); }
+  return r.length ? r : ["ok"];
+}
+const badgeDash = (code, plus) => { const d = DASH[code]; return `<span style="display:inline-block;background:${d.bg};color:${d.fg};font-weight:800;font-size:14px;letter-spacing:.02em;padding:6px 12px;border-radius:8px;margin:2px 4px 2px 0;white-space:nowrap">${d.ico} ${d.lib}${plus ? " " + esc(plus) : ""}</span>`; };
+function tableauBordBudget(){
+  if(state.budErr) return "";
+  const L = (state.budCaisse||[]).map(bc => ({ bc, st: statutsDash(bc) }));
+  if(!L.length) return "";
+  L.sort((a,b) => Math.min(...a.st.map(x => DASH[x].rang)) - Math.min(...b.st.map(x => DASH[x].rang)) || String(a.bc.titre).localeCompare(String(b.bc.titre), "fr"));
+  const f = state.dashFiltre || "";
+  const compte = c => L.filter(x => x.st.includes(c)).length;
+  const tuiles = Object.keys(DASH).map(c => { const d = DASH[c], n = compte(c), on = f === c;
+    return `<button type="button" data-baction="dashfiltre" data-id="${c}" aria-pressed="${on}" style="cursor:pointer;text-align:left;background:${n ? d.bg : "transparent"};color:${n ? d.fg : "var(--muted)"};border:${on ? "4px solid var(--text)" : "2px solid " + d.bg};border-radius:12px;padding:12px 14px;min-width:150px;font-family:inherit">
+      <div style="font-size:30px;font-weight:800;line-height:1">${n}</div><div style="font-size:14px;font-weight:800;margin-top:4px">${d.ico} ${d.lib}</div></button>`; }).join("");
+  const lignes = L.filter(x => !f || x.st.includes(f)).map(({ bc, st }) => {
+    const pct = bc.cout > 0 ? Math.round(bc.consomme / bc.cout * 100) : 0;
+    const coul = pct >= 100 ? "#a4161a" : pct >= 80 ? "#8f4a00" : "#0f6b37";
+    const rt = retourEtat(bc);
+    return `<div style="border:2px solid var(--line);border-left:10px solid ${DASH[st[0]].bg};border-radius:12px;padding:12px 14px;margin-top:10px;background:var(--surface)">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
+        <b style="font-size:18px">${esc(bc.titre)}</b>
+        <button type="button" class="btn ghost sm" data-baction="dashaller" data-id="${esc(bc.id)}">Ouvrir ↓</button></div>
+      <div style="margin:8px 0">${st.map(c => badgeDash(c, c === "fin" ? "dans " + joursAvant(bc.fin) + " j" : c === "retour" && rt ? "(" + rt.pct + " %)" : "")).join("")}</div>
+      <div style="height:18px;border-radius:9px;background:var(--bg);border:2px solid var(--line);overflow:hidden"><div style="height:100%;width:${Math.min(100, pct)}%;background:${coul}"></div></div>
+      <div style="font-size:15px;margin-top:6px"><b style="color:${coul}">${pct} %</b> utilisé · ${euro(bc.consomme)} sur ${euro(bc.cout)} · <b>reste ${euro(bc.cout - bc.consomme)}</b>${bc.fin ? " · jusqu'au " + fdate(bc.fin) : ""}</div></div>`; }).join("");
+  return `<div class="card pad" style="margin-bottom:14px"><h3 style="margin:0 0 4px;font-size:20px">Tableau de bord des budgets</h3>
+    <p class="hint" style="margin:0 0 10px">Clique sur une case pour ne voir que ces budgets${f ? " — <b>filtre actif</b> : clique à nouveau pour l'enlever" : ""}.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">${tuiles}</div>${lignes || `<p class="hint">Aucun budget dans cette catégorie.</p>`}</div>`;
+}
 function renderBudget(){
   const box = $("#budgetList"); if(!box) return;
   if($("#budObligAll")) $("#budObligAll").checked = !!comptaCfg().budgetOblig;
@@ -10370,7 +10466,7 @@ function renderBudget(){
   const alerteHTML = aAlerter.length ? `<div class="callout" style="border-left:4px solid var(--red)"><b>Retour promis non tenu</b>
     <p>${aAlerter.map(x => { const r = retourEtat(x); return "« " + esc(x.titre) + " » : " + euro(r.recu) + " reçus sur " + euro(r.promis) + " promis (échéance " + fdate(r.date) + ")"; }).join("<br>")}</p>
     <p>Ouvre le budget concerné et clique « Prévenir le CA ».</p></div>` : "";
-  box.innerHTML = alerteHTML + list.map(b => {
+  box.innerHTML = tableauBordBudget() + alerteHTML + list.map(b => {
     const count = ch => (b.votes||[]).filter(v => v.choix===ch).length;
     const open = b.statut==="vote";
     const [cls,label] = B_BADGE[b.statut] || ["bg-open", esc(b.statut||"")];
@@ -10380,7 +10476,7 @@ function renderBudget(){
     const major = (open && eff) ? `<p class="hint" style="margin:8px 0 0">${count("pour")>=seuil ? `✓ Majorité atteinte : ${count("pour")} voix pour sur ${eff} membres (il en faut ${seuil}).` : `Majorité simple : ${seuil} voix pour sur ${eff} membres — il en manque ${Math.max(0,seuil-count("pour"))}.`}</p>` : "";
     const decided = (!open && b.decidePar) ? `<p class="hint" style="margin:8px 0 0">${b.statut==="approuve"?"✓ Approuvé":"✕ Refusé"} par ${esc(b.decidePar)}${b.decideLe?" le "+fdate(String(b.decideLe).slice(0,10)):""}</p>` : "";
     const decideBtns = peutDec ? `<div class="b-foot">${open ? `${(eff && count("pour")>=seuil)?`<button class="btn sm" data-baction="decide" data-id="${b.id}" data-st="approuve">✓ Approuver</button>`:""}<button class="btn ghost sm" data-baction="decide" data-id="${b.id}" data-st="refuse">✕ Refuser</button>` : `<button class="btn ghost sm" data-baction="decide" data-id="${b.id}" data-st="vote">Rouvrir le vote</button>`}</div>` : "";
-    return `<div class="card pad b-card">
+    return `<div class="card pad b-card" id="bcard-${esc(b.id)}">
       <div class="b-head"><div><h3 style="margin:0;font-family:'Fraunces',serif;font-weight:600;font-size:18px">${esc(b.titre)}</h3>
         <p class="b-meta">${esc(b.type||"")}${(Number(b.cout)>0)?` · <b>${euro(b.cout)}</b>`:""}${b.demandeur?` · par ${esc(b.demandeur)}`:""}${
           b.parent ? ` · <b>complément du budget « ${esc(((state.budgets||[]).find(x => String(x.id) === String(b.parent))||{}).titre || "?")} »</b>` : ""}</p></div>
@@ -10475,6 +10571,7 @@ function blocGestionBudget(b, bc){
     <div class="attach" style="margin-top:6px">
       ${bc.cloture ? `<span class="bud-txt" style="margin:0">Clôturé le ${fdate(String(bc.cloture).slice(0,10))}</span><button class="btn ghost sm" data-baction="rouvrirbud" data-id="${esc(b.id)}">Rouvrir le budget</button>`
                    : `<button class="btn ghost sm" data-baction="cloturerbud" data-id="${esc(b.id)}">Clôturer le budget</button>`}
+      <button class="btn ghost sm" data-baction="fichepdf" data-id="${esc(b.id)}">Fiche du budget (PDF)</button>
     </div>
     ${bc.retourMontant != null && bc.retourMontant > 0
       ? `<div class="attach" data-retour-ok="${esc(b.id)}" style="margin-top:6px;align-items:center"><span class="bud-txt" style="margin:0;color:var(--green)">✅ <b>Retour promis enregistré : ${euro(bc.retourMontant)} pour le ${bc.retourDate ? fdate(bc.retourDate) : "—"}</b></span>
@@ -10586,7 +10683,7 @@ function blocReserves(b){
       <div style="font-size:13.5px;margin-top:3px${levee ? ";text-decoration:line-through" : ""}">${esc(r.texte)}</div>
       ${r.suspensive && r.condition ? `<div class="hint" style="margin:3px 0 0">Condition de levée : ${esc(r.condition)}</div>` : ""}
       ${levee ? `<div class="hint" style="margin:3px 0 0;color:var(--green)">Levée le ${fstamp(r.levee_at)} par ${esc(r.levee_par || "")}${r.levee_note ? " — " + esc(r.levee_note) : ""}</div>`
-              : (isTreso() ? `<div style="margin-top:6px"><button class="btn ghost sm" data-baction="reslever" data-id="${esc(r.id)}">Lever la réserve</button></div>` : "")}
+              : (isTreso() ? `<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" data-baction="resmodif" data-id="${esc(r.id)}">Modifier</button><button class="btn ghost sm" data-baction="reslever" data-id="${esc(r.id)}">Lever la réserve</button></div>` : "")}
     </div>`;
   }).join("");
   const gele = liste.some(r => r.suspensive && !r.levee_at);
@@ -10615,25 +10712,133 @@ async function emettreReserve(budgetId){
     <p class="hint" style="margin:0">Budget « ${esc(b ? b.titre : "")} »${b ? " — " + esc((B_BADGE[b.statut]||["",b.statut])[1]) : ""}. Elle est visible par les membres du CA qui votent.</p>
     <div class="field"><label>Niveau</label><select data-f="niv">${optsHtml([
       {v:"remarque", l:"Remarque"}, {v:"reserve", l:"Réserve"}, {v:"defavorable", l:"Avis défavorable"}], "reserve")}</select></div>
-    <div class="field"><label>Texte</label><textarea data-f="txt" maxlength="600" placeholder="Ex. trésorerie insuffisante avant le subside de janvier"></textarea></div>
+    <div class="field"><label>Pourquoi</label><select data-f="motifliste">${listeChoix(MOTIFS_RES, "")}</select>
+      <textarea data-f="txt" maxlength="600" placeholder="Choisis un motif dans la liste, ou écris le tien. Tu peux aussi compléter le motif choisi." style="margin-top:6px"></textarea></div>
     <label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--text)">
       <input type="checkbox" class="tgl" data-f="susp"><span>Suspensive : le budget reste gelé tant que je ne l'ai pas levée (demandes urgentes du titulaire bloquées aussi)</span></label>
-    <div class="field" data-fwrap="cond" hidden><label>Condition de levée</label>
-      <input type="text" data-f="cond" maxlength="200" placeholder="Ex. deux devis reçus"></div>`,
+    <div class="field" data-fwrap="cond" hidden><label>Condition de levée</label><select data-f="condliste">${listeChoix(CONDS_RES, "")}</select>
+      <input type="text" data-f="cond" maxlength="200" placeholder="Choisis une condition dans la liste, ou écris la tienne" style="margin-top:6px"></div>`,
     "Émettre la réserve", ov => {
       const g = k => ov.querySelector(`[data-f="${k}"]`);
       const txt = g("txt").value.trim(), susp = g("susp").checked, cond = g("cond").value.trim();
-      if(txt.length < 3) return "Écris le texte de la réserve.";
+      if(txt.length < 3) return "Choisis un motif dans la liste, ou écris le texte de la réserve.";
       if(susp && cond.length < 3) return "Indique la condition de levée d'une réserve suspensive.";
       return { niveau: g("niv").value, texte: txt, suspensive: susp, condition: susp ? cond : null };
     });
   if(!v) return;
   const { data, error } = await sb.from("ca_budget_reserves").insert({ budget_id: String(budgetId), ...v,
-    auteur: bSig(), auteur_id: state.profile.id }).select("id");
+    auteur: bSig(), auteur_id: state.profile.id }).select("*");
   if(error || !data || !data.length) return dire("Réserve non enregistrée", error ? error.message : "La base a refusé l'enregistrement.");
+  const ecrit = data[0];
+  if(ecrit.texte !== v.texte || (v.suspensive && (ecrit.condition || "") !== (v.condition || "")) || ecrit.niveau !== v.niveau)
+    return dire("Erreur : réserve enregistrée de travers", "La base n'a pas gardé exactement ce que tu as saisi.\n\nSaisi : " + v.texte + (v.condition ? " / " + v.condition : "") + "\nEnregistré : " + ecrit.texte + (ecrit.condition ? " / " + ecrit.condition : ""));
   await histoBudget(budgetId, "Réserve émise (" + (RES_NIVEAU[v.niveau]||[v.niveau])[0] + (v.suspensive ? ", suspensive" : "") + ") : " + v.texte);
   await chargerBudgetsCaisse(); renderBudget();
-  await dire("Réserve émise", (RES_NIVEAU[v.niveau]||[v.niveau])[0] + (v.suspensive ? " suspensive : le budget est gelé jusqu'à la levée (« " + v.condition + " »). Ses titulaires ne peuvent plus faire de demande urgente non plus." : " informative : elle reste visible sur le budget et dans le rapport."));
+  await dire("Réserve émise", "✅ Enregistré : « " + ecrit.texte + " »\n\n" + (RES_NIVEAU[v.niveau]||[v.niveau])[0] + (v.suspensive ? " suspensive : le budget est gelé jusqu'à la levée (« " + v.condition + " »). Ses titulaires ne peuvent plus faire de demande urgente non plus." : " informative : elle reste visible sur le budget et dans le rapport."));
+  await envoyerMailsReserve(data[0], false);
+}
+/* ---------- mails d'une réserve (CA + titulaires si suspensive) ---------- */
+const MOTIFS_RES = ["Trésorerie insuffisante pour le moment","Dans l'attente d'un subside","Budget sans justification suffisante","Devis manquants","Montant trop élevé","Dépassement du budget global de l'événement","Doublon avec une autre demande ou un autre budget","Dépense non conforme au règlement","Budget déjà largement consommé","Dans l'attente de la décision du CA","Dans l'attente d'une réponse d'un sponsor"];
+const CONDS_RES = ["Réception du subside","Deux devis reçus","Justificatif fourni","Accord du CA","Retour de sponsoring confirmé","Budget revu à la baisse","Réponse du sponsor reçue","Précisions du titulaire reçues","Feu vert de la présidence"];
+const listeChoix = (liste, courant) => `<option value="">— Choisir dans la liste —</option>` + liste.map(x => `<option value="${esc(x)}"${x === courant ? " selected" : ""}>${esc(x)}</option>`).join("") + `<option value="__autre">Autre (j'écris moi-même)</option>`;
+// choisir dans la liste remplit le champ ; « Autre » le vide pour écrire librement
+document.addEventListener("change", e => {
+  const c = e.target.closest && e.target.closest("[data-f=\"motifliste\"],[data-f=\"condliste\"]"); if(!c) return;
+  const cible = (c.closest(".sb") || document).querySelector(c.dataset.f === "motifliste" ? '[data-f="txt"]' : '[data-f="cond"]');
+  if(!cible || !c.value) return;
+  if(c.value === "__autre"){ cible.value = ""; cible.focus(); } else cible.value = c.value;
+});
+function mailsReserve(r, modif){
+  const b = (state.budgets||[]).find(x => String(x.id) === String(r.budget_id)) || {};
+  const titre = b.titre || "Budget";
+  const lien = window.location.origin + window.location.pathname;
+  const niv = (RES_NIVEAU[r.niveau] || [r.niveau])[0];
+  const susp = !!r.suspensive;
+  const quoi = modif ? "modifiée" : "émise";
+  const auteur = r.auteur || bSig();
+  const sigM = "<p>La trésorerie du Bureau étudiant</p></div>";
+  const ouvre = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a1a">';
+  const ligne = (a, v) => '<tr><td style="padding:4px 14px 4px 0;color:#666;vertical-align:top">' + a + "</td><td>" + v + "</td></tr>";
+  const ca = {
+    sujet: (modif ? "Réserve modifiée" : "Réserve du trésorier") + " sur le budget « " + titre + " »",
+    html: ouvre + "<p>Chères et chers membres du CA,</p>"
+      + "<p>Une <b>réserve</b> a été " + quoi + " sur le budget <b>« " + mailEsc(titre) + " »</b>" + (b.cout ? " (" + euro(b.cout) + ")" : "") + ".</p>"
+      + '<table style="border-collapse:collapse;margin:12px 0;font-size:14px">'
+      + ligne("Niveau", "<b>" + mailEsc(niv) + "</b>")
+      + ligne("Type", susp ? "<b>Suspensive</b> : le budget est gelé" : "Informative")
+      + ligne("Réserve", mailEsc(r.texte).replace(/\n/g, "<br>"))
+      + (susp && r.condition ? ligne("Condition de levée", mailEsc(r.condition)) : "")
+      + ligne(modif ? "Modifiée le" : "Émise le", fdate(dateLocale()) + " par " + mailEsc(auteur))
+      + "</table><p>Vous pouvez la consulter dans l'app CA, onglet Budgets.</p>" + sigM };
+  const tit = {
+    sujet: "Votre budget « " + titre + " » est suspendu" + (modif ? " (réserve modifiée)" : ""),
+    html: nom => ouvre + "<p>Bonjour " + mailEsc(nom) + ",</p>"
+      + "<p>Le trésorier a " + (modif ? "modifié la <b>réserve suspensive</b> sur" : "émis une <b>réserve suspensive</b> sur") + " votre budget <b>« " + mailEsc(titre) + " »</b>.</p>"
+      + '<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">' + mailEsc(r.texte).replace(/\n/g, "<br>") + "</p>"
+      + (r.condition ? "<p><b>Condition de levée :</b> " + mailEsc(r.condition) + "</p>" : "")
+      + "<p>Tant qu'elle n'est pas levée, votre budget est gelé : vous ne pouvez plus y rattacher de demande, et les demandes urgentes hors budget sont aussi bloquées. Vos demandes déjà envoyées ne changent pas.</p>"
+      + "<p>Contactez le trésorier si vous avez des questions.</p>"
+      + '<p style="text-align:center;margin:22px 0"><a href="' + lien + '" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>' + sigM };
+  return { titre, ca, tit };
+}
+async function envoyerMailsReserve(r, modif){
+  const m = mailsReserve(r, modif);
+  const destCA = [...new Set((state.caMembres||[]).filter(a => a.email && a.statut === "actif").map(a => String(a.email).trim().toLowerCase()))];
+  const bc = budgetParId(r.budget_id);
+  const titulaires = r.suspensive ? ((bc && bc.membres) || []).map(id => (state.members||[]).find(x => x.id === id)).filter(x => x && x.email) : [];
+  if(!destCA.length && !titulaires.length) return dire("Aucun mail à envoyer", "Aucun membre actif du CA avec e-mail n'est chargé" + (r.suspensive ? ", et aucun titulaire n'a été trouvé pour ce budget." : "."));
+  const ok0 = await demander(modif ? "Informer de la modification" : "Prévenir par e-mail",
+    "Expéditeur : Trésorerie du BE\n\n• " + destCA.length + " membre(s) actif(s) du CA\n"
+    + (r.suspensive ? "• " + titulaires.length + " titulaire(s) du budget" + (titulaires.length ? " : " + titulaires.map(x => x.name).join(", ") : " (aucun trouvé)") + "\n" : "")
+    + "\nObjet CA : " + m.ca.sujet + (r.suspensive && titulaires.length ? "\nObjet titulaires : " + m.tit.sujet : "") + "\n\nEnvoyer ?", { bouton:"Envoyer les mails" });
+  if(!ok0) return;
+  let okCA = 0, okT = 0; const rates = [];
+  for(const to of destCA){
+    let bon = false; try{ bon = await envoyerMail(to, m.ca.sujet, m.ca.html, emailTreso()); }catch(_){}
+    if(bon) okCA++; else rates.push(to + " (" + (dernierEchecMail || "raison inconnue") + ")");
+    await new Promise(r2 => setTimeout(r2, 120));
+  }
+  for(const t of titulaires){
+    if(destCA.includes(String(t.email).trim().toLowerCase())) { /* il reçoit aussi le mail dédié : voulu */ }
+    let bon = false; try{ bon = await envoyerMail(t.email, m.tit.sujet, m.tit.html(t.first_name || String(t.name||"").split(" ")[0]), emailTreso()); }catch(_){}
+    if(bon) okT++; else rates.push(t.email + " (" + (dernierEchecMail || "raison inconnue") + ")");
+    await new Promise(r2 => setTimeout(r2, 120));
+  }
+  const tot = destCA.length + titulaires.length, ok = okCA + okT;
+  if(ok) await histoBudget(r.budget_id, "Mails " + (modif ? "de modification " : "") + "de réserve envoyés (" + okCA + "/" + destCA.length + " CA" + (r.suspensive ? ", " + okT + "/" + titulaires.length + " titulaires" : "") + ")");
+  if(!ok) return dire("Erreur : aucun mail envoyé", "Aucun des " + tot + " mails n'est parti.\n\nErreur : " + (dernierEchecMail || "raison inconnue"));
+  if(rates.length) return dire("Envoi partiel", "⚠ " + ok + "/" + tot + " mails envoyés.\n\nNon envoyés :\n" + rates.join("\n"));
+  return dire("Mails envoyés", "✅ " + okCA + "/" + destCA.length + " membres du CA" + (r.suspensive ? " et " + okT + "/" + titulaires.length + " titulaire(s) du budget" : "") + " ont reçu le mail.");
+}
+async function modifierReserve(resId){
+  const r = (state.reserves||[]).find(x => String(x.id) === String(resId)); if(!r) return;
+  if(r.levee_at) return dire("Réserve déjà levée", "Une réserve levée ne peut plus être modifiée.");
+  const v = await fenetreForm("Modifier la réserve", `
+    <p class="hint" style="margin:0">${r.suspensive ? "Réserve suspensive : le budget reste gelé." : "Réserve informative."}</p>
+    <div class="field"><label>Niveau</label><select data-f="niv">${optsHtml([
+      {v:"remarque", l:"Remarque"}, {v:"reserve", l:"Réserve"}, {v:"defavorable", l:"Avis défavorable"}], r.niveau)}</select></div>
+    <div class="field"><label>Pourquoi</label><select data-f="motifliste">${listeChoix(MOTIFS_RES, r.texte)}</select>
+      <textarea data-f="txt" maxlength="600" style="margin-top:6px">${esc(r.texte)}</textarea></div>
+    ${r.suspensive ? `<div class="field"><label>Condition de levée</label><select data-f="condliste">${listeChoix(CONDS_RES, r.condition || "")}</select>
+      <input type="text" data-f="cond" maxlength="200" value="${esc(r.condition || "")}" style="margin-top:6px"></div>` : ""}`,
+    "Enregistrer", ov => {
+      const g = k => ov.querySelector(`[data-f="${k}"]`);
+      const txt = g("txt").value.trim(), cond = g("cond") ? g("cond").value.trim() : null;
+      if(txt.length < 3) return "Écris la raison de la réserve.";
+      if(r.suspensive && (cond || "").length < 3) return "Indique la condition de levée.";
+      return { niveau: g("niv").value, texte: txt, condition: r.suspensive ? cond : r.condition };
+    });
+  if(!v) return;
+  if(v.niveau === r.niveau && v.texte === r.texte && (v.condition || "") === (r.condition || "")) return dire("Rien à modifier", "Tu n'as rien changé.");
+  const { data, error } = await sb.from("ca_budget_reserves").update(v).eq("id", r.id).is("levee_at", null).select("*");
+  if(error || !data || !data.length) return dire("Erreur : réserve non modifiée", error ? error.message : "La base a refusé la modification (réserve peut-être déjà levée).");
+  const ecrit = data[0];
+  if(ecrit.texte !== v.texte || ecrit.niveau !== v.niveau || (r.suspensive && (ecrit.condition || "") !== (v.condition || "")))
+    return dire("Erreur : modification non gardée", "La base n'a pas gardé exactement ce que tu as saisi.\n\nSaisi : " + v.texte + (v.condition ? " / " + v.condition : "") + "\nEnregistré : " + ecrit.texte + (ecrit.condition ? " / " + ecrit.condition : ""));
+  await histoBudget(r.budget_id, "Réserve modifiée : « " + r.texte + " » → « " + v.texte + " »" + (r.suspensive && v.condition !== r.condition ? " ; condition : « " + (r.condition || "") + " » → « " + v.condition + " »" : ""));
+  await chargerBudgetsCaisse(); renderBudget();
+  await dire("Réserve modifiée", "✅ Enregistré :\n\n" + ecrit.texte + (r.suspensive ? "\nCondition de levée : " + ecrit.condition : ""));
+  await envoyerMailsReserve(data[0], true);
 }
 async function leverReserve(resId){
   const r = (state.reserves||[]).find(x => String(x.id) === String(resId)); if(!r) return;
@@ -10751,8 +10956,12 @@ async function budgetAction(action, ds){
     await chargerBudgetsCaisse(); renderBudget();
     return dire(fermer ? "Budget clôturé" : "Budget rouvert", fermer ? "« " + bc.titre + " » est clôturé. Économie : " + euro(economie) + "." : "« " + bc.titre + " » peut de nouveau recevoir des demandes.");
   }
+  if(action === "dashfiltre"){ state.dashFiltre = state.dashFiltre === ds.id ? "" : ds.id; return renderBudget(); }
+  if(action === "dashaller"){ const c = document.getElementById("bcard-" + ds.id); if(c) c.scrollIntoView({ behavior:"smooth", block:"start" }); return; }
+  if(action === "fichepdf") return ouvrirRapportBudget(String(ds.id));
   if(action === "resnouv") return emettreReserve(ds.id);
   if(action === "reslever") return leverReserve(ds.id);
+  if(action === "resmodif") return modifierReserve(ds.id);
   if(action === "fin" || action === "findefaut"){
     const id = String(ds.id);
     const el = document.querySelector(`[data-bfin="${CSS.escape(id)}"]`);
@@ -10992,8 +11201,8 @@ if($("#budRapportCsv")) $("#budRapportCsv").onclick = () => {
   telechargerFichier("rapport-budgets-" + dateLocale() + ".csv",
     "\uFEFF" + rows.map(r => r.map(v => `"${String(v==null?"":v).replace(/"/g,'""')}"`).join(";")).join("\n"), "text/csv;charset=utf-8");
 };
-if($("#budRapportBtn")) $("#budRapportBtn").onclick = () => {
-  const L = lignesRapportBudget().filter(x => !x.b.parent);
+function ouvrirRapportBudget(seulId){
+  const L = lignesRapportBudget().filter(x => !x.b.parent && (!seulId || String(x.b.id) === seulId));
   if(!L.length) return toast("Aucun budget à afficher.");
   const nomA = comptaCfg().nomAsbl || "Le bureau étudiant";
   const tot = k => L.filter(x => x.b.statut === "approuve").reduce((t,x) => t + x[k], 0);
@@ -11003,7 +11212,7 @@ if($("#budRapportBtn")) $("#budRapportBtn").onclick = () => {
     <td class="n">${esc(euro(x.cout))}</td><td class="n">${esc(euro(x.paye))}</td><td class="n">${esc(euro(x.valide + x.attente))}</td>
     <td class="n${x.reste < -0.005 ? " ko" : ""}">${esc(euro(x.reste))}</td><td class="n${x.pct > 100 ? " ko" : ""}">${x.pct} %</td><td class="n">${x.urg || ""}</td></tr>
     ${x.reserves.length ? `<tr><td colspan="7" class="res">${x.reserves.map(r => `<div${r.levee_at ? ' class="lev"' : ""}>${esc(resTexte(r))} — ${esc(r.auteur||"")}, ${esc(fdate(String(r.created_at).slice(0,10)))}</div>`).join("")}</td></tr>` : ""}`;
-  const ua = urgencesAssumees();
+  const ua = seulId ? [] : urgencesAssumees();
   const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Rapport par budget — ${esc(nomA)}</title>
 <style>body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:960px;margin:28px auto;padding:0 18px;font-size:12.5px}
 h1{font-size:18px;margin:0 0 2px}h2{font-size:14px;margin:22px 0 6px;border-bottom:2px solid #333;padding-bottom:3px}.meta{color:#555;font-size:11.5px}
@@ -11012,20 +11221,21 @@ th{font-size:11px;text-transform:uppercase;color:#555}td.n,th.n{text-align:right
 .s{color:#666;font-size:11px;margin-top:2px}td.res{background:#fafafa;font-size:11.5px;color:#333}td.res .lev{color:#888;text-decoration:line-through}
 tr.tot td{font-weight:bold;border-top:2px solid #333}.noprint{margin:14px 0}@media print{.noprint{display:none}body{margin:0}}</style></head><body>
 <div class="noprint"><button onclick="window.print()">Imprimer / enregistrer en PDF</button></div>
-<h1>${esc(nomA)} — rapport par budget</h1><div class="meta">Édité le ${esc(fdate(dateLocale()))} · engagé = payé + validé + en attente</div>
+<h1>${esc(nomA)} — ${seulId ? "fiche du budget « " + esc(L[0].titre) + " »" : "rapport par budget"}</h1><div class="meta">Édité le ${esc(fdate(dateLocale()))} · engagé = payé + validé + en attente</div>
 <table><thead><tr><th>Budget</th><th class="n">Approuvé</th><th class="n">Payé</th><th class="n">Engagé non payé</th><th class="n">Reste</th><th class="n">%</th><th class="n">Urgences</th></tr></thead>
 <tbody>${L.map(ligne).join("")}
 <tr class="tot"><td>Total des budgets approuvés</td><td class="n">${esc(euro(tot("cout")))}</td><td class="n">${esc(euro(tot("paye")))}</td><td class="n">${esc(euro(tot("valide")+tot("attente")))}</td><td class="n">${esc(euro(tot("reste")))}</td><td></td><td></td></tr></tbody></table>
 <h2>Historique des changements</h2>
 ${L.some(x => x.histo.length) ? L.filter(x => x.histo.length).map(x => `<p style="margin:10px 0 2px"><b>${esc(x.titre)}</b></p>${x.histo.slice(0,30).map(h => `<div class="s">${esc(fstamp(h.quand))} — ${esc(h.qui||"")} : ${esc(h.quoi)}</div>`).join("")}`).join("") : `<p class="meta">Aucun changement enregistré.</p>`}
-<h2>Urgences hors budget non imputées</h2>
-${ua.length ? `<table><thead><tr><th>Demande</th><th>Demandeur</th><th>Statut</th><th>Classement</th><th class="n">Montant</th></tr></thead><tbody>
+${seulId ? "" : "<h2>Urgences hors budget non imputées</h2>"}
+${seulId ? "" : ua.length ? `<table><thead><tr><th>Demande</th><th>Demandeur</th><th>Statut</th><th>Classement</th><th class="n">Montant</th></tr></thead><tbody>
 ${ua.map(i => `<tr><td>${esc(refOf(i))} — ${esc(i.object||"")}<div class="s">${esc(i.urgence_motif||"")}</div></td><td>${esc(i.requester_name||"")}</td><td>${esc(i.status)}</td><td>${i.hors_budget_assume ? "Hors budget assumé" : "<span class='ko'>À imputer</span>"}</td><td class="n">${esc(euro(i.amount))}</td></tr>`).join("")}
 <tr class="tot"><td colspan="4">Total</td><td class="n">${esc(euro(ua.reduce((t,i)=>t+Number(i.amount||0),0)))}</td></tr></tbody></table>` : `<p class="meta">Aucune.</p>`}
 </body></html>`;
   const w = window.open("", "_blank"); if(!w) return toast("Autorise les fenêtres pop-up.");
   w.document.open(); w.document.write(html); w.document.close();
-};
+}
+if($("#budRapportBtn")) $("#budRapportBtn").onclick = () => ouvrirRapportBudget("");
 
 document.addEventListener("click", e => {
   const el = e.target.closest("[data-baction]");
@@ -11161,7 +11371,7 @@ function ouvrirMessagerie(memberId, memberName, memberEmail){
             emailTreso()), "message au membre");
         }
       } else {
-        await avertirMail(envoyerMail(emailTreso(), "Nouveau message d'un membre — " + (memberName||""),
+        await avertirMail(envoyerRemb(emailTreso(), "Nouveau message d'un membre — " + (memberName||""),
           `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a2e"><h2 style="margin:0 0 10px">Nouveau message d'un membre</h2><p><b>${mailEsc(memberName||"Un membre")}</b> vous a écrit :</p><p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(body).replace(/\n/g,"<br>")}</p><p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:12px 22px;border-radius:9px;text-decoration:none;font-weight:bold">Ouvrir la messagerie</a></p></div>`,
           memberEmail || undefined), "message au trésorier");
       }
@@ -13321,7 +13531,7 @@ async function mailDepensePres(d){
     <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir dans la caisse (onglet Dépenses)</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant. Répondre à ce mail écrit directement à ${mailEsc(qui)}.</p></div>`;
-  return envoyerMail(emailTreso(), "Dépense de la présidente — " + qui + " (" + euro(d.amount) + ")", html,
+  return envoyerRemb(emailTreso(), "Dépense de la présidente — " + qui + " (" + euro(d.amount) + ")", html,
     (state.profile && state.profile.email) || undefined);
 }
 
