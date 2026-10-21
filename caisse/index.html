@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="20.10.2026 · 2">
+<meta name="app-build" content="21.10.2026 · 1">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -687,7 +687,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 20.10.2026 · 2</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 21.10.2026 · 1</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -1150,6 +1150,8 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
           <option value="À corriger">À corriger ⚠</option>
           <option value="reexamen">Réexamens ⚠</option>
           <option value="direct">Paiements directs</option>
+          <option value="urgence">Urgentes hors budget</option>
+          <option value="budNA">Budget non approuvé ⚠</option>
         </select>
         <input type="text" id="search" placeholder="Objet, nom, montant, référence, motif…">
         <div class="spacer"></div>
@@ -1462,7 +1464,15 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
         <label class="check" style="display:flex;align-items:center;gap:11px;margin-top:10px;text-transform:none;letter-spacing:0;font-size:14px;font-weight:600;color:var(--text)">
           <input type="checkbox" id="budObligAll" class="tgl"><span>Budget obligatoire pour tous</span></label>
         <p class="hint" style="margin:8px 0 0">Activé : chaque demande d'un membre doit être rattachée à un de ses budgets approuvés, sauf « demande urgente — hors budget ». Un réglage par personne (onglet Membres) passe avant ce réglage. Toi, tu n'es jamais bloqué.</p>
+        <div class="field" style="margin-top:14px;max-width:340px"><label for="budUrgLimite">Urgences hors budget : maximum par membre et par mois</label>
+          <input type="number" id="budUrgLimite" min="0" max="99" step="1" value="0">
+          <span class="hint">0 = sans limite. Au-delà, le membre doit passer par toi. Une urgence peut aussi être désactivée par personne (onglet Membres).</span></div>
         <p class="hint" id="budSqlErr" hidden style="margin:8px 0 0;color:var(--red)"></p>
+        <p class="hint" id="budV2Err" hidden style="margin:8px 0 0;color:var(--amber)"></p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+          <button class="btn ghost sm" id="budRapportBtn">Rapport par budget (à imprimer)</button>
+          <button class="btn ghost sm" id="budRapportCsv">Rapport par budget (CSV)</button>
+        </div>
       </div>
       <p class="hint" style="margin:0 0 12px">Miroir en direct des budgets de l'espace CA — même base de données. Tu peux consulter, voter et approuver / refuser : tout est synchronisé automatiquement avec l'app CA.</p>
       <div class="kpis" id="budgetStats"></div>
@@ -3086,6 +3096,7 @@ async function start(){
       .on("postgres_changes",{event:"*",schema:"public",table:"profiles"}, async () => { await loadProfile(user); await refresh(); })
       .on("postgres_changes",{event:"*",schema:"public",table:"ca_budgets"}, async () => { try{ await loadBudgetsCaisse(); if(state.view==="budget") renderBudget(); }catch(_){} })
       .on("postgres_changes",{event:"*",schema:"public",table:"ca_budget_votes"}, async () => { try{ await loadBudgetsCaisse(); if(state.view==="budget") renderBudget(); }catch(_){} })
+      .on("postgres_changes",{event:"*",schema:"public",table:"ca_budget_reserves"}, async () => { try{ await chargerBudgetsCaisse(); majBudgetForm("f"); majBudgetForm("fd"); renderMesBudgets(); if(state.view==="budget") renderBudget(); }catch(_){} })
       .subscribe();
   }
   await refresh();
@@ -3389,10 +3400,12 @@ $("#d_body").addEventListener("click", async e => {
   if(!await demander("Corriger le montant",
       "« " + (it.object || "") + " » — " + (it.requester_name || "")
       + "\n\n" + euro(ancien) + "  →  " + euro(nouveau)
-      + "\n\nLe bilan, les comptes et le dossier de contrôle seront recalculés. Aucun e-mail n'est envoyé.",
+      + "\n\nLe bilan, les comptes et le dossier de contrôle seront recalculés. Aucun e-mail n'est envoyé."
+      + (it.budget_id && compteBudget(it) && avertBudget(it.budget_id, nouveau - ancien) ? "\n\n" + avertBudget(it.budget_id, nouveau - ancien) : ""),
       { bouton:"Corriger" })) return;
   b.disabled = true;
   const { data, error } = await sb.from("requests").update({ amount: nouveau }).eq("id", it.id).select("id");
+  if(!error && data && data.length && it.budget_id) alertesBudget(it.budget_id);
   b.disabled = false;
   if(error) return toast("Correction impossible : " + error.message);
   if(!data || !data.length) return toast("Correction refusée par la base : le montant n'a pas changé.");
@@ -7141,23 +7154,65 @@ async function signerDemande(montant, direct, iban){
 }
 
 /* ---------- budgets reliés aux demandeurs ----------
-   budgets_caisse() (fonction serveur) renvoie les budgets approuvés avec leurs titulaires et
-   le montant déjà consommé : tous pour le trésorier, seulement les siens pour un membre.
-   Réglages : compta.budgetOblig (général) et compta.budgetObligMembres { id: "toujours"|"jamais" }. */
-state.budCaisse = []; state.budErr = null;
+   budgets_caisse() (fonction serveur) renvoie les budgets approuvés avec leurs titulaires :
+   tous pour le trésorier, seulement les siens pour un membre.
+   caisse_budget_montants() (script SQL « budgets v2 ») ajoute, pour ces mêmes budgets, les montants
+   payés / validés / en attente, le nombre d'urgences, la date de fin effective et le gel éventuel
+   (réserve suspensive non levée). « Consommé » = en attente + à corriger + validé + remboursé.
+   Réglages : compta.budgetOblig, compta.budgetObligMembres { id: "toujours"|"jamais" },
+   compta.urgLimiteMois (0 = sans limite), compta.urgDesactive { id: true }.
+   Le trigger SQL caisse_controle_budget refait tous ces contrôles côté serveur. */
+state.budCaisse = []; state.budErr = null; state.budMetaErr = null; state.reserves = []; state.resErr = null;
+const STATUTS_ENGAGES = ["En attente","À corriger","Validée","Remboursée"];
+const compteBudget = it => !!it && STATUTS_ENGAGES.includes(it.status);
 async function chargerBudgetsCaisse(){
   const { data, error } = await sb.rpc("budgets_caisse");
   if(error){ state.budErr = error.message || String(error); state.budCaisse = []; return; }
   state.budErr = null;
-  state.budCaisse = (data || []).map(b => ({ ...b, id:String(b.id), cout:Number(b.cout||0), consomme:Number(b.consomme||0), membres:b.membres||[] }));
+  state.budCaisse = (data || []).map(b => ({ ...b, id:String(b.id), cout:Number(b.cout||0), consomme:Number(b.consomme||0), membres:b.membres||[],
+    paye:null, valide:null, attente:null, nbUrg:0, fin:null, gel:null }));
+  try{
+    const r = await sb.rpc("caisse_budget_montants");
+    if(r.error) throw r.error;
+    state.budMetaErr = null;
+    const m = new Map((r.data || []).map(x => [String(x.id), x]));
+    state.budCaisse.forEach(b => { const x = m.get(b.id); if(!x) return;
+      b.paye = Number(x.paye||0); b.valide = Number(x.valide||0); b.attente = Number(x.attente||0);
+      b.consomme = b.paye + b.valide + b.attente;
+      b.nbUrg = Number(x.nb_urgences||0); b.fin = x.date_fin ? String(x.date_fin).slice(0,10) : null; b.gel = x.gel || null; });
+  }catch(eM){ state.budMetaErr = eM.message || String(eM); }
+  if(isTreso()){
+    try{
+      const r = await sb.from("ca_budget_reserves").select("*").order("created_at", { ascending:true });
+      if(r.error) throw r.error;
+      state.resErr = null; state.reserves = r.data || [];
+    }catch(eR){ state.resErr = eR.message || String(eR); state.reserves = []; }
+  }
 }
 const budgetsDe = uid => (state.budCaisse||[]).filter(b => (b.membres||[]).includes(uid));
 const budgetParId = id => (state.budCaisse||[]).find(b => b.id === String(id));
+const reservesDe = id => (state.reserves||[]).filter(r => String(r.budget_id) === String(id));
+const reservesActives = id => reservesDe(id).filter(r => !r.levee_at);
 function budgetObligatoire(uid){
   const c = comptaCfg(), m = (c.budgetObligMembres || {})[uid];
   if(m === "toujours") return true;
   if(m === "jamais") return false;
   return !!c.budgetOblig;
+}
+// budget utilisable pour une dépense à cette date ? (gel par réserve suspensive, date de fin)
+function budgetEtat(b, dateDep){
+  if(!b) return { ok:false, raison:"budget introuvable ou plus approuvé" };
+  if(b.gel) return { ok:false, gele:true, raison:"en attente de levée de la réserve du trésorier : " + b.gel };
+  if(b.fin && dateDep && String(dateDep) > b.fin) return { ok:false, raison:"utilisable jusqu'au " + fdate(b.fin) + " seulement" };
+  return { ok:true };
+}
+// urgences hors budget d'un membre
+const urgCfg = uid => ({ limite: Math.max(0, parseInt(comptaCfg().urgLimiteMois, 10) || 0),
+                        off: !!((comptaCfg().urgDesactive || {})[uid]) });
+const moisCourant = () => dateLocale().slice(0,7);
+function urgencesDe(uid, duMois){
+  return (state.items||[]).filter(i => i.user_id === uid && i.hors_budget && i.status !== "Refusée"
+    && (!duMois || String(i.created_at||"").slice(0,7) === moisCourant()));
 }
 function jaugeHTML(b, ajout){
   if(!b) return "";
@@ -7165,40 +7220,69 @@ function jaugeHTML(b, ajout){
   const pct = cout > 0 ? Math.round(apres / cout * 100) : 0;
   const cls = apres > cout + 0.005 ? "ko" : pct >= 80 ? "warn" : "";
   const reste = cout - cons;
+  const detail = b.paye != null ? ` <span class="hint">(payé ${euro(b.paye)} · validé ${euro(b.valide)} · en attente ${euro(b.attente)})</span>` : "";
+  const etat = b.gel ? `<div class="bud-txt"><span class="ko">Gelé</span> — en attente de levée de la réserve du trésorier : ${esc(b.gel)}</div>`
+    : (b.fin && dateLocale() > b.fin ? `<div class="bud-txt"><span class="warn">Clôturé le ${fdate(b.fin)}</span> : il ne couvre plus les dépenses postérieures.</div>`
+    : (b.fin ? `<div class="bud-txt">Utilisable jusqu'au ${fdate(b.fin)}.</div>` : ""));
   return `<div class="bud-bar ${cls}"><i style="width:${Math.min(100, Math.max(0, pct))}%"></i></div>
-    <div class="bud-txt">${esc(b.titre||"Budget")} : <b>${euro(cons)}</b> utilisés sur <b>${euro(cout)}</b> — reste <b>${euro(reste)}</b>${
-      ajout ? ` · après cette demande : <span class="${cls}">${euro(cout - apres)} (${pct} %)</span>` : ` (${cout>0?Math.round(cons/cout*100):0} %)`}</div>`;
+    <div class="bud-txt">${esc(b.titre||"Budget")} : <b>${euro(cons)}</b> engagés sur <b>${euro(cout)}</b> — reste <b>${euro(reste)}</b>${
+      ajout ? ` · après cette demande : <span class="${cls}">${euro(cout - apres)} (${pct} %)</span>` : ` (${cout>0?Math.round(cons/cout*100):0} %)`}${detail}</div>${etat}`;
 }
-const PFX_BUD = { f:{ montant:"#f_amount" }, fd:{ montant:"#fd_amount" } };
+// avertissement trésorier : delta = montant ajouté à la consommation du budget
+function avertBudget(bid, delta){
+  const b = bid ? budgetParId(bid) : null;
+  if(!b) return "";
+  const apres = Number(b.consomme||0) + Number(delta||0);
+  const pct = b.cout > 0 ? Math.round(apres / b.cout * 100) : 0;
+  const morceaux = [];
+  if(apres > b.cout + 0.005) morceaux.push("le budget « " + b.titre + " » " + (Math.abs(delta) < 0.005 ? "est déjà" : "passera")
+    + " à " + pct + " % (" + euro(apres) + " sur " + euro(b.cout) + ", dépassement de " + euro(apres - b.cout) + ")");
+  if(b.gel) morceaux.push("le budget « " + b.titre + " » est gelé par une réserve suspensive : " + b.gel);
+  return morceaux.length ? "⚠ Attention : " + morceaux.join(" ; ") + "." : "";
+}
+const PFX_BUD = { f:{ montant:"#f_amount", date:"#f_date" }, fd:{ montant:"#fd_amount", date:"#fd_dateDem" } };
 function uidFormulaire(px){
   if(px === "fd" && isTreso() && $("#fd_pour") && $("#fd_pour").value) return $("#fd_pour").value;
   return state.profile && state.profile.id;
 }
+const dateFormulaire = px => ($(PFX_BUD[px].date) && $(PFX_BUD[px].date).value) || dateLocale();
 function majBudgetForm(px){
   const box = $("#" + px + "_budBox"); if(!box || !state.profile) return;
   const uid = uidFormulaire(px);
   const pourAutre = uid !== state.profile.id;
   // le trésorier n'est pas concerné pour ses propres demandes
   if(state.budErr || (isTreso() && !pourAutre)){ box.hidden = true; return; }
-  const liste = budgetsDe(uid), oblig = budgetObligatoire(uid);
+  const liste = budgetsDe(uid), oblig = budgetObligatoire(uid), dDep = dateFormulaire(px);
   // rien à choisir et rien d'obligatoire : le bloc reste caché
   box.hidden = !liste.length && !oblig;
   const sel = $("#" + px + "_budget"), cur = sel.value;
+  const utilisables = liste.filter(b => budgetEtat(b, dDep).ok);
   sel.innerHTML = `<option value="">${oblig && !isTreso() ? "— Choisir un budget —" : "— Aucun budget —"}</option>`
-    + liste.map(b => `<option value="${esc(b.id)}">${esc(b.titre)} · reste ${esc(euro(b.cout - b.consomme))} sur ${esc(euro(b.cout))}</option>`).join("");
-  if(cur && liste.some(b => b.id === cur)) sel.value = cur;
-  else if(liste.length === 1 && oblig && !isTreso()) sel.value = liste[0].id;
+    + liste.map(b => { const et = budgetEtat(b, dDep);
+        return `<option value="${esc(b.id)}"${et.ok ? "" : " disabled"}>${esc(b.titre)} · ${et.ok
+          ? "reste " + esc(euro(b.cout - b.consomme)) + " sur " + esc(euro(b.cout)) : esc(et.gele ? "gelé" : "indisponible")}</option>`; }).join("");
+  if(cur && utilisables.some(b => b.id === cur)) sel.value = cur;
+  else if(utilisables.length === 1 && oblig && !isTreso()) sel.value = utilisables[0].id;
   const montant = parseFloat(String($(PFX_BUD[px].montant).value).replace(",", ".")) || 0;
   const b = budgetParId(sel.value);
-  $("#" + px + "_budJauge").innerHTML = b ? jaugeHTML(b, montant)
-    : (oblig && !isTreso() ? `<div class="bud-txt">${liste.length ? "Choisissez le budget de cette dépense." : "<span class=\"warn\">Aucun budget approuvé à votre nom.</span> Si la dépense est urgente, activez « Demande urgente — hors budget »."}</div>` : "");
-  $("#" + px + "_urgWrap").hidden = isTreso();
+  const bloques = liste.filter(x => !budgetEtat(x, dDep).ok)
+    .map(x => `<div class="bud-txt"><span class="warn">« ${esc(x.titre)} » indisponible</span> : ${esc(budgetEtat(x, dDep).raison)}.</div>`).join("");
+  $("#" + px + "_budJauge").innerHTML = (b ? jaugeHTML(b, montant)
+    : (oblig && !isTreso() ? `<div class="bud-txt">${utilisables.length ? "Choisissez le budget de cette dépense." : "<span class=\"warn\">Aucun budget utilisable à votre nom.</span> Si la dépense est urgente, activez « Demande urgente — hors budget »."}</div>` : ""))
+    + bloques;
+  const uc = urgCfg(uid);
+  $("#" + px + "_urgWrap").hidden = isTreso() || uc.off;
   const urg = $("#" + px + "_urg");
+  if(uc.off && urg) urg.checked = false;
   $("#" + px + "_urgBox").hidden = !(urg && urg.checked);
+  const hint = $("#" + px + "_urgBox") && $("#" + px + "_urgBox").querySelector(".hint");
+  if(hint) hint.textContent = "La demande arrive au trésorier marquée « URGENTE — hors budget ». C'est lui qui décide."
+    + (uc.limite ? " Limite : " + uc.limite + " par mois (" + urgencesDe(uid, true).length + " ce mois-ci)." : "");
 }
 ["f","fd"].forEach(px => {
   ["_budget","_urg"].forEach(sfx => { const el = $("#" + px + sfx); if(el) el.addEventListener("change", () => majBudgetForm(px)); });
   const m = $(PFX_BUD[px].montant); if(m) m.addEventListener("input", () => majBudgetForm(px));
+  const d = $(PFX_BUD[px].date); if(d) d.addEventListener("change", () => majBudgetForm(px));
 });
 if($("#fd_pour")) $("#fd_pour").addEventListener("change", () => majBudgetForm("fd"));
 ["#reqForm","#directForm"].forEach(id => { const f = $(id); if(f) f.addEventListener("reset", () => setTimeout(() => {
@@ -7217,6 +7301,31 @@ function renderMesBudgets(){
   }).join("");
 }
 
+// contrôle commun (envoi et modification) d'une demande d'un membre ; ancien = demande existante modifiée
+function verifierBudgetMembre(uid, bid, montant, dateDep, ancien){
+  if(!bid){
+    if(budgetObligatoire(uid)) throw new Error(budgetsDe(uid).length
+      ? "Choisissez le budget de cette dépense. Si elle ne rentre dans aucun budget et qu'elle est urgente, activez « Demande urgente — hors budget »."
+      : "Aucun budget approuvé n'est à votre nom. Si la dépense est urgente, activez « Demande urgente — hors budget ».");
+    return;
+  }
+  const b = budgetParId(bid);
+  const et = budgetEtat(b, dateDep);
+  if(!et.ok) throw new Error("Budget « " + (b ? b.titre : "?") + " » indisponible : " + et.raison
+    + ". Si la dépense est urgente, utilisez une demande urgente hors budget.");
+  // la demande modifiée compte déjà dans la consommation de son budget : on la retire du calcul
+  const dejaDedans = ancien && compteBudget(ancien) && String(ancien.budget_id) === String(bid) ? Number(ancien.amount||0) : 0;
+  const reste = b.cout - b.consomme + dejaDedans;
+  if(montant > reste + 0.005) throw new Error("Budget atteint : il reste " + euro(Math.max(0, reste)) + " sur « " + b.titre
+    + " » et votre demande fait " + euro(montant) + ". Si c'est urgent, faites une demande urgente hors budget.");
+}
+function verifierUrgence(uid, nouvelle){
+  const uc = urgCfg(uid);
+  if(uc.off) throw new Error("Les demandes urgentes hors budget ne sont pas ouvertes pour votre compte. Contactez le trésorier.");
+  if(nouvelle && uc.limite && urgencesDe(uid, true).length >= uc.limite)
+    throw new Error("Limite atteinte : " + uc.limite + " demande(s) urgente(s) hors budget maximum par mois. Contactez le trésorier.");
+}
+
 // contrôle à l'envoi : renvoie les champs à enregistrer, ou lève une erreur lisible
 function controleBudget(px, montant){
   const vide = { budget_id:null, hors_budget:false, urgence_motif:null };
@@ -7224,28 +7333,34 @@ function controleBudget(px, montant){
   if(state.budErr || !box || box.hidden) return null;   // colonnes absentes ou non concerné : rien à enregistrer
   const uid = uidFormulaire(px);
   const bid = $("#" + px + "_budget").value || null;
+  const dDep = dateFormulaire(px);
   const urg = !isTreso() && $("#" + px + "_urg").checked;
   if(urg){
+    verifierUrgence(uid, true);
     const motif = $("#" + px + "_urgMotif").value.trim();
     if(motif.length < 10) throw new Error("Expliquez pourquoi la demande est urgente (10 caractères minimum).");
     if(!$("#" + px + "_urgAtt").checked) throw new Error("Activez l'attestation « la demande est fondée » pour une demande urgente.");
-    return { budget_id: bid, hors_budget: true, urgence_motif: motif };
+    // un budget gelé ou clôturé n'est pas rattaché : l'urgence passe hors budget
+    const b = budgetParId(bid);
+    return { budget_id: (b && budgetEtat(b, dDep).ok) ? bid : null, hors_budget: true, urgence_motif: motif };
   }
   if(isTreso()) return { ...vide, budget_id: bid };
-  if(!bid){
-    if(budgetObligatoire(uid)) throw new Error(budgetsDe(uid).length
-      ? "Choisissez le budget de cette dépense. Si elle ne rentre dans aucun budget et qu'elle est urgente, activez « Demande urgente — hors budget »."
-      : "Aucun budget approuvé n'est à votre nom. Si la dépense est urgente, activez « Demande urgente — hors budget ».");
-    return vide;
-  }
-  const b = budgetParId(bid);
-  const reste = b ? b.cout - b.consomme : 0;
-  if(!b || montant > reste + 0.005) throw new Error("Budget atteint : il reste " + euro(Math.max(0, reste)) + " sur « " + (b ? b.titre : "ce budget")
-    + " » et votre demande fait " + euro(montant) + ". Si c'est urgent, activez « Demande urgente — hors budget ».");
+  verifierBudgetMembre(uid, bid, montant, dDep, null);
   return { ...vide, budget_id: bid };
 }
 
-// alerte unique quand un budget atteint 80 % (le serveur garantit qu'elle ne part qu'une fois)
+// erreurs levées par le trigger SQL : le message est déjà lisible, on retire seulement le jargon
+function messageBudgetServeur(m){
+  m = String(m || "");
+  return m.replace(/^.*?(Budget |Limite atteinte|Les demandes urgentes|Demande urgente :|Ce budget )/, "$1");
+}
+
+// alertes uniques quand un budget atteint 80 % puis 100 % (le serveur garantit un seul envoi)
+async function alertesBudget(bid){
+  if(!bid || state.budErr) return;
+  await alerteBudget80(bid);
+  await alerteBudget100(bid);
+}
 async function alerteBudget80(bid){
   if(!bid || state.budErr) return;
   let rows;
@@ -7263,6 +7378,28 @@ async function alerteBudget80(bid){
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant</p></div>`;
   const sujet = "Budget « " + b.titre + " » utilisé à " + pct + " %";
+  const vus = new Set();
+  for(const r of rows){ const e = String(r.email||"").trim().toLowerCase(); if(!e || vus.has(e)) continue; vus.add(e);
+    try{ await envoyerMail(r.email, sujet, corps(String(r.nom||"").split(" ")[0])); }catch(_){} }
+  const t = String(emailTreso()||"").toLowerCase();
+  if(t && !vus.has(t)){ try{ await envoyerMail(emailTreso(), sujet, corps("trésorier")); }catch(_){} }
+}
+async function alerteBudget100(bid){
+  if(!bid || state.budErr || state.budMetaErr) return;
+  let rows;
+  try{ const r = await sb.rpc("marquer_alerte_budget100", { p_budget: String(bid) }); if(r.error) return; rows = r.data || []; }catch(_){ return; }
+  if(!rows.length) return;
+  try{ await chargerBudgetsCaisse(); }catch(_){}
+  const b = budgetParId(bid) || { titre:"Budget", cout:0, consomme:0 };
+  const corps = nom => `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+    <h2 style="margin:0 0 10px">Budget épuisé</h2>
+    <p>Bonjour ${mailEsc(nom)},</p>
+    <p>Le budget <b>${mailEsc(b.titre)}</b> est entièrement engagé : ${euro(b.consomme)} sur ${euro(b.cout)}.</p>
+    <p>Plus aucune demande ne peut y être rattachée. Pour une dépense indispensable, il reste la demande urgente hors budget, que le trésorier examinera, ou un complément de budget à faire voter par le CA.</p>
+    <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant</p></div>`;
+  const sujet = "Budget « " + b.titre + " » épuisé";
   const vus = new Set();
   for(const r of rows){ const e = String(r.email||"").trim().toLowerCase(); if(!e || vus.has(e)) continue; vus.add(e);
     try{ await envoyerMail(r.email, sujet, corps(String(r.nom||"").split(" ")[0])); }catch(_){} }
@@ -7442,7 +7579,7 @@ $("#reqForm").addEventListener("submit", async e => {
     $("#reqForm").reset(); staged.req = []; renderStaged("req"); majControle();
     $("#f_date").value = dateLocale(); majFormulaire();
     await refresh();
-    if(data.budget_id) alerteBudget80(data.budget_id);
+    if(data.budget_id) alertesBudget(data.budget_id);
     if(!piecesOk){
       await dire("Justificatif non envoyé", "Votre demande a bien été enregistrée, mais le justificatif n'a pas pu être envoyé"
         + (piecesErr ? " (" + piecesErr + ")" : "") + ".\n\n"
@@ -7603,7 +7740,7 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display=""; staged.dir = []; renderStaged("dir");
     majPourQui();
     await refresh();
-    if(data.budget_id) alerteBudget80(data.budget_id);
+    if(data.budget_id) alertesBudget(data.budget_id);
     if(!dirPiecesOk){
       await dire("Pièce jointe non envoyée", "La demande a bien été enregistrée, mais la pièce jointe n'a pas pu être envoyée"
         + (dirErr ? " (" + dirErr + ")" : "") + ".\n\nOuvrez la demande pour la joindre à nouveau.");
@@ -7642,7 +7779,7 @@ const barreAvancement = it => {
 };
 const rowHTML = (it, showWho) => `<div class="row" data-id="${it.id}" tabindex="0" role="button">
   <div class="date mono" style="font-size:13px">${showWho?`<input type="checkbox" class="tgl sm" data-selchk data-id="${it.id}" ${state.sel&&state.sel.has(it.id)?"checked":""} style="margin-right:9px;vertical-align:middle;cursor:pointer">`:""}${fdate(it.expense_date)}</div>
-  <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}${it.hors_budget?` <span title="Demande urgente hors budget" style="color:var(--red);font-weight:700;font-size:12px">🔴 URGENTE</span>`:""}${showWho && it.status!=="Remboursée" && depensesSimilaires(it).length?` <span title="Une dépense du même montant, à une date proche, figure déjà dans les dépenses de l'ASBL" style="color:var(--red);font-weight:700;font-size:12px">\u26a0 déjà payée ?</span>`:""}${showWho && attesteDoublon(it)?` <span title="Doublon possible écarté par le demandeur — attestation signée jointe" style="color:var(--amber);font-weight:700;font-size:12px">\u26a0 doublon ?</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div><div style="margin-top:4px">${barreAvancement(it)}</div></div>
+  <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}${it.hors_budget?` <span title="Demande urgente hors budget" style="color:var(--red);font-weight:700;font-size:12px">🔴 URGENTE</span>`:""}${showWho && budgetNonApprouve(it)?` <span title="Rattachée à un budget qui n'est plus approuvé" style="color:var(--amber);font-weight:700;font-size:12px">⚠ budget non approuvé</span>`:""}${showWho && it.status!=="Remboursée" && depensesSimilaires(it).length?` <span title="Une dépense du même montant, à une date proche, figure déjà dans les dépenses de l'ASBL" style="color:var(--red);font-weight:700;font-size:12px">\u26a0 déjà payée ?</span>`:""}${showWho && attesteDoublon(it)?` <span title="Doublon possible écarté par le demandeur — attestation signée jointe" style="color:var(--amber);font-weight:700;font-size:12px">\u26a0 doublon ?</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div><div style="margin-top:4px">${barreAvancement(it)}</div></div>
   <div><span class="tag ${tagClass(it.status)}">${it.status}</span></div>
   <div class="amt">${euro(it.amount)}</div><div class="chev">›</div></div>`;
 const emptyHTML = (t,m) => `<div class="empty"><strong>${t}</strong>${m}</div>`;
@@ -9988,6 +10125,12 @@ function bMonVote(b){ const me = state.profile && state.profile.id; return (b.vo
 function renderBudget(){
   const box = $("#budgetList"); if(!box) return;
   if($("#budObligAll")) $("#budObligAll").checked = !!comptaCfg().budgetOblig;
+  if($("#budUrgLimite") && document.activeElement !== $("#budUrgLimite")) $("#budUrgLimite").value = parseInt(comptaCfg().urgLimiteMois, 10) || 0;
+  if($("#budV2Err")){
+    const manque = [state.budMetaErr && "montants / dates de fin (" + state.budMetaErr + ")", state.resErr && "réserves (" + state.resErr + ")"].filter(Boolean);
+    $("#budV2Err").hidden = !manque.length;
+    if(manque.length) $("#budV2Err").textContent = "Passe le script SQL « budgets v2 » pour activer : " + manque.join(" ; ") + ".";
+  }
   if($("#budSqlErr")){ $("#budSqlErr").hidden = !state.budErr;
     if(state.budErr) $("#budSqlErr").textContent = "Liaison budgets / demandeurs inactive : passe d'abord le script SQL « budgets ». Détail : " + state.budErr; }
   // ne pas effacer un choix de titulaire en cours
@@ -10025,7 +10168,7 @@ function renderBudget(){
         <span class="b-badge ${cls}">${label}</span></div>
       ${b.desc?`<p style="margin:8px 0 0;color:var(--muted);line-height:1.5">${esc(b.desc)}</p>`:""}
       <div class="b-tallies">${tallies}</div>
-      ${voteBtns}${major}${decided}${decideBtns}${blocAttribution(b)}</div>`;
+      ${voteBtns}${major}${decided}${decideBtns}${blocReserves(b)}${blocAttribution(b)}</div>`;
   }).join("");
 }
 
@@ -10045,7 +10188,95 @@ function blocAttribution(b){
     <div class="attach">${sel(0, bc.membres[0])}${sel(1, bc.membres[1])}
       <button class="btn sm" data-baction="attrib" data-id="${esc(b.id)}">Enregistrer</button>
       ${bc.manuel ? `<button class="btn ghost sm" data-baction="attribauto" data-id="${esc(b.id)}">Revenir à l'automatique</button>` : ""}</div>
+    ${state.budMetaErr ? "" : `<div class="attach"><span class="bud-txt" style="margin:0">Utilisable pour les dépenses jusqu'au</span>
+      <input type="date" data-bfin="${esc(b.id)}" value="${esc(bc.fin || "")}" style="width:auto">
+      <button class="btn ghost sm" data-baction="fin" data-id="${esc(b.id)}">Enregistrer la date</button>
+      <span class="hint" style="margin:0">Par défaut : fin de l'exercice où le budget a été approuvé.</span></div>`}
   </div>`;
+}
+
+/* ---------- réserves du trésorier sur un budget ---------- */
+const RES_NIVEAU = { remarque:["Remarque","var(--muted)"], reserve:["Réserve","var(--amber)"], defavorable:["Avis défavorable","var(--red)"] };
+function blocReserves(b){
+  if(state.resErr) return "";
+  const liste = reservesDe(b.id);
+  const lignes = liste.map(r => {
+    const [lib, coul] = RES_NIVEAU[r.niveau] || [r.niveau, "var(--muted)"];
+    const levee = !!r.levee_at;
+    return `<div style="border-left:3px solid ${coul};padding:6px 10px;margin-top:8px;background:var(--bg);border-radius:0 9px 9px 0${levee ? ";opacity:.6" : ""}">
+      <div style="font-size:13px"><b style="color:${coul}">${esc(lib)}</b>${r.suspensive ? ` · <b>suspensive</b>` : " · informative"}
+        <span class="hint" style="margin:0"> — ${esc(r.auteur || "Trésorier")}, ${fstamp(r.created_at)}</span></div>
+      <div style="font-size:13.5px;margin-top:3px${levee ? ";text-decoration:line-through" : ""}">${esc(r.texte)}</div>
+      ${r.suspensive && r.condition ? `<div class="hint" style="margin:3px 0 0">Condition de levée : ${esc(r.condition)}</div>` : ""}
+      ${levee ? `<div class="hint" style="margin:3px 0 0;color:var(--green)">Levée le ${fstamp(r.levee_at)} par ${esc(r.levee_par || "")}${r.levee_note ? " — " + esc(r.levee_note) : ""}</div>`
+              : (isTreso() ? `<div style="margin-top:6px"><button class="btn ghost sm" data-baction="reslever" data-id="${esc(r.id)}">Lever la réserve</button></div>` : "")}
+    </div>`;
+  }).join("");
+  const gele = liste.some(r => r.suspensive && !r.levee_at);
+  return `<div class="b-attr">
+    <div class="bud-txt"><b>Réserves du trésorier</b>${gele ? ` · <span class="ko">budget gelé tant que la réserve suspensive n'est pas levée</span>` : ""}</div>
+    ${lignes || `<div class="hint" style="margin:0">Aucune réserve.</div>`}
+    ${isTreso() ? `<div><button class="btn ghost sm" data-baction="resnouv" data-id="${esc(b.id)}">Émettre une réserve</button></div>` : ""}
+  </div>`;
+}
+document.addEventListener("change", e => {
+  const c = e.target.closest && e.target.closest('[data-f="susp"]'); if(!c) return;
+  const w = c.closest(".sb") && c.closest(".sb").querySelector('[data-fwrap="cond"]');
+  if(w) w.hidden = !c.checked;
+});
+async function emettreReserve(budgetId){
+  const b = (state.budgets||[]).find(x => String(x.id) === String(budgetId));
+  const v = await fenetreForm("Émettre une réserve", `
+    <p class="hint" style="margin:0">Budget « ${esc(b ? b.titre : "")} »${b ? " — " + esc((B_BADGE[b.statut]||["",b.statut])[1]) : ""}. Elle est visible par les membres du CA qui votent.</p>
+    <div class="field"><label>Niveau</label><select data-f="niv">${optsHtml([
+      {v:"remarque", l:"Remarque"}, {v:"reserve", l:"Réserve"}, {v:"defavorable", l:"Avis défavorable"}], "reserve")}</select></div>
+    <div class="field"><label>Texte</label><textarea data-f="txt" maxlength="600" placeholder="Ex. trésorerie insuffisante avant le subside de janvier"></textarea></div>
+    <label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--text)">
+      <input type="checkbox" class="tgl" data-f="susp"><span>Suspensive : le budget reste gelé tant que je ne l'ai pas levée</span></label>
+    <div class="field" data-fwrap="cond" hidden><label>Condition de levée</label>
+      <input type="text" data-f="cond" maxlength="200" placeholder="Ex. deux devis reçus"></div>`,
+    "Émettre la réserve", ov => {
+      const g = k => ov.querySelector(`[data-f="${k}"]`);
+      const txt = g("txt").value.trim(), susp = g("susp").checked, cond = g("cond").value.trim();
+      if(txt.length < 3) return "Écris le texte de la réserve.";
+      if(susp && cond.length < 3) return "Indique la condition de levée d'une réserve suspensive.";
+      return { niveau: g("niv").value, texte: txt, suspensive: susp, condition: susp ? cond : null };
+    });
+  if(!v) return;
+  const { data, error } = await sb.from("ca_budget_reserves").insert({ budget_id: String(budgetId), ...v,
+    auteur: bSig(), auteur_id: state.profile.id }).select("id");
+  if(error || !data || !data.length) return dire("Réserve non enregistrée", error ? error.message : "La base a refusé l'enregistrement.");
+  await chargerBudgetsCaisse(); renderBudget();
+  await dire("Réserve émise", (RES_NIVEAU[v.niveau]||[v.niveau])[0] + (v.suspensive ? " suspensive : le budget est gelé jusqu'à la levée (« " + v.condition + " »)." : " informative : elle reste visible sur le budget et dans le rapport."));
+}
+async function leverReserve(resId){
+  const r = (state.reserves||[]).find(x => String(x.id) === String(resId)); if(!r) return;
+  const note = await saisir("Lever la réserve", "« " + r.texte + " »" + (r.condition ? "\nCondition : " + r.condition : "") + "\n\nCommentaire (facultatif) :",
+    { bouton:"Lever la réserve" });
+  if(note === null) return;
+  const { data, error } = await sb.from("ca_budget_reserves").update({ levee_at: new Date().toISOString(), levee_par: bSig(),
+    levee_note: String(note||"").trim() || null }).eq("id", r.id).is("levee_at", null).select("id");
+  if(error || !data || !data.length) return dire("Levée non enregistrée", error ? error.message : "Cette réserve a peut-être déjà été levée.");
+  await chargerBudgetsCaisse(); renderBudget();
+  const encore = reservesActives(r.budget_id).some(x => x.suspensive);
+  if(r.suspensive && !encore){
+    const bc = budgetParId(r.budget_id), titre = bc ? bc.titre : (((state.budgets||[]).find(x => String(x.id) === String(r.budget_id))||{}).titre || "Budget");
+    const dest = ((bc && bc.membres) || []).map(id => (state.members||[]).find(m => m.id === id)).filter(m => m && m.email);
+    let n = 0;
+    for(const m of dest){
+      const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+        <h2 style="margin:0 0 10px">Budget disponible</h2>
+        <p>Bonjour ${mailEsc(m.first_name || String(m.name||"").split(" ")[0])},</p>
+        <p>La réserve du trésorier sur le budget <b>${mailEsc(titre)}</b> a été levée. Le budget est maintenant utilisable : vous pouvez y rattacher vos demandes.</p>
+        ${r.levee_note || String(note||"").trim() ? blocNote(String(note||"").trim()) : ""}
+        <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
+        <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+        <p style="color:#999;font-size:12px">Le bureau étudiant — Trésorerie</p></div>`;
+      if(await envoyerMail(m.email, "Budget « " + titre + " » maintenant utilisable", html, emailTreso())) n++;
+    }
+    return dire("Réserve levée", "Le budget « " + titre + " » est de nouveau utilisable." + (dest.length ? " " + n + "/" + dest.length + " titulaire(s) prévenu(s) par e-mail." : bc ? " Aucun titulaire avec e-mail à prévenir." : " (Le budget n'est pas encore approuvé.)"));
+  }
+  toast(encore ? "Réserve levée. Une autre réserve suspensive gèle encore ce budget." : "Réserve levée.");
 }
 
 async function budgetAction(action, ds){
@@ -10066,6 +10297,19 @@ async function budgetAction(action, ds){
     return dire(action === "attrib" ? "Budget attribué" : "Attribution automatique rétablie",
       (bc ? "« " + bc.titre + " » : " : "") + (noms.length ? noms.join(" et ") : "aucun titulaire trouvé automatiquement — attribue-le à la main"));
   }
+  if(action === "resnouv") return emettreReserve(ds.id);
+  if(action === "reslever") return leverReserve(ds.id);
+  if(action === "fin"){
+    const id = String(ds.id);
+    const el = document.querySelector(`[data-bfin="${CSS.escape(id)}"]`);
+    const v = el ? el.value : "";
+    const { data, error } = await sb.from("caisse_budget_meta")
+      .upsert({ budget_id: id, date_fin: v || null, updated_at: new Date().toISOString() }, { onConflict:"budget_id" }).select("budget_id");
+    if(error || !data || !data.length) return dire("Date non enregistrée", error ? error.message : "La base a refusé l'enregistrement.");
+    await chargerBudgetsCaisse(); renderBudget();
+    const bc = budgetParId(id);
+    return dire("Date de fin enregistrée", (bc ? "« " + bc.titre + " » : " : "") + (bc && bc.fin ? "utilisable pour les dépenses jusqu'au " + fdate(bc.fin) + "." : "sans date de fin."));
+  }
   const id = ds.id;
   const b = (state.budgets||[]).find(x => x.id === id);
   if(action === "vote"){
@@ -10078,6 +10322,14 @@ async function budgetAction(action, ds){
   } else if(action === "decide"){
     if(!bPeutDecider()) return;
     const st = ds.st;
+    if(st === "approuve"){
+      const act = reservesActives(id);
+      if(act.length && !await demander("Réserve du trésorier active",
+          act.map(r => "• " + ((RES_NIVEAU[r.niveau]||[r.niveau])[0]) + (r.suspensive ? " suspensive" : "") + " : " + r.texte
+            + (r.suspensive && r.condition ? " (condition : " + r.condition + ")" : "")).join("\n")
+          + "\n\nApprouver quand même ?" + (act.some(r => r.suspensive) ? " Le budget restera gelé tant que la réserve suspensive n'est pas levée." : ""),
+          { bouton:"Approuver quand même", danger: act.some(r => r.niveau === "defavorable") })) return;
+    }
     const md = await sb.from("ca_budgets").update({
       statut: st,
       decide_par: st==="vote" ? null : bSig(),
@@ -10126,12 +10378,91 @@ $("#viewMembers").addEventListener("change", async e => {
     await dire("Réglage non enregistré", err.message || String(err));
   }finally{ s.disabled = false; }
 });
+/* urgence hors budget validée : imputation à un budget, ou classement « hors budget assumé » */
+async function imputerUrgence(it){
+  if(!isTreso() || !it) return;
+  const siens = budgetsDe(it.user_id), autres = (state.budCaisse||[]).filter(b => !siens.includes(b));
+  const opt = b => ({ v:b.id, l:b.titre + " · reste " + euro(b.cout - b.consomme) + (b.gel ? " · gelé" : "") });
+  const opts = [{ v:"__assume", l:"Hors budget assumé (aucun budget)" }].concat(siens.map(opt), autres.map(opt));
+  const v = await fenetreForm("Imputer cette urgence",
+    `<p class="hint" style="margin:0">« ${esc(it.object||"")} » — ${euro(it.amount)} · ${esc(it.requester_name||"")}<br>
+      Une urgence validée doit finir rattachée à une enveloppe, ou être assumée explicitement hors budget (elle apparaît alors à part dans le rapport par budget).</p>
+     <div class="field"><label>Imputer à</label><select data-f="b">${optsHtml(opts, siens[0] ? siens[0].id : "__assume")}</select></div>`,
+    "Enregistrer", ov => ({ b: ov.querySelector('[data-f="b"]').value }));
+  if(!v) return;
+  const patch = v.b === "__assume" ? { budget_id:null, hors_budget_assume:true } : { budget_id:v.b, hors_budget_assume:false };
+  if(patch.budget_id){
+    const msgB = avertBudget(patch.budget_id, compteBudget(it) ? Number(it.amount||0) : 0);
+    if(msgB && !await demander("Budget dépassé", msgB + "\n\nImputer quand même ?", { bouton:"Imputer quand même", danger:true })) return;
+  }
+  const { data, error } = await sb.from("requests").update(patch).eq("id", it.id).select("id");
+  if(error) return dire("Classement non enregistré", /hors_budget_assume/i.test(error.message)
+    ? "Il manque la colonne hors_budget_assume : passe d'abord le script SQL « budgets v2 »." : error.message);
+  if(!data || !data.length) return dire("Classement non enregistré", "La base a refusé la mise à jour.");
+  try{ await sb.from("events").insert({ request_id:it.id, who:state.profile.name,
+    what: patch.budget_id ? "Urgence imputée au budget « " + ((budgetParId(patch.budget_id)||{}).titre || "?") + " »" : "Urgence classée « hors budget assumé »" }); }catch(_){}
+  await refresh();
+  if(patch.budget_id) alertesBudget(patch.budget_id);
+  const maj = state.items.find(x => x.id === it.id);
+  if(maj && state.selected === it.id){ state.drawerDirty = false; renderDrawer(maj); }
+  toast(patch.budget_id ? "Urgence imputée au budget." : "Urgence classée hors budget assumé.");
+}
+$("#d_body").addEventListener("click", e => {
+  const b = e.target.closest("[data-urgimp]"); if(!b) return;
+  imputerUrgence(state.items.find(x => x.id === b.dataset.urgimp));
+});
+
+// demande rattachée à un budget qui n'est plus approuvé (refusé, rouvert au vote, supprimé)
+const budgetNonApprouve = i => !state.budErr && !!i.budget_id && i.status !== "Refusée" && !budgetParId(i.budget_id);
+
+// montant que le rattachement ajoute au budget cible (les demandes déjà dessus ou refusées ne comptent pas)
+function deltaRattachement(ids, bid){
+  return (state.items||[]).filter(i => ids.includes(i.id) && compteBudget(i) && String(i.budget_id||"") !== String(bid))
+    .reduce((t,i) => t + Number(i.amount||0), 0);
+}
+/* réglages des urgences : désactivation par membre, limite mensuelle */
+$("#viewMembers").addEventListener("change", async e => {
+  const s = e.target.closest("[data-murg]"); if(!s) return;
+  const id = s.dataset.murg, off = s.value === "off";
+  const m = (state.members||[]).find(x => x.id === id);
+  s.disabled = true;
+  try{
+    await comptaMaj(c => { c.urgDesactive = c.urgDesactive || {}; if(off) c.urgDesactive[id] = true; else delete c.urgDesactive[id]; });
+    const r = await sb.from("caisse_config").select("compta").eq("id",1).maybeSingle();
+    const lu = !!((r.data && r.data.compta && r.data.compta.urgDesactive) || {})[id];
+    if(r.error || lu !== off) throw new Error(r.error ? r.error.message : "la base n'a pas gardé le réglage");
+    await dire("Réglage enregistré", (m ? m.name : "Ce membre") + (off ? " ne peut plus faire de demande urgente hors budget." : " peut de nouveau faire des demandes urgentes hors budget."));
+  }catch(err){
+    s.value = off ? "on" : "off";
+    await dire("Réglage non enregistré", err.message || String(err));
+  }finally{ s.disabled = false; }
+});
+if($("#budUrgLimite")) $("#budUrgLimite").addEventListener("change", async e => {
+  const v = Math.max(0, Math.min(99, parseInt(e.target.value, 10) || 0));
+  e.target.value = v;
+  try{
+    await comptaMaj(c => { c.urgLimiteMois = v; });
+    const r = await sb.from("caisse_config").select("compta").eq("id",1).maybeSingle();
+    const lu = parseInt(r.data && r.data.compta && r.data.compta.urgLimiteMois, 10) || 0;
+    if(r.error || lu !== v) throw new Error(r.error ? r.error.message : "la base n'a pas gardé le réglage");
+    try{ renderMembers(); }catch(_){}
+    await dire("Limite enregistrée", v ? "Chaque membre peut faire au plus " + v + " demande(s) urgente(s) hors budget par mois." : "Plus de limite mensuelle sur les demandes urgentes.");
+  }catch(err){
+    e.target.value = parseInt(comptaCfg().urgLimiteMois, 10) || 0;
+    await dire("Réglage non enregistré", err.message || String(err));
+  }
+});
+
 async function rattacherBudget(ids, bid){
+  if(bid){
+    const msgB = avertBudget(bid, deltaRattachement(ids, bid));
+    if(msgB && !await demander("Budget dépassé", msgB + "\n\nRattacher quand même ?", { bouton:"Rattacher quand même", danger:true })) return 0;
+  }
   const { data, error } = await sb.from("requests").update({ budget_id: bid || null }).in("id", ids).select("id");
   if(error) throw error;
   if(!data || !data.length) throw new Error("la base a refusé la mise à jour");
   await refresh();
-  if(bid) alerteBudget80(bid);
+  if(bid) alertesBudget(bid);
   return data.length;
 }
 $("#d_body").addEventListener("click", async e => {
@@ -10139,7 +10470,7 @@ $("#d_body").addEventListener("click", async e => {
   const bid = $("#d_budget") ? $("#d_budget").value : "";
   b.disabled = true;
   try{
-    await rattacherBudget([b.dataset.budrat], bid);
+    if(!await rattacherBudget([b.dataset.budrat], bid)) return;
     const it = state.items.find(x => x.id === b.dataset.budrat); if(it && state.selected === it.id){ state.drawerDirty = false; renderDrawer(it); }
     toast(bid ? "Demande rattachée au budget." : "Budget retiré de la demande.");
   }catch(err){ toast("Rattachement impossible : " + (err.message || err)); }
@@ -10152,8 +10483,74 @@ if($("#bulkBudget")) $("#bulkBudget").onclick = async () => {
   const v = await fenetreForm("Rattacher à un budget", `<p class="hint" style="margin:0">${ids.length} demande(s) sélectionnée(s). Aucun e-mail n'est envoyé.</p>
     <div class="field"><label>Budget</label><select data-f="b">${optsHtml(opts, "")}</select></div>`, "Rattacher", ov => ({ b: ov.querySelector('[data-f="b"]').value }));
   if(!v) return;
-  try{ const n = await rattacherBudget(ids, v.b); state.sel.clear(); renderBulk(); render(); toast(n + " demande(s) mise(s) à jour."); }
+  try{ const n = await rattacherBudget(ids, v.b); if(!n) return; state.sel.clear(); renderBulk(); render(); toast(n + " demande(s) mise(s) à jour."); }
   catch(err){ dire("Rattachement impossible", err.message || String(err)); }
+};
+
+/* ---------- rapport par budget (point 11) ---------- */
+function lignesRapportBudget(){
+  const nom = id => { const m = (state.members||[]).find(x => x.id === id); return m ? (m.name || m.email) : "?"; };
+  const liste = (state.budgets||[]).slice().sort((a,b) => String(a.titre||"").localeCompare(String(b.titre||""), "fr"));
+  return liste.map(b => {
+    const bc = budgetParId(b.id);
+    const lies = (state.items||[]).filter(i => String(i.budget_id||"") === String(b.id));
+    const som = st => lies.filter(i => st.includes(i.status)).reduce((t,i) => t + Number(i.amount||0), 0);
+    const paye = som(["Remboursée"]), valide = som(["Validée"]), attente = som(["En attente","À corriger"]);
+    const engage = paye + valide + attente, cout = Number(b.cout||0);
+    return { b, titre:b.titre||"", statut:(B_BADGE[b.statut]||["",b.statut||""])[1], titulaires: bc ? bc.membres.map(nom).join(" et ") : "",
+      cout, paye, valide, attente, engage, reste: cout - engage, pct: cout > 0 ? Math.round(engage / cout * 100) : 0,
+      urg: lies.filter(i => i.hors_budget && i.status !== "Refusée").length, fin: bc && bc.fin ? bc.fin : "",
+      reserves: reservesDe(b.id), nbDem: lies.filter(i => i.status !== "Refusée").length };
+  });
+}
+const urgencesAssumees = () => (state.items||[]).filter(i => i.hors_budget && !i.budget_id && i.status !== "Refusée");
+const resTexte = r => ((RES_NIVEAU[r.niveau]||[r.niveau])[0]) + (r.suspensive ? " suspensive" : " informative") + " : " + r.texte
+  + (r.suspensive && r.condition ? " (condition : " + r.condition + ")" : "")
+  + (r.levee_at ? " — levée le " + fdate(String(r.levee_at).slice(0,10)) + (r.levee_note ? " (" + r.levee_note + ")" : "") : " — active");
+if($("#budRapportCsv")) $("#budRapportCsv").onclick = () => {
+  const L = lignesRapportBudget();
+  if(!L.length) return toast("Aucun budget à exporter.");
+  const n = v => Number(v||0).toFixed(2).replace(".", ",");
+  const rows = [["Budget","Statut","Titulaires","Approuve","Paye","Valide","En attente","Engage","Reste","%","Demandes","Urgences","Utilisable jusqu'au","Reserves du tresorier"]];
+  L.forEach(x => rows.push([x.titre, x.statut, x.titulaires, n(x.cout), n(x.paye), n(x.valide), n(x.attente), n(x.engage), n(x.reste), x.pct,
+    x.nbDem, x.urg, x.fin ? fdate(x.fin) : "", x.reserves.map(resTexte).join(" | ")]));
+  const ua = urgencesAssumees();
+  if(ua.length){
+    rows.push([], ["Urgences hors budget (non imputées)","Statut","Demandeur","Montant","Classement","","","","","","","","","Motif"]);
+    ua.forEach(i => rows.push([refOf(i) + " " + (i.object||""), i.status, i.requester_name||"", n(i.amount), i.hors_budget_assume ? "Hors budget assumé" : "À imputer", "","","","","","","","", i.urgence_motif||""]));
+  }
+  telechargerFichier("rapport-budgets-" + dateLocale() + ".csv",
+    "\uFEFF" + rows.map(r => r.map(v => `"${String(v==null?"":v).replace(/"/g,'""')}"`).join(";")).join("\n"), "text/csv;charset=utf-8");
+};
+if($("#budRapportBtn")) $("#budRapportBtn").onclick = () => {
+  const L = lignesRapportBudget();
+  if(!L.length) return toast("Aucun budget à afficher.");
+  const nomA = comptaCfg().nomAsbl || "Le bureau étudiant";
+  const tot = k => L.filter(x => x.b.statut === "approuve").reduce((t,x) => t + x[k], 0);
+  const ligne = x => `<tr><td><b>${esc(x.titre)}</b><div class="s">${esc(x.statut)}${x.titulaires ? " · " + esc(x.titulaires) : ""}${x.fin ? " · jusqu'au " + esc(fdate(x.fin)) : ""}</div></td>
+    <td class="n">${esc(euro(x.cout))}</td><td class="n">${esc(euro(x.paye))}</td><td class="n">${esc(euro(x.valide + x.attente))}</td>
+    <td class="n${x.reste < -0.005 ? " ko" : ""}">${esc(euro(x.reste))}</td><td class="n${x.pct > 100 ? " ko" : ""}">${x.pct} %</td><td class="n">${x.urg || ""}</td></tr>
+    ${x.reserves.length ? `<tr><td colspan="7" class="res">${x.reserves.map(r => `<div${r.levee_at ? ' class="lev"' : ""}>${esc(resTexte(r))} — ${esc(r.auteur||"")}, ${esc(fdate(String(r.created_at).slice(0,10)))}</div>`).join("")}</td></tr>` : ""}`;
+  const ua = urgencesAssumees();
+  const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Rapport par budget — ${esc(nomA)}</title>
+<style>body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:960px;margin:28px auto;padding:0 18px;font-size:12.5px}
+h1{font-size:18px;margin:0 0 2px}h2{font-size:14px;margin:22px 0 6px;border-bottom:2px solid #333;padding-bottom:3px}.meta{color:#555;font-size:11.5px}
+table{width:100%;border-collapse:collapse;margin-top:6px}td,th{padding:6px 7px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}
+th{font-size:11px;text-transform:uppercase;color:#555}td.n,th.n{text-align:right;white-space:nowrap}.ko{color:#b3261e;font-weight:bold}
+.s{color:#666;font-size:11px;margin-top:2px}td.res{background:#fafafa;font-size:11.5px;color:#333}td.res .lev{color:#888;text-decoration:line-through}
+tr.tot td{font-weight:bold;border-top:2px solid #333}.noprint{margin:14px 0}@media print{.noprint{display:none}body{margin:0}}</style></head><body>
+<div class="noprint"><button onclick="window.print()">Imprimer / enregistrer en PDF</button></div>
+<h1>${esc(nomA)} — rapport par budget</h1><div class="meta">Édité le ${esc(fdate(dateLocale()))} · engagé = payé + validé + en attente</div>
+<table><thead><tr><th>Budget</th><th class="n">Approuvé</th><th class="n">Payé</th><th class="n">Engagé non payé</th><th class="n">Reste</th><th class="n">%</th><th class="n">Urgences</th></tr></thead>
+<tbody>${L.map(ligne).join("")}
+<tr class="tot"><td>Total des budgets approuvés</td><td class="n">${esc(euro(tot("cout")))}</td><td class="n">${esc(euro(tot("paye")))}</td><td class="n">${esc(euro(tot("valide")+tot("attente")))}</td><td class="n">${esc(euro(tot("reste")))}</td><td></td><td></td></tr></tbody></table>
+<h2>Urgences hors budget non imputées</h2>
+${ua.length ? `<table><thead><tr><th>Demande</th><th>Demandeur</th><th>Statut</th><th>Classement</th><th class="n">Montant</th></tr></thead><tbody>
+${ua.map(i => `<tr><td>${esc(refOf(i))} — ${esc(i.object||"")}<div class="s">${esc(i.urgence_motif||"")}</div></td><td>${esc(i.requester_name||"")}</td><td>${esc(i.status)}</td><td>${i.hors_budget_assume ? "Hors budget assumé" : "<span class='ko'>À imputer</span>"}</td><td class="n">${esc(euro(i.amount))}</td></tr>`).join("")}
+<tr class="tot"><td colspan="4">Total</td><td class="n">${esc(euro(ua.reduce((t,i)=>t+Number(i.amount||0),0)))}</td></tr></tbody></table>` : `<p class="meta">Aucune.</p>`}
+</body></html>`;
+  const w = window.open("", "_blank"); if(!w) return toast("Autorise les fenêtres pop-up.");
+  w.document.open(); w.document.write(html); w.document.close();
 };
 
 document.addEventListener("click", e => {
@@ -10382,7 +10779,7 @@ function render(){
 
     const f = $("#filterStatus").value, q = slug($("#search").value.trim());
     const list = ouvert(state.items).filter(i => {
-      const okS = f==="all" ? true : f==="a_traiter" ? (i.status==="En attente"||i.status==="Validée"||i.status==="À corriger") : f==="incomplet" ? estIncomplet(i) : f==="reexamen" ? (i.reexamen_at && i.status==="Refusée") : f==="direct" ? (i.kind==="direct") : i.status===f;
+      const okS = f==="all" ? true : f==="a_traiter" ? (i.status==="En attente"||i.status==="Validée"||i.status==="À corriger") : f==="incomplet" ? estIncomplet(i) : f==="reexamen" ? (i.reexamen_at && i.status==="Refusée") : f==="direct" ? (i.kind==="direct") : f==="urgence" ? (i.hors_budget && i.status!=="Refusée") : f==="budNA" ? budgetNonApprouve(i) : i.status===f;
       const okQ = !q || champsCherchables(i).includes(q);
       return okS && okQ;
     });
@@ -10462,7 +10859,12 @@ function memberHTML(m, pending){
       <select data-mbo="${esc(m.id)}" style="width:auto;padding:6px 30px 6px 10px;font-size:12.5px">${optsHtml([
         {v:"auto", l:"Suit le réglage général (" + (comptaCfg().budgetOblig ? "oui" : "non") + ")"},
         {v:"toujours", l:"Toujours obligatoire"}, {v:"jamais", l:"Jamais obligatoire"}],
-        (comptaCfg().budgetObligMembres||{})[m.id] || "auto")}</select></div>`}</div>
+        (comptaCfg().budgetObligMembres||{})[m.id] || "auto")}</select></div>
+    <div class="em" style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">Urgences hors budget :
+      <select data-murg="${esc(m.id)}" style="width:auto;padding:6px 30px 6px 10px;font-size:12.5px">${optsHtml([
+        {v:"on", l:"Autorisées"}, {v:"off", l:"Désactivées"}], urgCfg(m.id).off ? "off" : "on")}</select>
+      <span class="hint" style="margin:0">${urgencesDe(m.id, true).length} ce mois-ci · ${urgencesDe(m.id, false).length} au total${
+        urgCfg(m.id).limite ? " · limite " + urgCfg(m.id).limite + "/mois" : ""}</span></div>`}</div>
     <div class="btns">${btns}</div></div>`;
 }
 
@@ -10567,6 +10969,8 @@ async function bulkValider(){
   // La validation en lot ignorait totalement estIncomplet : on validait sans pièce ni IBAN.
   const alerte = detailIncompletes(cibles);
   if(alerte && !await demander("Demandes incomplètes", alerte + "Elles ne pourront pas être virées tant qu'elles ne sont pas complétées.", { bouton:"Valider quand même" })) return;
+  const alertesB = [...new Set(cibles.filter(i => i.budget_id).map(i => String(i.budget_id)))].map(id => avertBudget(id, 0)).filter(Boolean);
+  if(alertesB.length && !await demander("Budget dépassé", alertesB.join("\n") + "\n\nValider quand même ?", { bouton:"Valider quand même", danger:true })) return;
   const nbDir = cibles.filter(i => i.kind === "direct").length;
   let mailDirect = false;
   if(nbDir){
@@ -10652,6 +11056,23 @@ function stampHTML(it){
   return "";
 }
 
+/* choix du budget dans « Modifier ma demande » (membres) : le montant modifié est recontrôlé */
+function blocBudgetEdition(it){
+  if(isTreso() || state.budErr || !state.profile) return "";
+  const liste = budgetsDe(it.user_id);
+  if(it.hors_budget) return `<div class="field"><label>Budget</label>
+    <div class="bud-txt"><span class="ko">Demande urgente — hors budget.</span> Elle n'est pas rattachée à un budget ; le trésorier décidera.</div></div>`;
+  if(!liste.length && !budgetObligatoire(it.user_id) && !it.budget_id) return "";
+  const actuel = it.budget_id ? String(it.budget_id) : "";
+  const opts = liste.map(b => { const et = budgetEtat(b, it.expense_date);
+    const dejaDedans = compteBudget(it) && actuel === b.id ? Number(it.amount||0) : 0;
+    return `<option value="${esc(b.id)}"${b.id === actuel ? " selected" : ""}${et.ok || b.id === actuel ? "" : " disabled"}>${esc(b.titre)} · ${
+      et.ok ? "reste " + esc(euro(b.cout - b.consomme + dejaDedans)) : esc(et.gele ? "gelé" : "indisponible")}</option>`; }).join("");
+  const perdu = actuel && !liste.some(b => b.id === actuel) ? `<option value="${esc(actuel)}" selected disabled>Budget actuel introuvable ou plus approuvé</option>` : "";
+  return `<div class="field"><label for="ed_budget">Budget</label>
+    <select id="ed_budget"><option value="">${budgetObligatoire(it.user_id) ? "— Choisir un budget —" : "— Aucun budget —"}</option>${perdu}${opts}</select>
+    <span class="hint">Si vous changez le montant, il est recontrôlé par rapport à ce qu'il reste sur le budget.</span></div>`;
+}
 function blocEditer(it, sansMail, modeTreso){
   const direct = it.kind === "direct";
   const cats = (() => {
@@ -10701,6 +11122,7 @@ function blocEditer(it, sansMail, modeTreso){
       `}
       <div class="field"><label for="ed_note">Commentaire</label>
         <textarea id="ed_note" maxlength="400">${esc(it.note||"")}</textarea></div>
+      ${blocBudgetEdition(it)}
       ${isTreso() ? "" : `<div class="field"><label>Pièces justificatives</label>
         <div id="ed_pieces"></div>
         <div class="attach" style="margin-top:8px">
@@ -10807,7 +11229,13 @@ function renderDrawer(it){
     actions += `<div class="callout" style="border-color:var(--red)"><b style="color:var(--red)">🔴 Demande urgente — hors budget</b>
       <p>Le demandeur a attesté que la demande est fondée. Motif de l'urgence :</p>
       <p style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px 12px;white-space:pre-wrap">${esc(it.urgence_motif || "—")}</p>
-      <p>C'est toi qui décides : valide-la (tu peux la rattacher à un budget ci-dessous) ou refuse-la.</p></div>`;
+      <p>C'est toi qui décides : valide-la (tu peux la rattacher à un budget ci-dessous) ou refuse-la.</p>
+      <p class="hint" style="margin:6px 0 0">Urgences de ${esc(it.requester_name||"ce membre")} : ${urgencesDe(it.user_id, true).length} ce mois-ci · ${urgencesDe(it.user_id, false).length} au total${
+        urgCfg(it.user_id).limite ? " · limite " + urgCfg(it.user_id).limite + " par mois" : ""}.</p>
+      ${it.hors_budget_assume ? `<p style="margin:8px 0 0"><b>Classée « hors budget assumé »</b> par le trésorier.</p>` : ""}
+      ${(it.status === "Validée" || it.status === "Remboursée") && !it.budget_id && !it.hors_budget_assume
+        ? `<div class="actions"><button class="btn sm" data-urgimp="${esc(it.id)}">Imputer à un budget ou classer « hors budget assumé »</button></div>` : ""}
+      ${it.hors_budget_assume ? `<div class="actions"><button class="btn ghost sm" data-urgimp="${esc(it.id)}">Changer le classement</button></div>` : ""}</div>`;
   }
   if(isTreso() && !state.budErr){
     const bAct = it.budget_id ? budgetParId(it.budget_id) : null;
@@ -11085,6 +11513,27 @@ $("#d_body").addEventListener("click", async e => {
       // le trésorier ne vide jamais l'IBAN du membre par accident
       maj.iban = (modeTreso && !iban) ? it.iban : iban;
     }
+    // --- budget : un membre ne peut plus gonfler sa demande après coup ---
+    if(!state.budErr && !isTreso()){
+      const bSel = $("#ed_budget");
+      const bid = bSel ? (bSel.value || null) : (it.budget_id ? String(it.budget_id) : null);
+      if(!it.hors_budget){
+        // même budget et montant non augmenté : rien à recontrôler (le budget a pu être gelé depuis)
+        const inchange = String(bid||"") === String(it.budget_id||"") && mntArrondi <= Number(it.amount||0) + 0.005
+          && compteBudget(it) && dte === it.expense_date;
+        if(!inchange){
+          try{ verifierBudgetMembre(it.user_id, bid, mntArrondi, dte, it); }
+          catch(eB){ return erreurForm("#editErr", eB.message); }
+        }
+        if(bSel) maj.budget_id = bid;
+      }
+    }
+    // --- trésorier : avertissement si la correction fait dépasser le budget ---
+    if(isTreso() && it.budget_id && compteBudget(it)){
+      const msg = avertBudget(it.budget_id, mntArrondi - Number(it.amount||0));
+      if(msg && Math.abs(mntArrondi - Number(it.amount||0)) >= 0.005
+         && !await demander("Dépassement de budget", msg + "\n\nEnregistrer quand même ?", { bouton:"Enregistrer quand même", danger:true })) return;
+    }
     // --- pièces jointes : retraits demandés + nouveaux fichiers ---
     const pjAvant  = piecesDe(it);
     const pjRetire = [...state.edDrop].map(n => pjAvant[n]).filter(Boolean);
@@ -11104,8 +11553,9 @@ $("#d_body").addEventListener("click", async e => {
     const avant = { object: it.object, amount: it.amount, expense_date: it.expense_date };
     b.disabled = true; b.textContent = "Enregistrement…";
     const { data: majOk, error } = await sb.from("requests").update(maj).eq("id", it.id).select("id");
-    if(error){ b.disabled = false; b.textContent = "Enregistrer les modifications"; return toast("Échec : " + error.message); }
+    if(error){ b.disabled = false; b.textContent = "Enregistrer les modifications"; return erreurForm("#editErr", "Échec : " + messageBudgetServeur(error.message)); }
     if(!majOk || !majOk.length){ b.disabled = false; b.textContent = "Enregistrer les modifications"; return toast("Modification refusée par la base : rien n'a changé."); }
+    if(maj.budget_id || it.budget_id) alertesBudget(maj.budget_id || it.budget_id);
     // Les fichiers ne sont effacés du stockage qu'une fois la demande enregistrée sans erreur.
     // Si cet effacement échoue, la demande est déjà à jour : il ne reste qu'un fichier orphelin.
     if(pjRetire.length){
@@ -11304,6 +11754,12 @@ $("#d_body").addEventListener("click", async e => {
     patch = { decision_note: note }; label = "Message envoyé au demandeur";
   }
 
+  // budget : avertir le trésorier si la décision fait (ou laisse) dépasser le budget
+  if((act==="valider" || act==="rouvrir" || act==="payer") && it.budget_id){
+    const msgB = avertBudget(it.budget_id, compteBudget(it) ? 0 : Number(it.amount||0));
+    if(msgB && !await demander("Budget dépassé", msgB + "\n\nContinuer quand même ?", { bouton:"Continuer", danger:true })) return;
+  }
+
   if(direct && ["valider","refuser","corriger","payer","rouvrir","message"].includes(act)){
     const qui = (it.beneficiary ? "Bénéficiaire : " + it.beneficiary + "\n" : "") + "Demandeur : " + (it.requester_name||"—");
     const base = "« " + (it.object||"") + " » — " + euro(it.amount) + "\n" + qui;
@@ -11366,6 +11822,8 @@ $("#d_body").addEventListener("click", async e => {
   await refresh();
   const apres = state.items.find(x => x.id === it.id);
   if(apres && state.selected === it.id){ state.drawerDirty = false; renderDrawer(apres); }
+  // urgence hors budget validée : l'imputer à un budget ou la classer « hors budget assumé »
+  if(act==="valider" && apres && apres.hors_budget && !apres.budget_id && !apres.hors_budget_assume) await imputerUrgence(apres);
   await loadEvents(it.id);
   toast(label + ".");
 });
