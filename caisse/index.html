@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="21.10.2026 · 1">
+<meta name="app-build" content="21.10.2026 · 2">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -687,7 +687,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 21.10.2026 · 1</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 21.10.2026 · 2</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -7187,6 +7187,10 @@ async function chargerBudgetsCaisse(){
       if(r.error) throw r.error;
       state.resErr = null; state.reserves = r.data || [];
     }catch(eR){ state.resErr = eR.message || String(eR); state.reserves = []; }
+    try{
+      const r = await sb.from("caisse_budget_meta").select("budget_id,date_fin");
+      if(!r.error){ state.finManuel = {}; (r.data||[]).forEach(x => { if(x.date_fin) state.finManuel[String(x.budget_id)] = String(x.date_fin).slice(0,10); }); }
+    }catch(_){}
   }
 }
 const budgetsDe = uid => (state.budCaisse||[]).filter(b => (b.membres||[]).includes(uid));
@@ -10135,7 +10139,7 @@ function renderBudget(){
     if(state.budErr) $("#budSqlErr").textContent = "Liaison budgets / demandeurs inactive : passe d'abord le script SQL « budgets ». Détail : " + state.budErr; }
   // ne pas effacer un choix de titulaire en cours
   const act = document.activeElement;
-  if(act && box.contains(act) && act.tagName === "SELECT") return;
+  if(act && box.contains(act) && /^(SELECT|INPUT|TEXTAREA)$/.test(act.tagName)) return;
   const f = state.budgetFiltre || "tous";
   const all = state.budgets || [];
   const totApp = all.filter(b => b.statut==="approuve").reduce((s,b)=>s+(Number(b.cout)||0),0);
@@ -10189,9 +10193,10 @@ function blocAttribution(b){
       <button class="btn sm" data-baction="attrib" data-id="${esc(b.id)}">Enregistrer</button>
       ${bc.manuel ? `<button class="btn ghost sm" data-baction="attribauto" data-id="${esc(b.id)}">Revenir à l'automatique</button>` : ""}</div>
     ${state.budMetaErr ? "" : `<div class="attach"><span class="bud-txt" style="margin:0">Utilisable pour les dépenses jusqu'au</span>
-      <input type="date" data-bfin="${esc(b.id)}" value="${esc(bc.fin || "")}" style="width:auto">
+      <input type="date" data-bfin="${esc(b.id)}" value="${esc((state.finSaisie||{})[b.id] ?? (bc.fin || ""))}" style="width:auto">
       <button class="btn ghost sm" data-baction="fin" data-id="${esc(b.id)}">Enregistrer la date</button>
-      <span class="hint" style="margin:0">Par défaut : fin de l'exercice où le budget a été approuvé.</span></div>`}
+      ${(state.finManuel||{})[b.id] ? `<button class="btn ghost sm" data-baction="findefaut" data-id="${esc(b.id)}">Revenir à la date par défaut</button>` : ""}
+      <span class="hint" style="margin:0">${(state.finManuel||{})[b.id] ? "Date choisie par toi." : "Date par défaut : fin de l'exercice où le budget a été approuvé."}</span></div>`}
   </div>`;
 }
 
@@ -10219,6 +10224,14 @@ function blocReserves(b){
     ${isTreso() ? `<div><button class="btn ghost sm" data-baction="resnouv" data-id="${esc(b.id)}">Émettre une réserve</button></div>` : ""}
   </div>`;
 }
+document.addEventListener("input", e => {
+  const d = e.target.closest && e.target.closest("[data-bfin]"); if(!d) return;
+  state.finSaisie = state.finSaisie || {}; state.finSaisie[d.dataset.bfin] = d.value;
+});
+document.addEventListener("change", e => {
+  const d = e.target.closest && e.target.closest("[data-bfin]"); if(!d) return;
+  state.finSaisie = state.finSaisie || {}; state.finSaisie[d.dataset.bfin] = d.value;
+});
 document.addEventListener("change", e => {
   const c = e.target.closest && e.target.closest('[data-f="susp"]'); if(!c) return;
   const w = c.closest(".sb") && c.closest(".sb").querySelector('[data-fwrap="cond"]');
@@ -10299,15 +10312,24 @@ async function budgetAction(action, ds){
   }
   if(action === "resnouv") return emettreReserve(ds.id);
   if(action === "reslever") return leverReserve(ds.id);
-  if(action === "fin"){
+  if(action === "fin" || action === "findefaut"){
     const id = String(ds.id);
     const el = document.querySelector(`[data-bfin="${CSS.escape(id)}"]`);
-    const v = el ? el.value : "";
+    const v = action === "findefaut" ? "" : String(((state.finSaisie||{})[id] ?? (el ? el.value : "")) || "");
+    if(action === "fin" && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return dire("Date non enregistrée", "Choisis une date valide dans le calendrier.");
     const { data, error } = await sb.from("caisse_budget_meta")
-      .upsert({ budget_id: id, date_fin: v || null, updated_at: new Date().toISOString() }, { onConflict:"budget_id" }).select("budget_id");
-    if(error || !data || !data.length) return dire("Date non enregistrée", error ? error.message : "La base a refusé l'enregistrement.");
+      .upsert({ budget_id: id, date_fin: v || null, updated_at: new Date().toISOString() }, { onConflict:"budget_id" }).select("budget_id,date_fin");
+    if(error || !data || !data.length) return dire("Date non enregistrée", error ? error.message : "La base a refusé l'enregistrement (droits sur caisse_budget_meta).");
+    // relecture : on vérifie que la base a bien gardé la date
+    const lu = data[0].date_fin ? String(data[0].date_fin).slice(0,10) : "";
+    if(lu !== v) return dire("Date non enregistrée", "La base a renvoyé « " + (lu || "aucune date") + " » au lieu de « " + (v || "aucune date") + " ».");
+    if(state.finSaisie) delete state.finSaisie[id];
+    if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
     await chargerBudgetsCaisse(); renderBudget();
     const bc = budgetParId(id);
+    if(action === "fin" && bc && bc.fin !== v) return dire("Date enregistrée, mais non prise en compte",
+      "La date du " + fdate(v) + " est bien enregistrée, mais la Caisse calcule encore le " + (bc.fin ? fdate(bc.fin) : "?")
+      + ". Repasse le script SQL « budgets v2 » (fonction caisse_budget_fin) et envoie-moi ce message.");
     return dire("Date de fin enregistrée", (bc ? "« " + bc.titre + " » : " : "") + (bc && bc.fin ? "utilisable pour les dépenses jusqu'au " + fdate(bc.fin) + "." : "sans date de fin."));
   }
   const id = ds.id;
