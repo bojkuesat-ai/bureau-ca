@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="22.10.2026 · 6">
+<meta name="app-build" content="22.10.2026 · 8">
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -687,7 +687,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 22.10.2026 · 6</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 22.10.2026 · 8</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -10487,6 +10487,31 @@ function renderBudget(){
   }).join("");
 }
 
+/* détail des demandes rattachées : dépliable, reste ouvert après un rafraîchissement */
+state.budDetailOuvert = state.budDetailOuvert || {};
+document.addEventListener("toggle", e => {
+  const d = e.target; if(!d || !d.dataset || d.dataset.bdetail == null) return;
+  state.budDetailOuvert[d.dataset.bdetail] = d.open;
+}, true);
+function detailDemandesBudget(bid, nb){
+  const lies = (state.items||[]).filter(i => String(i.budget_id||"") === String(bid) && i.status !== "Refusée")
+    .sort((a,b) => String(b.expense_date || b.created_at || "").localeCompare(String(a.expense_date || a.created_at || "")));
+  const resas = resasDe(bid);
+  const recettes = (state.incomes||[]).filter(r => String(r.budget_id||"") === String(bid));
+  const stCoul = { "Remboursée":"#0f6b37", "Validée":"#1c5fa8", "En attente":"#8f4a00", "À corriger":"#a4161a" };
+  const ligne = i => `<div data-ouvrir-dem="${esc(i.id)}" role="button" tabindex="0" style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;border-bottom:1px solid var(--line);padding:8px 2px;cursor:pointer">
+      <b style="min-width:92px">${esc(refOf(i))}</b><span style="flex:1;min-width:160px">${esc(i.requester_name||"")} — ${esc(i.object||"")}${i.hors_budget ? " 🔴 urgente" : ""}</span>
+      <b>${esc(euro(i.amount))}</b><span style="font-weight:700;color:${stCoul[i.status]||"var(--muted)"}">${esc(i.status)}</span>
+      <span class="hint" style="margin:0">${esc(i.expense_date ? fdate(String(i.expense_date).slice(0,10)) : "")}</span></div>`;
+  const tot = lies.reduce((t,i) => t + Number(i.amount||0), 0);
+  return `<details data-bdetail="${esc(bid)}" ${state.budDetailOuvert[bid] ? "open" : ""} style="margin:6px 0">
+    <summary class="bud-txt" style="cursor:pointer;font-weight:700;font-size:15px">▶ ${nb} demande(s) rattachée(s) — ${esc(euro(tot))} · cliquer pour voir le détail</summary>
+    ${lies.length ? lies.map(ligne).join("") : `<p class="hint">Aucune demande rattachée.</p>`}
+    ${resas.length ? `<div class="bud-txt" style="margin-top:8px"><b>Réservations actives :</b> ${resas.map(x => esc(euro(x.montant)) + " — " + esc(x.objet) + " (" + esc(x.user_name||"") + ")").join(" · ")}</div>` : ""}
+    ${recettes.length ? `<div class="bud-txt" style="margin-top:8px"><b>Recettes rattachées :</b> ${recettes.map(r => esc(euro(r.amount)) + (r.source ? " — " + esc(r.source) : "")).join(" · ")}</div>` : ""}
+  </details>`;
+}
+document.addEventListener("click", e => { const l = e.target.closest && e.target.closest("[data-ouvrir-dem]"); if(l) openDrawer(l.dataset.ouvrirDem); });
 function blocAttribution(b){
   if(b.statut !== "approuve" || state.budErr) return "";
   const bc = budgetParId(b.id);
@@ -10499,7 +10524,8 @@ function blocAttribution(b){
   return `<div class="b-attr">
     ${jaugeHTML(bc, 0)}
     <div class="bud-txt">Attribué à : <b>${bc.membres.length ? esc(bc.membres.map(nom).join(" et ")) : "personne"}</b>${
-      bc.membres.length ? (bc.manuel ? " (attribué par toi)" : " (automatique)") : " — attribue-le ci-dessous"} · ${nbLiees} demande(s) rattachée(s)</div>
+      bc.membres.length ? (bc.manuel ? " (attribué par toi)" : " (automatique)") : " — attribue-le ci-dessous"}</div>
+    ${detailDemandesBudget(b.id, nbLiees)}
     <div class="attach">${sel(0, bc.membres[0])}${sel(1, bc.membres[1])}
       <button class="btn sm" data-baction="attrib" data-id="${esc(b.id)}">Enregistrer</button>
       ${bc.manuel ? `<button class="btn ghost sm" data-baction="attribauto" data-id="${esc(b.id)}">Revenir à l'automatique</button>` : ""}</div>
@@ -11135,8 +11161,17 @@ async function rattacherBudget(ids, bid){
   if(error) throw error;
   if(!data || !data.length) throw new Error("la base a refusé la mise à jour");
   await refresh();
+  // vérification : la base doit montrer le nouveau budget sur chaque demande
+  const faux = ids.filter(id => { const x = (state.items||[]).find(i => String(i.id) === String(id)); return !x || String(x.budget_id || "") !== String(bid || ""); });
+  if(faux.length) throw new Error("la base n'affiche pas le rattachement pour " + faux.length + " demande(s). Recharge la page pour vérifier.");
   if(bid) alertesBudget(bid);
   return data.length;
+}
+function resumeRattachement(ids, bid){
+  const b = bid ? budgetParId(bid) : null;
+  const lignes = ids.map(id => { const x = (state.items||[]).find(i => String(i.id) === String(id)); return x ? "• " + refOf(x) + " — " + (x.object || "") + " (" + euro(x.amount) + ")" : ""; }).filter(Boolean).slice(0, 8).join("\n");
+  return bid ? "✅ Bien rattaché au budget « " + (b ? b.titre : "?") + " » :\n\n" + lignes + (b ? "\n\nBudget : " + euro(b.consomme) + " engagés sur " + euro(b.cout) + " — reste " + euro(b.cout - b.consomme) + "." : "")
+             : "✅ Budget retiré de :\n\n" + lignes;
 }
 $("#d_body").addEventListener("click", async e => {
   const b = e.target.closest("[data-budrat]"); if(!b || !isTreso()) return;
@@ -11145,8 +11180,8 @@ $("#d_body").addEventListener("click", async e => {
   try{
     if(!await rattacherBudget([b.dataset.budrat], bid)) return;
     const it = state.items.find(x => x.id === b.dataset.budrat); if(it && state.selected === it.id){ state.drawerDirty = false; renderDrawer(it); }
-    toast(bid ? "Demande rattachée au budget." : "Budget retiré de la demande.");
-  }catch(err){ toast("Rattachement impossible : " + (err.message || err)); }
+    await dire(bid ? "Demande rattachée" : "Budget retiré", resumeRattachement([b.dataset.budrat], bid));
+  }catch(err){ await dire("Erreur : demande NON rattachée", (err.message || String(err)) + "\n\nRien n'a été modifié."); }
   finally{ b.disabled = false; }
 });
 if($("#bulkBudget")) $("#bulkBudget").onclick = async () => {
@@ -11156,8 +11191,8 @@ if($("#bulkBudget")) $("#bulkBudget").onclick = async () => {
   const v = await fenetreForm("Rattacher à un budget", `<p class="hint" style="margin:0">${ids.length} demande(s) sélectionnée(s). Aucun e-mail n'est envoyé.</p>
     <div class="field"><label>Budget</label><select data-f="b">${optsHtml(opts, "")}</select></div>`, "Rattacher", ov => ({ b: ov.querySelector('[data-f="b"]').value }));
   if(!v) return;
-  try{ const n = await rattacherBudget(ids, v.b); if(!n) return; state.sel.clear(); renderBulk(); render(); toast(n + " demande(s) mise(s) à jour."); }
-  catch(err){ dire("Rattachement impossible", err.message || String(err)); }
+  try{ const n = await rattacherBudget(ids, v.b); if(!n) return; const msg = resumeRattachement(ids, v.b); state.sel.clear(); renderBulk(); render(); await dire(v.b ? "Demandes rattachées" : "Budget retiré", n + " demande(s) mise(s) à jour.\n\n" + msg); }
+  catch(err){ dire("Erreur : rattachement NON fait", (err.message || String(err)) + "\n\nVérifie les demandes avant de réessayer."); }
 };
 
 /* ---------- rapport par budget (point 11) ---------- */
