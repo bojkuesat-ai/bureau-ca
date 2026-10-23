@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="23.10.2026 · 9">
+<meta name="app-build" content="23.10.2026 · 10">
 <!-- Politique de sécurité (CSP) : la Caisse ne peut charger du code que depuis ces adresses précises, et n'échanger des données qu'avec Supabase. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/ https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; media-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; connect-src 'self' https://mlgzdfyqjhvyubrywuim.supabase.co wss://mlgzdfyqjhvyubrywuim.supabase.co https://esm.sh https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/; frame-src 'self' blob: data:; worker-src 'self' blob: https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/; manifest-src 'self' blob: data:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <link rel="preconnect" href="https://mlgzdfyqjhvyubrywuim.supabase.co" crossorigin>
@@ -6326,8 +6326,10 @@ function lireHorairesUI(){
 }
 async function saveHoraires(){
   const H = lireHorairesUI();
-  const { error } = await sb.from("caisse_config").upsert({ id:1, horaires:H, updated_at:new Date().toISOString() });
+  const { data, error } = await sb.from("caisse_config").upsert({ id:1, horaires:H, updated_at:new Date().toISOString() }).select("horaires");
   if(error){ toast("Échec : "+error.message); return; }
+  // Une règle de droits peut refuser sans message : on vérifie que la base a vraiment pris le réglage.
+  if(!data || !data.length){ toast("Non enregistré : seul le compte trésorier de la Caisse peut modifier les horaires."); return; }
   state.horaires = H; state.horEdited = false; renderHoraires(); majHoraire && majHoraire(); toast("Horaires enregistrés.");
 }
 function renderOverview(){
