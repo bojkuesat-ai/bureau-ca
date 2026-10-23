@@ -156,6 +156,8 @@ input[type=date]{color-scheme:dark}
 .cal-reu{background:#4a4a8a}
 .cal-ev{background:#c9772a}
 .cal-tache{background:#8a3a5a}
+.cal-salle{background:#2e7d4f}
+.cal-salle-att{background:transparent;border:1px dashed #f2ac3f!important;color:#f2ac3f}
 @media(max-width:640px){ .cal-cell{min-height:56px} .cal-ev-chip{font-size:9px} }
 select.f{width:100%}
 
@@ -612,7 +614,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-22 \u00b7 02h00";
+const CA_VERSION="2026-10-23 \u00b7 salle fac";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1168,16 +1170,16 @@ async function refreshSession(){
   const jobsCoopte=[loadConflits,loadEvenements,loadMeta,loadAvis,loadAvisVotes,loadMediation,loadSoutien];
   const jobs=(S.session.role==="coopte")?jobsCoopte:[loadDocs,loadMessages,loadConflits,loadTaches,loadContacts,loadAnnonces,loadReactions,loadPresence,
     loadEvenements,loadReunions,loadCreneaux,loadOrg,loadBudgets,loadVotes,loadMeta,loadBilans,loadJournal,
-    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes];
+    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes,loadSalle];
   if(S.session.role==="coopte"){ ["docs","messages","taches","contacts","annonces","reunions","creneaux","budgets","votes","bilans","journal","mailing","procurations"].forEach(k=>{ S[k]=[]; }); }
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
 }
-const ONGLETS_OPTIONNELS=[["taches","Tâches"],["planning","Planning"],["evenements","Événements"],["contacts","Contacts"]];
+const ONGLETS_OPTIONNELS=[["taches","Tâches"],["planning","Planning"],["evenements","Événements"],["salle","Réservation salle fac"],["contacts","Contacts"]];
 function ongletActif(k){ return ongletsOff().indexOf(k)<0; }
 function ongletsOff(){ return (S.meta&&Array.isArray(S.meta.ongletsOff))?S.meta.ongletsOff:[]; }
 /* Notes d'un point : le secrétariat partout, chaque membre seulement sous son propre point. */
 function peutNoterPoint(pt){ const me=S.session; if(!me||!pt) return false; return estSecretaire() || (!!pt.parId && pt.parId===me.id); }
-async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; S.meta.ongletsOff=Array.isArray(data.onglets_off)?data.onglets_off:[]; S.meta.cesActif=(data.ces_actif!==false); S.meta.erreurCa=data.erreur_ca||""; S.meta.erreurCaisse=data.erreur_caisse||""; } }catch(e){} }
+async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; S.meta.ongletsOff=Array.isArray(data.onglets_off)?data.onglets_off:[]; S.meta.cesActif=(data.ces_actif!==false); S.meta.erreurCa=data.erreur_ca||""; S.meta.salleResp=Array.isArray(data.salle_resp)?data.salle_resp:[]; S.meta.salleCharte=Array.isArray(data.salle_charte)?data.salle_charte:null; S.meta.salleFermetures=Array.isArray(data.salle_fermetures)?data.salle_fermetures:[]; S.meta.erreurCaisse=data.erreur_caisse||""; } }catch(e){} }
 async function loadBilans(){
   /* Aucun tri : l'ordre de lecture ne doit rien laisser deviner de l'ordre de dépôt.
      La base ne renvoie ces lignes qu'au secrétariat, et seulement après clôture. */
@@ -1375,6 +1377,7 @@ function evenementsCalendrier(){
   (S.reunions||[]).forEach(m=>{ if(m.date) items.push({date:String(m.date).slice(0,10),type:"Réunion",titre:m.titre||"Réunion",lieu:m.lieu||"",cls:"cal-reu"}); });
   if(ongletActif("evenements")) (S.evenements||[]).forEach(e=>{ if(e.date) items.push({date:String(e.date).slice(0,10),type:"Événement",titre:e.titre||"Événement",lieu:e.lieu||"",cls:"cal-ev"}); });
   if(ongletActif("taches")) (S.taches||[]).forEach(t=>{ if(t.echeance && t.statut!=="done") items.push({date:String(t.echeance).slice(0,10),type:"Échéance tâche",titre:t.titre||"Tâche",lieu:"",cls:"cal-tache"}); });
+  if(ongletActif("salle") && typeof salleIsoLocal==="function") (S.salle||[]).forEach(r=>{ if(r.statut==="validee") items.push({date:salleIsoLocal(new Date(r.debut)),type:"Salle fac",titre:salleH(r.debut)+"–"+salleH(r.fin)+" "+(r.demandeur_nom||""),lieu:"Salle facultaire",cls:"cal-salle"}); });
   return items;
 }
 function icsDate(d){ return String(d).slice(0,10).replace(/-/g,""); }
@@ -1663,6 +1666,7 @@ function viewAdmin(){
       <div class="row-btn"><button class="btn sm" data-action="save-mediateurs">Enregistrer</button></div>
       ${directionExtra().length?`<p class="du">${directionExtra().length} médiateur(s) enregistré(s).</p>`:`<p class="du" style="color:var(--red)">Aucun médiateur enregistré : vous ne pourrez attribuer aucun dossier.</p>`}
     </div>
+    ${salleCarteAdmin()}
     <div class="card2"><h3 class="serif">Commission Entraide Sociale (CES)</h3>
       <p class="du">Activez ou désactivez l'onglet « Soutien social — CES » de Waled Buzzian, quand vous le voulez. Désactivé, l'onglet disparaît pour lui (vous le gardez). Ses dossiers ne sont ni modifiés ni effacés.</p>
       <label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:15px;font-weight:700;cursor:pointer">
@@ -1783,10 +1787,11 @@ function viewAuth(){
 function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textContent=msg; e.style.display="block"; } }
 
 /* ---- DASHBOARD ---- */
-const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["evenements","05","Événements"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
+const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,notifs:tabNotifs,search:tabSearch};
+  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,notifs:tabNotifs,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
+  if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   /* Les cooptes n'ont acces qu'a leur espace de contribution et aux annonces. */
   /* Les coopte·es ont acces a la mediation : c'est meme la raison pour laquelle
@@ -1841,7 +1846,7 @@ function viewDash(){
       ${estCoopte()?`<span class="badge-coopte">Coopté·e</span>`:`<button class="logout" data-action="set-tab" data-tab="search" title="Recherche">🔍</button>
       <button class="logout" data-action="set-tab" data-tab="notifs" title="À traiter">🔔${notifTot?" "+notifTot:""}</button>`}
       <button class="logout" data-action="logout">Se déconnecter</button></div>
-    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():id==="soutien"?soutNonLus("ca"):id==="soutien_etu"?soutNonLus("etu"):id==="soutien_ces"?cesNonLus():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:id==="soutien"?` style="border:2px solid #b48cf2;border-bottom:none;color:#d4bbff;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
+    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():id==="soutien"?soutNonLus("ca"):id==="soutien_etu"?soutNonLus("etu"):id==="soutien_ces"?cesNonLus():id==="salle"?salleBadge():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:id==="soutien"?` style="border:2px solid #b48cf2;border-bottom:none;color:#d4bbff;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
   </div></header>
   <main class="body">${bienvenue}${bandeauRappels()}${body}</main>`;
 }
@@ -3051,7 +3056,7 @@ function tabCalendrier(){
         <button class="btn sm" data-action="cal-ics">\u2b07 Exporter (.ics)</button>
       </div>
     </div>
-    <div class="cal-legend"><span class="cal-ev-chip cal-reu">R\u00e9union</span><span class="cal-ev-chip cal-ev">\u00c9v\u00e9nement</span><span class="cal-ev-chip cal-tache">\u00c9ch\u00e9ance t\u00e2che</span></div>
+    <div class="cal-legend"><span class="cal-ev-chip cal-salle">Salle fac</span><span class="cal-ev-chip cal-reu">R\u00e9union</span><span class="cal-ev-chip cal-ev">\u00c9v\u00e9nement</span><span class="cal-ev-chip cal-tache">\u00c9ch\u00e9ance t\u00e2che</span></div>
     <div class="cal-grid-h">${dows.map(d=>`<div>${d}</div>`).join("")}</div>
     <div class="cal-grid">${cells.join("")}</div>
     <p style="font-size:11.5px;color:var(--slate);margin:10px 0 0">Le calendrier reprend automatiquement vos r\u00e9unions, \u00e9v\u00e9nements et \u00e9ch\u00e9ances de t\u00e2ches. L'export .ics s'ouvre dans Google Agenda, Apple Calendrier, Outlook\u2026</p>
@@ -4990,6 +4995,8 @@ async function boot(){
       try{ const m=sessionStorage.getItem("ca:goto"); if(m){ S.goto=m; S.view="ca"; } }catch(_){ }
     }
     if(g==="coopte"){ S.authMode="signup"; }
+    if(g==="salle"){ S.gotoRes=params.get("r")||""; try{ sessionStorage.setItem("ca:r",S.gotoRes); }catch(_){ } }
+    else if(retourAuth && S.goto==="salle"){ try{ S.gotoRes=sessionStorage.getItem("ca:r")||""; }catch(_){ } }
     if(c){ S.viaCode=c; try{ sessionStorage.setItem("ca:c",c); }catch(_){ } }
     else if(retourAuth){ try{ const m=sessionStorage.getItem("ca:c"); if(m) S.viaCode=m; }catch(_){ } }
   }catch(e){}
@@ -5002,7 +5009,7 @@ async function boot(){
   if(!sb){ render(); return; }
   try{ const h=String(location.hash||""); if(/type=recovery/.test(h)||/[?&]type=recovery/.test(location.search)){ S.recovery=true; } }catch(e){}
   try{ await refreshSession(); }catch(e){} render();
-  if(S.session && S.session.role!=="coopte"){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") rendreEnPreservant(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterRappelsCertif().catch(()=>{}); traiterRecapIdees().catch(()=>{}); traiterInscriptions().catch(()=>{}); traiterRetardsMediation().catch(()=>{}); }
+  if(S.session && S.session.role!=="coopte"){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") rendreEnPreservant(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterRappelsCertif().catch(()=>{}); traiterRecapIdees().catch(()=>{}); traiterInscriptions().catch(()=>{}); traiterRetardsMediation().catch(()=>{}); traiterSalle().then(()=>{ if(S.tab==="salle") rendreEnPreservant(); }).catch(()=>{}); }
   try{ sb.auth.onAuthStateChange(async (evt)=>{
     if(evt==="PASSWORD_RECOVERY"){ S.recovery=true; render(); return; }
     if(S.recovery) return;
@@ -7067,6 +7074,629 @@ document.addEventListener("click", async e=>{
     try{ logAct("Demande de coopté·e refusée : "+nom); }catch(_){ }
   }
   S.cooptesAttenteCharge=false; await loadAccounts(); render();
+});
+
+
+/* =====================================================================
+   RÉSERVATION DE LA SALLE FACULTAIRE
+   - Un membre du CA demande un créneau (lun–sam, 4 h max, ≥ 24 h à l'avance,
+     ≤ 2 mois, 3 par semaine) et signe le règlement avec son mot de passe.
+   - Les responsables (cochées par le propriétaire dans Admin) valident ou
+     refusent ; un mail « Salle-Fac » part chez la personne.
+   - 10 min avant la fin : mail pour déclarer son départ (≥ 2 photos).
+     30 min après la fin : rappel. 24 h après : blocage jusqu'au déblocage.
+   - Photos supprimées automatiquement après 3 jours.
+   Toutes les règles sont revérifiées par le serveur (script salle_facultaire.sql).
+   ===================================================================== */
+const EXP_SALLE = "Salle-Fac <noreply@bureauetuidant.xyz>";
+const SALLE_MAX_H = 4, SALLE_DELAI_MIN_H = 24, SALLE_DELAI_MAX_J = 60, SALLE_MAX_SEMAINE = 3, SALLE_PHOTOS_MIN = 2, SALLE_PHOTOS_MAX = 8;
+const SALLE_TYPES = [["reunion","Réunion"],["evenement","Événement"],["permanence","Permanence"],["travail","Travail ou préparation"],["autre","Autre"]];
+const SALLE_TYPE_LIB = Object.fromEntries(SALLE_TYPES);
+const SALLE_CHARTE_DEFAUT = [
+  "Laisser la salle propre et rangée après mon passage : tables, chaises, déchets.",
+  "Respecter l'horaire réservé et libérer la salle à l'heure.",
+  "Fermer les fenêtres, éteindre les lumières et le matériel.",
+  "Fermer la salle à clé et remettre les clés dans le boîtier en partant.",
+  "Signaler tout dégât ou problème aux responsables de la salle.",
+  "Je suis responsable de la salle et des personnes présentes pendant ma réservation."
+];
+const SALLE_STATUT = {attente:["En attente","--amber"], validee:["Validée","--green"], refusee:["Refusée","--red"], annulee:["Annulée","--slate"]};
+
+/* ---------- Données ---------- */
+async function loadSalle(){
+  if(!sb||!S.session||estCoopte()) return;
+  try{
+    const depuis=new Date(Date.now()-200*86400000).toISOString();
+    const r=await sb.from("ca_salle_reservations").select("*").gte("debut",depuis).order("debut",{ascending:true});
+    if(r&&r.error){ S.salleErr=r.error.message; S.salle=[]; }
+    else { S.salleErr=""; S.salle=(r.data||[]).map(x=>Object.assign({}, x, {
+      depart_photos:Array.isArray(x.depart_photos)?x.depart_photos:[], arrivee_photos:Array.isArray(x.arrivee_photos)?x.arrivee_photos:[]})); }
+  }catch(e){ S.salleErr=String(e&&e.message||e); S.salle=[]; }
+  try{ const b=await sb.from("ca_salle_blocages").select("*"); S.salleBloques=(b&&!b.error&&b.data)||[]; }catch(e){ S.salleBloques=[]; }
+}
+function salleResp(){ return (S.meta&&Array.isArray(S.meta.salleResp))?S.meta.salleResp:[]; }
+function estRespSalle(){ return !!(S.session && salleResp().indexOf(S.session.id)>=0 && !estCoopte()); }
+function salleCharte(){ const c=S.meta&&S.meta.salleCharte; return (Array.isArray(c)&&c.length)?c:SALLE_CHARTE_DEFAUT; }
+function salleFermetures(){ const f=S.meta&&S.meta.salleFermetures; return Array.isArray(f)?f:[]; }
+function salleMoiBloque(){ const me=S.session&&S.session.id; return (S.salleBloques||[]).find(b=>b.membre_id===me)||null; }
+function salleEmailsResp(){ return (S.admins||[]).filter(a=>a.statut==="actif"&&a.email&&salleResp().indexOf(a.id)>=0).map(a=>String(a.email).toLowerCase().trim()); }
+function salleNomsResp(){ return (S.admins||[]).filter(a=>salleResp().indexOf(a.id)>=0).map(a=>a.prenom||a.nom||"").filter(Boolean).join(" et ")||"les responsables de la salle"; }
+function salleLien(id){ return caAppUrl()+"?go=salle"+(id?"&r="+encodeURIComponent(id):""); }
+function salleIsoLocal(d){ const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+function salleH(iso){ try{ return new Date(iso).toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
+function salleJour(iso){ return fmtDateLong(salleIsoLocal(new Date(iso))); }
+function salleCreneau(r){ return salleJour(r.debut)+", "+salleH(r.debut)+" – "+salleH(r.fin); }
+function salleDureeTxt(r){ const m=Math.round((new Date(r.fin)-new Date(r.debut))/60000); const h=Math.floor(m/60), mi=m%60; return (h?h+" h":"")+(mi?(h?" ":"")+mi+" min":""); }
+function salleSemaine(d){ const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-((x.getDay()+6)%7)); return salleIsoLocal(x); }
+function salleFini(r){ return new Date(r.fin).getTime()<=Date.now(); }
+function salleEvTitre(id){ const e=(S.evenements||[]).find(x=>String(x.id)===String(id)); return e?e.titre:""; }
+function salleFermetureDu(jour){ return salleFermetures().find(f=>jour>=String(f.du) && jour<=String(f.au||f.du))||null; }
+
+/* Règles vérifiées dans l'app avant l'envoi (le serveur vérifie les mêmes). */
+function salleVerifier(debut, fin){
+  if(isNaN(debut.getTime())||isNaN(fin.getTime())) return "Indiquez la date, l'heure de début et l'heure de fin.";
+  if(fin<=debut) return "L'heure de fin doit être après l'heure de début.";
+  if(fin-debut > SALLE_MAX_H*3600000) return "Une réservation ne peut pas dépasser "+SALLE_MAX_H+" heures.";
+  if(debut.getDay()===0) return "La salle ne se réserve pas le dimanche.";
+  if(debut.getTime() < Date.now()+SALLE_DELAI_MIN_H*3600000) return "La salle se réserve au moins "+SALLE_DELAI_MIN_H+" heures à l'avance.";
+  if(debut.getTime() > Date.now()+SALLE_DELAI_MAX_J*86400000) return "La salle se réserve au plus 2 mois à l'avance.";
+  const f=salleFermetureDu(salleIsoLocal(debut));
+  if(f) return "La salle est fermée du "+fmtDateLong(f.du)+" au "+fmtDateLong(f.au||f.du)+(f.motif?" ("+f.motif+")":"")+".";
+  const conflit=(S.salle||[]).find(r=>r.statut==="validee" && new Date(r.debut)<fin && new Date(r.fin)>debut);
+  if(conflit) return "Ce créneau chevauche une réservation déjà validée ("+salleH(conflit.debut)+" – "+salleH(conflit.fin)+").";
+  const me=S.session&&S.session.id, sem=salleSemaine(debut);
+  const n=(S.salle||[]).filter(r=>r.demandeur_id===me && (r.statut==="attente"||r.statut==="validee") && salleSemaine(new Date(r.debut))===sem).length;
+  if(n>=SALLE_MAX_SEMAINE) return "Vous avez déjà "+n+" réservations cette semaine-là (maximum "+SALLE_MAX_SEMAINE+").";
+  return "";
+}
+
+/* ---------- Mails ---------- */
+function salleMail(dest, sujet, corps){
+  const l=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))];
+  if(!l.length) return Promise.resolve({ok:0,err:0,total:0});
+  return envoyerAvecPiece(l, sujet, corps, null, {sansInvitation:true, tous:true, exp:EXP_SALLE});
+}
+function salleBouton(id, texte){ return `<p><a href="${salleLien(id)}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">${caMailEsc(texte||"Ouvrir la réservation")}</a></p>`; }
+function salleMailDetails(r){
+  const ev=r.evenement_id?salleEvTitre(r.evenement_id):"";
+  return `<table style="border-collapse:collapse;font-size:14px;margin:10px 0">`
+    +`<tr><td style="padding:4px 12px 4px 0;color:#666">Créneau</td><td><b>${caMailEsc(salleCreneau(r))}</b></td></tr>`
+    +`<tr><td style="padding:4px 12px 4px 0;color:#666">Demandé par</td><td>${caMailEsc(r.demandeur_nom||"")}</td></tr>`
+    +`<tr><td style="padding:4px 12px 4px 0;color:#666">Type</td><td>${caMailEsc(SALLE_TYPE_LIB[r.type]||r.type||"")}</td></tr>`
+    +(ev?`<tr><td style="padding:4px 12px 4px 0;color:#666">Événement</td><td>${caMailEsc(ev)}</td></tr>`:"")
+    +`<tr><td style="padding:4px 12px 4px 0;color:#666">Personnes</td><td>${caMailEsc(r.nb_personnes||"")}</td></tr>`
+    +`<tr><td style="padding:4px 12px 4px 0;color:#666;vertical-align:top">Description</td><td style="white-space:pre-wrap">${caMailEsc(r.description||"")}</td></tr></table>`;
+}
+function salleMailRegles(){ return `<p><b>Rappel des règles :</b></p><ol style="margin:4px 0 10px;padding-left:20px">${salleCharte().map(t=>`<li>${caMailEsc(t)}</li>`).join("")}</ol>`; }
+
+/* ---------- Signature : mot de passe du compte ---------- */
+async function salleAuthentifier(email){
+  if(!email){ modaleInfo("Votre compte n'a pas d'adresse e-mail : signature impossible."); return false; }
+  let err="";
+  for(let essai=0; essai<3; essai++){
+    const mdp=await modaleChamp("Pour signer le règlement de la salle, retapez le mot de passe de votre compte ("+email+").","Signer le règlement",{type:"password",placeholder:"Mot de passe",bouton:"🔒 Signer",erreur:err});
+    if(mdp===null) return false;
+    if(!mdp){ err="Saisissez votre mot de passe."; essai--; continue; }
+    let r=null; try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }catch(e){ r={error:e}; }
+    if(!(r&&r.error)) return true;
+    err="Mot de passe incorrect.";
+  }
+  modaleInfo("Mot de passe incorrect (3 essais). La demande n'a pas été envoyée.");
+  return false;
+}
+
+/* ---------- Photos ---------- */
+async function salleCompresser(file){
+  try{
+    const bmp=await createImageBitmap(file);
+    const max=1600, k=Math.min(1, max/Math.max(bmp.width,bmp.height));
+    const c=document.createElement("canvas"); c.width=Math.round(bmp.width*k); c.height=Math.round(bmp.height*k);
+    c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
+    const blob=await new Promise(res=>c.toBlob(res,"image/jpeg",0.82));
+    if(blob) return {blob, type:"image/jpeg", ext:"jpg"};
+  }catch(e){}
+  if(file.size>8*1024*1024) throw new Error("Photo trop lourde ("+Math.round(file.size/1048576)+" Mo, maximum 8).");
+  const t=typeFichier(file); const ext=(t.split("/")[1]||"jpg").replace("jpeg","jpg");
+  return {blob:file, type:t, ext};
+}
+async function salleEnvoyerPhotos(resId, prefixe, files, progres){
+  const chemins=[];
+  for(let i=0;i<files.length;i++){
+    const c=await salleCompresser(files[i]);
+    const chemin=resId+"/"+prefixe+"-"+uid()+"."+c.ext;
+    const up=await sb.storage.from("ca-salle").upload(chemin, c.blob, {contentType:c.type, upsert:false});
+    if(up&&up.error) throw new Error("Envoi de la photo "+(i+1)+" refusé : "+up.error.message);
+    chemins.push(chemin);
+    if(progres) progres(i+1, files.length);
+  }
+  return chemins;
+}
+async function salleChargerPhotos(){
+  const imgs=document.querySelectorAll("img[data-salle-photo]"); if(!imgs.length||!sb) return;
+  S.sallePhotoUrls=S.sallePhotoUrls||{};
+  for(const im of imgs){
+    const p=im.getAttribute("data-salle-photo");
+    if(!S.sallePhotoUrls[p]){
+      try{ const su=await sb.storage.from("ca-salle").createSignedUrl(p, 900); if(su&&su.data&&su.data.signedUrl) S.sallePhotoUrls[p]=su.data.signedUrl; }catch(e){}
+    }
+    if(S.sallePhotoUrls[p]){ im.src=S.sallePhotoUrls[p]; im.parentElement&&im.parentElement.setAttribute("href",S.sallePhotoUrls[p]); }
+    else im.alt="Photo indisponible";
+  }
+}
+function sallePhotosHTML(liste){
+  if(!liste||!liste.length) return "";
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">${liste.map(p=>`<a target="_blank" rel="noopener" style="display:block;width:104px;height:104px;border-radius:9px;overflow:hidden;border:1px solid var(--line);background:var(--paper)"><img data-salle-photo="${esc(p)}" alt="Photo" style="width:100%;height:100%;object-fit:cover"></a>`).join("")}</div>`;
+}
+/* Fenêtre : règles + case de déclaration (facultative) + photos. Renvoie {files, texte} ou null. */
+function salleModalePhotos(o){
+  return new Promise(resolve=>{
+    const d=document.createElement("div"); d.className="ca-mod";
+    d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true" style="max-width:520px;max-height:92vh;overflow:auto">'
+      +'<h3>'+esc(o.titre)+'</h3><p style="color:var(--ink);font-size:13.5px">'+esc(o.texte)+'</p>'
+      +(o.regles?'<ol style="margin:4px 0 10px;padding-left:20px;font-size:13.5px;line-height:1.6;color:var(--ink)">'+o.regles.map(t=>'<li>'+esc(t)+'</li>').join("")+'</ol>':'')
+      +(o.declaration?'<label style="display:flex;gap:9px;align-items:flex-start;margin:6px 0 12px;font-size:14px;color:var(--ink);cursor:pointer"><input type="checkbox" id="sp_decl" style="margin-top:3px;width:18px;height:18px"><span><b>'+esc(o.declaration)+'</b></span></label>':'')
+      +(o.zoneTexte?'<textarea class="f" id="sp_txt" rows="3" maxlength="2000" placeholder="'+esc(o.zoneTexte)+'" style="width:100%"></textarea>':'')
+      +'<label class="btn ghost sm" style="cursor:pointer;margin:6px 0">📷 Prendre ou choisir des photos<input type="file" id="sp_files" accept="image/*" multiple style="display:none"></label>'
+      +'<p class="du" id="sp_nb" style="margin:4px 0">Au moins '+o.min+' photo(s), '+SALLE_PHOTOS_MAX+' maximum.</p>'
+      +'<div id="sp_prev" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0"></div>'
+      +'<p id="sp_err" style="color:var(--red);font-size:13px;margin:6px 0;display:none"></p>'
+      +'<div class="ca-mod-btns"><button class="btn ghost sm" id="sp_no">Annuler</button><button class="btn sm" id="sp_ok">'+esc(o.bouton)+'</button></div></div>';
+    document.body.appendChild(d);
+    let fichiers=[]; const urls=[];
+    const maj=()=>{ const pv=d.querySelector("#sp_prev"); pv.innerHTML="";
+      fichiers.forEach((f,i)=>{ const u=URL.createObjectURL(f); urls.push(u);
+        const w=document.createElement("div"); w.style.cssText="position:relative;width:72px;height:72px;border-radius:8px;overflow:hidden;border:1px solid var(--line)";
+        w.innerHTML='<img src="'+u+'" style="width:100%;height:100%;object-fit:cover"><button type="button" data-i="'+i+'" style="position:absolute;top:2px;right:2px;border:none;border-radius:50%;width:22px;height:22px;background:rgba(0,0,0,.7);color:#fff;font-size:12px;cursor:pointer">✕</button>';
+        pv.appendChild(w); });
+      d.querySelector("#sp_nb").textContent=fichiers.length+" photo(s) — au moins "+o.min+", "+SALLE_PHOTOS_MAX+" maximum."; };
+    d.querySelector("#sp_files").addEventListener("change",ev=>{ const l=[...(ev.target.files||[])].filter(f=>/^image\//.test(f.type||"")||/\.(jpe?g|png|heic|heif|webp)$/i.test(f.name||""));
+      fichiers=fichiers.concat(l).slice(0,SALLE_PHOTOS_MAX); ev.target.value=""; maj(); });
+    d.querySelector("#sp_prev").addEventListener("click",ev=>{ const b=ev.target.closest("button[data-i]"); if(!b) return; fichiers.splice(Number(b.dataset.i),1); maj(); });
+    const fin=v=>{ urls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_){ } }); d.remove(); resolve(v); };
+    const err=m=>{ const e=d.querySelector("#sp_err"); e.textContent=m; e.style.display="block"; };
+    d.querySelector("#sp_no").addEventListener("click",()=>fin(null));
+    d.querySelector("#sp_ok").addEventListener("click",()=>{
+      if(o.declaration && !d.querySelector("#sp_decl").checked) return err("Cochez la déclaration pour continuer.");
+      const t=o.zoneTexte?String(d.querySelector("#sp_txt").value||"").trim():"";
+      if(o.zoneTexte && t.length<5) return err("Décrivez le problème en quelques mots.");
+      if(fichiers.length<o.min) return err("Ajoutez au moins "+o.min+" photo(s).");
+      fin({files:fichiers, texte:t});
+    });
+  });
+}
+
+/* ---------- Actions ---------- */
+async function salleDemander(){
+  const me=S.session; if(!me||!sb) return;
+  if(salleMoiBloque()){ modaleInfo("Vous ne pouvez pas réserver : un départ n'a pas été déclaré. Contactez "+salleNomsResp()+"."); return; }
+  if(!salleResp().length){ modaleInfo("Aucune responsable de la salle n'est encore désignée. Le propriétaire doit les cocher dans Admin."); return; }
+  const jour=String(val("salle_date")||""), hd=String(val("salle_hd")||""), hf=String(val("salle_hf")||"");
+  const type=String(val("salle_type")||""), ev=String(val("salle_ev")||""), desc=String(val("salle_desc")||"").trim(), nb=parseInt(val("salle_nb")||"0",10);
+  const debut=new Date(jour+"T"+hd), fin=new Date(jour+"T"+hf);
+  const e=salleVerifier(debut, fin);
+  if(e){ modaleInfo(e,"Réservation impossible"); return; }
+  if(!SALLE_TYPE_LIB[type]){ modaleInfo("Choisissez le type d'utilisation."); return; }
+  if(desc.length<5){ modaleInfo("Décrivez en quelques mots ce qui va se passer dans la salle."); return; }
+  if(!(nb>=1 && nb<=500)){ modaleInfo("Indiquez le nombre de personnes attendues."); return; }
+  const recap="Demander la salle facultaire le "+fmtDateLong(jour)+", de "+hd+" à "+hf+" ?\n\n"+SALLE_TYPE_LIB[type]+(ev?" — "+salleEvTitre(ev):"")+"\n"+nb+" personne(s)\n\nEn signant, vous vous engagez à respecter le règlement de la salle.";
+  if(!(await modaleConfirm(recap,"Réserver la salle"))) return;
+  if(!(await salleAuthentifier(me.email))) return;
+  const charte=salleCharte(), signeLe=new Date().toISOString();
+  const empreinte=await prCalculerEmpreinte({charte, membre:me.id, debut:debut.toISOString(), fin:fin.toISOString(), signeLe});
+  const r=await sb.rpc("ca_salle_demander",{p_debut:debut.toISOString(), p_fin:fin.toISOString(), p_type:type, p_evenement:ev||null, p_description:desc, p_nb:nb, p_charte:charte, p_empreinte:empreinte});
+  if(r&&r.error){ modaleInfo(r.error.message,"Réservation impossible"); return; }
+  const id=r&&r.data;
+  logAct("Salle facultaire — demande de réservation : "+fmtDateLong(jour)+" "+hd+"–"+hf);
+  await loadSalle();
+  const res=(S.salle||[]).find(x=>x.id===id)||{id, debut:debut.toISOString(), fin:fin.toISOString(), type, evenement_id:ev, description:desc, nb_personnes:nb, demandeur_nom:me.nom};
+  const m=await salleMail(salleEmailsResp(), "Nouvelle demande de réservation — "+salleCreneau(res),
+    `<h2 style="margin:0 0 10px">Nouvelle demande de réservation</h2><p>Une demande de réservation de la salle facultaire attend votre décision.</p>${salleMailDetails(res)}${salleBouton(id,"Valider ou refuser")}`);
+  S.salleUI={vue:"detail", sel:id}; render();
+  modaleInfo("✓ Votre demande est envoyée à "+salleNomsResp()+"."+(m.ok?"":" (Le mail de notification n'est pas parti : prévenez-les directement.)")+"\n\nVous recevrez un mail dès qu'elle sera validée ou refusée.","Demande envoyée");
+}
+async function salleDecider(id, valider){
+  const r=(S.salle||[]).find(x=>x.id===id); if(!r||!sb) return;
+  let motif=null;
+  if(valider){ if(!(await modaleConfirm("Valider la réservation de "+r.demandeur_nom+" le "+salleCreneau(r)+" ?\n\nLes autres demandes en attente sur ce créneau seront refusées automatiquement.","Valider"))) return; }
+  else { motif=await modaleMotif("Refuser la demande de "+r.demandeur_nom+" ("+salleCreneau(r)+") ?\n\nMotif facultatif, envoyé dans le mail.","Refuser la demande",{placeholder:"Ex. salle déjà prévue pour un examen.",bouton:"Refuser"}); if(motif===null) return; }
+  const x=await sb.rpc("ca_salle_decider",{p_id:id, p_valider:!!valider, p_motif:motif||null});
+  if(x&&x.error){ modaleInfo(x.error.message,"Décision impossible"); await loadSalle(); render(); return; }
+  logAct("Salle facultaire — réservation "+(valider?"validée":"refusée")+" : "+r.demandeur_nom+", "+salleCreneau(r));
+  const sig=(S.session&&S.session.nom)||"";
+  if(valider){
+    await salleMail([r.demandeur_email], "Réservation validée — salle facultaire, "+salleCreneau(r),
+      `<h2 style="margin:0 0 10px">✓ Votre réservation est validée</h2><p>La salle facultaire est à vous le <b>${caMailEsc(salleCreneau(r))}</b>.</p>${salleMailRegles()}<p>10 minutes avant la fin, vous recevrez un mail pour <b>déclarer votre départ</b> avec au moins ${SALLE_PHOTOS_MIN} photos de la salle. Sans déclaration dans les 24 heures, vous ne pourrez plus réserver.</p>${salleBouton(id,"Voir ma réservation")}<p style="color:#666;font-size:13px">Validée par ${caMailEsc(sig)}.</p>`);
+  } else {
+    await salleMail([r.demandeur_email], "Réservation refusée — salle facultaire, "+salleCreneau(r),
+      `<h2 style="margin:0 0 10px">Votre demande n'a pas été retenue</h2><p>Votre demande de réservation de la salle facultaire pour le <b>${caMailEsc(salleCreneau(r))}</b> a été refusée.</p>${motif?`<p style="background:#fdf6ec;border:1px solid #e8d3ab;border-radius:8px;padding:12px"><b>Motif :</b><br>${caMailEsc(motif)}</p>`:""}<p>Vous pouvez faire une nouvelle demande sur un autre créneau.</p><p style="color:#666;font-size:13px">Décision de ${caMailEsc(sig)}.</p>`);
+  }
+  const auto=(x&&x.data&&Array.isArray(x.data.auto_refus))?x.data.auto_refus:[];
+  for(const a of auto){
+    await salleMail([a.demandeur_email], "Réservation refusée — salle facultaire, "+salleCreneau(a),
+      `<h2 style="margin:0 0 10px">Votre demande n'a pas été retenue</h2><p>Le créneau que vous aviez demandé (<b>${caMailEsc(salleCreneau(a))}</b>) a été attribué à une autre demande.</p><p>Vous pouvez faire une nouvelle demande sur un autre créneau.</p>`);
+  }
+  await loadSalle(); render();
+  modaleInfo((valider?"✓ Réservation validée. ":"Demande refusée. ")+r.demandeur_nom+" a été prévenu·e par mail."+(auto.length?"\n"+auto.length+" autre(s) demande(s) sur ce créneau refusée(s) automatiquement.":""),"Salle facultaire");
+}
+async function salleAnnuler(id){
+  const r=(S.salle||[]).find(x=>x.id===id); if(!r||!sb) return;
+  const own=r.demandeur_id===(S.session&&S.session.id);
+  let motif=null;
+  if(own){ motif=await modaleMotif("Annuler votre réservation du "+salleCreneau(r)+" ?\n\nMotif facultatif.","Annuler ma réservation",{bouton:"Annuler la réservation"}); if(motif===null) return; }
+  else {
+    for(;;){ motif=await modaleMotif("Annuler la réservation de "+r.demandeur_nom+" ("+salleCreneau(r)+") ?\n\nLe motif est obligatoire : il est envoyé à la personne.","Annuler la réservation",{placeholder:"Ex. la faculté a besoin de la salle ce jour-là.",bouton:"Annuler la réservation"});
+      if(motif===null) return; if(motif.length>=3) break; modaleInfo("Indiquez le motif de l'annulation."); await attendreFermetureInfo(); }
+  }
+  const x=await sb.rpc("ca_salle_annuler",{p_id:id, p_motif:motif||null});
+  if(x&&x.error){ modaleInfo(x.error.message,"Annulation impossible"); return; }
+  logAct("Salle facultaire — réservation annulée : "+r.demandeur_nom+", "+salleCreneau(r));
+  if(own){
+    await salleMail(salleEmailsResp(), "Réservation annulée — "+salleCreneau(r),
+      `<h2 style="margin:0 0 10px">Réservation annulée</h2><p><b>${caMailEsc(r.demandeur_nom||"")}</b> a annulé sa réservation de la salle facultaire.</p>${salleMailDetails(r)}${motif?`<p><b>Motif :</b> ${caMailEsc(motif)}</p>`:""}`);
+  } else {
+    await salleMail([r.demandeur_email], "Réservation annulée — salle facultaire, "+salleCreneau(r),
+      `<h2 style="margin:0 0 10px">Votre réservation est annulée</h2><p>Votre réservation de la salle facultaire du <b>${caMailEsc(salleCreneau(r))}</b> a été annulée par ${caMailEsc((S.session&&S.session.nom)||"")}.</p><p style="background:#fdf6ec;border:1px solid #e8d3ab;border-radius:8px;padding:12px"><b>Motif :</b><br>${caMailEsc(motif)}</p>`);
+  }
+  await loadSalle(); render();
+  modaleInfo("Réservation annulée. "+(own?"Les responsables de la salle ont été prévenues.":r.demandeur_nom+" a été prévenu·e par mail."),"Salle facultaire");
+}
+async function salleDeclarerDepart(id){
+  const r=(S.salle||[]).find(x=>x.id===id); if(!r||!sb) return;
+  const o=await salleModalePhotos({titre:"J'ai quitté la salle", texte:"Vérifiez chaque règle avant de partir :", regles:salleCharte(),
+    declaration:"Je déclare que toutes les règles ont été respectées.", min:SALLE_PHOTOS_MIN, bouton:"Envoyer ma déclaration"});
+  if(!o) return;
+  const info=document.createElement("div"); info.className="ca-mod"; info.innerHTML='<div class="ca-mod-box"><p id="sp_prog" style="color:var(--ink)">Envoi des photos…</p></div>'; document.body.appendChild(info);
+  let chemins=[];
+  try{ chemins=await salleEnvoyerPhotos(id,"depart",o.files,(i,n)=>{ const p=document.getElementById("sp_prog"); if(p) p.textContent="Envoi des photos… "+i+" / "+n; }); }
+  catch(e){ info.remove(); modaleInfo(e.message||String(e),"Envoi impossible"); return; }
+  const x=await sb.rpc("ca_salle_declarer_depart",{p_id:id, p_photos:chemins});
+  info.remove();
+  if(x&&x.error){ modaleInfo(x.error.message,"Déclaration impossible"); return; }
+  logAct("Salle facultaire — départ déclaré : "+salleCreneau(r));
+  await salleMail(salleEmailsResp(), r.demandeur_nom+" a quitté la salle — "+salleCreneau(r),
+    `<h2 style="margin:0 0 10px">Départ déclaré</h2><p><b>${caMailEsc(r.demandeur_nom||"")}</b> déclare avoir quitté la salle facultaire et respecté toutes les règles.</p><p>Créneau : <b>${caMailEsc(salleCreneau(r))}</b><br>${chemins.length} photo(s) jointe(s), visibles dans l'app pendant 3 jours.</p>${salleBouton(id,"Voir les photos")}`);
+  await loadSalle(); render();
+  modaleInfo("✓ Merci ! Votre départ est enregistré et les responsables de la salle ont été prévenues.","Départ déclaré");
+}
+async function salleSignalerArrivee(id){
+  const r=(S.salle||[]).find(x=>x.id===id); if(!r||!sb) return;
+  const o=await salleModalePhotos({titre:"Signaler un problème à l'arrivée", texte:"La salle n'était pas en ordre quand vous êtes arrivé·e ? Décrivez ce que vous avez trouvé et joignez une photo : vous ne serez pas tenu·e pour responsable.",
+    zoneTexte:"Ex. tables non rangées, déchets, lumière restée allumée…", min:1, bouton:"Envoyer le signalement"});
+  if(!o) return;
+  let chemins=[];
+  try{ chemins=await salleEnvoyerPhotos(id,"arrivee",o.files); }catch(e){ modaleInfo(e.message||String(e),"Envoi impossible"); return; }
+  const x=await sb.rpc("ca_salle_signaler_arrivee",{p_id:id, p_texte:o.texte, p_photos:chemins});
+  if(x&&x.error){ modaleInfo(x.error.message,"Signalement impossible"); return; }
+  const avant=(S.salle||[]).filter(z=>z.statut==="validee" && z.id!==id && new Date(z.fin)<=new Date(r.debut)).sort((a,b)=>new Date(b.fin)-new Date(a.fin))[0];
+  logAct("Salle facultaire — problème signalé à l'arrivée : "+salleCreneau(r));
+  await salleMail(salleEmailsResp(), "Problème signalé à l'arrivée — "+salleCreneau(r),
+    `<h2 style="margin:0 0 10px">Problème signalé à l'arrivée</h2><p><b>${caMailEsc(r.demandeur_nom||"")}</b> a trouvé la salle facultaire dans cet état en arrivant (${caMailEsc(salleCreneau(r))}) :</p><p style="white-space:pre-wrap;background:#f7f7fb;border-radius:8px;padding:12px">${caMailEsc(o.texte)}</p>${avant?`<p>Réservation précédente : <b>${caMailEsc(avant.demandeur_nom||"")}</b>, ${caMailEsc(salleCreneau(avant))}.</p>`:""}${salleBouton(id,"Voir les photos")}`);
+  await loadSalle(); render();
+  modaleInfo("✓ Signalement envoyé aux responsables de la salle.","Merci");
+}
+async function salleDebloquer(membre){
+  const a=(S.admins||[]).find(x=>x.id===membre); const nom=a?((a.prenom||"")+" "+(a.nom||"")).trim():"cette personne";
+  if(!(await modaleConfirm("Débloquer "+nom+" ? Cette personne pourra de nouveau réserver la salle.","Débloquer"))) return;
+  const x=await sb.rpc("ca_salle_debloquer",{p_membre:membre});
+  if(x&&x.error){ modaleInfo(x.error.message); return; }
+  logAct("Salle facultaire — membre débloqué : "+nom);
+  if(a&&a.email) await salleMail([a.email],"Vous pouvez de nouveau réserver la salle facultaire",
+    `<h2 style="margin:0 0 10px">Réservations débloquées</h2><p>Bonjour ${caMailEsc(a.prenom||"")},</p><p>Vous pouvez de nouveau réserver la salle facultaire. Pensez à déclarer votre départ, avec les photos, à la fin de chaque réservation.</p>${salleBouton("","Réserver la salle")}`);
+  await loadSalle(); render();
+}
+async function salleEnregistrerReglages(charte, fermetures){
+  const x=await sb.rpc("ca_salle_reglages",{p_charte:charte, p_fermetures:fermetures});
+  if(x&&x.error){ modaleInfo(x.error.message,"Enregistrement impossible"); return false; }
+  S.meta.salleCharte=charte; S.meta.salleFermetures=fermetures; return true;
+}
+
+/* ---------- Tâches automatiques (complément de la fonction serveur salle-cron) ---------- */
+async function salleCle(cle){
+  try{ const ins=await sb.from("ca_rappels_envoyes").insert({cle:cle}).select(); return !(ins&&ins.error) && !!(ins&&ins.data&&ins.data.length); }catch(e){ return false; }
+}
+async function traiterSalle(){
+  if(!sb||!S.session||estCoopte()||S.salleErr) return;
+  try{ await sb.rpc("ca_salle_echeances"); }catch(e){}
+  await loadSalle();
+  const now=Date.now(), M=60000;
+  for(const r of (S.salle||[])){
+    const d=new Date(r.debut).getTime(), f=new Date(r.fin).getTime(), c=new Date(r.created_at).getTime();
+    try{
+      if(r.statut==="attente" && now>c+24*60*M && now<d && await salleCle("salle-relance:"+r.id))
+        await salleMail(salleEmailsResp(),"Demande en attente depuis 24 h — "+salleCreneau(r),
+          `<h2 style="margin:0 0 10px">Demande toujours en attente</h2><p>Cette demande de réservation attend une décision depuis plus de 24 heures.</p>${salleMailDetails(r)}${salleBouton(r.id,"Valider ou refuser")}`);
+      if(r.statut!=="validee") continue;
+      if(now>=d-60*M && now<d && await salleCle("salle-1h:"+r.id))
+        await salleMail([r.demandeur_email],"Dans 1 heure : la salle facultaire est à vous",
+          `<h2 style="margin:0 0 10px">Votre réservation commence bientôt</h2><p>La salle facultaire est à vous le <b>${caMailEsc(salleCreneau(r))}</b>.</p>${salleMailRegles()}`);
+      if(!r.depart_declare_le && now>=f-10*M && now<f+30*M && await salleCle("salle-fin:"+r.id))
+        await salleMail([r.demandeur_email],"Fin de votre réservation : déclarez votre départ",
+          `<h2 style="margin:0 0 10px">Votre réservation se termine dans 10 minutes</h2><p>Avant de partir, vérifiez que tout est en ordre, puis déclarez votre départ dans l'app avec <b>au moins ${SALLE_PHOTOS_MIN} photos</b> de la salle.</p>${salleMailRegles()}${salleBouton(r.id,"Déclarer mon départ")}<p style="color:#a33;font-size:13px">Sans déclaration dans les 24 heures, vous ne pourrez plus réserver la salle.</p>`);
+      if(!r.depart_declare_le && now>=f+30*M && now<f+24*60*M && await salleCle("salle-retard:"+r.id)){
+        await salleMail([r.demandeur_email],"Rappel : déclarez votre départ de la salle facultaire",
+          `<h2 style="margin:0 0 10px">Départ non déclaré</h2><p>Votre réservation du <b>${caMailEsc(salleCreneau(r))}</b> est terminée, mais votre départ n'est pas encore déclaré.</p><p>Faites-le maintenant avec au moins ${SALLE_PHOTOS_MIN} photos : sans déclaration dans les 24 heures après la fin, vous ne pourrez plus réserver.</p>${salleBouton(r.id,"Déclarer mon départ")}`);
+        await salleMail(salleEmailsResp(),"Départ non déclaré — "+salleCreneau(r),
+          `<h2 style="margin:0 0 10px">Départ pas encore déclaré</h2><p><b>${caMailEsc(r.demandeur_nom||"")}</b> n'a pas déclaré son départ, 30 minutes après la fin de sa réservation (${caMailEsc(salleCreneau(r))}). Un rappel lui a été envoyé.</p>${salleBouton(r.id)}`);
+      }
+      if(r.non_declare && now<f+7*24*60*M && await salleCle("salle-bloc:"+r.id)){
+        await salleMail([r.demandeur_email],"Réservations de la salle facultaire bloquées",
+          `<h2 style="margin:0 0 10px">Vous ne pouvez plus réserver la salle</h2><p>Votre départ de la réservation du <b>${caMailEsc(salleCreneau(r))}</b> n'a pas été déclaré dans les 24 heures.</p><p>Vos réservations sont bloquées jusqu'à ce que ${caMailEsc(salleNomsResp())} vous débloquent.</p>`);
+        await salleMail(salleEmailsResp(),"Membre bloqué — "+(r.demandeur_nom||""),
+          `<h2 style="margin:0 0 10px">Réservations bloquées</h2><p><b>${caMailEsc(r.demandeur_nom||"")}</b> n'a pas déclaré son départ dans les 24 heures (${caMailEsc(salleCreneau(r))}). Ses réservations sont bloquées jusqu'à ce que vous le ou la débloquiez dans l'app.</p>${salleBouton("","Ouvrir l'onglet salle")}`);
+      }
+    }catch(e){}
+  }
+  /* Suppression des photos après 3 jours (le serveur le fait aussi). */
+  if(estRespSalle()){
+    for(const r of (S.salle||[])){
+      if(r.photos_purgees) continue;
+      const ref=Math.max(r.depart_declare_le?new Date(r.depart_declare_le).getTime():0, r.arrivee_le?new Date(r.arrivee_le).getTime():0);
+      const ph=(r.depart_photos||[]).concat(r.arrivee_photos||[]);
+      if(!ref||!ph.length||now<ref+3*24*60*M) continue;
+      try{ const rm=await sb.storage.from("ca-salle").remove(ph); if(!(rm&&rm.error)) await sb.rpc("ca_salle_photos_purgees",{p_id:r.id}); }catch(e){}
+    }
+  }
+}
+
+/* ---------- Badge de l'onglet ---------- */
+function salleBadge(){
+  if(!S.session) return 0;
+  const me=S.session.id, now=Date.now();
+  let n=(S.salle||[]).filter(r=>r.demandeur_id===me && r.statut==="validee" && !r.depart_declare_le && now>=new Date(r.fin).getTime()-10*60000).length;
+  if(estRespSalle()) n+=(S.salle||[]).filter(r=>r.statut==="attente" && new Date(r.debut).getTime()>now).length;
+  return n;
+}
+
+/* ---------- Affichage ---------- */
+function salleBadgeStatut(r){
+  const s=SALLE_STATUT[r.statut]||[r.statut,"--slate"];
+  let x=`<span class="badge" style="background:var(${s[1]});color:#fff">${esc(s[0])}</span>`;
+  if(r.statut==="validee" && salleFini(r)) x+= r.depart_declare_le?` <span class="badge" style="background:var(--green);color:#fff">✓ Départ déclaré</span>`:(r.non_declare?` <span class="badge" style="background:var(--red);color:#fff">⚠ Départ non déclaré</span>`:` <span class="badge" style="background:var(--amber);color:#241100">Départ à déclarer</span>`);
+  if(r.arrivee_le) x+=` <span class="badge" style="background:#4a6bb5;color:#fff">Problème signalé</span>`;
+  return x;
+}
+function salleLigne(r){
+  return `<button class="msg-row" data-action="salle-open" data-id="${esc(r.id)}"><span class="msg-av">${esc(String(new Date(r.debut).getDate()))}</span>
+    <span><span class="nm">${esc(salleCreneau(r))}</span><br><span class="fn">${esc(r.demandeur_nom||"")} · ${esc(SALLE_TYPE_LIB[r.type]||r.type||"")}${r.evenement_id&&salleEvTitre(r.evenement_id)?" · "+esc(salleEvTitre(r.evenement_id)):""}</span></span>
+    <span style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${salleBadgeStatut(r)}</span></button>`;
+}
+function salleCalendrier(){
+  const ui=S.salleUI, now=new Date();
+  let cur=ui.mois?new Date(ui.mois+"-01T00:00"):new Date(now.getFullYear(),now.getMonth(),1);
+  if(isNaN(cur.getTime())) cur=new Date(now.getFullYear(),now.getMonth(),1);
+  const y=cur.getFullYear(), mo=cur.getMonth(), cle=y+"-"+String(mo+1).padStart(2,"0");
+  const debutSem=(new Date(y,mo,1).getDay()+6)%7, nbJ=new Date(y,mo+1,0).getDate();
+  const parJour={}; (S.salle||[]).forEach(r=>{ if(r.statut!=="validee"&&r.statut!=="attente") return; const d=salleIsoLocal(new Date(r.debut)); if(d.slice(0,7)===cle) (parJour[d]=parJour[d]||[]).push(r); });
+  const auj=salleIsoLocal(now), cells=[];
+  for(let i=0;i<debutSem;i++) cells.push(`<div class="cal-cell cal-empty"></div>`);
+  for(let j=1;j<=nbJ;j++){
+    const ds=cle+"-"+String(j).padStart(2,"0"), dim=new Date(ds+"T12:00").getDay()===0, ferme=salleFermetureDu(ds);
+    const L=(parJour[ds]||[]).sort((a,b)=>new Date(a.debut)-new Date(b.debut));
+    cells.push(`<div class="cal-cell${ds===auj?" cal-today":""}" style="${dim||ferme?"opacity:.45;background:transparent":""}"><div class="cal-d">${j}${ferme?" 🔒":""}</div>${L.map(r=>`<button class="cal-ev-chip ${r.statut==="validee"?"cal-salle":"cal-salle-att"}" data-action="salle-open" data-id="${esc(r.id)}" style="border:none;width:100%;text-align:left;cursor:pointer" title="${esc(salleH(r.debut)+"–"+salleH(r.fin)+" · "+(r.demandeur_nom||""))}">${esc(salleH(r.debut)+" "+(r.demandeur_nom||"").split(" ")[0])}</button>`).join("")}</div>`);
+  }
+  const p=new Date(y,mo-1,1), n=new Date(y,mo+1,1), k=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+  return `<div class="compose"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <h3 class="serif" style="margin:0;text-transform:capitalize">${esc(cur.toLocaleDateString("fr-BE",{month:"long",year:"numeric"}))}</h3>
+      <div class="row-btn" style="margin:0"><button class="btn ghost sm" data-action="salle-mois" data-mo="${k(p)}">◀</button><button class="btn ghost sm" data-action="salle-mois" data-mo="">Aujourd'hui</button><button class="btn ghost sm" data-action="salle-mois" data-mo="${k(n)}">▶</button></div></div>
+    <div class="cal-legend"><span class="cal-ev-chip cal-salle">Validée</span><span class="cal-ev-chip cal-salle-att">En attente</span><span class="du">🔒 salle fermée · dimanche grisé</span></div>
+    <div class="cal-grid-h">${["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map(d=>`<div>${d}</div>`).join("")}</div>
+    <div class="cal-grid">${cells.join("")}</div></div>`;
+}
+function salleVueAccueil(){
+  const me=S.session.id, now=Date.now(), resp=estRespSalle(), bloc=salleMoiBloque();
+  const L=S.salle||[];
+  const miennes=L.filter(r=>r.demandeur_id===me).sort((a,b)=>new Date(b.debut)-new Date(a.debut));
+  const aVenir=miennes.filter(r=>!salleFini(r)||(r.statut==="validee"&&!r.depart_declare_le&&!r.non_declare)).reverse();
+  const passees=miennes.filter(r=>aVenir.indexOf(r)<0).slice(0,8);
+  let h="";
+  if(bloc){ const rb=L.find(r=>r.id===bloc.reservation_id);
+    h+=`<div class="sout-bloque" style="margin:0 0 14px">🚫 <b>Vous ne pouvez plus réserver la salle.</b> Votre départ${rb?" du "+esc(salleCreneau(rb)):""} n'a pas été déclaré dans les 24 heures. Contactez ${esc(salleNomsResp())} pour être débloqué·e.</div>`; }
+  if(!salleResp().length) h+=`<div class="sout-urg" style="margin:0 0 14px">Aucune responsable de la salle n'est désignée : le propriétaire doit les cocher dans Admin › Droits salle facultaire.</div>`;
+  const aDeclarer=L.filter(r=>r.demandeur_id===me&&r.statut==="validee"&&!r.depart_declare_le&&now>=new Date(r.debut).getTime()-30*60000&&!r.non_declare);
+  aDeclarer.forEach(r=>{ h+=`<div class="sout-card" style="border-color:var(--stamp)">🔑 <b>Réservation en cours ou terminée :</b> ${esc(salleCreneau(r))}<div class="row-btn" style="margin-top:8px"><button class="btn" data-action="salle-depart" data-id="${esc(r.id)}">J'ai quitté la salle</button><button class="btn ghost sm" data-action="salle-open" data-id="${esc(r.id)}">Détails</button></div></div>`; });
+  h+=`<div class="row-btn" style="margin:0 0 14px">
+      <button class="btn" data-action="salle-nouvelle" ${bloc?"disabled":""}>＋ Réserver la salle</button>
+      ${resp?`<button class="btn ghost sm" data-action="salle-vue" data-vue="reglages">⚙ Règlement, fermetures, blocages</button><button class="btn ghost sm" data-action="salle-vue" data-vue="stats">📊 Statistiques</button>`:""}</div>`;
+  if(resp){
+    const att=L.filter(r=>r.statut==="attente"&&new Date(r.debut).getTime()>now).sort((a,b)=>new Date(a.debut)-new Date(b.debut));
+    h+=`<h3 class="serif" style="margin:4px 0 8px">Demandes à traiter (${att.length})</h3>`+(att.length?att.map(r=>{
+        const conflits=L.filter(z=>z.id!==r.id&&(z.statut==="attente"||z.statut==="validee")&&new Date(z.debut)<new Date(r.fin)&&new Date(z.fin)>new Date(r.debut));
+        return `<div class="vote"><div class="vote-h"><h4 class="serif">${esc(salleCreneau(r))}</h4>${salleBadgeStatut(r)}</div>
+          <p class="du" style="margin:4px 0">${esc(r.demandeur_nom||"")} · ${esc(SALLE_TYPE_LIB[r.type]||"")}${r.evenement_id&&salleEvTitre(r.evenement_id)?" · "+esc(salleEvTitre(r.evenement_id)):""} · ${esc(String(r.nb_personnes||""))} pers. · demandé le ${esc(fmtQuand(r.created_at))}</p>
+          <p style="white-space:pre-wrap;margin:6px 0;font-size:14px">${esc(r.description||"")}</p>
+          ${conflits.length?`<p class="du" style="color:var(--amber)">⚠ ${conflits.length} autre(s) demande(s) sur ce créneau : ${esc(conflits.map(z=>z.demandeur_nom+" ("+salleH(z.debut)+"–"+salleH(z.fin)+(z.statut==="validee"?", validée":"")+")").join(", "))}</p>`:""}
+          <div class="row-btn"><button class="btn sm" data-action="salle-valider" data-id="${esc(r.id)}" style="background:var(--green);border-color:var(--green)">✓ Valider</button><button class="btn ghost sm" data-action="salle-refuser" data-id="${esc(r.id)}" style="border-color:var(--red);color:var(--red)">✕ Refuser</button><button class="link" data-action="salle-open" data-id="${esc(r.id)}">Détails</button></div></div>`; }).join(""):`<div class="empty">Aucune demande en attente.</div>`);
+    const nd=L.filter(r=>r.statut==="validee"&&!r.depart_declare_le&&salleFini(r)).sort((a,b)=>new Date(b.fin)-new Date(a.fin)).slice(0,10);
+    if(nd.length) h+=`<h3 class="serif" style="margin:18px 0 8px">Départs non déclarés</h3><div class="msg-list">${nd.map(salleLigne).join("")}</div>`;
+    const pb=L.filter(r=>r.arrivee_le&&now-new Date(r.arrivee_le).getTime()<30*86400000).sort((a,b)=>new Date(b.arrivee_le)-new Date(a.arrivee_le));
+    if(pb.length) h+=`<h3 class="serif" style="margin:18px 0 8px">Problèmes signalés à l'arrivée</h3><div class="msg-list">${pb.map(salleLigne).join("")}</div>`;
+    if((S.salleBloques||[]).length) h+=`<h3 class="serif" style="margin:18px 0 8px">Membres bloqués (${S.salleBloques.length})</h3>`+salleListeBloques();
+  }
+  h+=salleCalendrier();
+  h+=`<h3 class="serif" style="margin:18px 0 8px">Mes réservations</h3>`+(aVenir.length?`<div class="msg-list">${aVenir.map(salleLigne).join("")}</div>`:`<div class="empty">Aucune réservation à venir.</div>`);
+  if(passees.length) h+=`<h3 class="serif" style="margin:18px 0 8px">Mes réservations passées</h3><div class="msg-list">${passees.map(salleLigne).join("")}</div>`;
+  const ferm=salleFermetures().filter(f=>String(f.au||f.du)>=todayISO());
+  if(ferm.length) h+=`<h3 class="serif" style="margin:18px 0 8px">Fermetures prévues</h3>`+ferm.map(f=>`<div class="ces-evt" style="text-align:left">🔒 ${esc(fmtDateLong(f.du))}${f.au&&f.au!==f.du?" → "+esc(fmtDateLong(f.au)):""}${f.motif?" — "+esc(f.motif):""}</div>`).join("");
+  return h;
+}
+function salleListeBloques(){
+  return (S.salleBloques||[]).map(b=>{ const a=(S.admins||[]).find(x=>x.id===b.membre_id); const r=(S.salle||[]).find(x=>x.id===b.reservation_id);
+    return `<div class="doc" style="cursor:default;padding:9px 13px"><span class="meta"><p class="dt" style="font-size:13.5px">🚫 ${esc(a?((a.prenom||"")+" "+(a.nom||"")).trim():"Membre")}</p>
+      <p class="du">Bloqué·e le ${esc(fmtQuand(b.cree_le))}${r?" · départ non déclaré : "+esc(salleCreneau(r)):""}</p></span><button class="btn ghost sm" data-action="salle-debloquer" data-id="${esc(b.membre_id)}">Débloquer</button></div>`; }).join("");
+}
+function salleVueForm(){
+  const jourMin=salleIsoLocal(new Date(Date.now()+SALLE_DELAI_MIN_H*3600000)), jourMax=salleIsoLocal(new Date(Date.now()+SALLE_DELAI_MAX_J*86400000));
+  const jour=String(val("salle_date")||(S.salleUI.jour||""));
+  const evs=(S.evenements||[]).filter(e=>!e.date||String(e.date).slice(0,10)>=todayISO()).sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
+  let infoJour="";
+  if(jour){
+    const dim=new Date(jour+"T12:00").getDay()===0, f=salleFermetureDu(jour);
+    const L=(S.salle||[]).filter(r=>(r.statut==="validee"||r.statut==="attente")&&salleIsoLocal(new Date(r.debut))===jour).sort((a,b)=>new Date(a.debut)-new Date(b.debut));
+    infoJour = dim?`<p class="du" style="color:var(--red)">La salle ne se réserve pas le dimanche.</p>`
+      : f?`<p class="du" style="color:var(--red)">La salle est fermée ce jour-là${f.motif?" ("+esc(f.motif)+")":""}.</p>`
+      : `<div class="sout-card" style="margin:8px 0"><b>Déjà réservé ce jour-là</b>${L.length?L.map(r=>`<div class="du" style="margin-top:4px">${esc(salleH(r.debut)+" – "+salleH(r.fin))} · ${esc(r.demandeur_nom||"")} ${r.statut==="attente"?"(en attente)":"(validée)"}</div>`).join(""):`<div class="du" style="margin-top:4px">Rien pour le moment : la salle est libre.</div>`}</div>`;
+  }
+  const L=t=>`<label class="sout-small" style="display:block;margin-top:10px">${t}</label>`;
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="salle-vue" data-vue="accueil">✕ Annuler</button><span class="u-nom">Réserver la salle facultaire</span></div>
+    <div class="compose">
+      <p class="du" style="margin:0 0 6px">Du lundi au samedi · ${SALLE_MAX_H} h maximum · au moins ${SALLE_DELAI_MIN_H} h à l'avance · au plus 2 mois à l'avance · ${SALLE_MAX_SEMAINE} réservations par semaine au maximum.</p>
+      ${L("Date")}<input class="f" type="date" id="salle_date" min="${jourMin}" max="${jourMax}" value="${esc(jour)}">
+      ${infoJour}
+      <div class="two"><div>${L("Heure de début")}<input class="f" type="time" id="salle_hd" step="900"></div><div>${L("Heure de fin")}<input class="f" type="time" id="salle_hf" step="900"></div></div>
+      ${L("Type d'utilisation")}<select class="f" id="salle_type"><option value="">— Choisir —</option>${SALLE_TYPES.map(([k,l])=>`<option value="${k}">${esc(l)}</option>`).join("")}</select>
+      ${L("Événement lié (facultatif)")}<select class="f" id="salle_ev"><option value="">— Aucun —</option>${evs.map(e=>`<option value="${esc(e.id)}">${esc(e.titre)}${e.date?" · "+esc(dShort(String(e.date).slice(0,10))):""}</option>`).join("")}</select>
+      ${L("Description : ce qui va se passer dans la salle")}<textarea class="f" id="salle_desc" rows="3" maxlength="1500" placeholder="Ex. réunion de préparation du dîner de Noël avec l'équipe événements."></textarea>
+      ${L("Nombre de personnes attendues")}<input class="f" type="number" id="salle_nb" min="1" max="500" inputmode="numeric">
+      <h4 style="margin:16px 0 4px">Règlement de la salle</h4>
+      <div class="sout-clause"><p><b>En réservant, je m'engage à :</b></p><ol style="margin:0;padding-left:20px">${salleCharte().map(t=>`<li style="margin:0 0 5px">${esc(t)}</li>`).join("")}</ol>
+        <p style="margin-top:8px">Je déclarerai mon départ dans l'app avec au moins ${SALLE_PHOTOS_MIN} photos de la salle. Sans déclaration dans les 24 heures après la fin, je ne pourrai plus réserver jusqu'à mon déblocage.</p></div>
+      <p class="du" style="margin:8px 0 0">Vous signerez avec le mot de passe de votre compte.</p>
+      <div class="row-btn" style="margin-top:12px"><button class="btn" data-action="salle-envoyer">✍ Signer et envoyer la demande</button></div></div>`;
+}
+function salleVueDetail(){
+  const r=(S.salle||[]).find(x=>x.id===S.salleUI.sel);
+  if(!r) return `<div class="msg-head"><button class="btn ghost sm" data-action="salle-vue" data-vue="accueil">← Retour</button></div><div class="empty">Réservation introuvable ou trop ancienne.</div>`;
+  const me=S.session.id, own=r.demandeur_id===me, resp=estRespSalle(), now=Date.now();
+  const d=new Date(r.debut).getTime(), f=new Date(r.fin).getTime();
+  const ligne=(k,v)=>v?`<tr><th style="width:150px">${esc(k)}</th><td style="white-space:pre-wrap">${v}</td></tr>`:"";
+  const actions=[];
+  if(resp && r.statut==="attente" && d>now) actions.push(`<button class="btn sm" data-action="salle-valider" data-id="${esc(r.id)}" style="background:var(--green);border-color:var(--green)">✓ Valider</button>`,`<button class="btn ghost sm" data-action="salle-refuser" data-id="${esc(r.id)}" style="border-color:var(--red);color:var(--red)">✕ Refuser</button>`);
+  if(own && r.statut==="validee" && !r.depart_declare_le && now>=d-30*60000) actions.push(`<button class="btn" data-action="salle-depart" data-id="${esc(r.id)}">🔑 J'ai quitté la salle</button>`);
+  if(own && r.statut==="validee" && !r.arrivee_le && !r.depart_declare_le && now>=d-30*60000 && now<f) actions.push(`<button class="btn ghost sm" data-action="salle-arrivee" data-id="${esc(r.id)}">⚠ Signaler un problème à l'arrivée</button>`);
+  if((own||resp) && (r.statut==="attente"||r.statut==="validee") && f>now) actions.push(`<button class="link" data-action="salle-annuler" data-id="${esc(r.id)}" style="color:var(--red)">Annuler la réservation</button>`);
+  const voitPhotos=own||resp;
+  setTimeout(salleChargerPhotos,0);
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="salle-vue" data-vue="accueil">← Réservation salle fac</button><span class="u-nom">${esc(salleCreneau(r))}</span></div>
+    <div style="margin:0 0 10px">${salleBadgeStatut(r)}</div>
+    <div class="sout-card"><table class="sout-table" style="margin:0"><tbody>
+      ${ligne("Créneau", esc(salleCreneau(r))+" ("+esc(salleDureeTxt(r))+")")}
+      ${ligne("Demandé par", esc(r.demandeur_nom||""))}
+      ${ligne("Type", esc(SALLE_TYPE_LIB[r.type]||r.type||""))}
+      ${ligne("Événement", r.evenement_id?esc(salleEvTitre(r.evenement_id)||"(événement supprimé)"):"")}
+      ${ligne("Personnes", esc(String(r.nb_personnes||"")))}
+      ${ligne("Description", esc(r.description||""))}
+      ${ligne("Demande", esc(fmtQuand(r.created_at)))}
+      ${ligne("Règlement signé", r.signe_le?esc(fmtQuand(r.signe_le))+" — mot de passe vérifié · code "+esc(prEmpreinteCourte(r.charte_empreinte)):"")}
+      ${ligne("Décision", r.decide_le?esc((r.statut==="refusee"?"Refusée":"Validée")+" par "+(r.decide_par||"")+" le "+fmtQuand(r.decide_le)):"")}
+      ${ligne("Motif du refus", esc(r.motif_refus||""))}
+      ${ligne("Annulation", r.annule_le?esc("Par "+(r.annule_par||"")+" le "+fmtQuand(r.annule_le)):"")}
+      ${ligne("Motif d'annulation", esc(r.motif_annulation||""))}
+      ${ligne("Départ déclaré", r.depart_declare_le?esc(fmtQuand(r.depart_declare_le))+" — règles déclarées respectées":"")}
+    </tbody></table></div>
+    ${actions.length?`<div class="row-btn" style="margin:12px 0">${actions.join("")}</div>`:""}
+    ${r.charte_texte&&Array.isArray(r.charte_texte)?`<details class="sout-card"><summary style="cursor:pointer"><b>Règlement signé pour cette réservation</b></summary><ol style="margin:8px 0 0;padding-left:20px;font-size:13.5px">${r.charte_texte.map(t=>`<li>${esc(t)}</li>`).join("")}</ol></details>`:""}
+    ${r.arrivee_le?`<div class="sout-card" style="border-color:#4a6bb5"><b>⚠ Problème signalé à l'arrivée</b> — ${esc(fmtQuand(r.arrivee_le))}<p style="white-space:pre-wrap;margin:6px 0;font-size:14px">${esc(r.arrivee_probleme||"")}</p>${voitPhotos&&!r.photos_purgees?sallePhotosHTML(r.arrivee_photos):""}</div>`:""}
+    ${r.depart_declare_le&&voitPhotos?`<div class="sout-card"><b>Photos au départ</b>${r.photos_purgees?`<p class="du">Photos supprimées automatiquement (conservation 3 jours).</p>`:sallePhotosHTML(r.depart_photos)+`<p class="du">Supprimées automatiquement 3 jours après l'envoi.</p>`}</div>`:""}
+    ${resp&&r.non_declare&&(S.salleBloques||[]).some(b=>b.membre_id===r.demandeur_id)?`<div class="sout-bloque">🚫 ${esc(r.demandeur_nom||"")} est bloqué·e. <button class="btn ghost sm" data-action="salle-debloquer" data-id="${esc(r.demandeur_id)}">Débloquer</button></div>`:""}`;
+}
+function salleVueReglages(){
+  const ferm=salleFermetures().slice().sort((a,b)=>String(a.du).localeCompare(String(b.du)));
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="salle-vue" data-vue="accueil">← Réservation salle fac</button><span class="u-nom">⚙ Réglages de la salle</span></div>
+    <div class="compose"><h3 class="serif">Règlement signé à chaque réservation</h3>
+      <p class="du">Une règle par ligne. Les réservations déjà faites gardent le texte qui a été signé.</p>
+      <textarea class="f" id="salle_charte" rows="8" maxlength="4000">${esc(salleCharte().join("\n"))}</textarea>
+      <div class="row-btn"><button class="btn sm" data-action="salle-charte-save">Enregistrer le règlement</button><button class="btn ghost sm" data-action="salle-charte-defaut">Remettre le texte d'origine</button></div></div>
+    <div class="compose"><h3 class="serif">Fermetures de la salle</h3>
+      <p class="du">Examens, vacances, travaux : aucune réservation possible ces jours-là.</p>
+      <div class="two"><div><label class="sout-small">Du</label><input class="f" type="date" id="salle_f_du"></div><div><label class="sout-small">Au (inclus)</label><input class="f" type="date" id="salle_f_au"></div></div>
+      <input class="f" id="salle_f_motif" placeholder="Motif (ex. session d'examens)" maxlength="120">
+      <div class="row-btn"><button class="btn sm" data-action="salle-ferm-add">Ajouter la fermeture</button></div>
+      ${ferm.length?ferm.map((f,i)=>`<div class="doc" style="cursor:default;padding:8px 12px"><span class="meta"><p class="dt" style="font-size:13.5px">🔒 ${esc(fmtDateLong(f.du))}${f.au&&f.au!==f.du?" → "+esc(fmtDateLong(f.au)):""}</p><p class="du">${esc(f.motif||"")}</p></span><button class="rm2" data-action="salle-ferm-del" data-du="${esc(f.du)}" data-au="${esc(f.au||"")}">✕</button></div>`).join(""):`<div class="empty">Aucune fermeture prévue.</div>`}</div>
+    <div class="compose"><h3 class="serif">Membres bloqués</h3>
+      ${(S.salleBloques||[]).length?salleListeBloques():`<div class="empty">Personne n'est bloqué.</div>`}</div>`;
+}
+function salleVueStats(){
+  const L=(S.salle||[]), mois={};
+  L.forEach(r=>{ const k=salleIsoLocal(new Date(r.debut)).slice(0,7); const m=mois[k]=mois[k]||{dem:0,val:0,ref:0,ann:0,heures:0,nd:0,pb:0};
+    m.dem++; if(r.statut==="validee"){ m.val++; m.heures+=(new Date(r.fin)-new Date(r.debut))/3600000; if(r.non_declare) m.nd++; } if(r.statut==="refusee") m.ref++; if(r.statut==="annulee") m.ann++; if(r.arrivee_le) m.pb++; });
+  const cles=Object.keys(mois).sort().reverse();
+  const h=x=>(Math.round(x*10)/10).toString().replace(".",",");
+  return `<div class="msg-head"><button class="btn ghost sm" data-action="salle-vue" data-vue="accueil">← Réservation salle fac</button><span class="u-nom">📊 Statistiques</span></div>
+    <div class="sout-card" style="overflow-x:auto"><table class="sout-table"><thead><tr><th>Mois</th><th>Demandes</th><th>Validées</th><th>Heures occupées</th><th>Refusées</th><th>Annulées</th><th>Départs non déclarés</th><th>Problèmes signalés</th></tr></thead><tbody>
+    ${cles.length?cles.map(k=>{ const m=mois[k]; return `<tr><td>${esc(new Date(k+"-01T12:00").toLocaleDateString("fr-BE",{month:"long",year:"numeric"}))}</td><td>${m.dem}</td><td>${m.val}</td><td>${h(m.heures)} h</td><td>${m.ref}</td><td>${m.ann}</td><td>${m.nd}</td><td>${m.pb}</td></tr>`; }).join(""):`<tr><td colspan="8">Aucune réservation sur les 6 derniers mois.</td></tr>`}
+    </tbody></table><p class="du">Sur les 6 derniers mois.</p></div>`;
+}
+function tabSalle(){
+  if(estCoopte()) return `<div class="empty">Réservé aux membres du CA.</div>`;
+  if(S.salleErr) return `<div class="sout-card"><p class="sout-p" style="color:var(--red)">L'onglet n'est pas encore installé sur le serveur : le script SQL « salle_facultaire.sql » doit être exécuté dans Supabase.</p><p class="du">${esc(S.salleErr)}</p><div class="row-btn"><button class="btn ghost sm" data-action="salle-recharger">Réessayer</button></div></div>`;
+  S.salleUI=S.salleUI||{vue:"accueil",sel:null,mois:""};
+  const v=S.salleUI.vue, resp=estRespSalle();
+  let corps;
+  if(v==="nouvelle") corps=salleVueForm();
+  else if(v==="detail") corps=salleVueDetail();
+  else if(v==="reglages"&&resp) corps=salleVueReglages();
+  else if(v==="stats"&&resp) corps=salleVueStats();
+  else corps=salleVueAccueil();
+  return `<div class="sout-top"><h2 class="serif" style="margin:0;font-size:22px">🏫 Réservation salle fac</h2>${resp?`<span class="badge">Responsable de la salle</span>`:""}</div>${corps}`;
+}
+
+/* Carte du propriétaire dans Admin : qui valide les réservations. */
+function salleCarteAdmin(){
+  if(!(S.session&&S.session.role==="owner")) return "";
+  return `<div class="card2"><h3 class="serif">Droits salle facultaire</h3>
+    <p class="du">Personnes qui valident ou refusent les réservations, annulent avec motif, gèrent le règlement, les fermetures et les déblocages. Elles reçoivent un mail à chaque nouvelle demande.</p>
+    ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte").map(a=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
+        <input type="checkbox" class="sw salle-chk" role="switch" ${salleResp().indexOf(a.id)>=0?"checked":""} value="${a.id}">
+        ${esc(((a.prenom||"")+" "+(a.nom||"")).trim()||a.email)} <span class="du">${esc(a.fonction||"")}</span></label>`).join("")}
+    <div class="row-btn"><button class="btn sm" data-action="salle-save-resp">Enregistrer</button></div>
+    ${salleResp().length?`<p class="du">${salleResp().length} responsable(s) enregistrée(s).</p>`:`<p class="du" style="color:var(--red)">Aucune responsable : personne ne peut valider les réservations.</p>`}</div>`;
+}
+
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-action^='salle-']"); if(!el) return;
+  const a=el.dataset.action, id=el.dataset.id;
+  S.salleUI=S.salleUI||{vue:"accueil",sel:null,mois:""};
+  try{ switch(a){
+    case "salle-recharger": S.salleErr=""; await loadSalle(); render(); break;
+    case "salle-vue": S.salleUI.vue=el.dataset.vue; if(el.dataset.vue==="accueil") await loadSalle(); render(); window.scrollTo(0,0); break;
+    case "salle-open": S.salleUI.vue="detail"; S.salleUI.sel=id; render(); window.scrollTo(0,0); break;
+    case "salle-mois": S.salleUI.mois=el.dataset.mo||""; render(); break;
+    case "salle-nouvelle":
+      if(salleMoiBloque()){ modaleInfo("Vous ne pouvez pas réserver : un départ n'a pas été déclaré. Contactez "+salleNomsResp()+"."); break; }
+      S.salleUI.vue="nouvelle"; S.salleUI.jour=""; render(); window.scrollTo(0,0); break;
+    case "salle-envoyer": await salleDemander(); break;
+    case "salle-valider": await salleDecider(id,true); break;
+    case "salle-refuser": await salleDecider(id,false); break;
+    case "salle-annuler": await salleAnnuler(id); break;
+    case "salle-depart": await salleDeclarerDepart(id); break;
+    case "salle-arrivee": await salleSignalerArrivee(id); break;
+    case "salle-debloquer": await salleDebloquer(id); break;
+    case "salle-charte-save": {
+      const l=String(val("salle_charte")||"").split("\n").map(x=>x.trim()).filter(Boolean);
+      if(!l.length){ modaleInfo("Le règlement ne peut pas être vide."); break; }
+      if(l.length>20){ modaleInfo("20 règles maximum."); break; }
+      if(!(await modaleConfirm("Enregistrer ce règlement ? Il sera signé à chaque nouvelle réservation.","Règlement"))) break;
+      if(await salleEnregistrerReglages(l, salleFermetures())){ logAct("Salle facultaire — règlement modifié"); render(); modaleInfo("✓ Règlement enregistré."); }
+      break; }
+    case "salle-charte-defaut": { const t=document.getElementById("salle_charte"); if(t) t.value=SALLE_CHARTE_DEFAUT.join("\n"); break; }
+    case "salle-ferm-add": {
+      const du=String(val("salle_f_du")||""), au=String(val("salle_f_au")||"")||du, motif=String(val("salle_f_motif")||"").trim();
+      if(!du){ modaleInfo("Choisissez la date de début."); break; }
+      if(au<du){ modaleInfo("La date de fin doit être après la date de début."); break; }
+      const touchees=(S.salle||[]).filter(r=>(r.statut==="validee"||r.statut==="attente")&&salleIsoLocal(new Date(r.debut))>=du&&salleIsoLocal(new Date(r.debut))<=au&&!salleFini(r));
+      if(touchees.length && !(await modaleConfirm(touchees.length+" réservation(s) existent déjà sur cette période. Elles ne sont pas annulées automatiquement : annulez-les avec un motif si nécessaire.\n\nAjouter la fermeture quand même ?","Fermeture"))) break;
+      const l=salleFermetures().concat([{du,au,motif}]);
+      if(await salleEnregistrerReglages(salleCharte(), l)){ logAct("Salle facultaire — fermeture ajoutée : "+du+" → "+au); render(); }
+      break; }
+    case "salle-ferm-del": {
+      if(!(await modaleConfirm("Retirer cette fermeture ?","Fermeture"))) break;
+      const l=salleFermetures().filter(f=>!(String(f.du)===el.dataset.du && String(f.au||"")===String(el.dataset.au||"")));
+      if(await salleEnregistrerReglages(salleCharte(), l)) render();
+      break; }
+    case "salle-save-resp": {
+      if(!(S.session&&S.session.role==="owner")) break;
+      const ids=[...document.querySelectorAll(".salle-chk")].filter(c=>c.checked).map(c=>c.value);
+      const r=await sb.rpc("ca_salle_set_resp",{p_ids:ids});
+      if(r&&r.error){ modaleInfo("Non enregistré : "+r.error.message,"Erreur"); break; }
+      S.meta.salleResp=Array.isArray(r.data)?r.data:ids; logAct("Droits salle facultaire modifiés"); render();
+      modaleInfo(S.meta.salleResp.length+" responsable(s) de la salle enregistrée(s).","Enregistré");
+      break; }
+  } }catch(err){ modaleInfo(err.message||String(err)); }
+});
+/* Toutes les 5 minutes, quand l'app est ouverte : rappels, blocages, mise à jour de l'onglet. */
+setInterval(()=>{ if(document.visibilityState!=="visible"||!S.session||estCoopte()) return; traiterSalle().then(()=>{ if(S.tab==="salle") rendreEnPreservant(); }).catch(()=>{}); }, 5*60000);
+document.addEventListener("change", e=>{
+  if(e.target && e.target.id==="salle_date" && S.salleUI){ S.salleUI.jour=e.target.value; rendreEnPreservant(); }
 });
 
 boot();
