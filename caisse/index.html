@@ -2188,6 +2188,51 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   /* Pas d'appel Supabase directement dans l'écouteur (risque de blocage) : on diffère. */
   sb.auth.onAuthStateChange(function(evt){ if(evt==="SIGNED_IN"||evt==="INITIAL_SESSION"||evt==="TOKEN_REFRESHED"||evt==="MFA_CHALLENGE_VERIFIED") setTimeout(garde,60); });
 })();
+const AUDIT_APP="caisse";
+/* =====================================================================
+   JOURNAL DE SÉCURITÉ — côté app (connexions, onglets, tentatives).
+   Les modifications de données sont notées par le serveur lui-même.
+   Le compte propriétaire n'est jamais enregistré (décidé par le serveur).
+   ===================================================================== */
+(function(APP){
+  if(typeof sb==="undefined" || !sb || !sb.rpc) return;
+  var ID="", LAB="";
+  try{ ID=localStorage.getItem("be:appareil-id")||""; if(!ID){ ID="d"+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); localStorage.setItem("be:appareil-id",ID); } }catch(e){ ID=""; }
+  (function(){ var u=navigator.userAgent||"";
+    var os=/iPhone/.test(u)?"iPhone":/iPad/.test(u)?"iPad":/Android/.test(u)?"Android":/Mac OS X/.test(u)?"Mac":/Windows/.test(u)?"Windows":/Linux/.test(u)?"Linux":"Appareil";
+    var nav=/Edg\//.test(u)?"Edge":/OPR\//.test(u)?"Opera":/Firefox\//.test(u)?"Firefox":/CriOS|Chrome\//.test(u)?"Chrome":/Safari\//.test(u)?"Safari":"Navigateur";
+    LAB=os+" · "+nav+((window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches)?" (app installée)":""); })();
+  function noter(cat, action, cible, details){
+    try{ sb.rpc("audit_noter",{p_app:APP,p_categorie:cat,p_action:String(action||"").slice(0,300),p_cible:cible?String(cible).slice(0,300):null,
+      p_details:details||null,p_appareil:LAB,p_appareil_id:ID||null}).then(function(){},function(){}); }catch(e){}
+  }
+  function tentative(email, raison){
+    try{ sb.rpc("audit_tentative",{p_app:APP,p_email:String(email||"").slice(0,200),p_raison:String(raison||"").slice(0,200),p_appareil:LAB,p_appareil_id:ID||null}).then(function(){},function(){}); }catch(e){}
+  }
+  function cle(uid){ return "audit:cx:"+APP+":"+uid; }
+  var occupe=false;
+  async function connexion(type){
+    if(occupe) return; occupe=true;
+    try{
+      var s=await sb.auth.getSession(); var u=s&&s.data&&s.data.session&&s.data.session.user; if(!u) return;
+      var n=await sb.auth.mfa.getAuthenticatorAssuranceLevel(); if(n&&n.data&&n.data.nextLevel==="aal2"&&n.data.currentLevel!=="aal2") return;  // après le code
+      try{ if(sessionStorage.getItem(cle(u.id))) return; sessionStorage.setItem(cle(u.id),"1"); }catch(e){}
+      noter("connexion", type||"Ouverture de l'app");
+    }catch(e){}
+    finally{ occupe=false; }
+  }
+  var dernier="";
+  window.auditNoter=noter;
+  window.auditTentative=tentative;
+  window.auditConnexion=function(){ setTimeout(function(){ connexion("Connexion"); },50); };
+  window.auditNav=function(nom){ nom=String(nom||""); if(!nom||nom===dernier) return; dernier=nom; noter("navigation","Onglet « "+nom+" »"); };
+  sb.auth.onAuthStateChange(function(evt){
+    if(evt==="INITIAL_SESSION") setTimeout(function(){ connexion("Ouverture de l'app"); },400);
+    if(evt==="SIGNED_IN"||evt==="MFA_CHALLENGE_VERIFIED") setTimeout(function(){ connexion("Connexion"); },400);
+    if(evt==="SIGNED_OUT"){ dernier=""; }
+  });
+})(typeof AUDIT_APP!=="undefined"?AUDIT_APP:"ca");
+
 
 const $ = s => document.querySelector(s);
 const HORAIRES_DEFAUT = {1:{ouvert:true,limite:null},2:{ouvert:true,limite:null},3:{ouvert:true,limite:null},4:{ouvert:true,limite:null},5:{ouvert:true,limite:null},6:{ouvert:true,limite:null},7:{ouvert:true,limite:null}};
@@ -2896,6 +2941,7 @@ $("#authForm").addEventListener("submit", async e => {
     }}}));
   }else{
     ({ error } = await sb.auth.signInWithPassword({ email, password }));
+    if(error){ try{ auditTentative(email, traduire(error.message)); }catch(_){ } }
   }
   btn.disabled = false;
   if(error) afficherErreur(traduire(error.message));
@@ -8174,6 +8220,7 @@ const emptyHTML = (t,m) => `<div class="empty"><strong>${t}</strong>${m}</div>`;
 
 function setView(v){
   state.view = v;
+  try{ auditNav(({mine:"Mes demandes",treso:"Trésorerie",reexam:"Réexamens",overview:"Vue d'ensemble",expenses:"Dépenses",incomes:"Recettes",members:"Membres",messages:"Messages",budget:"Budgets",compta:"Comptabilité",tva:"TVA",direct:"Paiement direct",factures:"Factures",novelles:"Novelles"})[v]||v); }catch(_){ }
   $("#tabMine").setAttribute("aria-pressed", v==="mine");
   $("#tabTreso").setAttribute("aria-pressed", v==="treso");
   $("#tabReexam").setAttribute("aria-pressed", v==="reexam");

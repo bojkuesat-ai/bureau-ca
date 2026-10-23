@@ -309,6 +309,12 @@ async function appelFn(corps, o = {}) {
     if (!j) return { ok: false, erreur: r.status === 404 ? "La fonction « billets-mail » n'est pas encore déployée sur Supabase." : "Réponse inattendue du serveur (code " + r.status + ")." };
     if (r.status === 401 && !o.public && !j.erreur) j.erreur = "Connexion requise : reconnectez-vous.";
     if (!r.ok && j.ok === undefined) j.ok = false;
+    if (!o.public && j.ok && corps && corps.action && corps.action !== "test") {
+      const LIB = { valider: "Preuve acceptée", refuser: "Inscription refusée", repecher: "Repêchage", supprimer: "Inscription supprimée", masse: "Action irréversible : " + (corps.quoi || ""),
+        liberer: "Places modifiées", envoyer_billets: "Billets envoyés par mail", presence: "Demande de présence envoyée", rappel: "Rappel envoyé", relance: "Relance des non-venus", bilan: "Bilan envoyé" };
+      try { const e = (typeof evtCourant === "function" && evtCourant()) || {}; const i = (S.insc || []).find((x) => x.id === corps.id);
+        auditNoter(["envoyer_billets", "presence", "rappel", "relance", "bilan"].includes(corps.action) ? "mails" : "billetterie", LIB[corps.action] || corps.action, (e.titre || "") + (i ? " — " + ((i.prenom || "") + " " + (i.nom || "")).trim() : ""), j.envoyes != null ? { envoyes: j.envoyes } : null); } catch (er) {}
+    }
     return j;
   } catch (e) { return { ok: false, erreur: "Le serveur n'a pas répondu. Vérifiez votre connexion et réessayez." }; }
 }
@@ -466,6 +472,52 @@ document.addEventListener("click", (e) => {
   /* Pas d'appel Supabase directement dans l'écouteur (risque de blocage) : on diffère. */
   sb.auth.onAuthStateChange(function(evt){ if(evt==="SIGNED_IN"||evt==="INITIAL_SESSION"||evt==="TOKEN_REFRESHED"||evt==="MFA_CHALLENGE_VERIFIED") setTimeout(garde,60); });
 })();
+
+const AUDIT_APP = "billets";
+
+/* =====================================================================
+   JOURNAL DE SÉCURITÉ — côté app (connexions, onglets, tentatives).
+   Les modifications de données sont notées par le serveur lui-même.
+   Le compte propriétaire n'est jamais enregistré (décidé par le serveur).
+   ===================================================================== */
+(function(APP){
+  if(typeof sb==="undefined" || !sb || !sb.rpc) return;
+  var ID="", LAB="";
+  try{ ID=localStorage.getItem("be:appareil-id")||""; if(!ID){ ID="d"+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); localStorage.setItem("be:appareil-id",ID); } }catch(e){ ID=""; }
+  (function(){ var u=navigator.userAgent||"";
+    var os=/iPhone/.test(u)?"iPhone":/iPad/.test(u)?"iPad":/Android/.test(u)?"Android":/Mac OS X/.test(u)?"Mac":/Windows/.test(u)?"Windows":/Linux/.test(u)?"Linux":"Appareil";
+    var nav=/Edg\//.test(u)?"Edge":/OPR\//.test(u)?"Opera":/Firefox\//.test(u)?"Firefox":/CriOS|Chrome\//.test(u)?"Chrome":/Safari\//.test(u)?"Safari":"Navigateur";
+    LAB=os+" · "+nav+((window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches)?" (app installée)":""); })();
+  function noter(cat, action, cible, details){
+    try{ sb.rpc("audit_noter",{p_app:APP,p_categorie:cat,p_action:String(action||"").slice(0,300),p_cible:cible?String(cible).slice(0,300):null,
+      p_details:details||null,p_appareil:LAB,p_appareil_id:ID||null}).then(function(){},function(){}); }catch(e){}
+  }
+  function tentative(email, raison){
+    try{ sb.rpc("audit_tentative",{p_app:APP,p_email:String(email||"").slice(0,200),p_raison:String(raison||"").slice(0,200),p_appareil:LAB,p_appareil_id:ID||null}).then(function(){},function(){}); }catch(e){}
+  }
+  function cle(uid){ return "audit:cx:"+APP+":"+uid; }
+  var occupe=false;
+  async function connexion(type){
+    if(occupe) return; occupe=true;
+    try{
+      var s=await sb.auth.getSession(); var u=s&&s.data&&s.data.session&&s.data.session.user; if(!u) return;
+      var n=await sb.auth.mfa.getAuthenticatorAssuranceLevel(); if(n&&n.data&&n.data.nextLevel==="aal2"&&n.data.currentLevel!=="aal2") return;  // après le code
+      try{ if(sessionStorage.getItem(cle(u.id))) return; sessionStorage.setItem(cle(u.id),"1"); }catch(e){}
+      noter("connexion", type||"Ouverture de l'app");
+    }catch(e){}
+    finally{ occupe=false; }
+  }
+  var dernier="";
+  window.auditNoter=noter;
+  window.auditTentative=tentative;
+  window.auditConnexion=function(){ setTimeout(function(){ connexion("Connexion"); },50); };
+  window.auditNav=function(nom){ nom=String(nom||""); if(!nom||nom===dernier) return; dernier=nom; noter("navigation","Onglet « "+nom+" »"); };
+  sb.auth.onAuthStateChange(function(evt){
+    if(evt==="INITIAL_SESSION") setTimeout(function(){ connexion("Ouverture de l'app"); },400);
+    if(evt==="SIGNED_IN"||evt==="MFA_CHALLENGE_VERIFIED") setTimeout(function(){ connexion("Connexion"); },400);
+    if(evt==="SIGNED_OUT"){ dernier=""; }
+  });
+})(typeof AUDIT_APP!=="undefined"?AUDIT_APP:"ca");
 
 /* =====================================================================
    PAGES PUBLIQUES (sans compte)
@@ -1167,6 +1219,7 @@ RES.login = async () => {
   if (!mail || !pwd) return err("Entrez votre e-mail et votre mot de passe.");
   if (!enLigne()) return err("Pas de connexion internet.");
   const { error } = await sb.auth.signInWithPassword({ email: mail, password: pwd });
+  if (error) { try { auditTentative(mail, /Invalid login/i.test(error.message) ? "E-mail ou mot de passe incorrect" : error.message); } catch (e) {} }
   if (error) return err(/Invalid login/i.test(error.message) ? "E-mail ou mot de passe incorrect." : /confirm/i.test(error.message) ? "Adresse e-mail pas encore confirmée (voir le mail reçu à l'inscription au CA)." : error.message);
   store.set("auth_ok", Date.now()); S.loginMsg = ""; S.vientDeSeConnecter = true;
   if (window.mfaGarde && await window.mfaGarde()) return;
@@ -1307,7 +1360,8 @@ RES.nouvelEvt = async () => {
 /* ---------------- Événement ---------------- */
 async function ouvrirEvt(id, onglet) {
   scanFermer();
-  S.evtId = id; S.vue = "evt"; S.onglet = onglet || S.ongletPref || "inscriptions"; S.insc = store.get("cache:insc:" + id, []); S.filtre = "tous";
+  S.evtId = id; S.vue = "evt"; S.onglet = onglet || S.ongletPref || "inscriptions";
+  try { auditNav("Événement — " + (((S.evts || []).find((x) => x.id === id) || {}).titre || "")); } catch (e) {} S.insc = store.get("cache:insc:" + id, []); S.filtre = "tous";
   history.replaceState(null, "", APP_URL + "?ev=" + id);
   rendre();
   await chargerInscriptions(); rendre();
@@ -1319,6 +1373,7 @@ RES.onglet = async (el) => {
   if (S.onglet === "formulaire" && S.fbModif && el.dataset.o !== "formulaire" && !(await confirmer("Le formulaire a des modifications non enregistrées. Les abandonner ?", "Formulaire"))) return;
   if (el.dataset.o !== "formulaire") { S.fb = null; S.fbModif = false; }
   S.onglet = el.dataset.o; S.ongletPref = S.onglet; rendre();
+  try { auditNav(el.textContent.trim() + " — " + ((evtCourant() || {}).titre || "")); } catch (e) {}
   if (["inscriptions", "suivi"].includes(S.onglet)) { await chargerInscriptions(); rendreEnPreservant(); }
 };
 function vueEvt() {
@@ -1516,6 +1571,7 @@ RES.verifier = async () => {
 /* ---------------- Scanner global ---------------- */
 RES.ouvrirGlobal = async () => {
   S.vue = "global"; S.evtId = null; history.replaceState(null, "", APP_URL);
+  try { auditNav("Scanner global"); } catch (e) {}
   let evts = [];
   if (enLigne()) {
     const ids = S.comms.map((c) => c.id);

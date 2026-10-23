@@ -571,6 +571,51 @@ const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createC
   /* Pas d'appel Supabase directement dans l'écouteur (risque de blocage) : on diffère. */
   sb.auth.onAuthStateChange(function(evt){ if(evt==="SIGNED_IN"||evt==="INITIAL_SESSION"||evt==="TOKEN_REFRESHED"||evt==="MFA_CHALLENGE_VERIFIED") setTimeout(garde,60); });
 })();
+const AUDIT_APP="ca";
+/* =====================================================================
+   JOURNAL DE SÉCURITÉ — côté app (connexions, onglets, tentatives).
+   Les modifications de données sont notées par le serveur lui-même.
+   Le compte propriétaire n'est jamais enregistré (décidé par le serveur).
+   ===================================================================== */
+(function(APP){
+  if(typeof sb==="undefined" || !sb || !sb.rpc) return;
+  var ID="", LAB="";
+  try{ ID=localStorage.getItem("be:appareil-id")||""; if(!ID){ ID="d"+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); localStorage.setItem("be:appareil-id",ID); } }catch(e){ ID=""; }
+  (function(){ var u=navigator.userAgent||"";
+    var os=/iPhone/.test(u)?"iPhone":/iPad/.test(u)?"iPad":/Android/.test(u)?"Android":/Mac OS X/.test(u)?"Mac":/Windows/.test(u)?"Windows":/Linux/.test(u)?"Linux":"Appareil";
+    var nav=/Edg\//.test(u)?"Edge":/OPR\//.test(u)?"Opera":/Firefox\//.test(u)?"Firefox":/CriOS|Chrome\//.test(u)?"Chrome":/Safari\//.test(u)?"Safari":"Navigateur";
+    LAB=os+" · "+nav+((window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches)?" (app installée)":""); })();
+  function noter(cat, action, cible, details){
+    try{ sb.rpc("audit_noter",{p_app:APP,p_categorie:cat,p_action:String(action||"").slice(0,300),p_cible:cible?String(cible).slice(0,300):null,
+      p_details:details||null,p_appareil:LAB,p_appareil_id:ID||null}).then(function(){},function(){}); }catch(e){}
+  }
+  function tentative(email, raison){
+    try{ sb.rpc("audit_tentative",{p_app:APP,p_email:String(email||"").slice(0,200),p_raison:String(raison||"").slice(0,200),p_appareil:LAB,p_appareil_id:ID||null}).then(function(){},function(){}); }catch(e){}
+  }
+  function cle(uid){ return "audit:cx:"+APP+":"+uid; }
+  var occupe=false;
+  async function connexion(type){
+    if(occupe) return; occupe=true;
+    try{
+      var s=await sb.auth.getSession(); var u=s&&s.data&&s.data.session&&s.data.session.user; if(!u) return;
+      var n=await sb.auth.mfa.getAuthenticatorAssuranceLevel(); if(n&&n.data&&n.data.nextLevel==="aal2"&&n.data.currentLevel!=="aal2") return;  // après le code
+      try{ if(sessionStorage.getItem(cle(u.id))) return; sessionStorage.setItem(cle(u.id),"1"); }catch(e){}
+      noter("connexion", type||"Ouverture de l'app");
+    }catch(e){}
+    finally{ occupe=false; }
+  }
+  var dernier="";
+  window.auditNoter=noter;
+  window.auditTentative=tentative;
+  window.auditConnexion=function(){ setTimeout(function(){ connexion("Connexion"); },50); };
+  window.auditNav=function(nom){ nom=String(nom||""); if(!nom||nom===dernier) return; dernier=nom; noter("navigation","Onglet « "+nom+" »"); };
+  sb.auth.onAuthStateChange(function(evt){
+    if(evt==="INITIAL_SESSION") setTimeout(function(){ connexion("Ouverture de l'app"); },400);
+    if(evt==="SIGNED_IN"||evt==="MFA_CHALLENGE_VERIFIED") setTimeout(function(){ connexion("Connexion"); },400);
+    if(evt==="SIGNED_OUT"){ dernier=""; }
+  });
+})(typeof AUDIT_APP!=="undefined"?AUDIT_APP:"ca");
+
 
 /* Un compte arrivé par le lien des coopté·es (via_code) ou dont la fonction est « Coopté·e »
    est TOUJOURS traité comme coopté·e, même si la base l'a enregistré comme « membre »
@@ -676,7 +721,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-23 \u00b7 double authentification";
+const CA_VERSION="2026-10-23 \u00b7 journal";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1854,7 +1899,7 @@ function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textC
 /* ---- DASHBOARD ---- */
 const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,notifs:tabNotifs,search:tabSearch};
+  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
@@ -1873,7 +1918,8 @@ function viewDash(){
   if(cesOngletVisible() && !estCoopte()) tabs.push(["soutien_ces","\ud83e\udd1d","Soutien social — CES"]);
   const estProprio = S.session && S.session.role==="owner";
   if(estProprio && !estCoopte()) tabs.push(["admin","\u2699","Admin"]);
-  if(S.tab==="admin" && !estProprio) S.tab="accueil";
+  if(estProprio && !estCoopte()) tabs.push(["journal","\ud83d\udcdc","Journal"]);
+  if((S.tab==="admin"||S.tab==="journal") && !estProprio) S.tab="accueil";
   if(bilanOnglet() && !estCoopte()) tabs.push(["bilan","13","Bilans moraux"]);
   if(S.tab==="bilan" && !bilanOnglet()) S.tab="org";
   /* Onglets désactivés dans Admin : cachés pour tout le monde, propriétaire compris. */
@@ -3150,7 +3196,7 @@ function tabAgendaCoopte(){
 function tabRgpdCoopte(){
   return `<div class="compose">
     <h3 class="serif">Vos donn\u00e9es</h3>
-    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">L'application conserve votre nom, votre adresse e-mail et les contributions que vous d\u00e9posez. Vous pouvez en r\u00e9cup\u00e9rer une copie ou demander leur suppression \u00e0 tout moment.</p>
+    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">L'application conserve votre nom, votre adresse e-mail et les contributions que vous d\u00e9posez. Vos connexions (date, application, type d'appareil) sont enregistrées pendant 12 mois dans le journal de sécurité, consultable uniquement par le propriétaire. Vous pouvez en r\u00e9cup\u00e9rer une copie ou demander leur suppression \u00e0 tout moment.</p>
     <div class="row-btn">
       <button class="btn ghost" data-action="rgpd-export-moi">T\u00e9l\u00e9charger mes donn\u00e9es</button>
       <button class="btn ghost" data-action="rgpd-suppr-moi">Demander la suppression de mes donn\u00e9es</button>
@@ -3176,6 +3222,7 @@ function tabRgpd(){
   const estProprio=!!(S.session&&S.session.role==="owner");
   return `<div class="compose">
     <h3 class="serif">Vos donn\u00e9es</h3>
+    <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px"><b>Journal de sécurité :</b> pour protéger l'association, vos connexions (date, application, type d'appareil), les onglets ouverts et vos actions sur le CA, la Caisse et la Billetterie sont enregistrés pendant <b>12 mois</b>, puis supprimés automatiquement. Seul le propriétaire de l'application peut les consulter. Le contenu du soutien psychologique, de la médiation, de la CES, les bilans moraux et le choix de vos votes ne sont jamais enregistrés.</p>
     <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Vous pouvez r\u00e9cup\u00e9rer \u00e0 tout moment une copie de tout ce que l'application conserve \u00e0 votre sujet, ou demander sa suppression.</p>
     <div class="row-btn">
       <button class="btn ghost" data-action="rgpd-export-moi">T\u00e9l\u00e9charger mes donn\u00e9es</button>
@@ -4064,7 +4111,7 @@ document.addEventListener("click", async e=>{
       const email=normId(val("au_email")), pwd=val("au_pwd");
       if(!sb) return authErr("Connexion au serveur indisponible. Réessayez.");
       const { error } = await sb.auth.signInWithPassword({ email:email, password:pwd });
-      if(error) return authErr("E-mail ou mot de passe incorrect.");
+      if(error){ try{ auditTentative(email,"E-mail ou mot de passe incorrect"); }catch(_){ } return authErr("E-mail ou mot de passe incorrect."); }
       await refreshSession(); render(); break;
     }
     case "complete-profile": {
@@ -4866,7 +4913,7 @@ ${sections||"<p>Aucun retour.</p>"}
         if(r&&r.error){ modaleInfo("Réactivation impossible : "+r.error.message); break; }
         logAct("Compte réactivé : "+lab2); }
       await loadAccounts(); render(); break; }
-    case "set-tab": S.tab=el.dataset.tab; S.mailFlash=null; if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
+    case "set-tab": S.tab=el.dataset.tab; S.mailFlash=null; try{ const _t=(TABS.concat([["admin","","Admin"],["journal","","Journal"],["avis","","Idées & avis"],["agenda","","Agenda"],["bilan","","Bilans moraux"],["soutien_etu","","Soutien psy — étudiants"],["soutien_ces","","Soutien social — CES"],["notifs","","À traiter"],["search","","Recherche"]])).find(x=>x[0]===S.tab); auditNav(_t?_t[2]:S.tab); }catch(_){ } if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
     /* organigramme */
     case "edit-poste": S.editPoste=id; render(); break;
     case "cancel-edit": S.editPoste=null; render(); break;
@@ -7973,6 +8020,114 @@ document.addEventListener("click", async e=>{
   }catch(err){ modaleInfo(String(err&&err.message||err)); }
 });
 
+/* =====================================================================
+   JOURNAL DE SÉCURITÉ — onglet du propriétaire (Admin › Journal).
+   Lecture seule ; les lignes sont écrites par le serveur (script journal.sql).
+   ===================================================================== */
+const AUD_CATS=[["connexion","🔐","Connexions"],["navigation","👁","Navigation"],["procuration","✍","Procurations"],["votes","🗳","Votes & budgets"],
+  ["reunions","📋","Réunions & PV"],["evenements","📅","Événements & tâches"],["billetterie","🎟","Billetterie"],["caisse","💶","Caisse"],
+  ["docs","📄","Documents, annonces & messages"],["salle","🏫","Salle fac"],["comptes","⚙","Comptes & réglages"],["mails","📨","Mails & exports"]];
+const AUD_APPS={ca:"CA",caisse:"Caisse",billets:"Billetterie"};
+const AUD_STATUTS={membre:"",coopte:"coopté·e",hors_ca:"HORS CA",attente:"compte en attente",revoque:"compte révoqué"};
+function audCat(k){ return AUD_CATS.find(c=>c[0]===k)||[k,"•",k]; }
+async function chargerAudit(){
+  if(!sb) return;
+  const A=S.aud=S.aud||{f:{cat:"",membre:"",app:"",du:"",au:"",q:""}};
+  A.charge=true;
+  try{
+    let q=sb.from("ca_audit").select("*").order("le",{ascending:false}).limit(600);
+    if(A.f.cat) q=q.eq("categorie",A.f.cat);
+    if(A.f.membre==="__hors") q=q.neq("statut_compte","membre").neq("statut_compte","coopte");
+    else if(A.f.membre) q=q.eq("membre_id",A.f.membre);
+    if(A.f.app) q=q.eq("app",A.f.app);
+    if(A.f.du) q=q.gte("le",new Date(A.f.du+"T00:00:00").toISOString());
+    if(A.f.au) q=q.lte("le",new Date(A.f.au+"T23:59:59").toISOString());
+    const [r,t]=await Promise.all([q, sb.rpc("audit_tableau")]);
+    if(r.error) throw r.error;
+    A.rows=r.data||[]; A.tab=(t&&!t.error&&t.data)||null; A.err="";
+  }catch(e){ A.err=String(e&&e.message||e); A.rows=[]; }
+  A.charge=false;
+}
+function audLigne(r,k){
+  const c=audCat(r.categorie), st=(r.statut_compte in AUD_STATUTS)?AUD_STATUTS[r.statut_compte]:r.statut_compte;
+  const diff=(r.avant||r.apres)?`<div id="aud_d_${k}" style="display:none;margin-top:8px"><table class="sout-table"><tr><th>Champ</th><th>Avant</th><th>Après</th></tr>${
+    [...new Set([...Object.keys(r.avant||{}),...Object.keys(r.apres||{})])].map(f=>`<tr><td>${esc(f)}</td><td style="white-space:normal">${esc(r.avant&&r.avant[f]!=null?JSON.stringify(r.avant[f]):"")}</td><td style="white-space:normal">${esc(r.apres&&r.apres[f]!=null?JSON.stringify(r.apres[f]):"")}</td></tr>`).join("")}</table></div>`:"";
+  return `<div class="doc" style="cursor:default;flex-wrap:wrap;${r.statut_compte!=="membre"&&r.statut_compte!=="coopte"||r.action==="Tentative échouée"?"border-color:var(--red)":""}">
+    <span class="ic" title="${esc(c[2])}">${c[1]}</span>
+    <span class="meta"><p class="dt" style="font-size:13.5px">${esc(r.nom||r.email||"?")}${st?` <span class="badge" style="background:${r.statut_compte==="coopte"?"#b48cf2":"var(--red)"};color:#fff">${esc(st)}</span>`:""} — ${esc(r.action)}</p>
+      <p class="du">${esc(fmtQuand(r.le))} · ${esc(AUD_APPS[r.app]||r.app)}${r.cible?" · "+esc(r.cible):""}${r.appareil?" · "+esc(r.appareil):""}${r.appareil_nouveau?` · <b style="color:var(--amber)">🆕 nouvel appareil</b>`:""}${r.nuit?` · <b style="color:var(--amber)">🌙 nuit</b>`:""}${r.email&&r.nom?" · "+esc(r.email):""}</p></span>
+    ${diff?`<button class="link" data-action="aud-diff" data-k="${k}">avant / après</button>`:""}${diff}</div>`;
+}
+function tabJournal(){
+  if(!(S.session&&S.session.role==="owner")) return `<div class="empty">Réservé au propriétaire.</div>`;
+  const A=S.aud;
+  if(!A||(!A.rows&&!A.charge&&!A.err)){ if(!A||!A.charge){ chargerAudit().then(()=>{ if(S.tab==="journal") rendreEnPreservant(); }); } return `<p class="du">Chargement du journal…</p>`; }
+  if(A.charge&&!A.rows) return `<p class="du">Chargement du journal…</p>`;
+  if(A.err) return `<div class="sout-card"><p class="sout-p" style="color:var(--red)">${/ca_audit|audit_/.test(A.err)?"Le journal n'est pas encore installé : le script « journal.sql » doit être exécuté dans Supabase.":esc(A.err)}</p></div>`;
+  const T=A.tab||{}, f=A.f, q=String(f.q||"").toLowerCase();
+  const rows=(A.rows||[]).filter(r=>!q||[r.nom,r.email,r.action,r.cible,r.appareil].join(" ").toLowerCase().includes(q));
+  const mem=(T.membres||[]);
+  const opt=(v,l,sel)=>`<option value="${esc(v)}" ${sel===v?"selected":""}>${esc(l)}</option>`;
+  const k=(t,v,rouge)=>`<div class="stat"><p class="k">${t}</p><p class="v" style="${rouge&&v?"color:var(--red)":""}">${v}</p></div>`;
+  const inactifs=mem.filter(m=>!m.coopte&&(!m.derniere_connexion||Date.now()-new Date(m.derniere_connexion).getTime()>30*86400000));
+  return `<div class="sout-top"><h2 class="serif" style="margin:0;font-size:22px">📜 Journal de sécurité</h2>
+      <span class="du">Membres du CA, coopté·es (connexions) et personnes hors CA · votre compte n'est jamais enregistré · conservé 12 mois</span></div>
+    <div class="stat-row">${k("Tentatives ratées (7 j)",T.tentatives_7j||0,true)}${k("Activité hors CA (7 j)",T.hors_ca_7j||0,true)}${k("Lignes au journal",T.total||0)}</div>
+    <div class="compose" style="padding:12px 14px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><button class="chip" data-action="aud-cat" data-v="" style="${!f.cat?"border-color:var(--stamp);color:var(--stamp)":""}">Toutes</button>
+        ${AUD_CATS.map(c=>`<button class="chip" data-action="aud-cat" data-v="${c[0]}" style="${f.cat===c[0]?"border-color:var(--stamp);color:var(--stamp)":""}">${c[1]} ${esc(c[2])}${T.categories&&T.categories[c[0]]?` <span class="du" style="display:inline">${T.categories[c[0]]}</span>`:""}</button>`).join("")}</div>
+      <div class="two" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr))">
+        <select class="f" id="aud_membre">${opt("","Toutes les personnes",f.membre)}${opt("__hors","⚠ Hors CA / tentatives",f.membre)}${mem.map(m=>opt(m.id,m.nom+(m.coopte?" (coopté·e)":""),f.membre)).join("")}</select>
+        <select class="f" id="aud_app">${opt("","Toutes les apps",f.app)}${Object.entries(AUD_APPS).map(([a,l])=>opt(a,l,f.app)).join("")}</select>
+        <input class="f" type="date" id="aud_du" value="${esc(f.du)}" title="Du"><input class="f" type="date" id="aud_au" value="${esc(f.au)}" title="Au">
+      </div>
+      <input class="f" id="aud_q" placeholder="Rechercher (nom, e-mail, action, appareil…)" value="${esc(f.q)}">
+      <div class="row-btn"><button class="btn sm" data-action="aud-filtrer">Filtrer</button><button class="btn ghost sm" data-action="aud-raz">Réinitialiser</button>
+        <button class="btn ghost sm" data-action="aud-csv">Exporter la sélection (CSV)</button><button class="btn ghost sm" data-action="aud-archive">Exporter 12 mois (archive de mandat)</button>
+        <a class="btn ghost sm" href="https://supabase.com/dashboard/project/mlgzdfyqjhvyubrywuim/logs/auth-logs" target="_blank" rel="noopener">Journaux Supabase ↗</a></div>
+      <p class="du" style="margin:6px 0 0">Les tentatives qui ne passent pas par nos apps (attaque directe du serveur) n'apparaissent que dans les journaux Supabase.</p></div>
+    ${f.membre&&f.membre!=="__hors"?(()=>{ const m=mem.find(x=>x.id===f.membre); return m?`<div class="compose"><h3 class="serif">🧾 Fiche : ${esc(m.nom)}</h3><p class="du">${esc(m.fonction||"")} · dernière connexion : ${m.derniere_connexion?esc(fmtQuand(m.derniere_connexion)):"jamais"} · ${m.connexions_30j} connexion(s) sur 30 j · ${m.actions_7j} action(s) sur 7 j, ${m.actions_30j} sur 30 j · ${m.appareils} appareil(s)</p></div>`:""; })():""}
+    <div class="grp-h" style="margin:18px 0 10px"><h2 class="serif">Événements</h2><span class="c">${rows.length}${(A.rows||[]).length>=600?" (600 plus récents — affinez les filtres)":""}</span><span class="l"></span></div>
+    ${rows.length?rows.map(audLigne).join(""):`<div class="empty">Aucun événement pour ces filtres.</div>`}
+    <div class="grp-h" style="margin:26px 0 10px"><h2 class="serif">📊 Tableau de bord des membres</h2><span class="l"></span></div>
+    ${inactifs.length?`<p class="du">⚠ Sans connexion depuis plus de 30 jours : <b>${inactifs.map(m=>esc(m.nom)).join(", ")}</b></p>`:""}
+    <div style="overflow-x:auto"><table class="sout-table"><tr><th>Membre</th><th>Dernière connexion</th><th>Connexions 30 j</th><th>Actions 7 j</th><th>Actions 30 j</th><th>Appareils</th><th></th></tr>
+      ${mem.map(m=>`<tr><td>${esc(m.nom)}${m.coopte?" <span class=\"badge-coopte\">Coopté·e</span>":""}</td><td>${m.derniere_connexion?esc(fmtQuand(m.derniere_connexion)):"—"}</td><td>${m.connexions_30j}</td><td>${m.coopte?"—":m.actions_7j}</td><td>${m.coopte?"—":m.actions_30j}</td><td>${m.appareils}</td>
+        <td><button class="link" data-action="aud-fiche" data-id="${esc(m.id)}">fiche</button></td></tr>`).join("")}</table></div>
+    <p class="du" style="margin-top:10px">Activité par app (30 j) : ${Object.entries(T.apps||{}).map(([a,n])=>esc(AUD_APPS[a]||a)+" "+n).join(" · ")||"—"}</p>`;
+}
+function audCsv(rows, nom){
+  const L=[["Date","Personne","E-mail","Statut","App","Catégorie","Action","Cible","Appareil","Nouvel appareil","Nuit","Avant","Après"]].concat(rows.map(r=>[
+    fmtQuand(r.le),r.nom||"",r.email||"",AUD_STATUTS[r.statut_compte]||r.statut_compte,AUD_APPS[r.app]||r.app,audCat(r.categorie)[2],r.action,r.cible||"",r.appareil||"",r.appareil_nouveau?"oui":"",r.nuit?"oui":"",
+    r.avant?JSON.stringify(r.avant):"",r.apres?JSON.stringify(r.apres):""]));
+  const t="﻿"+L.map(l=>l.map(v=>{ const s=String(v==null?"":v); return /[;"\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }).join(";")).join("\r\n");
+  const u=URL.createObjectURL(new Blob([t],{type:"text/csv;charset=utf-8"})); const a=document.createElement("a"); a.href=u; a.download=nom; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(u); a.remove(); },1500);
+}
+function audLireFiltres(){ const A=S.aud; const g=id=>{ const e=document.getElementById(id); return e?e.value:""; };
+  A.f.membre=g("aud_membre"); A.f.app=g("aud_app"); A.f.du=g("aud_du"); A.f.au=g("aud_au"); A.f.q=g("aud_q"); }
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-action^='aud-']"); if(!el||!sb) return;
+  if(!(S.session&&S.session.role==="owner")) return;
+  const a=el.dataset.action, A=S.aud;
+  try{
+    if(a==="aud-diff"){ const d=document.getElementById("aud_d_"+el.dataset.k); if(d) d.style.display=d.style.display==="none"?"block":"none"; return; }
+    if(a==="aud-cat"){ audLireFiltres(); A.f.cat=el.dataset.v; await chargerAudit(); render(); return; }
+    if(a==="aud-filtrer"){ audLireFiltres(); await chargerAudit(); render(); return; }
+    if(a==="aud-raz"){ A.f={cat:"",membre:"",app:"",du:"",au:"",q:""}; await chargerAudit(); render(); return; }
+    if(a==="aud-fiche"){ audLireFiltres(); A.f.membre=el.dataset.id; A.f.cat=""; await chargerAudit(); render(); window.scrollTo(0,0); return; }
+    if(a==="aud-csv"){ audLireFiltres(); const q=String(A.f.q||"").toLowerCase(); audCsv((A.rows||[]).filter(r=>!q||[r.nom,r.email,r.action,r.cible,r.appareil].join(" ").toLowerCase().includes(q)),"journal-"+todayISO()+".csv"); return; }
+    if(a==="aud-archive"){
+      el.disabled=true; el.textContent="Export en cours…";
+      const tout=[]; for(let p=0;p<200;p++){ const r=await sb.from("ca_audit").select("*").order("le",{ascending:false}).range(p*1000,p*1000+999); if(r.error) throw r.error; tout.push(...(r.data||[])); if(!r.data||r.data.length<1000) break; }
+      audCsv(tout,"journal-12-mois-"+todayISO()+".csv"); el.disabled=false; el.textContent="Exporter 12 mois (archive de mandat)";
+      try{ logAct("Journal de sécurité exporté ("+tout.length+" lignes)"); }catch(_){ }
+      return;
+    }
+  }catch(err){ modaleInfo(String(err&&err.message||err)); }
+});
+
+/* Les mails et exports passent par logAct : on les reporte au journal de sécurité. */
+(function(){ const _l=logAct; logAct=function(txt,who){ _l(txt,who); try{ if(/mail|rappel|convocation|envoy|export|pdf|archive|sauvegarde|import/i.test(String(txt||""))) auditNoter("mails",String(txt).slice(0,300)); }catch(_){ } }; })();
 boot();
 
 </script>
