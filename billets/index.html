@@ -1,0 +1,1959 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<!-- Politique de sécurité (CSP) : la page ne charge que ses librairies figées (jsDelivr, empreintes vérifiées)
+     et n'échange des données qu'avec Supabase. Toute nouvelle source externe doit être ajoutée ici. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://cdn.jsdelivr.net/npm/qrious@4.0.2/ https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/ https://cdn.jsdelivr.net/npm/jspdf@2.5.1/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; media-src 'self' data: blob:; connect-src 'self' https://mlgzdfyqjhvyubrywuim.supabase.co wss://mlgzdfyqjhvyubrywuim.supabase.co; frame-src 'self' blob: https://mlgzdfyqjhvyubrywuim.supabase.co; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="robots" content="noindex">
+<title>Billetterie — Bureau étudiant</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23241c46'/%3E%3Cpath d='M5 9.5A1.5 1.5 0 0 1 6.5 8H10v8H6.5A1.5 1.5 0 0 1 5 14.5z' fill='%23e8b04b' opacity='.6'/%3E%3Cpath d='M13 8h4.5A1.5 1.5 0 0 1 19 9.5v5a1.5 1.5 0 0 1-1.5 1.5H13z' fill='%23e8b04b'/%3E%3C/svg%3E">
+<script>try{var _e=localStorage.getItem("be-err-billets")||"";if(_e&&!/admin/.test(location.hash))document.documentElement.style.visibility="hidden";setTimeout(function(){document.documentElement.style.visibility="";},2500);}catch(e){}</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{--ink:#ffffff;--ink-soft:#c9c3e4;--paper:#000000;--card:#241c46;--line:#3b3170;--gold-dim:#9c7628;--surface2:#2d2456;--bg2:#1b1436;
+  --line-2:#2d2456;--stamp:#e8b04b;--stamp-soft:#f0c877;--red:#f2645f;--slate:#a49dc6;--amber:#f2ac3f;--green:#3ccf94;}
+html,body{background:var(--paper);color:var(--ink);font-family:'Inter',system-ui,sans-serif;min-height:100%;-webkit-font-smoothing:antialiased;margin:0}
+*{box-sizing:border-box}
+button{font-family:inherit;cursor:pointer}
+input,textarea,select{font-family:inherit}
+a{color:var(--stamp-soft)}
+.serif{font-family:'Fraunces',Georgia,serif}
+.mono{font-family:'IBM Plex Mono',monospace}
+.f{width:100%;font-size:14px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:6px 0}
+textarea.f{resize:vertical;min-height:70px;line-height:1.5}
+.f:focus{outline:none;border-color:var(--gold-dim);box-shadow:0 0 0 3px rgba(232,176,75,.13)}
+input[type=date],input[type=time],input[type=datetime-local]{color-scheme:dark}
+label.l{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:12px 0 0}
+.btn{border:none;border-radius:11px;padding:11px 16px;font-size:13.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(150deg,var(--stamp),var(--gold-dim));color:#241100;box-shadow:0 5px 16px rgba(232,176,75,.24);transition:.15s;text-decoration:none}
+.btn:hover{filter:brightness(1.05)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.ghost{background:var(--surface2);color:var(--ink);border:1px solid var(--line);box-shadow:none}
+.btn.ghost:hover{color:var(--stamp-soft);border-color:var(--gold-dim)}
+.btn.danger{background:#7a1f1f;color:#fff;border:1px solid #e05555;box-shadow:none}
+.btn.ok{background:var(--green);color:#06291b;box-shadow:none}
+.btn.sm{padding:7px 11px;font-size:12.5px;border-radius:9px}
+.btn.block{width:100%}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.link{background:none;border:none;color:var(--slate);font-size:12.5px;font-weight:500;padding:0;text-decoration:underline;text-underline-offset:2px}
+.link:hover{color:var(--stamp)}
+.empty{text-align:center;color:var(--slate);font-size:13.5px;padding:28px 10px;border:1px dashed var(--line);border-radius:14px}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft)}
+.du{font-size:12.5px;color:var(--slate);margin:4px 0;line-height:1.5}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+.card h3{font-family:'Fraunces',serif;font-weight:500;font-size:17px;margin:0 0 6px}
+.badge{font-family:'IBM Plex Mono',monospace;font-size:10.5px;padding:3px 9px;border-radius:20px;white-space:nowrap;font-weight:600;display:inline-block;background:var(--surface2);color:var(--ink-soft);border:1px solid var(--line)}
+.badge.ok{background:#0f3d2b;color:#9ff0c9;border-color:#1f6a4a}
+.badge.wait{background:#3d2e0f;color:#ffd58a;border-color:#7a5a1f}
+.badge.no{background:#3d1416;color:#ffb3b0;border-color:#7a2a2a}
+.badge.info{background:#1d2a4a;color:#bcd0ff;border-color:#3a5a9a}
+.pill{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;padding:1px 8px;border-radius:20px;background:var(--red);color:#fff;margin-left:6px}
+.sw{appearance:none;-webkit-appearance:none;position:relative;flex:0 0 auto;width:42px;height:23px;border-radius:23px;background:var(--surface2);border:1px solid var(--line);cursor:pointer;margin:0;transition:background .18s,border-color .18s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#efeaf8;box-shadow:0 1px 3px rgba(0,0,0,.45);transition:transform .18s}
+.sw:checked{background:linear-gradient(150deg,var(--stamp),var(--gold-dim));border-color:var(--gold-dim)}
+.sw:checked::after{transform:translateX(19px);background:#fff}
+.sw:disabled{opacity:.45;cursor:not-allowed}
+.swl{display:flex;align-items:center;gap:10px;margin:9px 0;font-size:14px;cursor:pointer}
+.swl small{display:block;color:var(--slate);font-size:12px}
+/* en-tête */
+.hd{border-bottom:1px solid var(--line);padding:14px 18px;position:sticky;top:0;background:rgba(0,0,0,.92);backdrop-filter:blur(6px);z-index:50}
+.hd-in{max-width:1080px;margin:0 auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.hd .brand{font-family:'Fraunces',serif;font-size:18px;font-weight:500;display:flex;align-items:center;gap:8px}
+.hd .brand .ic{width:28px;height:28px;border-radius:8px;background:linear-gradient(150deg,var(--stamp),var(--gold-dim));display:grid;place-items:center;color:#241100;font-size:15px}
+.hd .sp{flex:1}
+.hd .who{font-size:12.5px;color:var(--ink-soft)}
+.body{max-width:1080px;margin:0 auto;padding:20px 18px 70px}
+.titre{font-family:'Fraunces',serif;font-weight:500;font-size:clamp(24px,4.5vw,34px);line-height:1.1;margin:4px 0 6px}
+.sub{color:var(--ink-soft);font-size:14px;margin:0 0 14px}
+.tabs{display:flex;gap:4px;overflow-x:auto;margin:14px 0 18px;border-bottom:1px solid var(--line);scrollbar-width:none}
+.tab{border:1px solid var(--line);border-bottom:none;background:transparent;padding:10px 14px;font-size:13.5px;font-weight:500;color:var(--ink-soft);border-radius:8px 8px 0 0;white-space:nowrap;position:relative;top:1px}
+.tab[aria-selected="true"]{background:var(--card);color:var(--ink)}
+.tab:hover{color:var(--ink)}
+.grp-h{display:flex;align-items:baseline;gap:12px;margin:22px 0 10px}
+.grp-h h2{font-family:'Fraunces',serif;font-weight:500;font-size:19px;margin:0}
+.grp-h .c{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--slate)}
+.grp-h .l{height:1px;flex:1;background:var(--line-2)}
+.evt-card{display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 15px;margin-bottom:10px;width:100%;text-align:left;color:inherit}
+.evt-card:hover{border-color:var(--stamp)}
+.evt-card .d{width:46px;height:46px;border-radius:11px;background:var(--surface2);display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none;font-family:'IBM Plex Mono',monospace;line-height:1.1}
+.evt-card .d b{font-size:17px;color:var(--stamp)}.evt-card .d span{font-size:10px;color:var(--slate);text-transform:uppercase}
+.evt-card .m{flex:1;min-width:0}
+.evt-card .t{font-weight:600;font-size:15px}
+.evt-card .s{font-size:12.5px;color:var(--slate);margin-top:2px}
+.lst{display:flex;flex-direction:column;gap:6px}
+.li{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 12px}
+.li .m{flex:1;min-width:0}
+.li .n{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis}
+.li .x{font-size:12px;color:var(--slate);overflow:hidden;text-overflow:ellipsis}
+.li.in{border-color:#1f6a4a;background:#0c2a1f}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin:0 0 14px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.kpi .k{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--slate)}
+.kpi .v{font-family:'Fraunces',serif;font-size:24px;font-weight:500;margin-top:4px}
+.counter{display:flex;align-items:baseline;gap:10px;justify-content:center;margin:6px 0 10px}
+.counter b{font-family:'Fraunces',serif;font-size:46px;font-weight:500;color:var(--stamp)}
+.counter span{color:var(--ink-soft);font-size:15px}
+.bar{height:9px;background:var(--line);border-radius:999px;overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--stamp),var(--gold-dim))}
+.menu{position:relative;display:inline-block}
+.menu>summary{list-style:none;cursor:pointer}
+.menu>summary::-webkit-details-marker{display:none}
+.menu .ml{position:absolute;z-index:30;top:calc(100% + 6px);left:0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:6px;min-width:230px;box-shadow:0 14px 40px rgba(0,0,0,.6)}
+.menu.zone .ml{border-color:#7a2a2a}
+.scan-stat{border-radius:14px;padding:16px;text-align:center;margin:10px 0;border:1px solid var(--line);background:var(--card)}
+.scan-stat .w{font-family:'Fraunces',serif;font-size:24px;margin:0}
+.scan-stat .n{color:var(--ink-soft);font-size:14px;margin:4px 0 0}
+.scan-stat.ok{background:#0c3a26;border-color:#1f8a5a}.scan-stat.deja{background:#3d2a0c;border-color:#b07a1f}.scan-stat.ko{background:#3d0f12;border-color:#c0393b}
+#reader{width:100%;max-width:460px;margin:0 auto;border-radius:12px;overflow:hidden;background:#111}
+#reader video{border-radius:12px}
+.flash{position:fixed;inset:0;z-index:9000;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;color:#fff}
+.flash.on{display:flex}
+.flash.ok{background:rgba(18,130,80,.96)}.flash.deja{background:rgba(176,112,20,.97)}.flash.ko{background:rgba(180,30,40,.97)}
+.flash .ic{font-size:84px;line-height:1}.flash .lb{font-family:'Fraunces',serif;font-size:34px;margin-top:10px}.flash .nm{font-size:22px;margin-top:8px;font-weight:600}.flash .sm2{font-size:15px;margin-top:6px;opacity:.9}
+.alerte{background:#7a1f1f;color:#fff;border:2px solid #e05555;border-radius:12px;padding:12px 14px;margin:10px 0;font-size:14px;line-height:1.45}
+.note{background:#1d2a4a;border:1px solid #3a5a9a;color:#dbe5ff;border-radius:12px;padding:10px 13px;font-size:13px;line-height:1.55;margin:10px 0}
+.warn{background:#3d2e0f;border:1px solid #7a5a1f;color:#ffe2a8;border-radius:12px;padding:10px 13px;font-size:13px;line-height:1.55;margin:10px 0}
+.net{position:fixed;bottom:12px;left:12px;z-index:80;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:20px;background:#3d1416;color:#ffb3b0;border:1px solid #7a2a2a;display:none}
+.net.on{display:block}
+/* formulaire (constructeur) */
+.fb{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+.fb .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fb .top .f{margin:0}
+.ico{background:var(--surface2);border:1px solid var(--line);color:var(--ink);border-radius:8px;width:34px;height:34px;display:inline-grid;place-items:center;font-size:14px;flex:none}
+.ico:hover{border-color:var(--stamp)}
+.ico:disabled{opacity:.35}
+/* modales maison */
+.ca-mod{position:fixed;inset:0;background:rgba(0,0,0,.74);display:flex;align-items:center;justify-content:center;z-index:9999;padding:18px;backdrop-filter:blur(3px);overflow-y:auto}
+.ca-mod-box{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:480px;width:100%;padding:22px;box-shadow:0 18px 50px rgba(0,0,0,.55);max-height:92vh;overflow:auto}
+.ca-mod-box.large{max-width:680px}
+.ca-mod-box h3{font-family:'Fraunces',Georgia,serif;margin:0 0 8px;font-size:19px;color:var(--ink)}
+.ca-mod-box p{margin:0 0 12px;font-size:14px;color:var(--ink);line-height:1.6;white-space:pre-wrap}
+.ca-mod-box.ok{border-color:#1f8a5a}.ca-mod-box.ok h3{color:var(--green)}
+.ca-mod-box.err{border-color:#c0393b}.ca-mod-box.err h3{color:var(--red)}
+.ca-mod-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:6px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#0c3a26;color:#c9f7e0;border:1px solid #1f8a5a;padding:10px 16px;border-radius:999px;font-size:13.5px;font-weight:600;z-index:10000;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+/* pages publiques */
+.pub{max-width:560px;margin:0 auto;padding:22px 16px 60px}
+.ulb{text-align:center;padding-bottom:16px;margin-bottom:18px;border-bottom:1px solid var(--line)}
+.ulb .a{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--slate)}
+.ulb .b{font-size:15.5px;font-weight:700;margin-top:4px}
+.ulb .c{font-size:13px;margin-top:5px;color:var(--stamp)}
+.pub h1{font-family:'Fraunces',serif;font-weight:500;font-size:28px;margin:0 0 4px;line-height:1.15}
+.pub .org{color:var(--ink-soft);font-size:14px;margin:0 0 14px}
+.pub label.q{display:block;font-size:13px;color:var(--ink-soft);margin:16px 0 6px;font-weight:600}
+.pub .aide{font-size:12.5px;color:var(--slate);margin:-2px 0 6px}
+.pub .req{color:var(--red)}
+.pub .f{font-size:16px;padding:12px 13px;border-radius:11px;background:#0d0a1a}
+.chk{display:flex;align-items:flex-start;gap:10px;margin:8px 0;font-size:14.5px;cursor:pointer;line-height:1.45}
+.chk input{width:19px;height:19px;flex:none;margin-top:2px;accent-color:var(--stamp)}
+.opts{display:flex;flex-wrap:wrap;gap:8px}
+.opt{flex:1 1 30%;padding:12px 10px;font-size:13.5px;font-weight:600;background:#0d0a1a;color:var(--ink);border:1px solid var(--line);border-radius:11px}
+.opt:hover{border-color:var(--stamp)}
+.fich{font-size:12.5px;color:var(--green);margin-top:6px}
+.rgpd{margin-top:18px;background:rgba(232,176,75,.08);border:1px solid rgba(232,176,75,.4);border-radius:12px;padding:13px}
+.rgpd b{color:var(--stamp)}
+.pay{background:rgba(232,176,75,.08);border:1px solid rgba(232,176,75,.4);border-radius:12px;padding:14px;margin-top:16px}
+.pay .qr{background:#fff;border-radius:12px;padding:10px;width:fit-content;margin:10px auto}
+.pay .qr canvas{display:block}
+.pay .lg{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;padding:4px 0;border-bottom:1px dashed rgba(255,255,255,.08)}
+.pay .lg b{font-family:'IBM Plex Mono',monospace;text-align:right}
+.big{font-size:44px;margin:0 0 6px;text-align:center}
+.centre{text-align:center}
+.ticket{background:#fff;color:#181233;border-radius:20px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.ticket .tt{background:#241c46;color:#fff;padding:18px;text-align:center}
+.ticket .tt .e{font-family:'Fraunces',serif;font-size:22px;line-height:1.2}
+.ticket .tt .o{font-size:12.5px;color:#c9c3e4;margin-top:4px}
+.ticket .tb{padding:20px;text-align:center}
+.ticket canvas{max-width:100%;height:auto}
+.ticket .nm{font-size:21px;font-weight:700;margin-top:10px}
+.ticket .cd{font-family:'IBM Plex Mono',monospace;font-size:20px;letter-spacing:3px;margin-top:4px;color:#3a3360}
+.ticket .inf{font-size:13.5px;color:#444;margin-top:10px;line-height:1.6}
+.stars{display:flex;gap:6px;justify-content:center;margin:8px 0}
+.stars button{width:46px;height:46px;border-radius:12px;border:1px solid var(--line);background:#0d0a1a;color:var(--ink);font-size:20px}
+.stars button.on{background:linear-gradient(150deg,var(--stamp),var(--gold-dim));color:#241100;border-color:var(--gold-dim)}
+.hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden}
+#print-zone{display:none}
+@media print{
+  body.printing>*:not(#print-zone){display:none!important}
+  body.printing #print-zone{display:block!important;color:#000;background:#fff;text-align:center;font-family:Arial,sans-serif;padding:30px}
+  html,body{background:#fff!important}
+}
+@media(max-width:640px){
+  .two,.three{grid-template-columns:1fr}
+  .body{padding:16px 13px 70px}.hd{padding:11px 13px}
+  .hd .who{display:none}
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js" integrity="sha384-CLZeq1dk8+Uzrs7TVvBUdlFoV5F0DMqgRoeHa8g5wJcuPe5SkVfEvdxB0ZuzlnBQ" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js" integrity="sha384-Dr98ddmUw2QkdCarNQ+OL7xLty7cSxgR0T7v1tq4UErS/qLV0132sBYTolRAFuOV" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="app"><div class="pub"><p class="du centre" style="margin-top:40px">Chargement…</p></div></div>
+<div id="flash" class="flash" aria-live="assertive"><div class="ic" id="flIc"></div><div class="lb" id="flLb"></div><div class="nm" id="flNm"></div><div class="sm2" id="flSm"></div></div>
+<div id="net" class="net">● Hors ligne</div>
+<div id="print-zone"></div>
+<script>
+/* =====================================================================
+   BILLETTERIE DU BUREAU ÉTUDIANT — page unique : espace des responsables,
+   scanner, bénévoles et pages publiques (inscription, billet, agenda…).
+   Tout passe par Supabase ; les droits sont revérifiés par le serveur.
+   ===================================================================== */
+"use strict";
+const VERSION = "2026-10-23 · billetterie v1";
+const SB_URL = "https://mlgzdfyqjhvyubrywuim.supabase.co";
+const SB_KEY = "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
+const FN = SB_URL + "/functions/v1/billets-mail";
+const APP_URL = location.origin + location.pathname.replace(/index\.html$/, "");
+const CA_URL = new URL("../", APP_URL).href;
+/* Même origine et même clé de stockage que le CA : une personne connectée au CA l'est ici aussi. */
+const sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
+const S = { mode: "", params: new URLSearchParams(location.search), etat: { erreur: "", maintenance: false, deco_le: null, owner: false } };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+const eur = (n) => new Intl.NumberFormat("fr-BE", { style: "currency", currency: "EUR" }).format(Number(n || 0));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("bil:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { if (v === undefined || v === null) localStorage.removeItem("bil:" + k); else localStorage.setItem("bil:" + k, JSON.stringify(v)); } catch (e) {} },
+};
+function dateLongue(iso) { if (!iso) return ""; try { return new Date(String(iso).slice(0, 10) + "T12:00:00").toLocaleDateString("fr-BE", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch (e) { return iso; } }
+function dateCourte(iso) { if (!iso) return ""; try { return new Date(String(iso).slice(0, 10) + "T12:00:00").toLocaleDateString("fr-BE", { day: "2-digit", month: "short" }); } catch (e) { return iso; } }
+function quand(ts) { if (!ts) return ""; try { return new Date(ts).toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } }
+function heure(ts) { if (!ts) return ""; try { return new Date(ts).toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } }
+const hm = (t) => t ? String(t).slice(0, 5).replace(":", "h") : "";
+function aujourdhui() { return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Brussels" }); }
+function versLocalInput(ts) { if (!ts) return ""; const d = new Date(ts); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
+function depuisLocalInput(v) { if (!v) return null; const d = new Date(v); return isNaN(d) ? null : d.toISOString(); }
+const normCode = (c) => String(c || "").replace(/^.*[:/=]/, "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+const sansAccents = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const enLigne = () => navigator.onLine !== false;
+function infosLigne(e) {
+  return [e.date_evt || e.date ? dateLongue(e.date_evt || e.date) : "", (e.heure_debut ? hm(e.heure_debut) + (e.heure_fin ? " – " + hm(e.heure_fin) : "") : ""), e.lieu || ""].filter(Boolean).join(" · ");
+}
+function appareil() { let d = store.get("appareil", ""); if (!d) { d = "app-" + Math.random().toString(36).slice(2, 8); store.set("appareil", d); } return d; }
+
+/* ---------------- Fenêtres maison (jamais alert/confirm du navigateur) ---------------- */
+function modale({ titre = "", html = "", type = "", large = false, boutons = [{ t: "Fermer", v: true }], auto = null }) {
+  return new Promise((resolve) => {
+    const d = document.createElement("div"); d.className = "ca-mod";
+    d.innerHTML = `<div class="ca-mod-box ${type} ${large ? "large" : ""}" role="dialog" aria-modal="true">${titre ? `<h3>${esc(titre)}</h3>` : ""}${html}
+      <div class="ca-mod-btns">${boutons.map((b, k) => `<button class="btn sm ${b.cls || (k < boutons.length - 1 ? "ghost" : "")}" data-k="${k}">${esc(b.t)}</button>`).join("")}</div></div>`;
+    document.body.appendChild(d);
+    let fini = false;
+    const fin = (v) => { if (fini) return; fini = true; d.remove(); document.removeEventListener("keydown", k); resolve(v); };
+    function k(e) { if (e.key === "Escape") fin(null); }
+    document.addEventListener("keydown", k);
+    d.addEventListener("click", (e) => {
+      if (e.target === d) return fin(null);
+      const b = e.target.closest("[data-k]"); if (!b) return;
+      const bt = boutons[+b.dataset.k];
+      fin(typeof bt.v === "function" ? bt.v(d) : bt.v);
+    });
+    if (auto) auto(d, fin);
+    setTimeout(() => { const f = d.querySelector("input,textarea,select") || d.querySelector(".ca-mod-btns .btn:last-child"); try { f && f.focus(); } catch (e) {} }, 30);
+  });
+}
+const info = (texte, titre = "", type = "") => modale({ titre, type, html: `<p>${esc(texte)}</p>` });
+const succes = (texte, titre = "Enregistré") => modale({ titre: "✓ " + titre, type: "ok", html: `<p>${esc(texte)}</p>` });
+const echec = (texte, titre = "Non enregistré") => modale({ titre: "✕ " + titre, type: "err", html: `<p>${esc(texte)}</p>` });
+const confirmer = (texte, titre = "Confirmer", o = {}) => modale({ titre, type: o.danger ? "err" : "", html: `<p>${esc(texte)}</p>`,
+  boutons: [{ t: "Annuler", v: false }, { t: o.bouton || "Confirmer", v: true, cls: o.danger ? "danger" : "" }] });
+function saisir(texte, titre, o = {}) {
+  const champ = o.long ? `<textarea class="f" id="m_val" rows="4" maxlength="${o.max || 800}" placeholder="${esc(o.placeholder || "")}"></textarea>`
+    : `<input class="f" id="m_val" type="${o.type || "text"}" placeholder="${esc(o.placeholder || "")}" value="${esc(o.valeur || "")}">`;
+  return modale({ titre, html: `<p>${esc(texte)}</p>${champ}`, boutons: [{ t: "Annuler", v: null }, { t: o.bouton || "Valider", v: (d) => d.querySelector("#m_val").value, cls: o.danger ? "danger" : "" }],
+    auto: (d, fin) => { const c = d.querySelector("#m_val"); if (!o.long) c.addEventListener("keydown", (e) => { if (e.key === "Enter") fin(c.value); }); } });
+}
+function toast(t) { const d = document.createElement("div"); d.className = "toast"; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2200); }
+async function copier(texte) {
+  let ok = false;
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(texte); ok = true; } } catch (e) {}
+  if (!ok) { try { const t = document.createElement("textarea"); t.value = texte; t.style.position = "fixed"; t.style.opacity = "0"; document.body.appendChild(t); t.select(); ok = document.execCommand("copy"); t.remove(); } catch (e) {} }
+  return ok;
+}
+function telecharger(blob, nom) {
+  const u = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = u; a.download = nom; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(u); a.remove(); }, 1500);
+}
+function imprimer(html) {
+  const z = $("print-zone"); z.innerHTML = html; document.body.classList.add("printing");
+  const fin = () => { document.body.classList.remove("printing"); z.innerHTML = ""; window.removeEventListener("afterprint", fin); };
+  window.addEventListener("afterprint", fin); setTimeout(() => { window.print(); setTimeout(fin, 1500); }, 150);
+}
+function qrCanvas(valeur, taille = 240, o = {}) {
+  const c = document.createElement("canvas");
+  if (typeof QRious === "undefined") return c;
+  new QRious({ element: c, value: String(valeur), size: taille, level: o.level || "M", background: "#ffffff", foreground: o.fg || "#181233", padding: o.padding == null ? 12 : o.padding });
+  return c;
+}
+
+/* ---------------- Réseau ---------------- */
+function majReseau() { const n = $("net"); if (n) n.classList.toggle("on", !enLigne()); }
+window.addEventListener("online", () => { majReseau(); try { scanSynchroniser(); } catch (e) {} });
+window.addEventListener("offline", majReseau);
+async function jeton() { try { const { data } = await sb.auth.getSession(); return (data && data.session && data.session.access_token) || ""; } catch (e) { return ""; } }
+/* Appel de la fonction serveur billets-mail. Renvoie toujours un objet {ok, erreur…}. */
+async function appelFn(corps, o = {}) {
+  if (!enLigne()) return { ok: false, erreur: "Pas de connexion internet." };
+  const t = o.public ? "" : await jeton();
+  try {
+    const r = await fetch(FN, { method: "POST", headers: Object.assign({ "apikey": SB_KEY, "Authorization": "Bearer " + (t || SB_KEY) }, corps instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      body: corps instanceof FormData ? corps : JSON.stringify(corps) });
+    let j = null; try { j = await r.json(); } catch (e) {}
+    if (!j) return { ok: false, erreur: r.status === 404 ? "La fonction « billets-mail » n'est pas encore déployée sur Supabase." : "Réponse inattendue du serveur (code " + r.status + ")." };
+    if (r.status === 401 && !o.public && !j.erreur) j.erreur = "Connexion requise : reconnectez-vous.";
+    if (!r.ok && j.ok === undefined) j.ok = false;
+    return j;
+  } catch (e) { return { ok: false, erreur: "Le serveur n'a pas répondu. Vérifiez votre connexion et réessayez." }; }
+}
+function msgErreur(err) {
+  const m = String((err && (err.message || err.erreur)) || err || "");
+  if (/Failed to fetch|NetworkError|Load failed|fetch/i.test(m) && !enLigne()) return "Pas de connexion internet.";
+  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return "Le serveur n'a pas répondu. Vérifiez votre connexion.";
+  if (/row-level security|permission denied|42501/i.test(m)) return "Vous n'êtes pas responsable de cette commission.";
+  if (/bil_|does not exist|Could not find/i.test(m) && /function|relation|table/i.test(m)) return "La billetterie n'est pas encore installée sur le serveur (script billetterie.sql à exécuter dans Supabase).";
+  return m || "Erreur inconnue.";
+}
+
+/* ---------------- Page d'erreur (réglée dans le CA › Admin) ---------------- */
+const ERR_TXT = {
+  "400": ["400", "Requête incorrecte", "Le serveur n'a pas pu comprendre la requête.", "ERR_BAD_REQUEST"],
+  "401": ["401", "Authentification requise", "Vous devez être authentifié pour accéder à cette ressource.", "ERR_UNAUTHORIZED"],
+  "403": ["403", "Accès refusé", "Vous n'avez pas l'autorisation d'accéder à cette page.", "ERR_ACCESS_DENIED"],
+  "404": ["404", "Page introuvable", "La page demandée n'existe pas.", "ERR_NOT_FOUND"],
+  "408": ["408", "Délai d'attente dépassé", "Le serveur a mis trop de temps à répondre.", "ERR_REQUEST_TIMEOUT"],
+  "429": ["429", "Trop de requêtes", "Trop de requêtes ont été envoyées. Réessayez plus tard.", "ERR_TOO_MANY_REQUESTS"],
+  "500": ["500", "Erreur serveur", "Une erreur interne est survenue. Réessayez plus tard.", "ERR_INTERNAL_SERVER_ERROR"],
+  "502": ["502", "Passerelle incorrecte", "Le serveur a reçu une réponse invalide.", "ERR_BAD_GATEWAY"],
+  "503": ["503", "Service indisponible", "Le service est temporairement indisponible.", "ERR_SERVICE_UNAVAILABLE"],
+  "504": ["504", "Délai de la passerelle dépassé", "Le serveur n'a pas répondu à temps.", "ERR_GATEWAY_TIMEOUT"],
+};
+function afficherErreur(code) {
+  let o = $("errOverlay");
+  const t = ERR_TXT[code];
+  if (!t || /admin/.test(location.hash)) { if (o) o.remove(); document.documentElement.style.visibility = ""; return; }
+  if (!o) {
+    o = document.createElement("div"); o.id = "errOverlay";
+    o.style.cssText = "position:fixed;inset:0;z-index:2147483000;background:#fff;color:#222;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px";
+    document.body.appendChild(o);
+  }
+  let ref = ""; for (let i = 0; i < 8; i++) { ref += "0123456789ABCDEF"[Math.floor(Math.random() * 16)]; if (i === 3) ref += "-"; }
+  o.innerHTML = `<div><div style="font-size:96px;font-weight:300;line-height:1;color:#333">${t[0]}</div><div style="font-size:22px;margin-top:14px;color:#555">${t[1]}</div><div style="font-size:14px;margin-top:10px;color:#999">${t[2]}</div><div style="font-size:12px;margin-top:22px;color:#bbb;font-family:ui-monospace,Menlo,Consolas,monospace">Code d'erreur : ${t[3]} · Réf. ${ref}</div></div>`;
+  document.title = t[0] + " " + t[1];
+  document.documentElement.style.visibility = "";
+}
+async function lireEtat() {
+  if (!sb || !enLigne()) return S.etat;
+  try {
+    const { data, error } = await sb.rpc("bil_etat_public");
+    if (!error && data) {
+      S.etat = data;
+      try { localStorage.setItem("be-err-billets", data.erreur || ""); } catch (e) {}
+      afficherErreur(data.erreur || "");
+    }
+  } catch (e) {}
+  document.documentElement.style.visibility = "";
+  return S.etat;
+}
+function ecranMaintenance() {
+  return `<div class="pub centre" style="margin-top:8vh"><p class="big">🛠️</p><h1>En maintenance</h1>
+    <p class="org">La billetterie est momentanément indisponible. Réessayez un peu plus tard.</p>
+    ${S.session ? `<p><a class="btn ghost" href="${esc(CA_URL)}">← Espace CA</a></p>` : ""}</div>`;
+}
+
+/* ---------------- Rendu ---------------- */
+const app = () => $("app");
+function rendre() {
+  const vues = { form: vueFormPublic, agenda: vueAgenda, confirm: vueConfirm, billet: vueBillet, desinsc: vueDesinsc, presence: vuePresence,
+    sondage: vueSondage, virement: vueVirement, benevole: vueBenevole, login: vueLogin, refus: vueRefus, resp: vueResp, maintenance: ecranMaintenance, charge: () => `<div class="pub"><p class="du centre" style="margin-top:40px">Chargement…</p></div>` };
+  const f = vues[S.mode] || vues.charge;
+  app().innerHTML = f();
+  if (typeof apresRendu === "function") apresRendu();
+}
+/* Redessiner sans perdre une saisie en cours (rafraîchissements automatiques). */
+function rendreEnPreservant() {
+  if (document.querySelector(".ca-mod") || (typeof SC !== "undefined" && SC.camOn)) return;
+  const act = document.activeElement;
+  if (act && /INPUT|TEXTAREA|SELECT/.test(act.tagName) && act.closest("#app") && act.type !== "checkbox") return;
+  const y = window.scrollY; rendre(); window.scrollTo(0, y);
+}
+const RES = {};   // actions : data-a="nom"
+document.addEventListener("click", async (e) => {
+  const el = e.target.closest("[data-a]"); if (!el) return;
+  const f = RES[el.dataset.a]; if (!f) return;
+  if (el.tagName === "A" && !el.getAttribute("href")) e.preventDefault();
+  if (el.tagName === "BUTTON") e.preventDefault();
+  try { await f(el, e); } catch (err) { console.error(err); echec(msgErreur(err), "Erreur"); }
+});
+document.addEventListener("change", async (e) => {
+  const el = e.target.closest("[data-ch]"); if (!el) return;
+  const f = RES[el.dataset.ch]; if (!f) return;
+  try { await f(el, e); } catch (err) { console.error(err); echec(msgErreur(err), "Erreur"); }
+});
+document.addEventListener("input", (e) => {
+  const el = e.target.closest("[data-in]"); if (!el) return;
+  const f = RES[el.dataset.in]; if (f) f(el, e);
+});
+/* Les menus déroulants se referment après un choix, ou en cliquant ailleurs. */
+document.addEventListener("click", (e) => {
+  const dans = e.target.closest("details.menu");
+  document.querySelectorAll("details.menu[open]").forEach((d) => { if (d !== dans || e.target.closest(".ml .btn")) d.removeAttribute("open"); });
+}, true);
+
+/* =====================================================================
+   PAGES PUBLIQUES (sans compte)
+   ?e=CODE inscription · ?agenda · ?c= confirmation · ?t= billet · ?d= désinscription
+   ?p= présence · ?s= sondage · ?v= QR de virement
+   ===================================================================== */
+const TYPES_CHAMPS = { texte: "Texte court", texte_long: "Texte long", choix_unique: "Liste à choix unique", choix_multiple: "Choix multiples",
+  case: "Case à cocher", nombre: "Nombre", date: "Date", telephone: "Téléphone", photo: "Photo", fichier: "Fichier (PDF ou image)" };
+const enteteUlb = () => `<div class="ulb"><div class="a">Université libre de Bruxelles</div><div class="b">Faculté de Droit et de Criminologie</div><div class="c">Bureau étudiant</div></div>`;
+function blocInfos(e) {
+  const l = [];
+  if (e.date) l.push(["📅", dateLongue(e.date)]);
+  if (e.heure_debut) l.push(["🕘", hm(e.heure_debut) + (e.heure_fin ? " – " + hm(e.heure_fin) : "")]);
+  if (e.lieu) l.push(["📍", e.lieu]);
+  return (l.length ? `<div class="card" style="padding:12px 14px">${l.map(([i, t]) => `<div style="font-size:14.5px;margin:3px 0">${i} ${esc(t)}</div>`).join("")}</div>` : "")
+    + (e.infos ? `<div class="note" style="white-space:pre-wrap">${esc(e.infos)}</div>` : "");
+}
+function ogm() {
+  const b = new Uint32Array(2); crypto.getRandomValues(b);
+  const n = String(b[0] % 100000).padStart(5, "0") + String(b[1] % 100000).padStart(5, "0");
+  const c = (Number(n) % 97) || 97; const d = n + String(c).padStart(2, "0");
+  return `+++${d.slice(0, 3)}/${d.slice(3, 7)}/${d.slice(7)}+++`;
+}
+const ibanJoli = (i) => String(i || "").replace(/\s/g, "").replace(/(.{4})/g, "$1 ").trim();
+function epc(titulaire, iban, montant, comm) {
+  return ["BCD", "002", "1", "SCT", "", String(titulaire).slice(0, 70), String(iban).replace(/\s/g, ""), "EUR" + Number(montant || 0).toFixed(2), "", "", comm].join("\n");
+}
+function blocPaiementPublic(titulaire, iban, montant, comm) {
+  return `<div class="pay"><b style="color:var(--stamp)">Paiement par virement</b>
+    <p class="du" style="margin:4px 0 8px">Scannez ce QR avec l'app de votre banque : tout est prérempli.</p>
+    <div class="qr" id="qrEpc"></div>
+    <div class="lg"><span>Montant</span><b>${eur(montant)}</b></div>
+    <div class="lg"><span>Compte</span><b>${esc(ibanJoli(iban))}</b></div>
+    <div class="lg"><span>Titulaire</span><b style="font-family:inherit">${esc(titulaire)}</b></div>
+    <div class="lg"><span>Communication</span><b>${esc(comm)}</b></div>
+    <p class="du">Utilisez exactement cette communication : elle permet de retrouver votre paiement.</p></div>`;
+}
+function texteRgpd(e) {
+  const champs = ["nom", "prénom", "adresse e-mail"].concat((e.formulaire || []).map((c) => String(c.label || "").toLowerCase()).filter(Boolean));
+  if (e.payant) champs.push("preuve de paiement");
+  if (e.cooptation) champs.push("souhait de cooptation");
+  const fichiers = (e.formulaire || []).some((c) => c.type === "photo" || c.type === "fichier") || e.payant;
+  return `J'accepte que mes données (${esc(champs.join(", "))}) soient collectées et traitées <b>uniquement</b> pour la gestion de cet événement, organisé par la commission ${esc(e.commission)} du Bureau étudiant de la Faculté de Droit et de Criminologie, sans transmission à des tiers. `
+    + (fichiers ? "Les photos et fichiers sont <b>supprimés 30 jours après l'événement</b>, les autres données <b>12 mois après</b> (seules des statistiques anonymes sont conservées). " : "Mes données sont <b>supprimées 12 mois après l'événement</b> (seules des statistiques anonymes sont conservées). ")
+    + `Conformément au RGPD, je peux demander l'accès, la rectification ou la suppression de mes données à <a href="mailto:${esc(e.contact_rgpd || "esat.bojku@ulb.be")}">${esc(e.contact_rgpd || "esat.bojku@ulb.be")}</a>.`;
+}
+function champHtml(c, apercu = false) {
+  const id = "q_" + c.id, req = c.requis ? ` <span class="req">*</span>` : "";
+  const lab = `<label class="q" for="${id}">${esc(c.label)}${req}</label>${c.aide ? `<p class="aide">${esc(c.aide)}</p>` : ""}`;
+  const dis = apercu ? " disabled" : "";
+  switch (c.type) {
+    case "texte_long": return lab + `<textarea class="f" id="${id}" data-champ="${esc(c.id)}" rows="4" maxlength="3000"${dis}></textarea>`;
+    case "choix_unique": return lab + `<select class="f" id="${id}" data-champ="${esc(c.id)}"${dis}><option value="">— choisir —</option>${(c.options || []).filter((o) => String(o).trim()).map((o) => `<option>${esc(o)}</option>`).join("")}</select>`;
+    case "choix_multiple": return lab + `<div data-champ-multi="${esc(c.id)}">${(c.options || []).filter((o) => String(o).trim()).map((o) => `<label class="chk"><input type="checkbox" value="${esc(o)}"${dis}> ${esc(o)}</label>`).join("")}</div>`;
+    case "case": return `<label class="chk" style="margin-top:16px"><input type="checkbox" id="${id}" data-champ="${esc(c.id)}"${dis}> <span>${esc(c.label)}${req}${c.aide ? `<br><span class="aide">${esc(c.aide)}</span>` : ""}</span></label>`;
+    case "nombre": return lab + `<input class="f" type="number" inputmode="decimal" id="${id}" data-champ="${esc(c.id)}"${dis}>`;
+    case "date": return lab + `<input class="f" type="date" id="${id}" data-champ="${esc(c.id)}"${dis}>`;
+    case "telephone": return lab + `<input class="f" type="tel" inputmode="tel" autocomplete="tel" id="${id}" data-champ="${esc(c.id)}"${dis}>`;
+    case "photo": return lab + `<div class="opts"><button type="button" class="opt" data-a="pubFichier" data-cible="cam_${esc(c.id)}"${dis}>📷 Prendre une photo</button><button type="button" class="opt" data-a="pubFichier" data-cible="img_${esc(c.id)}"${dis}>🖼️ Choisir une image</button></div>
+      <input type="file" id="cam_${esc(c.id)}" accept="image/*" capture="environment" hidden data-ch="pubFichierChoisi" data-champ-f="${esc(c.id)}"><input type="file" id="img_${esc(c.id)}" accept="image/*" hidden data-ch="pubFichierChoisi" data-champ-f="${esc(c.id)}"><p class="fich" id="nom_${esc(c.id)}"></p>`;
+    case "fichier": return lab + `<div class="opts"><button type="button" class="opt" data-a="pubFichier" data-cible="fic_${esc(c.id)}"${dis}>📄 Déposer un fichier (PDF ou image)</button></div>
+      <input type="file" id="fic_${esc(c.id)}" accept="application/pdf,.pdf,image/*" hidden data-ch="pubFichierChoisi" data-champ-f="${esc(c.id)}"><p class="fich" id="nom_${esc(c.id)}"></p>`;
+    default: return lab + `<input class="f" type="text" id="${id}" data-champ="${esc(c.id)}" maxlength="300"${dis}>`;
+  }
+}
+function formulaireHtml(e, apercu = false) {
+  const dis = apercu ? " disabled" : "";
+  return `<label class="q" for="p_nom">Nom <span class="req">*</span></label><input class="f" id="p_nom" autocomplete="family-name" maxlength="120"${dis}>
+    <label class="q" for="p_prenom">Prénom <span class="req">*</span></label><input class="f" id="p_prenom" autocomplete="given-name" maxlength="120"${dis}>
+    <label class="q" for="p_mail">Adresse e-mail <span class="req">*</span></label><input class="f" id="p_mail" type="email" inputmode="email" autocomplete="email"${dis}>
+    <label class="q" for="p_mail2">Confirmez votre adresse e-mail <span class="req">*</span></label><input class="f" id="p_mail2" type="email" inputmode="email" autocomplete="off" onpaste="return false"${dis}>
+    <div class="hp" aria-hidden="true"><label>Site web<input id="p_site" tabindex="-1" autocomplete="off"></label></div>
+    ${(e.formulaire || []).map((c) => champHtml(c, apercu)).join("")}
+    ${e.cooptation ? `<label class="chk" style="margin-top:18px"><input type="checkbox" id="p_coopte"${dis}> <span>${esc(e.cooptation)}</span></label>` : ""}
+    ${e.payant ? `${blocPaiementPublic(e.titulaire || "Le bureau étudiant ASBL", e.iban || "BE74363057740807", e.prix, S.pub && S.pub.comm || "+++000/0000/09797+++")}
+      <label class="q">Preuve de paiement <span class="req">*</span></label><p class="aide">Capture d'écran ou photo de votre virement (image ou PDF).</p>
+      <div class="opts"><button type="button" class="opt" data-a="pubFichier" data-cible="preuve_cam"${dis}>📷 Photo</button><button type="button" class="opt" data-a="pubFichier" data-cible="preuve_img"${dis}>🖼️ Image</button><button type="button" class="opt" data-a="pubFichier" data-cible="preuve_pdf"${dis}>📄 PDF</button></div>
+      <input type="file" id="preuve_cam" accept="image/*" capture="environment" hidden data-ch="pubFichierChoisi" data-champ-f="__preuve"><input type="file" id="preuve_img" accept="image/*" hidden data-ch="pubFichierChoisi" data-champ-f="__preuve"><input type="file" id="preuve_pdf" accept="application/pdf,.pdf" hidden data-ch="pubFichierChoisi" data-champ-f="__preuve"><p class="fich" id="nom___preuve"></p>` : ""}
+    <div class="rgpd"><div style="font-weight:700;color:var(--stamp);margin-bottom:6px">Protection de vos données (RGPD)</div>
+      <label class="chk" style="font-size:12.5px;line-height:1.55"><input type="checkbox" id="p_rgpd"${dis}> <span>${texteRgpd(e)}</span></label></div>`;
+}
+async function chargerFormPublic() {
+  const code = String(S.params.get("e") || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  S.pub = { code, chargement: true, fichiers: {} };
+  rendre();
+  try {
+    const { data, error } = await sb.rpc("bil_public_evenement", { p_code: code });
+    if (error) throw error;
+    S.pub.evt = data; S.pub.chargement = false;
+    if (data && data.payant) { let c = store.get("comm:" + code, ""); if (!c) { c = ogm(); store.set("comm:" + code, c); } S.pub.comm = c; }
+    if (data) document.title = data.titre + " — Inscription";
+  } catch (e) { S.pub.chargement = false; S.pub.err = msgErreur(e); }
+  S.pub.t0 = Date.now();
+  rendre();
+}
+function vueFormPublic() {
+  const P = S.pub || {};
+  if (P.chargement) return `<div class="pub">${enteteUlb()}<p class="du centre">Chargement…</p></div>`;
+  if (P.err) return `<div class="pub">${enteteUlb()}<div class="alerte">${esc(P.err)}</div><button class="btn ghost" data-a="recharger">Réessayer</button></div>`;
+  const e = P.evt;
+  if (!e) return `<div class="pub">${enteteUlb()}<p class="big">🔍</p><h1 class="centre">Événement introuvable</h1><p class="org centre">Ce lien d'inscription n'existe pas (ou plus). Vérifiez l'adresse, ou consultez <a href="${APP_URL}?agenda">l'agenda des événements</a>.</p></div>`;
+  const tete = `${enteteUlb()}<h1>${esc(e.titre)}</h1><p class="org">Organisé par la commission ${esc(e.commission)}</p>${blocInfos(e)}`;
+  if (P.resultat) return `<div class="pub">${tete}${P.resultat}</div>`;
+  if (!e.ouvert) {
+    const r = { maintenance: "La billetterie est en maintenance. Réessayez un peu plus tard.", pas_encore: "Les inscriptions ne sont pas encore ouvertes" + (e.ouverture ? " : elles ouvriront le " + quand(e.ouverture) + "." : "."),
+      termine: "L'événement est terminé.", ferme: "Les inscriptions sont fermées." }[e.raison] || "Les inscriptions sont fermées.";
+    return `<div class="pub">${tete}<div class="card centre"><p class="big">${e.raison === "pas_encore" ? "⏳" : "⛔"}</p><p style="font-size:16px;margin:0">${esc(r)}</p></div>
+      <p class="centre"><a href="${APP_URL}?agenda">Voir les autres événements</a></p></div>`;
+  }
+  return `<div class="pub">${tete}
+    ${e.complet ? `<div class="warn"><b>Complet.</b> Vous pouvez vous inscrire en <b>liste d'attente</b> : si une place se libère, vous serez prévenu·e automatiquement par e-mail.${e.payant ? " Si aucune place ne se libère, votre virement vous sera remboursé." : ""}</div>`
+      : (e.restantes != null ? `<p class="du">${e.restantes} place(s) restante(s)</p>` : "")}
+    ${e.fermeture ? `<p class="du">Inscriptions jusqu'au ${esc(quand(e.fermeture))}.</p>` : ""}
+    <div id="pubForm">${formulaireHtml(e)}</div>
+    <div id="pubErr"></div>
+    <button class="btn block" style="margin-top:20px;padding:15px;font-size:16px" data-a="pubEnvoyer" id="pubBtn">${e.complet ? "M'inscrire en liste d'attente" : "Je m'inscris"}</button>
+    <p class="du centre" style="margin-top:12px">Un e-mail de confirmation vous sera envoyé : pensez à vérifier vos <b>spams</b>.</p></div>`;
+}
+RES.recharger = () => location.reload();
+RES.pubFichier = (el) => { const i = $(el.dataset.cible); if (i) i.click(); };
+async function compresserImage(f) {
+  if (!f || !/^image\/(jpeg|png|webp|gif)/.test(f.type)) return f;
+  try {
+    const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = URL.createObjectURL(f); });
+    const max = 1600, r = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * r); c.height = Math.round(img.naturalHeight * r);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    const b = await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.82));
+    URL.revokeObjectURL(img.src);
+    if (!b || b.size >= f.size) return f;
+    return new File([b], f.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch (e) { return f; }
+}
+RES.pubFichierChoisi = async (el) => {
+  const f = el.files && el.files[0]; if (!f) return;
+  const k = el.dataset.champF; const n = $("nom_" + k);
+  if (n) n.textContent = "Préparation…";
+  const g = await compresserImage(f);
+  if (g.size > 10 * 1024 * 1024) { if (n) { n.style.color = "var(--red)"; n.textContent = "Fichier trop lourd (10 Mo au plus)."; } return; }
+  S.pub.fichiers[k] = g;
+  if (n) { n.style.color = ""; n.textContent = "✓ " + f.name + " (" + Math.max(1, Math.round(g.size / 1024)) + " Ko)"; }
+};
+function lireReponses(e, racine = document) {
+  const rep = {};
+  for (const c of e.formulaire || []) {
+    if (c.type === "photo" || c.type === "fichier") continue;
+    if (c.type === "choix_multiple") { const z = racine.querySelector(`[data-champ-multi="${CSS.escape(c.id)}"]`); rep[c.id] = z ? [...z.querySelectorAll("input:checked")].map((i) => i.value) : []; continue; }
+    const el = racine.querySelector(`[data-champ="${CSS.escape(c.id)}"]`); if (!el) continue;
+    rep[c.id] = c.type === "case" ? el.checked : String(el.value || "").trim();
+  }
+  return rep;
+}
+RES.pubEnvoyer = async (btn) => {
+  const e = S.pub.evt, err = $("pubErr");
+  const montre = (m) => { err.innerHTML = `<div class="alerte">${esc(m)}</div>`; err.scrollIntoView({ behavior: "smooth", block: "center" }); };
+  const nom = $("p_nom").value.trim(), prenom = $("p_prenom").value.trim(), mail = $("p_mail").value.trim().toLowerCase(), mail2 = $("p_mail2").value.trim().toLowerCase();
+  if (!nom || !prenom) return montre("Indiquez votre nom et votre prénom.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)) return montre("Adresse e-mail invalide.");
+  if (mail !== mail2) return montre("Les deux adresses e-mail ne sont pas identiques.");
+  const rep = lireReponses(e);
+  for (const c of e.formulaire || []) {
+    if (!c.requis) continue;
+    const v = (c.type === "photo" || c.type === "fichier") ? S.pub.fichiers[c.id] : rep[c.id];
+    if (!v || (Array.isArray(v) && !v.length)) return montre(c.type === "case" ? `« ${c.label} » doit être cochée.` : `« ${c.label} » est obligatoire.`);
+  }
+  if (e.payant && !S.pub.fichiers.__preuve) return montre("La preuve de paiement est obligatoire.");
+  if (!$("p_rgpd").checked) return montre("Merci d'accepter le traitement de vos données (case RGPD).");
+  if (!enLigne()) return montre("Pas de connexion internet. Réessayez quand vous serez connecté·e.");
+  const fd = new FormData();
+  fd.append("evenement", e.code); fd.append("nom", nom); fd.append("prenom", prenom); fd.append("email", mail); fd.append("email2", mail2);
+  fd.append("rgpd", "1"); fd.append("t0", String(S.pub.t0 || 0)); fd.append("site_web", $("p_site").value || "");
+  fd.append("reponses", JSON.stringify(rep));
+  if (e.cooptation && $("p_coopte") && $("p_coopte").checked) fd.append("coopte", "1");
+  if (e.payant) { fd.append("communication", S.pub.comm); fd.append("preuve", S.pub.fichiers.__preuve); }
+  for (const c of e.formulaire || []) if ((c.type === "photo" || c.type === "fichier") && S.pub.fichiers[c.id]) fd.append("f_" + c.id, S.pub.fichiers[c.id]);
+  const lab = btn.textContent;
+  btn.disabled = true; btn.textContent = "Envoi en cours…"; err.innerHTML = "";
+  const r = await appelFn(fd, { public: true });
+  btn.disabled = false; btn.textContent = lab;
+  if (!r.ok) return montre(r.erreur || "Inscription impossible. Réessayez.");
+  store.set("comm:" + e.code, null);
+  S.pub.resultat = `<div class="card centre"><p class="big">📬</p><h2 class="serif" style="margin:0 0 8px">Vérifiez votre boîte mail</h2>
+    <p>Un e-mail vient d'être envoyé à <b>${esc(r.email || mail)}</b>.<br>Cliquez sur le lien qu'il contient pour <b>confirmer votre inscription</b>.</p>
+    ${r.mail === false ? `<div class="warn">Le mail n'a pas pu partir tout de suite. S'il n'arrive pas d'ici quelques minutes, réinscrivez-vous avec la même adresse : un nouveau lien vous sera envoyé.</div>` : ""}
+    <p class="du">Pas reçu ? Regardez dans les <b>spams / courriers indésirables</b>.</p></div>`;
+  rendre(); window.scrollTo(0, 0);
+};
+
+/* ---------------- Agenda public ---------------- */
+async function chargerAgenda() {
+  S.agenda = null; rendre();
+  try { const { data, error } = await sb.rpc("bil_public_agenda"); if (error) throw error; S.agenda = data || []; }
+  catch (e) { S.agenda = { err: msgErreur(e) }; }
+  rendre();
+}
+function vueAgenda() {
+  const A = S.agenda;
+  const tete = `${enteteUlb()}<h1>Agenda des événements</h1><p class="org">Les événements du Bureau étudiant aux inscriptions ouvertes.</p>`;
+  if (!A) return `<div class="pub">${tete}<p class="du">Chargement…</p></div>`;
+  if (A.err) return `<div class="pub">${tete}<div class="alerte">${esc(A.err)}</div></div>`;
+  if (!A.length) return `<div class="pub">${tete}<div class="empty">Aucune inscription ouverte pour le moment. Revenez bientôt !</div></div>`;
+  return `<div class="pub">${tete}${A.map((e) => `<a class="evt-card" href="${APP_URL}?e=${esc(e.code)}" style="text-decoration:none">
+      <span class="d"><b>${e.date ? esc(String(e.date).slice(8, 10)) : "·"}</b><span>${e.date ? esc(dateCourte(e.date).replace(/^\d+\s*/, "")) : ""}</span></span>
+      <span class="m"><span class="t">${esc(e.titre)}</span><span class="s" style="display:block">${esc([e.commission, e.heure_debut ? hm(e.heure_debut) : "", e.lieu].filter(Boolean).join(" · "))}</span></span>
+      ${e.complet ? `<span class="badge wait">Liste d'attente</span>` : e.payant ? `<span class="badge">${eur(e.prix)}</span>` : `<span class="badge ok">Gratuit</span>`}</a>`).join("")}</div>`;
+}
+
+/* ---------------- Confirmation de l'adresse ---------------- */
+async function chargerConfirm() {
+  S.conf = null; rendre();
+  S.conf = await appelFn({ action: "confirmer", token: S.params.get("c") || "" }, { public: true });
+  rendre();
+}
+function vueConfirm() {
+  const r = S.conf;
+  if (!r) return `<div class="pub">${enteteUlb()}<p class="du centre">Confirmation en cours…</p></div>`;
+  let ic = "✅", t = "", m = "";
+  if (!r.ok) {
+    ic = "⚠️";
+    t = { inconnu: "Lien invalide", expire: "Lien expiré", ferme: "Inscriptions fermées" }[r.etat] || "Confirmation impossible";
+    m = { inconnu: "Ce lien n'est pas (ou plus) valable. Si vous vous êtes inscrit·e récemment, utilisez le dernier e-mail reçu.", expire: "Ce lien a expiré : inscrivez-vous à nouveau.", ferme: "L'événement est terminé ou la billetterie est en maintenance." }[r.etat] || (r.erreur || "Réessayez plus tard.");
+  } else {
+    const st = r.statut;
+    if (st === "inscrit") { t = "Inscription confirmée !"; m = "Votre billet vient de vous être envoyé par e-mail (pensez aux spams). Vous pouvez aussi l'afficher ici."; }
+    else if (st === "a_valider") { ic = "🔎"; t = "Adresse confirmée"; m = "Votre preuve de paiement va être vérifiée par un·e responsable. Vous recevrez votre billet par e-mail dès la validation."; }
+    else if (st === "attente") { ic = "⏳"; t = "Liste d'attente"; m = "L'événement est complet : vous êtes sur la liste d'attente. Si une place se libère, vous serez prévenu·e automatiquement par e-mail."; }
+    else if (st === "refuse") { ic = "⛔"; t = "Inscription non validée"; m = "Votre inscription a été refusée. Consultez le mail reçu pour le détail."; }
+    else if (st === "desinscrit") { ic = "👋"; t = "Désinscription enregistrée"; m = "Vous vous êtes désinscrit·e de cet événement."; }
+    if (r.etat === "deja") t = "Adresse déjà confirmée — " + t.charAt(0).toLowerCase() + t.slice(1);
+  }
+  return `<div class="pub">${enteteUlb()}<div class="card centre"><p class="big">${ic}</p>${r.titre ? `<p class="eyebrow">${esc(r.titre)}</p>` : ""}<h2 class="serif" style="margin:4px 0 8px">${esc(t)}</h2><p>${esc(m)}</p>
+    ${r.ok && r.secret ? `<p><a class="btn" href="${APP_URL}?t=${esc(r.secret)}">${r.statut === "inscrit" ? "📱 Afficher mon billet" : "Voir mon inscription"}</a></p>` : ""}</div></div>`;
+}
+
+/* ---------------- Billet personnel ---------------- */
+async function chargerBillet(cle) {
+  S.billet = null; rendre();
+  try { const { data, error } = await sb.rpc("bil_public_billet", { p_secret: S.params.get(cle) || "" }); if (error) throw error; S.billet = data || { introuvable: true }; }
+  catch (e) { S.billet = { err: msgErreur(e) }; }
+  rendre();
+  if (S.billet && S.billet.statut === "inscrit" && S.params.get("ics") === "1" && S.mode === "billet") setTimeout(() => RES.billetIcs(), 400);
+}
+function decalageBxl(ts) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Brussels", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(new Date(ts)).map((x) => [x.type, x.value]));
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - ts;
+}
+function bxlVersUtc(iso, t) { const [y, m, d] = iso.split("-").map(Number); const [h, mi] = t.split(":").map(Number); const g = Date.UTC(y, m - 1, d, h, mi); return new Date(g - decalageBxl(g - decalageBxl(g))); }
+function icsTexte(e, code, lien) {
+  const f = (d) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const n = (s) => String(s || "").replace(/\\/g, "\\\\").replace(/([,;])/g, "\\$1").replace(/\r?\n/g, "\\n");
+  const date = e.date || e.date_evt; if (!date) return "";
+  let deb, fin;
+  if (e.heure_debut) { const d = bxlVersUtc(date, e.heure_debut); let fi = e.heure_fin ? bxlVersUtc(date, e.heure_fin) : new Date(d.getTime() + 3 * 3600000); if (fi <= d) fi = new Date(fi.getTime() + 86400000); deb = "DTSTART:" + f(d); fin = "DTEND:" + f(fi); }
+  else { const d2 = new Date(date + "T12:00:00Z"); d2.setUTCDate(d2.getUTCDate() + 1); deb = "DTSTART;VALUE=DATE:" + date.replace(/-/g, ""); fin = "DTEND;VALUE=DATE:" + d2.toISOString().slice(0, 10).replace(/-/g, ""); }
+  return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Bureau etudiant//Billetterie//FR", "BEGIN:VEVENT", `UID:${code}@billetterie-be`, "DTSTAMP:" + f(new Date()), deb, fin,
+    "SUMMARY:" + n(e.titre), e.lieu ? "LOCATION:" + n(e.lieu) : "", "DESCRIPTION:" + n("Organisé par la commission " + e.commission + ". Billet : " + lien), "END:VEVENT", "END:VCALENDAR"].filter(Boolean).join("\r\n") + "\r\n";
+}
+RES.billetIcs = () => {
+  const b = S.billet; if (!b) return;
+  const t = icsTexte(b.evenement, b.code, location.href.split("&")[0]);
+  if (!t) return info("La date de l'événement n'est pas encore fixée.");
+  telecharger(new Blob([t], { type: "text/calendar;charset=utf-8" }), "evenement.ics");
+};
+const pdfTxt = (s) => String(s || "").replace(/[’‘]/g, "'").replace(/[“”]/g, '"').replace(/[—–]/g, "-").replace(/…/g, "...").replace(/[^\x20-\xFF€]/g, "");
+function pdfPageBillet(doc, e, p, premiere) {
+  if (!premiere) doc.addPage("a6", "portrait");
+  const W = 105;
+  doc.setFillColor(36, 28, 70); doc.rect(0, 0, W, 32, "F");
+  doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(14);
+  const l = doc.splitTextToSize(pdfTxt(e.titre), W - 12).slice(0, 2);
+  doc.text(l, W / 2, l.length > 1 ? 11 : 14, { align: "center" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(201, 195, 228);
+  doc.text(pdfTxt("Organisé par la commission " + e.commission), W / 2, 27, { align: "center" });
+  doc.setTextColor(24, 18, 51); doc.setFont("helvetica", "bold"); doc.setFontSize(15);
+  doc.text(pdfTxt(((p.prenom || "") + " " + (p.nom || "")).trim() || "Billet"), W / 2, 44, { align: "center" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+  const l1 = [e.date || e.date_evt ? dateLongue(e.date || e.date_evt) : "", e.heure_debut ? hm(e.heure_debut) : ""].filter(Boolean).join(" · ");
+  if (l1) doc.text(pdfTxt(l1), W / 2, 51, { align: "center" });
+  if (e.lieu) { doc.setTextColor(90, 90, 110); doc.text(pdfTxt(doc.splitTextToSize(e.lieu, W - 14)[0]), W / 2, 56.5, { align: "center" }); }
+  const c = qrCanvas(p.code, 600, { padding: 0 });
+  doc.addImage(c.toDataURL("image/png"), "PNG", (W - 56) / 2, 63, 56, 56);
+  doc.setTextColor(24, 18, 51); doc.setFont("courier", "bold"); doc.setFontSize(15); doc.text(String(p.code), W / 2, 128, { align: "center" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(110, 110, 120);
+  doc.text(pdfTxt("Billet personnel — valable une seule fois à l'entrée."), W / 2, 138, { align: "center" });
+}
+RES.billetPdf = () => {
+  const b = S.billet; if (!b) return;
+  if (!(window.jspdf && window.jspdf.jsPDF)) return info("Le module PDF n'est pas chargé. Vérifiez votre connexion.");
+  const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a6", compress: true });
+  pdfPageBillet(doc, b.evenement, b, true);
+  doc.save("billet-" + sansAccents(b.evenement.titre).replace(/[^a-z0-9]+/g, "-").slice(0, 30) + ".pdf");
+};
+function vueBillet() {
+  const b = S.billet;
+  if (!b) return `<div class="pub"><p class="du centre" style="margin-top:40px">Chargement du billet…</p></div>`;
+  if (b.err) return `<div class="pub">${enteteUlb()}<div class="alerte">${esc(b.err)}</div><button class="btn ghost" data-a="recharger">Réessayer</button></div>`;
+  if (b.introuvable) return `<div class="pub">${enteteUlb()}<p class="big">🔍</p><h1 class="centre">Billet introuvable</h1><p class="org centre">Ce lien n'est pas (ou plus) valable.</p></div>`;
+  const e = b.evenement;
+  const statut = { a_confirmer: ["📬", "Confirmez d'abord votre adresse e-mail (lien reçu par mail)."], a_valider: ["🔎", "Votre preuve de paiement est en cours de vérification. Le billet arrivera par e-mail dès la validation."],
+    attente: ["⏳", "Vous êtes sur la liste d'attente" + (b.rang ? " (position " + b.rang + ")" : "") + ". Si une place se libère, vous recevrez votre billet par e-mail."],
+    refuse: ["⛔", "Cette inscription n'a pas été validée."], desinscrit: ["👋", "Vous vous êtes désinscrit·e de cet événement."] }[b.statut];
+  if (b.statut !== "inscrit") {
+    return `<div class="pub">${enteteUlb()}<h1>${esc(e.titre)}</h1><p class="org">Organisé par la commission ${esc(e.commission)}</p>${blocInfos(e)}
+      <div class="card centre"><p class="big">${statut ? statut[0] : "ℹ️"}</p><p style="font-size:15px;margin:0">${esc(statut ? statut[1] : "")}</p></div>
+      ${b.statut === "a_valider" && e.payant ? blocPaiementPublic(b.titulaire, b.iban, b.montant || e.prix, b.communication || "") : ""}
+      ${["attente", "a_valider", "a_confirmer"].includes(b.statut) ? `<p class="centre"><a class="link" href="${APP_URL}?d=${esc(S.params.get("t") || S.params.get("v") || "")}">Me désinscrire</a></p>` : ""}</div>`;
+  }
+  return `<div class="pub"><div class="ticket"><div class="tt"><div class="e">${esc(e.titre)}</div><div class="o">Organisé par la commission ${esc(e.commission)}</div></div>
+    <div class="tb">${b.entre_le ? `<div class="badge ok" style="font-size:13px;margin-bottom:10px">✓ Entré·e le ${esc(quand(b.entre_le))}</div>` : ""}<div id="qrBillet"></div>
+      <div class="nm">${esc(((b.prenom || "") + " " + (b.nom || "")).trim())}</div><div class="cd">${esc(b.code)}</div>
+      <div class="inf">${esc(infosLigne({ date: e.date, heure_debut: e.heure_debut, heure_fin: e.heure_fin, lieu: e.lieu }))}</div></div></div>
+    <p class="du centre" style="margin-top:14px">Présentez ce QR à l'entrée. Gardez l'écran allumé, luminosité au maximum. Valable une seule fois.</p>
+    ${e.infos ? `<div class="note" style="white-space:pre-wrap">${esc(e.infos)}</div>` : ""}
+    <div class="row" style="justify-content:center;margin-top:12px"><button class="btn ghost sm" data-a="billetIcs">📅 Ajouter à mon agenda</button><button class="btn ghost sm" data-a="billetPdf">⬇ Télécharger le PDF</button></div>
+    ${!b.entre_le ? `<p class="centre" style="margin-top:22px"><a class="link" href="${APP_URL}?d=${esc(S.params.get("t") || "")}">Je ne peux plus venir : me désinscrire</a></p>` : ""}</div>`;
+}
+function vueVirement() {
+  const b = S.billet;
+  if (!b || b.err || b.introuvable) return vueBillet();
+  const e = b.evenement;
+  return `<div class="pub">${enteteUlb()}<h1>${esc(e.titre)}</h1><p class="org">Organisé par la commission ${esc(e.commission)}</p>
+    ${e.payant ? (b.paye ? `<div class="card centre"><p class="big">✅</p><p>Votre paiement a été validé.</p></div>` : blocPaiementPublic(b.titulaire, b.iban, b.montant || e.prix, b.communication || "")) : `<div class="card">Cet événement est gratuit.</div>`}</div>`;
+}
+
+/* ---------------- Désinscription ---------------- */
+function vueDesinsc() {
+  const b = S.billet;
+  if (!b) return `<div class="pub"><p class="du centre" style="margin-top:40px">Chargement…</p></div>`;
+  if (b.err || b.introuvable) return vueBillet();
+  const e = b.evenement;
+  const tete = `${enteteUlb()}<h1>${esc(e.titre)}</h1><p class="org">Organisé par la commission ${esc(e.commission)}</p>`;
+  if (S.desinsc) return `<div class="pub">${tete}<div class="card centre">${S.desinsc}</div></div>`;
+  if (b.statut === "desinscrit" || b.statut === "refuse") return `<div class="pub">${tete}<div class="card centre"><p class="big">👋</p><p>Vous n'êtes plus inscrit·e à cet événement.</p></div></div>`;
+  if (b.entre_le) return `<div class="pub">${tete}<div class="card centre"><p>Votre entrée a déjà été enregistrée : la désinscription n'est plus possible.</p></div></div>`;
+  return `<div class="pub">${tete}${blocInfos(e)}<div class="card centre"><p class="big">🎟️</p><p style="font-size:16px">Se désinscrire de <b>${esc(e.titre)}</b> ?</p>
+    <p class="du">${esc(((b.prenom || "") + " " + (b.nom || "")).trim())} · votre place sera libérée et proposée à la personne suivante sur la liste d'attente.</p>
+    <button class="btn danger block" data-a="desinscOk" style="margin-top:10px">Confirmer ma désinscription</button></div></div>`;
+}
+RES.desinscOk = async (btn) => {
+  btn.disabled = true; btn.textContent = "Désinscription…";
+  const r = await appelFn({ action: "desinscrire", secret: S.params.get("d") || "" }, { public: true });
+  if (r.ok) S.desinsc = `<p class="big">✅</p><h2 class="serif" style="margin:0 0 6px">Désinscription enregistrée</h2><p>Votre place a été libérée. Un e-mail de confirmation vous a été envoyé.</p>`;
+  else if (r.etat === "entre") S.desinsc = `<p>Votre entrée a déjà été enregistrée : la désinscription n'est plus possible.</p>`;
+  else if (r.etat === "deja") S.desinsc = `<p>Vous n'êtes plus inscrit·e à cet événement.</p>`;
+  else S.desinsc = `<div class="alerte">${esc(r.erreur || "Désinscription impossible. Réessayez.")}</div>`;
+  rendre();
+};
+
+/* ---------------- Confirmation de présence ---------------- */
+function vuePresence() {
+  const b = S.billet;
+  if (!b) return `<div class="pub"><p class="du centre" style="margin-top:40px">Chargement…</p></div>`;
+  if (b.err || b.introuvable) return vueBillet();
+  const e = b.evenement, r = S.params.get("r");
+  const tete = `${enteteUlb()}<h1>${esc(e.titre)}</h1><p class="org">Organisé par la commission ${esc(e.commission)}</p>${blocInfos(e)}`;
+  if (b.statut !== "inscrit") return vueBillet();
+  if (S.presenceOk) return `<div class="pub">${tete}<div class="card centre"><p class="big">${S.presenceOk === "oui" ? "🎉" : "👍"}</p><p style="font-size:16px">${S.presenceOk === "oui" ? "Merci ! Votre présence est confirmée." : "Merci de nous avoir prévenus."}</p>
+    ${S.presenceOk === "non" ? `<p class="du">Si vous ne venez vraiment pas, vous pouvez libérer votre place : <a href="${APP_URL}?d=${esc(S.params.get("p"))}">me désinscrire</a>.</p>` : `<p><a class="btn ghost sm" href="${APP_URL}?t=${esc(S.params.get("p"))}">📱 Afficher mon billet</a></p>`}</div></div>`;
+  return `<div class="pub">${tete}<div class="card centre"><p style="font-size:16px">Serez-vous présent·e ?</p>
+    ${b.presence ? `<p class="du">Réponse actuelle : <b>${b.presence === "oui" ? "présent·e" : "absent·e"}</b></p>` : ""}
+    <div class="row" style="justify-content:center"><button class="btn ok" data-a="presenceRep" data-r="oui" style="${r === "non" ? "opacity:.6" : ""}">✅ Je serai présent·e</button>
+    <button class="btn danger" data-a="presenceRep" data-r="non" style="${r === "oui" ? "opacity:.6" : ""}">❌ Je ne viendrai pas</button></div></div></div>`;
+}
+RES.presenceRep = async (btn) => {
+  btn.disabled = true;
+  try { const { data, error } = await sb.rpc("bil_public_presence", { p_secret: S.params.get("p") || "", p_reponse: btn.dataset.r }); if (error) throw error;
+    if (!data || !data.ok) return echec("Réponse non enregistrée : ce billet n'est plus actif.", "Oups");
+    S.presenceOk = btn.dataset.r; rendre(); }
+  catch (e) { btn.disabled = false; echec(msgErreur(e)); }
+};
+
+/* ---------------- Sondage du lendemain ---------------- */
+function vueSondage() {
+  const b = S.billet;
+  if (!b) return `<div class="pub"><p class="du centre" style="margin-top:40px">Chargement…</p></div>`;
+  if (b.err || b.introuvable) return vueBillet();
+  const e = b.evenement, so = S.sond || (S.sond = {});
+  const tete = `${enteteUlb()}<h1>Votre avis</h1><p class="org">${esc(e.titre)} · commission ${esc(e.commission)}</p>`;
+  if (so.fait || b.sondage_fait) return `<div class="pub">${tete}<div class="card centre"><p class="big">🙏</p><p style="font-size:16px">Merci pour votre avis !</p></div></div>`;
+  const etoiles = (k) => `<div class="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-a="sondNote" data-k="${k}" data-n="${n}" class="${so[k] >= n ? "on" : ""}" aria-label="${n} sur 5">★</button>`).join("")}</div>`;
+  return `<div class="pub">${tete}
+    <div class="card"><label class="q" style="margin-top:0">1. Note globale de l'événement</label>${etoiles("note")}
+    <label class="q">2. L'organisation (accueil, horaires, infos)</label>${etoiles("organisation")}
+    <label class="q">3. Reviendrais-tu à un prochain événement ?</label>
+    <div class="opts">${[["oui", "Oui"], ["peut-etre", "Peut-être"], ["non", "Non"]].map(([v, t]) => `<button class="opt" data-a="sondRev" data-v="${v}" style="${so.reviendrait === v ? "border-color:var(--stamp);color:var(--stamp)" : ""}">${t}</button>`).join("")}</div>
+    <label class="q">Un commentaire ? (facultatif)</label><textarea class="f" id="sondCom" rows="3" maxlength="2000">${esc(so.commentaire || "")}</textarea></div>
+    <div id="sondErr"></div><button class="btn block" data-a="sondEnvoyer" style="padding:14px">Envoyer mon avis</button></div>`;
+}
+RES.sondNote = (el) => { S.sond.commentaire = ($("sondCom") || {}).value || S.sond.commentaire; S.sond[el.dataset.k] = +el.dataset.n; rendre(); };
+RES.sondRev = (el) => { S.sond.commentaire = ($("sondCom") || {}).value || S.sond.commentaire; S.sond.reviendrait = el.dataset.v; rendre(); };
+RES.sondEnvoyer = async (btn) => {
+  const so = S.sond; so.commentaire = $("sondCom").value;
+  if (!so.note || !so.organisation || !so.reviendrait) { $("sondErr").innerHTML = `<div class="alerte">Répondez aux trois questions.</div>`; return; }
+  btn.disabled = true;
+  try {
+    const { data, error } = await sb.rpc("bil_public_sondage", { p_secret: S.params.get("s") || "", p_note: so.note, p_organisation: so.organisation, p_reviendrait: so.reviendrait, p_commentaire: so.commentaire || "" });
+    if (error) throw error;
+    if (data && (data.ok || data.raison === "deja")) { so.fait = true; rendre(); return; }
+    btn.disabled = false; $("sondErr").innerHTML = `<div class="alerte">${data && data.raison === "trop_tot" ? "Le sondage ouvre après l'événement." : "Ce lien n'est pas valable."}</div>`;
+  } catch (e) { btn.disabled = false; $("sondErr").innerHTML = `<div class="alerte">${esc(msgErreur(e))}</div>`; }
+};
+
+/* =====================================================================
+   SCANNER — plusieurs téléphones en même temps, hors ligne, bénévoles.
+   Le serveur n'accepte que le premier scan d'un billet (opération atomique).
+   Hors ligne : les entrées sont gardées sur le téléphone puis envoyées ;
+   un billet scanné hors ligne sur deux téléphones est signalé en rouge.
+   ===================================================================== */
+const SC = { actif: false, cle: "", ids: [], scanCode: "", titre: "", liste: {}, file: [], conflits: [], cam: null, camOn: false, torche: null, torcheOn: false,
+  dernier: { code: "", t: 0 }, compteur: null, sync: false, majLe: 0, minuterie: null, err: "" };
+function scanOuvrir({ ids, scanCode = "", titre = "", cle }) {
+  if (SC.actif && SC.cle === cle) return;
+  scanFermer();
+  const loc = store.get("scan:" + cle, {});
+  Object.assign(SC, { actif: true, cle, ids: ids || [], scanCode, titre, liste: loc.liste || {}, file: loc.file || [], conflits: loc.conflits || [], compteur: null, err: "" });
+  scanCharger();
+  SC.minuterie = setInterval(() => { if (document.visibilityState === "visible") { scanSynchroniser(); scanCharger(true); } }, 8000);
+}
+function scanFermer() {
+  if (SC.minuterie) clearInterval(SC.minuterie);
+  SC.minuterie = null; scanCamStop(); SC.actif = false;
+}
+function scanSauver() { store.set("scan:" + SC.cle, { liste: SC.liste, file: SC.file.slice(-2000), conflits: SC.conflits.slice(-200) }); }
+async function scanCharger(discret) {
+  if (!SC.actif || !enLigne()) { scanMajUI(); return; }
+  try {
+    const args = SC.scanCode ? { p_scan_code: SC.scanCode } : { p_evenements: SC.ids };
+    const [{ data, error }, cpt] = await Promise.all([sb.rpc("bil_scan_liste", args), sb.rpc("bil_scan_compteur", args)]);
+    if (error) throw error;
+    const enAttente = new Set(SC.file.map((x) => x.code));
+    const nl = {};
+    for (const r of data || []) {
+      const loc = SC.liste[r.code];
+      nl[r.code] = { id: r.id, e: r.evenement_id, code: r.code, nom: r.nom, prenom: r.prenom, entre_le: r.entre_le || (enAttente.has(r.code) && loc ? loc.entre_le : null), app: r.entre_appareil };
+    }
+    SC.liste = nl; SC.compteur = cpt && cpt.data; SC.majLe = Date.now(); SC.err = "";
+    scanSauver();
+  } catch (e) { SC.err = msgErreur(e); if (!discret) console.warn(e); }
+  scanMajUI();
+}
+function bip(ok) {
+  try {
+    const a = SC.audio || (SC.audio = new (window.AudioContext || window.webkitAudioContext)());
+    const o = a.createOscillator(), g = a.createGain(); o.connect(g); g.connect(a.destination);
+    o.frequency.value = ok === "ok" ? 880 : ok === "deja" ? 520 : 220; o.type = ok === "ok" ? "sine" : "square";
+    g.gain.setValueAtTime(0.18, a.currentTime); g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + (ok === "ok" ? 0.18 : 0.45));
+    o.start(); o.stop(a.currentTime + 0.5);
+  } catch (e) {}
+  try { navigator.vibrate && navigator.vibrate(ok === "ok" ? 80 : [120, 80, 120]); } catch (e) {}
+}
+function flash(type, label, nom, petit) {
+  const f = $("flash"); f.className = "flash on " + type;
+  $("flIc").textContent = type === "ok" ? "✓" : type === "deja" ? "!" : "✕";
+  $("flLb").textContent = label; $("flNm").textContent = nom || ""; $("flSm").textContent = petit || "";
+  bip(type); clearTimeout(SC.flT); SC.flT = setTimeout(() => { f.className = "flash"; }, type === "ok" ? 1100 : 1900);
+  const st = $("scStat");
+  if (st) { st.className = "scan-stat " + (type === "ko" ? "ko" : type); st.innerHTML = `<p class="w">${esc(label)}</p><p class="n">${esc([nom, petit].filter(Boolean).join(" · "))}</p>`; }
+}
+const nomP = (p) => ((p.prenom || "") + " " + (p.nom || "")).trim() || "—";
+function avecDelai(p, ms) { return Promise.race([p, new Promise((_, ko) => setTimeout(() => ko(new Error("delai")), ms))]); }
+async function scanTraiter(brut) {
+  const code = normCode(brut); if (!code || code.length < 4) return;
+  const t = Date.now();
+  if (SC.dernier.code === code && t - SC.dernier.t < 2500) return;
+  SC.dernier = { code, t };
+  const loc = SC.liste[code];
+  if (enLigne()) {
+    try {
+      const { data: r, error } = await avecDelai(sb.rpc("bil_scan", { p_code: code, p_evenements: SC.scanCode ? null : SC.ids, p_scan_code: SC.scanCode || null, p_appareil: appareil(), p_par: SC.par || null }), 6000);
+      if (error) throw error;
+      return scanAppliquer(r, code);
+    } catch (e) { if (!/delai|fetch|network|load failed/i.test(String(e && e.message || e))) { flash("ko", "Erreur", "", msgErreur(e)); return; } }
+  }
+  // Hors ligne : décision locale, envoyée au retour de la connexion.
+  if (!loc) { flash("ko", "Billet inconnu", "", "hors ligne · code " + code); return; }
+  if (loc.entre_le) { flash("deja", "Déjà entré", nomP(loc), "à " + heure(loc.entre_le) + " · hors ligne"); return; }
+  loc.entre_le = new Date().toISOString(); loc.app = appareil();
+  SC.file.push({ code, at: loc.entre_le });
+  scanSauver(); flash("ok", "Entrée validée", nomP(loc), "hors ligne — sera synchronisée"); scanMajUI();
+}
+function scanAppliquer(r, code) {
+  const loc = SC.liste[code];
+  if (r.resultat === "ok") { if (loc) { loc.entre_le = r.entre_le; loc.app = r.entre_appareil; } else SC.liste[code] = { code, nom: r.nom, prenom: r.prenom, entre_le: r.entre_le, e: r.evenement_id }; flash("ok", "Entrée validée", nomP(r)); }
+  else if (r.resultat === "deja") { if (loc) loc.entre_le = r.entre_le; flash("deja", "Déjà entré", nomP(r), "à " + heure(r.entre_le) + (r.entre_par ? " · par " + r.entre_par : "")); }
+  else if (r.resultat === "invalide") flash("ko", "Billet non valable", nomP(r), { desinscrit: "désinscrit·e", refuse: "inscription refusée", attente: "liste d'attente", a_valider: "paiement non validé", a_confirmer: "adresse non confirmée" }[r.statut] || r.statut);
+  else if (r.resultat === "acces") flash("ko", "Accès refusé", "", r.message || "");
+  else flash("ko", "Billet inconnu", "", "code " + code);
+  scanSauver(); scanMajUI();
+  if (SC.compteur && r.resultat === "ok") { SC.compteur.entres = (SC.compteur.entres || 0) + 1; SC.compteur.dernier = r.entre_le; }
+}
+async function scanSynchroniser() {
+  if (!SC.actif || SC.sync || !enLigne() || !SC.file.length) return;
+  SC.sync = true;
+  try {
+    while (SC.file.length) {
+      const it = SC.file[0];
+      let r;
+      try {
+        const res = await avecDelai(sb.rpc("bil_scan", { p_code: it.code, p_evenements: SC.scanCode ? null : SC.ids, p_scan_code: SC.scanCode || null, p_scanne_le: it.at, p_appareil: appareil(), p_horsligne: true, p_par: SC.par || null }), 8000);
+        if (res.error) throw res.error; r = res.data;
+      } catch (e) { break; }
+      SC.file.shift();
+      const p = SC.liste[it.code] || { code: it.code };
+      if (r.resultat === "deja" && r.doublon) SC.conflits.push({ code: it.code, nom: nomP(r), ici: it.at, ailleurs: r.entre_le, par: r.entre_par || "" });
+      else if (r.resultat === "inconnu" || r.resultat === "invalide") SC.conflits.push({ code: it.code, nom: nomP(p), ici: it.at, refus: r.resultat === "invalide" ? "billet non valable" : "billet inconnu" });
+      if (r.entre_le && SC.liste[it.code]) SC.liste[it.code].entre_le = r.entre_le;
+    }
+  } finally { SC.sync = false; scanSauver(); scanMajUI(); }
+}
+async function scanCamStart() {
+  if (SC.camOn) return;
+  if (typeof Html5Qrcode === "undefined") return info("Le module caméra n'est pas chargé. Vérifiez votre connexion puis rechargez la page.");
+  try {
+    SC.cam = new Html5Qrcode("reader", { verbose: false, formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] });
+    await SC.cam.start({ facingMode: "environment" }, { fps: 12, qrbox: (w, h) => { const m = Math.floor(Math.min(w, h) * 0.72); return { width: m, height: m }; }, aspectRatio: 1 }, (txt) => scanTraiter(txt), () => {});
+    SC.camOn = true;
+    try { const caps = SC.cam.getRunningTrackCameraCapabilities(); const t = caps && caps.torchFeature && caps.torchFeature(); SC.torche = (t && t.isSupported()) ? t : null; } catch (e) { SC.torche = null; }
+  } catch (e) {
+    SC.camOn = false;
+    info("La caméra n'a pas pu démarrer : " + (String(e && (e.message || e)).includes("Permission") || String(e).includes("NotAllowed") ? "autorisez l'accès à la caméra dans les réglages du navigateur." : String(e && (e.message || e))) + "\nVous pouvez toujours saisir le code à la main.", "Caméra");
+  }
+  scanMajUI();
+}
+async function scanCamStop() {
+  if (SC.cam) { try { if (SC.camOn) await SC.cam.stop(); } catch (e) {} try { SC.cam.clear(); } catch (e) {} }
+  SC.cam = null; SC.camOn = false; SC.torche = null; SC.torcheOn = false;
+  scanMajUI();
+}
+RES.scanCam = () => SC.camOn ? scanCamStop() : scanCamStart();
+RES.scanTorche = async () => { if (!SC.torche) return; try { SC.torcheOn = !SC.torcheOn; await SC.torche.apply(SC.torcheOn); } catch (e) { SC.torcheOn = false; } scanMajUI(); };
+RES.scanManuel = () => { const i = $("scManuel"); if (!i) return; const v = i.value; i.value = ""; SC.dernier = { code: "", t: 0 }; scanTraiter(v); };
+RES.scanCode = (el) => { SC.dernier = { code: "", t: 0 }; scanTraiter(el.dataset.code); const i = $("scCherche"); if (i) { i.value = ""; scanMajUI(); } };
+RES.scanCherche = () => scanMajUI();
+RES.scanConflitsOk = () => { SC.conflits = []; scanSauver(); scanMajUI(); };
+RES.scanRecharger = () => { scanSynchroniser(); scanCharger(); };
+function scanStats() {
+  const l = Object.values(SC.liste);
+  const total = l.length, entres = l.filter((p) => p.entre_le).length;
+  const now = Date.now(), h = l.map((p) => p.entre_le && new Date(p.entre_le).getTime()).filter(Boolean);
+  return { total, entres, q15: h.filter((x) => x >= now - 900000).length, q60: h.filter((x) => x >= now - 3600000).length, dernier: h.length ? Math.max(...h) : 0 };
+}
+function scanHtml() {
+  return `<div class="counter"><b id="scEntres">0</b><span>entrés sur <b id="scTotal">0</b></span></div>
+    <div id="scDirect"></div><div id="scConflits"></div>
+    <div class="scan-stat" id="scStat"><p class="w">Prêt à scanner</p><p class="n">Démarrez la caméra ou saisissez un code</p></div>
+    <div class="card" style="padding:13px">
+      <div class="row" style="margin-bottom:11px"><button class="btn sm" id="scCamBtn" data-a="scanCam">Démarrer la caméra</button>
+        <button class="btn ghost sm" id="scTorche" data-a="scanTorche" style="display:none">🔦 Lampe</button>
+        <button class="btn ghost sm" data-a="scanRecharger">↻ Recharger</button></div>
+      <div id="reader"></div>
+      <label class="l" for="scManuel">Saisie manuelle / lecteur externe</label>
+      <div class="row"><input class="f" id="scManuel" placeholder="Code du billet (ex. K7F3QX9A)" autocomplete="off" autocapitalize="characters" style="flex:1;margin:4px 0" onkeydown="if(event.key==='Enter')RES.scanManuel()">
+        <button class="btn sm" data-a="scanManuel">Vérifier</button></div>
+      <label class="l" for="scCherche">Rechercher par nom (si le QR est perdu)</label>
+      <input class="f" id="scCherche" data-in="scanCherche" placeholder="Nom ou prénom…" autocomplete="off">
+      <div id="scRes"></div>
+      <p class="du" id="scInfo" style="margin-top:10px"></p></div>`;
+}
+function scanMajUI() {
+  if (!$("scEntres")) return;
+  const s = scanStats(), c = SC.compteur;
+  const ent = enLigne() && c && !SC.file.length ? Math.max(c.entres, s.entres) : s.entres, tot = c && enLigne() ? Math.max(c.total, s.total) : s.total;
+  $("scEntres").textContent = ent; $("scTotal").textContent = tot;
+  const pct = tot ? Math.round(100 * ent / tot) : 0;
+  const q15 = c && enLigne() ? c.q15 : s.q15, q60 = c && enLigne() ? c.q60 : s.q60, der = (c && c.dernier) || s.dernier;
+  $("scDirect").innerHTML = tot ? `<div class="card" style="padding:11px 13px"><div class="row" style="justify-content:space-between"><span class="eyebrow">Suivi en direct</span><span class="du">${der ? "dernière entrée à " + heure(der) : "aucune entrée"}</span></div>
+    <div class="bar"><i style="width:${pct}%"></i></div><div class="row" style="font-size:13px;gap:12px"><span><b>${ent}</b> entré·e·s</span><span class="du">${tot - ent} attendu·e·s</span><span class="du">${q15} sur 15 min</span><span class="du">${q60} sur 1 h</span><span class="du">${pct} %</span></div></div>` : "";
+  $("scConflits").innerHTML = SC.conflits.length ? `<div class="alerte"><b>⚠ ${SC.conflits.length} doublon(s) détecté(s) à la synchronisation</b><br>${SC.conflits.map((x) => esc(x.nom) + " (" + esc(x.code) + ") — " + (x.refus ? esc(x.refus) + ", scanné ici à " + heure(x.ici) : "scanné ici à " + heure(x.ici) + ", déjà entré à " + heure(x.ailleurs) + (x.par ? " par " + esc(x.par) : ""))).join("<br>")}
+    <div style="margin-top:8px"><button class="btn ghost sm" data-a="scanConflitsOk">J'ai vu</button></div></div>` : "";
+  const b = $("scCamBtn"); if (b) { b.textContent = SC.camOn ? "Arrêter la caméra" : "Démarrer la caméra"; b.className = "btn sm" + (SC.camOn ? " ghost" : ""); }
+  const t = $("scTorche"); if (t) { t.style.display = SC.torche ? "" : "none"; t.textContent = SC.torcheOn ? "🔦 Éteindre" : "🔦 Lampe"; }
+  const q = sansAccents(($("scCherche") || {}).value || "").trim();
+  const res = $("scRes");
+  if (res) {
+    if (q.length < 2) res.innerHTML = "";
+    else {
+      const l = Object.values(SC.liste).filter((p) => sansAccents(p.prenom + " " + p.nom + " " + p.nom + " " + p.prenom + " " + p.code).includes(q)).slice(0, 25);
+      res.innerHTML = l.length ? `<div class="lst">${l.map((p) => `<div class="li ${p.entre_le ? "in" : ""}"><div class="m"><div class="n">${esc(nomP(p))}</div><div class="x mono">${esc(p.code)}${p.entre_le ? " · entré à " + heure(p.entre_le) : ""}</div></div>
+        ${p.entre_le ? `<span class="badge ok">Entré</span>` : `<button class="btn sm" data-a="scanCode" data-code="${esc(p.code)}">Valider l'entrée</button>`}</div>`).join("")}</div>` : `<p class="du">Aucun billet à ce nom.</p>`;
+    }
+  }
+  const inf = $("scInfo");
+  if (inf) inf.innerHTML = [enLigne() ? "● en ligne" : "<b style='color:var(--red)'>● hors ligne</b> — les entrées sont gardées sur ce téléphone", SC.file.length ? `<b style="color:var(--amber)">${SC.file.length} entrée(s) à synchroniser</b>` : "", SC.majLe ? "liste à jour à " + heure(SC.majLe) : "", SC.err ? "<span style='color:var(--red)'>" + esc(SC.err) + "</span>" : ""].filter(Boolean).join(" · ");
+}
+
+/* ---------------- Bénévoles de l'entrée (code de scan par événement) ---------------- */
+async function chargerBenevole() {
+  const b = store.get("benevole", null);
+  S.ben = { saisie: !b, err: "" };
+  if (b && b.expire && new Date(b.expire) < new Date()) { store.set("benevole", null); S.ben = { saisie: true, err: "Votre code de scan a expiré (fin de la journée de l'événement)." }; }
+  else if (b) {
+    S.ben.info = b;
+    if (enLigne()) {
+      try { const { data } = await sb.rpc("bil_scan_acces", { p_scan_code: b.code }); if (!data) { store.set("benevole", null); S.ben = { saisie: true, err: "Ce code de scan n'est plus valable." }; } else { S.ben.info = Object.assign({ code: b.code, depuis: b.depuis || Date.now() }, data); store.set("benevole", S.ben.info); } } catch (e) {}
+    }
+  }
+  if (S.etat.maintenance) { S.mode = "maintenance"; return rendre(); }
+  rendre();
+  if (!S.ben.saisie) { SC.par = store.get("benevole_nom", "") || "Bénévole"; scanOuvrir({ scanCode: S.ben.info.code, titre: S.ben.info.titre, cle: "ben:" + S.ben.info.id }); scanMajUI(); }
+}
+function vueBenevole() {
+  const B = S.ben || { saisie: true };
+  if (B.saisie) return `<div class="pub">${enteteUlb()}<h1>Scanner à l'entrée</h1><p class="org">Accès bénévoles : entrez le code de scan donné par la commission.</p>
+    ${B.err ? `<div class="alerte">${esc(B.err)}</div>` : ""}
+    <div class="card"><label class="q" style="margin-top:0" for="benCode">Code de scan</label><input class="f mono" id="benCode" placeholder="XXXX-XXXX" autocapitalize="characters" autocomplete="off" style="letter-spacing:2px;text-transform:uppercase">
+    <label class="q" for="benNom">Votre prénom (facultatif)</label><input class="f" id="benNom" value="${esc(store.get("benevole_nom", ""))}" placeholder="Ex. Sarah" maxlength="40">
+    <button class="btn block" style="margin-top:14px" data-a="benEntrer">Commencer à scanner</button>
+    <p class="du">Ce code permet uniquement de scanner les billets de cet événement. Il expire à la fin de la journée de l'événement.</p></div>
+    <p class="centre"><a class="link" href="${APP_URL}">Espace des responsables</a></p></div>`;
+  const e = B.info;
+  return `<div class="hd"><div class="hd-in"><span class="brand"><span class="ic">🎟</span>Entrée</span><span class="sp"></span><button class="btn ghost sm" data-a="benQuitter">Quitter</button></div></div>
+    <div class="body" style="max-width:640px"><p class="eyebrow">${esc(e.commission || "")}</p><h1 class="titre">${esc(e.titre)}</h1><p class="sub">${esc(infosLigne(e))}</p>${scanHtml()}</div>`;
+}
+RES.benEntrer = async (btn) => {
+  const code = normCode($("benCode").value); store.set("benevole_nom", $("benNom").value.trim());
+  if (code.length < 8) return echec("Le code de scan compte 8 caractères.", "Code incomplet");
+  if (!enLigne()) return echec("Pas de connexion internet : la première ouverture demande une connexion.", "Hors ligne");
+  btn.disabled = true;
+  const { data, error } = await sb.rpc("bil_scan_acces", { p_scan_code: code });
+  btn.disabled = false;
+  if (error) return echec(msgErreur(error));
+  if (!data) return echec("Code invalide ou expiré. Vérifiez-le auprès de la commission.", "Accès refusé");
+  store.set("benevole", Object.assign({ code, depuis: Date.now() }, data));
+  chargerBenevole();
+};
+RES.benQuitter = async () => {
+  if (SC.file.length) { await scanSynchroniser(); if (SC.file.length) return echec(SC.file.length + " entrée(s) ne sont pas encore synchronisées. Restez sur cette page jusqu'au retour de la connexion.", "Pas encore"); }
+  if (!(await confirmer("Quitter le scanner sur ce téléphone ?", "Quitter"))) return;
+  scanFermer(); store.set("benevole", null); chargerBenevole();
+};
+
+/* =====================================================================
+   ESPACE DES RESPONSABLES (identifiants du CA)
+   ===================================================================== */
+const STATUTS = { a_confirmer: ["À confirmer (e-mail)", "info"], a_valider: ["Preuve à vérifier", "wait"], attente: ["Liste d'attente", "wait"],
+  inscrit: ["Inscrit·e", "ok"], refuse: ["Refusé·e", "no"], desinscrit: ["Désinscrit·e", "no"] };
+const badgeStatut = (s) => { const x = STATUTS[s] || [s, ""]; return `<span class="badge ${x[1]}">${esc(x[0])}</span>`; };
+const lienInscription = (e) => APP_URL + "?e=" + e.code;
+function evtCourant() { return (S.evts || []).find((x) => x.id === S.evtId) || null; }
+function commCourante() { return (S.comms || []).find((c) => c.id === S.commId) || null; }
+
+async function demarrerResp() {
+  S.mode = "charge"; rendre();
+  let session = null;
+  try { const { data } = await sb.auth.getSession(); session = data && data.session; } catch (e) {}
+  if (!session) { S.mode = "login"; return rendre(); }
+  // Déconnexion forcée par le propriétaire (CA › Admin › Billetterie).
+  const ok = store.get("auth_ok", 0);
+  if (S.etat.deco_le && ok && new Date(S.etat.deco_le).getTime() > ok) { S.mode = "login"; S.loginMsg = "Le propriétaire a déconnecté tous les appareils de la Billetterie : reconnectez-vous."; return rendre(); }
+  if (!ok) store.set("auth_ok", Date.now());
+  S.session = session;
+  if (!enLigne()) {
+    const c = store.get("cache:moi", null);
+    if (c) { S.profil = c.profil; S.comms = c.comms; S.commId = store.get("comm", c.comms[0] && c.comms[0].id); S.evts = store.get("cache:evts:" + S.commId, []); S.mode = "resp"; S.vue = S.vue || "comm"; return rendre(); }
+  }
+  try {
+    const { data: prof } = await sb.from("ca_membres").select("id,prenom,nom,email,fonction,statut,role,via_code").eq("id", session.user.id).maybeSingle();
+    S.profil = prof || { id: session.user.id, email: session.user.email };
+    const { data: comms, error } = await sb.rpc("bil_mes_commissions");
+    if (error) throw error;
+    S.comms = comms || [];
+  } catch (e) { S.mode = "refus"; S.refus = msgErreur(e); return rendre(); }
+  if (S.etat.maintenance) { S.mode = "maintenance"; return rendre(); }
+  if (!S.comms.length) {
+    S.mode = "refus";
+    S.refus = (S.profil && S.profil.statut && S.profil.statut !== "actif") ? "Votre compte n'est pas encore validé dans l'espace CA." : "Aucune commission ne vous est attribuée : l'accès à la Billetterie est réservé aux responsables de commission (organigramme du CA).";
+    if (S.vientDeSeConnecter) { try { await sb.auth.signOut({ scope: "local" }); } catch (e) {} S.session = null; }
+    return rendre();
+  }
+  store.set("cache:moi", { profil: S.profil, comms: S.comms });
+  S.estOwner = !!(S.comms[0] && S.comms[0].est_owner);
+  S.mode = "resp";
+  const evParam = S.params.get("ev");
+  if (evParam) {
+    const { data: ev } = await sb.from("bil_evenements").select("id,commission_id").eq("id", evParam).maybeSingle();
+    if (ev) { S.commId = ev.commission_id; await chargerEvts(); return ouvrirEvt(ev.id, S.params.get("onglet") || ""); }
+  }
+  const pref = store.get("comm", "");
+  if (S.comms.length === 1) S.commId = S.comms[0].id;
+  else if (pref && S.comms.some((c) => c.id === pref)) S.commId = pref;
+  else { S.vue = "choix"; return rendre(); }
+  await chargerEvts(); S.vue = "comm"; rendre();
+}
+function vueLogin() {
+  return `<div class="pub" style="max-width:420px;margin-top:6vh"><div class="centre"><span class="eyebrow">Bureau étudiant</span><h1 style="margin:6px 0">🎟 Billetterie</h1>
+    <p class="org">Espace des responsables de commission. Connectez-vous avec vos identifiants de l'espace CA.</p></div>
+    ${S.loginMsg ? `<div class="warn">${esc(S.loginMsg)}</div>` : ""}
+    <div class="card"><label class="l" for="lgMail">Adresse e-mail</label><input class="f" id="lgMail" type="email" autocomplete="username" autocapitalize="none">
+      <label class="l" for="lgPwd">Mot de passe</label><input class="f" id="lgPwd" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')RES.login()">
+      <div id="lgErr"></div><button class="btn block" style="margin-top:12px" data-a="login">Se connecter</button>
+      <p class="centre" style="margin:12px 0 0"><button class="link" data-a="mdpOublie">Mot de passe oublié ?</button></p></div>
+    <p class="du centre">Pas encore de compte ? Il se crée dans <a href="${esc(CA_URL)}">l'espace CA</a>.</p>
+    <p class="centre" style="margin-top:22px"><a class="btn ghost sm" href="${APP_URL}?scan">Bénévole à l'entrée ? Scanner avec un code</a></p></div>`;
+}
+RES.login = async () => {
+  const mail = $("lgMail").value.trim().toLowerCase(), pwd = $("lgPwd").value;
+  const err = (m) => { $("lgErr").innerHTML = `<p style="color:var(--red);font-size:13px;margin:10px 0 0">${esc(m)}</p>`; };
+  if (!mail || !pwd) return err("Entrez votre e-mail et votre mot de passe.");
+  if (!enLigne()) return err("Pas de connexion internet.");
+  const { error } = await sb.auth.signInWithPassword({ email: mail, password: pwd });
+  if (error) return err(/Invalid login/i.test(error.message) ? "E-mail ou mot de passe incorrect." : /confirm/i.test(error.message) ? "Adresse e-mail pas encore confirmée (voir le mail reçu à l'inscription au CA)." : error.message);
+  store.set("auth_ok", Date.now()); S.loginMsg = ""; S.vientDeSeConnecter = true;
+  demarrerResp();
+};
+RES.mdpOublie = async () => {
+  const mail = (($("lgMail") || {}).value || "").trim() || await saisir("Votre adresse e-mail :", "Mot de passe oublié", { type: "email" });
+  if (!mail) return;
+  const { error } = await sb.auth.resetPasswordForEmail(mail.trim(), { redirectTo: CA_URL });
+  if (error) return echec(error.message);
+  succes("Si un compte existe pour " + mail + ", un lien de réinitialisation vient d'être envoyé (pensez aux spams).", "E-mail envoyé");
+};
+function vueRefus() {
+  return `<div class="pub" style="max-width:460px;margin-top:8vh;text-align:center"><p class="big">🔒</p><h1>Accès refusé</h1><p class="org">${esc(S.refus || "")}</p>
+    <div class="row" style="justify-content:center;margin-top:14px"><a class="btn ghost" href="${esc(CA_URL)}">← Espace CA</a><button class="btn ghost" data-a="autreCompte">Se connecter avec un autre compte</button></div></div>`;
+}
+RES.autreCompte = async () => { try { await sb.auth.signOut({ scope: "local" }); } catch (e) {} store.set("auth_ok", null); location.href = APP_URL; };
+RES.deconnexion = async () => {
+  if (!(await confirmer("Se déconnecter ? Vous serez aussi déconnecté·e de l'espace CA sur cet appareil.", "Déconnexion"))) return;
+  scanFermer(); try { await sb.auth.signOut({ scope: "local" }); } catch (e) {} store.set("auth_ok", null); location.href = APP_URL;
+};
+
+/* ---------------- Données ---------------- */
+async function chargerEvts() {
+  store.set("comm", S.commId);
+  if (!enLigne()) { S.evts = store.get("cache:evts:" + S.commId, []); return; }
+  const { data, error } = await sb.from("bil_evenements").select("*").eq("commission_id", S.commId).order("date_evt", { ascending: true, nullsFirst: false });
+  if (error) { S.evtsErr = msgErreur(error); S.evts = store.get("cache:evts:" + S.commId, []); return; }
+  S.evtsErr = "";
+  S.evts = data || [];
+  try {
+    const ids = S.evts.filter((e) => e.statut === "actif").map((e) => e.id);
+    S.compteurs = {};
+    if (ids.length) {
+      const { data: ins } = await sb.from("bil_inscriptions").select("evenement_id,statut").in("evenement_id", ids);
+      for (const i of ins || []) { const c = S.compteurs[i.evenement_id] || (S.compteurs[i.evenement_id] = {}); c[i.statut] = (c[i.statut] || 0) + 1; }
+    }
+  } catch (e) {}
+  store.set("cache:evts:" + S.commId, S.evts);
+}
+async function chargerInscriptions() {
+  if (!S.evtId) return;
+  if (!enLigne()) { S.insc = store.get("cache:insc:" + S.evtId, S.insc || []); return; }
+  const { data, error } = await sb.from("bil_inscriptions").select("*").eq("evenement_id", S.evtId).order("created_at", { ascending: true });
+  if (error) { S.inscErr = msgErreur(error); return; }
+  S.inscErr = ""; S.insc = data || [];
+  store.set("cache:insc:" + S.evtId, S.insc.map((i) => ({ id: i.id, code: i.code, nom: i.nom, prenom: i.prenom, email: i.email, statut: i.statut, entre_le: i.entre_le, source: i.source })));
+}
+async function rechargerEvt() {
+  const { data } = await sb.from("bil_evenements").select("*").eq("id", S.evtId).maybeSingle();
+  if (data) { const k = S.evts.findIndex((x) => x.id === data.id); if (k >= 0) S.evts[k] = data; else S.evts.push(data); store.set("cache:evts:" + S.commId, S.evts); }
+  return data;
+}
+/* Mise à jour d'un événement : on vérifie que le serveur a bien enregistré. */
+async function majEvt(champs) {
+  if (!enLigne()) throw new Error("Pas de connexion internet.");
+  const { data, error } = await sb.from("bil_evenements").update(champs).eq("id", S.evtId).select();
+  if (error) throw new Error(msgErreur(error));
+  if (!data || !data.length) throw new Error("Vous n'êtes pas responsable de cette commission.");
+  const k = S.evts.findIndex((x) => x.id === S.evtId); if (k >= 0) S.evts[k] = data[0];
+  store.set("cache:evts:" + S.commId, S.evts);
+  return data[0];
+}
+
+/* ---------------- Habillage ---------------- */
+function vueResp() {
+  const nomU = S.profil ? ((S.profil.prenom || "") + " " + (S.profil.nom || "")).trim() : "";
+  const c = commCourante();
+  const tete = `<div class="hd"><div class="hd-in"><a class="brand" href="${APP_URL}" style="text-decoration:none;color:inherit"><span class="ic">🎟</span>Billetterie</a>
+    ${S.comms && S.comms.length > 1 && S.vue !== "choix" ? `<select class="f" style="width:auto;margin:0;padding:7px 10px;font-size:13px" data-ch="choixComm">${S.comms.map((x) => `<option value="${esc(x.id)}" ${x.id === S.commId ? "selected" : ""}>${esc(x.nom)}${x.actif ? "" : " (retirée)"}</option>`).join("")}</select>` : (c ? `<span class="badge">${esc(c.nom)}</span>` : "")}
+    <span class="sp"></span><span class="who">${esc(nomU)}${S.estOwner ? " · propriétaire" : ""}</span>
+    <button class="btn ghost sm" data-a="ouvrirGlobal" title="Scanner global">🎯 Scanner global</button>
+    <a class="btn ghost sm" href="${esc(CA_URL)}">← CA</a><button class="btn ghost sm" data-a="deconnexion">Se déconnecter</button></div></div>`;
+  let corps = "";
+  if (S.vue === "choix") corps = vueChoixComm();
+  else if (S.vue === "global") corps = vueGlobal();
+  else if (S.vue === "evt") corps = vueEvt();
+  else corps = vueComm();
+  return tete + `<div class="body">${corps}<p class="du centre" style="margin-top:40px;opacity:.6">Version ${esc(VERSION)}</p></div>`;
+}
+function vueChoixComm() {
+  return `<h1 class="titre">Choisissez votre commission</h1><p class="sub">Vous gérez plusieurs commissions.</p>
+    ${S.comms.map((c) => `<button class="evt-card" data-a="allerComm" data-id="${esc(c.id)}"><span class="d"><b>${esc(c.nom.charAt(0))}</b></span><span class="m"><span class="t">${esc(c.nom)}</span><span class="s" style="display:block">${esc(c.responsables || "—")}${c.actif ? "" : " · retirée"}</span></span><span>›</span></button>`).join("")}`;
+}
+RES.allerComm = async (el) => { S.commId = el.dataset.id; await chargerEvts(); S.vue = "comm"; scanFermer(); rendre(); };
+RES.choixComm = async (el) => { S.commId = el.value; S.evtId = null; await chargerEvts(); S.vue = "comm"; scanFermer(); history.replaceState(null, "", APP_URL); rendre(); };
+
+/* ---------------- Accueil de la commission ---------------- */
+function vueComm() {
+  const c = commCourante(); if (!c) return vueChoixComm();
+  const actifs = (S.evts || []).filter((e) => e.statut === "actif"), arch = (S.evts || []).filter((e) => e.statut !== "actif");
+  const carte = (e) => {
+    const k = (S.compteurs || {})[e.id] || {}, d = e.date_evt;
+    const p = e.places ? `${(k.inscrit || 0) + (k.a_valider || 0)} / ${e.places}` : `${k.inscrit || 0} inscrit·e(s)`;
+    return `<button class="evt-card" data-a="ouvrirEvt" data-id="${e.id}"><span class="d"><b>${d ? esc(d.slice(8, 10)) : "·"}</b><span>${d ? esc(dateCourte(d).replace(/^\d+\s*/, "")) : ""}</span></span>
+      <span class="m"><span class="t">${esc(e.titre)}</span><span class="s" style="display:block">${esc([infosLigne(e) || "date à fixer", p, e.payant ? eur(e.prix) : "gratuit"].join(" · "))}</span></span>
+      ${k.a_valider ? `<span class="badge wait">${k.a_valider} à vérifier</span>` : ""}${k.attente ? `<span class="badge">${k.attente} en attente</span>` : ""}<span>›</span></button>`;
+  };
+  return `<p class="eyebrow">Commission</p><h1 class="titre">${esc(c.nom)}</h1><p class="sub">${esc(c.responsables || "")}${c.actif ? "" : " · <b>commission retirée</b> (visible par vous seul·e)"}</p>
+    ${S.evtsErr ? `<div class="alerte">${esc(S.evtsErr)}</div>` : ""}
+    <div class="row" style="margin-bottom:6px"><button class="btn" data-a="nouvelEvt">＋ Nouvel événement</button></div>
+    <div class="grp-h"><h2>Événements</h2><span class="c">${actifs.length}</span><span class="l"></span></div>
+    ${actifs.length ? actifs.map(carte).join("") : `<div class="empty">Aucun événement. Créez-en un, ou créez-le en un clic depuis l'onglet Événements du CA.</div>`}
+    <div class="grp-h"><h2>Réglages de la commission</h2><span class="l"></span></div>
+    <div class="card"><label class="swl"><input type="checkbox" class="sw" data-ch="reglComm" data-k="pdf" ${c.pdf_joint ? "checked" : ""}><span>Billet PDF joint au mail<small>En plus du lien vers le billet, un PDF est joint à chaque mail de billet.</small></span></label>
+      <label class="swl"><input type="checkbox" class="sw" data-ch="reglComm" data-k="ouv" ${c.inscriptions_ouvertes ? "checked" : ""}><span>Inscriptions ouvertes (toute la commission)<small>Fermé : le formulaire en ligne et l'ajout manuel de tous vos événements sont bloqués.</small></span></label></div>
+    ${arch.length ? `<details style="margin-top:10px"><summary class="grp-h" style="cursor:pointer;list-style:none"><h2>Archives</h2><span class="c">${arch.length}</span><span class="l"></span></summary>${arch.map(carte).join("")}</details>` : ""}`;
+}
+RES.reglComm = async (el) => {
+  const c = commCourante(); const v = el.checked;
+  const args = { p_cid: c.id, p_pdf_joint: el.dataset.k === "pdf" ? v : null, p_inscriptions_ouvertes: el.dataset.k === "ouv" ? v : null };
+  if (!enLigne()) { el.checked = !v; return echec("Pas de connexion internet."); }
+  const { data, error } = await sb.rpc("bil_regler_commission", args);
+  if (error || !data) { el.checked = !v; return echec(msgErreur(error || "Refusé par le serveur.")); }
+  c.pdf_joint = data.pdf_joint; c.inscriptions_ouvertes = data.inscriptions_ouvertes;
+  succes(el.dataset.k === "pdf" ? (v ? "Le billet PDF sera joint aux mails." : "Le billet PDF ne sera plus joint aux mails.")
+    : (v ? "Les inscriptions de la commission sont ouvertes." : "Les inscriptions de toute la commission sont fermées."));
+};
+RES.nouvelEvt = async () => {
+  let caEvts = [];
+  try { const { data } = await sb.from("ca_evenements").select("id,titre,date,lieu").order("date", { ascending: false }).limit(60); caEvts = data || []; } catch (e) {}
+  const deja = new Set((S.evts || []).map((e) => e.ca_evenement_id).filter(Boolean));
+  const r = await modale({ titre: "Nouvel événement", html: `
+    ${caEvts.length ? `<label class="l">Depuis un événement de l'onglet Événements du CA (facultatif)</label><select class="f" id="neCa"><option value="">— événement sans lien avec le CA —</option>${caEvts.map((x) => `<option value="${esc(x.id)}" data-t="${esc(x.titre)}" data-d="${esc(String(x.date || "").slice(0, 10))}" data-l="${esc(x.lieu || "")}">${esc(x.titre)}${x.date ? " — " + esc(dateCourte(x.date)) : ""}${deja.has(String(x.id)) ? " (déjà en billetterie)" : ""}</option>`).join("")}</select>` : ""}
+    <label class="l">Nom de l'événement</label><input class="f" id="neT" maxlength="160" placeholder="Ex. Soirée de rentrée">
+    <div class="two"><div><label class="l">Date</label><input class="f" id="neD" type="date"></div><div><label class="l">Heure</label><input class="f" id="neH" type="time"></div></div>
+    <label class="l">Lieu</label><input class="f" id="neL" placeholder="Ex. Salle Dupréel, ULB">`,
+    boutons: [{ t: "Annuler", v: null }, { t: "Créer", v: (d) => ({ ca: d.querySelector("#neCa") ? d.querySelector("#neCa").value : "", t: d.querySelector("#neT").value.trim(), d: d.querySelector("#neD").value, h: d.querySelector("#neH").value, l: d.querySelector("#neL").value.trim() }) }],
+    auto: (d) => { const s = d.querySelector("#neCa"); if (s) s.addEventListener("change", () => { const o = s.selectedOptions[0]; if (!o || !o.value) return; d.querySelector("#neT").value = o.dataset.t; d.querySelector("#neD").value = o.dataset.d; d.querySelector("#neL").value = o.dataset.l; }); } });
+  if (!r) return;
+  if (!r.t) return echec("Donnez un nom à l'événement.");
+  const { data, error } = await sb.rpc("bil_creer_evenement", { p_cid: S.commId, p_titre: r.t, p_date: r.d || null, p_lieu: r.l || null, p_heure: r.h || null, p_ca_id: r.ca || null });
+  if (error) return echec(msgErreur(error));
+  await chargerEvts(); ouvrirEvt(data, "reglages");
+  toast("Événement créé");
+};
+
+/* ---------------- Événement ---------------- */
+async function ouvrirEvt(id, onglet) {
+  scanFermer();
+  S.evtId = id; S.vue = "evt"; S.onglet = onglet || S.ongletPref || "inscriptions"; S.insc = store.get("cache:insc:" + id, []); S.filtre = "tous";
+  history.replaceState(null, "", APP_URL + "?ev=" + id);
+  rendre();
+  await chargerInscriptions(); rendre();
+}
+RES.ouvrirEvt = (el) => ouvrirEvt(el.dataset.id);
+RES.retourComm = async () => { scanFermer(); S.vue = "comm"; S.evtId = null; history.replaceState(null, "", APP_URL); await chargerEvts(); rendre(); };
+RES.onglet = async (el) => {
+  if (S.onglet === "scanner" && el.dataset.o !== "scanner") scanFermer();
+  if (S.onglet === "formulaire" && S.fbModif && el.dataset.o !== "formulaire" && !(await confirmer("Le formulaire a des modifications non enregistrées. Les abandonner ?", "Formulaire"))) return;
+  if (el.dataset.o !== "formulaire") { S.fb = null; S.fbModif = false; }
+  S.onglet = el.dataset.o; S.ongletPref = S.onglet; rendre();
+  if (["inscriptions", "suivi"].includes(S.onglet)) { await chargerInscriptions(); rendreEnPreservant(); }
+};
+function vueEvt() {
+  const e = evtCourant(); if (!e) return `<div class="empty">Événement introuvable. <button class="link" data-a="retourComm">Retour</button></div>`;
+  const I = S.insc || [];
+  const n = (st) => I.filter((i) => i.statut === st).length;
+  const ong = [["inscriptions", "Inscriptions", n("a_valider")], ["suivi", "Suivi", 0], ["scanner", "Scanner", 0], ["formulaire", "Formulaire", 0], ["reglages", "Réglages", 0], ["bilan", "Bilan", 0]];
+  const res = n("inscrit") + n("a_valider");
+  let corps = "";
+  if (S.onglet === "suivi") corps = vueSuivi(e);
+  else if (S.onglet === "scanner") corps = vueScannerEvt(e);
+  else if (S.onglet === "formulaire") corps = vueFormulaire(e);
+  else if (S.onglet === "reglages") corps = vueReglages(e);
+  else if (S.onglet === "bilan") corps = vueBilan(e);
+  else corps = vueInscriptions(e);
+  return `<button class="link" data-a="retourComm">← ${esc((commCourante() || {}).nom || "Commission")}</button>
+    <h1 class="titre">${esc(e.titre)}</h1>
+    <p class="sub">${esc(infosLigne(e) || "Date et lieu à fixer (onglet Réglages)")} · organisé par la commission ${esc((commCourante() || {}).nom || "")}<br>
+      ${e.places ? `${res} / ${e.places} places` : `${n("inscrit")} inscrit·e(s)`} · ${e.payant ? "payant " + eur(e.prix) : "gratuit"}${e.statut !== "actif" ? " · <b>archivé</b>" : ""}</p>
+    <div class="card" style="padding:11px 13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="mono" style="font-size:12.5px;color:var(--stamp);word-break:break-all;flex:1;min-width:200px">${esc(lienInscription(e))}</span>
+      <button class="btn sm" data-a="copierLien">Copier</button><button class="btn ghost sm" data-a="qrInscription">QR d'inscription</button><button class="btn ghost sm" data-a="affiche">Affiche</button></div>
+    ${S.inscErr ? `<div class="alerte">${esc(S.inscErr)}</div>` : ""}
+    <div class="tabs">${ong.map(([k, l, b]) => `<button class="tab" aria-selected="${S.onglet === k}" data-a="onglet" data-o="${k}">${l}${b ? `<span class="pill">${b}</span>` : ""}</button>`).join("")}</div>${corps}`;
+}
+RES.copierLien = async () => { const ok = await copier(lienInscription(evtCourant())); toast(ok ? "Lien copié" : "Copie impossible : sélectionnez le lien à la main"); };
+RES.qrInscription = () => {
+  const e = evtCourant(), l = lienInscription(e);
+  modale({ titre: "QR d'inscription", html: `<p class="du">${esc(e.titre)} — ce QR et ce lien ne changent jamais.</p><div id="qrInsc" style="background:#fff;border-radius:12px;padding:12px;width:fit-content;margin:8px auto"></div><p class="mono centre" style="font-size:12px;word-break:break-all;color:var(--stamp)">${esc(l)}</p>`,
+    boutons: [{ t: "Fermer", v: null }, { t: "Imprimer", v: "print" }, { t: "Télécharger", v: "dl" }],
+    auto: (d) => { const c = qrCanvas(l, 300, { level: "Q" }); d.querySelector("#qrInsc").appendChild(c); } }).then((v) => {
+    const c = qrCanvas(l, 900, { level: "Q", padding: 40 });
+    if (v === "dl") c.toBlob((b) => telecharger(b, "qr-inscription-" + sansAccents(e.titre).replace(/[^a-z0-9]+/g, "-").slice(0, 30) + ".png"));
+    if (v === "print") imprimer(`<h1 style="font-size:30px;margin:0 0 6px">${esc(e.titre)}</h1><p style="font-size:16px;margin:0 0 20px">Organisé par la commission ${esc((commCourante() || {}).nom || "")}<br>${esc(infosLigne(e))}</p><img src="${c.toDataURL()}" style="width:340px;height:340px"><p style="font-size:20px;font-weight:bold;margin:16px 0 4px">Inscris-toi en scannant ce QR</p><p style="font-size:13px">${esc(l)}</p>`);
+  });
+};
+RES.affiche = () => {
+  const e = evtCourant();
+  if (!(window.jspdf && window.jspdf.jsPDF)) return info("Le module PDF n'est pas chargé. Vérifiez votre connexion.");
+  const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+  doc.setFillColor(36, 28, 70); doc.rect(0, 0, 210, 297, "F");
+  doc.setFillColor(232, 176, 75); doc.rect(0, 0, 210, 8, "F");
+  doc.setTextColor(232, 176, 75); doc.setFont("helvetica", "normal"); doc.setFontSize(13);
+  doc.text(pdfTxt("BUREAU ÉTUDIANT · FACULTÉ DE DROIT ET DE CRIMINOLOGIE"), 105, 26, { align: "center" });
+  doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(38);
+  const t = doc.splitTextToSize(pdfTxt(e.titre), 180).slice(0, 3); doc.text(t, 105, 52, { align: "center", lineHeightFactor: 1.1 });
+  let y = 52 + t.length * 16;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(15); doc.setTextColor(201, 195, 228);
+  doc.text(pdfTxt("Organisé par la commission " + ((commCourante() || {}).nom || "")), 105, y, { align: "center" }); y += 14;
+  doc.setTextColor(255, 255, 255); doc.setFontSize(19);
+  if (e.date_evt) { doc.text(pdfTxt(dateLongue(e.date_evt) + (e.heure_debut ? " · " + hm(e.heure_debut) : "")), 105, y, { align: "center" }); y += 10; }
+  if (e.lieu) { doc.text(pdfTxt(doc.splitTextToSize(e.lieu, 180)[0]), 105, y, { align: "center" }); y += 10; }
+  if (e.payant) { doc.setTextColor(232, 176, 75); doc.text(pdfTxt(eur(e.prix)), 105, y, { align: "center" }); y += 10; }
+  const c = qrCanvas(lienInscription(e), 900, { level: "Q", padding: 30 });
+  doc.setFillColor(255, 255, 255); doc.roundedRect(55, Math.max(y + 6, 150), 100, 100, 6, 6, "F");
+  doc.addImage(c.toDataURL("image/png"), "PNG", 58, Math.max(y + 6, 150) + 3, 94, 94);
+  doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(20);
+  doc.text(pdfTxt("Inscris-toi : scanne le QR"), 105, Math.max(y + 6, 150) + 116, { align: "center" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(201, 195, 228);
+  doc.text(lienInscription(e), 105, Math.max(y + 6, 150) + 124, { align: "center" });
+  doc.save("affiche-" + sansAccents(e.titre).replace(/[^a-z0-9]+/g, "-").slice(0, 30) + ".pdf");
+};
+
+/* ---------------- Onglet Réglages ---------------- */
+function vueReglages(e) {
+  const c = commCourante() || {};
+  const raison = !c.inscriptions_ouvertes ? "fermées pour toute la commission" : !e.inscriptions_ouvertes ? "fermées" : (e.ouverture && new Date(e.ouverture) > new Date()) ? "ouvriront le " + quand(e.ouverture) : (e.fermeture && new Date(e.fermeture) <= new Date()) ? "fermées depuis le " + quand(e.fermeture) : "ouvertes";
+  return `<div class="card"><h3>Infos pratiques</h3><p class="du">Elles apparaissent sur la page d'inscription et dans tous les mails.</p>
+      <label class="l">Nom de l'événement</label><input class="f" id="rgT" maxlength="160" value="${esc(e.titre)}">
+      <div class="three"><div><label class="l">Date</label><input class="f" id="rgD" type="date" value="${esc(e.date_evt || "")}"></div>
+        <div><label class="l">Heure de début</label><input class="f" id="rgH" type="time" value="${esc((e.heure_debut || "").slice(0, 5))}"></div>
+        <div><label class="l">Heure de fin (facultatif)</label><input class="f" id="rgH2" type="time" value="${esc((e.heure_fin || "").slice(0, 5))}"></div></div>
+      <label class="l">Lieu</label><input class="f" id="rgL" value="${esc(e.lieu || "")}" placeholder="Ex. Salle Dupréel, ULB — Av. Jeanne 44">
+      <label class="l">Infos complémentaires (facultatif)</label><textarea class="f" id="rgI" rows="3" placeholder="Ex. dress code, accès, à apporter…">${esc(e.infos || "")}</textarea>
+      <div class="row"><button class="btn sm" data-a="sauverInfos">Enregistrer les infos pratiques</button></div></div>
+    <div class="card"><h3>Places et tarif</h3>
+      <label class="l">Nombre de places (vide ou 0 = illimité)</label><div class="row"><input class="f" id="rgP" type="number" min="0" style="max-width:160px" value="${e.places || ""}"><button class="btn sm" data-a="sauverPlaces">Enregistrer</button></div>
+      <p class="du">Complet : les nouvelles inscriptions passent en liste d'attente. Quand une place se libère, la première personne en attente passe automatiquement et reçoit un mail.</p>
+      <label class="l">Prix (€) — un seul tarif</label><div class="row"><input class="f" id="rgPrix" inputmode="decimal" placeholder="Ex. 12,50" style="max-width:160px" value="${e.prix != null ? String(Number(e.prix)).replace(".", ",") : ""}"><button class="btn ghost sm" data-a="sauverPrix">Enregistrer le prix</button></div>
+      <label class="swl" style="margin-top:12px"><input type="checkbox" class="sw" id="rgPayant" data-ch="basculePayant" ${e.payant ? "checked" : ""}><span><b>Payant</b><small>Activé : le formulaire demande une preuve de paiement (obligatoire) et affiche le QR de virement. Le billet part après validation de la preuve.</small></span></label></div>
+    <div class="card"><h3>Inscriptions</h3><p class="du">Actuellement : <b>${esc(raison)}</b>.</p>
+      <label class="swl"><input type="checkbox" class="sw" data-ch="basculeOuvert" ${e.inscriptions_ouvertes ? "checked" : ""}><span>Inscriptions ouvertes pour cet événement</span></label>
+      <div class="two"><div><label class="l">Ouverture programmée (facultatif)</label><input class="f" id="rgO" type="datetime-local" value="${esc(versLocalInput(e.ouverture))}"></div>
+        <div><label class="l">Fermeture programmée (facultatif)</label><input class="f" id="rgF" type="datetime-local" value="${esc(versLocalInput(e.fermeture))}"></div></div>
+      <p class="du">Sans fermeture programmée, les inscriptions se ferment à la fin du jour de l'événement.</p>
+      <div class="row"><button class="btn sm" data-a="sauverProg">Enregistrer la programmation</button></div></div>
+    <div class="card"><h3>Mails automatiques</h3>
+      <label class="swl"><input type="checkbox" class="sw" data-ch="basculeAuto" data-k="rappel_auto" ${e.rappel_auto ? "checked" : ""}><span>Rappel la veille de l'événement<small>Envoyé à partir de 10 h aux inscrit·es.</small></span></label>
+      <label class="swl"><input type="checkbox" class="sw" data-ch="basculeAuto" data-k="sondage_auto" ${e.sondage_auto ? "checked" : ""}><span>Sondage de satisfaction le lendemain<small>Trois questions + commentaire ; résultats dans l'onglet Bilan.</small></span></label></div>
+    <div class="card"><h3>Code de scan des bénévoles</h3>
+      <p class="du">Pour les personnes hors CA qui scannent à l'entrée : ce code permet <b>uniquement</b> de scanner les billets de cet événement (et de chercher un nom). Il expire à la fin de la journée de l'événement.</p>
+      ${e.scan_code ? `<p style="font-size:26px;letter-spacing:4px;margin:8px 0" class="mono">${esc(e.scan_code.slice(0, 4) + "-" + e.scan_code.slice(4))}</p>
+        <p class="du">À ouvrir sur le téléphone : <span class="mono" style="color:var(--stamp)">${esc(APP_URL)}?scan</span></p>
+        <div class="row"><button class="btn sm" data-a="copierScan">Copier le lien et le code</button><button class="btn ghost sm" data-a="genScan">Changer le code</button><button class="btn ghost sm" data-a="retirerScan">Désactiver</button></div>`
+      : `<div class="row"><button class="btn sm" data-a="genScan">Générer un code</button></div>`}</div>
+    <div class="card"><h3>Vérifier avant le jour J</h3><p class="du">Contrôle automatique : connexion au serveur, droits, infos pratiques, scanner (caméra, liste hors ligne) et envoi d'un mail de test à votre adresse.</p>
+      <div class="row"><button class="btn sm" data-a="verifier">Lancer la vérification</button></div><div id="verifRes"></div></div>
+    <div class="card"><h3>Archive</h3>
+      <div class="row">${e.statut === "actif" ? `<button class="btn ghost sm" data-a="archiver">Archiver l'événement</button>` : `<button class="btn ghost sm" data-a="desarchiver">Réactiver l'événement</button>`}
+      <button class="btn danger sm" data-a="supprimerEvt">Supprimer l'événement</button></div>
+      <p class="du">Archivé : il quitte la liste principale ; ses statistiques restent consultables. La suppression n'est possible que sans aucune inscription.</p></div>`;
+}
+RES.sauverInfos = async () => {
+  const t = $("rgT").value.trim(); if (!t) return echec("Le nom de l'événement est vide.");
+  try { await majEvt({ titre: t, date_evt: $("rgD").value || null, heure_debut: $("rgH").value || null, heure_fin: $("rgH2").value || null, lieu: $("rgL").value.trim() || null, infos: $("rgI").value.trim() || null }); }
+  catch (e) { return echec(e.message); }
+  rendre(); succes("Les infos pratiques sont enregistrées. Elles apparaissent tout de suite sur la page d'inscription et dans les prochains mails.");
+};
+RES.sauverPlaces = async () => {
+  const v = $("rgP").value.trim(), n = v === "" ? null : Math.max(0, parseInt(v, 10) || 0);
+  try { await majEvt({ places: n || null }); } catch (e) { return echec(e.message); }
+  const r = await appelFn({ action: "liberer", evenement_id: S.evtId });
+  await chargerInscriptions(); rendre();
+  succes((n ? n + " places." : "Places illimitées.") + (r.promus ? "\n" + r.promus + " personne(s) de la liste d'attente ont reçu une place." : ""));
+};
+RES.sauverPrix = async () => {
+  const v = $("rgPrix").value.trim(); const p = v === "" ? null : Math.round(parseFloat(v.replace(",", ".")) * 100) / 100;
+  const e = evtCourant();
+  if (e.payant && !(p > 0)) return echec("Un événement payant doit avoir un prix. Désactivez d'abord « Payant ».");
+  try { await majEvt({ prix: p }); } catch (er) { return echec(er.message); }
+  rendre(); succes(p ? "Prix : " + eur(p) + "." : "Prix retiré.");
+};
+RES.basculePayant = async (el) => {
+  const e = evtCourant(), v = el.checked;
+  const prixSaisi = parseFloat(String(($("rgPrix") || {}).value || "").replace(",", "."));
+  const champs = { payant: v };
+  if (v && !(Number(e.prix) > 0)) { if (prixSaisi > 0) champs.prix = Math.round(prixSaisi * 100) / 100; else { el.checked = !v; return echec("Indiquez d'abord le prix de l'événement (un seul tarif), puis réactivez « Payant ».", "Prix manquant"); } }
+  try { await majEvt(champs); } catch (er) { el.checked = !v; return echec(er.message); }
+  rendre();
+  succes(v ? `L'événement « ${e.titre} » est maintenant payant (${eur(evtCourant().prix)}). La page d'inscription demande désormais une preuve de paiement et affiche le QR de virement. Le lien ne change pas.`
+    : `L'événement « ${e.titre} » est maintenant gratuit. La page d'inscription ne demande plus de preuve de paiement. Le lien ne change pas.`, "Enregistré");
+};
+RES.basculeOuvert = async (el) => {
+  const v = el.checked;
+  try { await majEvt({ inscriptions_ouvertes: v }); } catch (er) { el.checked = !v; return echec(er.message); }
+  rendre(); succes(v ? "Les inscriptions de cet événement sont ouvertes." : "Les inscriptions de cet événement sont fermées.");
+};
+RES.basculeAuto = async (el) => {
+  const v = el.checked;
+  try { await majEvt({ [el.dataset.k]: v }); } catch (er) { el.checked = !v; return echec(er.message); }
+  toast("Enregistré");
+};
+RES.sauverProg = async () => {
+  const o = depuisLocalInput($("rgO").value), f = depuisLocalInput($("rgF").value);
+  if (o && f && new Date(f) <= new Date(o)) return echec("La fermeture doit être après l'ouverture.");
+  try { await majEvt({ ouverture: o, fermeture: f }); } catch (er) { return echec(er.message); }
+  rendre(); succes([o ? "Ouverture : " + quand(o) : "Pas d'ouverture programmée", f ? "Fermeture : " + quand(f) : "Pas de fermeture programmée"].join("\n"));
+};
+RES.genScan = async () => {
+  const e = evtCourant();
+  if (e.scan_code && !(await confirmer("Changer le code ? L'ancien ne fonctionnera plus sur les téléphones des bénévoles.", "Code de scan"))) return;
+  const { data, error } = await sb.rpc("bil_scan_code_generer", { p_eid: e.id });
+  if (error) return echec(msgErreur(error));
+  e.scan_code = data; rendre(); succes("Code de scan : " + data.slice(0, 4) + "-" + data.slice(4) + "\nIl expire à la fin de la journée de l'événement.", "Code généré");
+};
+RES.retirerScan = async () => {
+  if (!(await confirmer("Désactiver le code ? Les bénévoles ne pourront plus scanner.", "Code de scan"))) return;
+  const { error } = await sb.rpc("bil_scan_code_retirer", { p_eid: S.evtId }); if (error) return echec(msgErreur(error));
+  evtCourant().scan_code = null; rendre();
+};
+RES.copierScan = async () => { const e = evtCourant(); const ok = await copier(`Scanner à l'entrée de « ${e.titre} » : ouvrez ${APP_URL}?scan et entrez le code ${e.scan_code.slice(0, 4)}-${e.scan_code.slice(4)}`); toast(ok ? "Copié" : "Copie impossible"); };
+RES.archiver = async () => { if (!(await confirmer("Archiver cet événement ? Les inscriptions se ferment ; les statistiques restent consultables.", "Archiver"))) return; try { await majEvt({ statut: "archive" }); } catch (er) { return echec(er.message); } rendre(); toast("Événement archivé"); };
+RES.desarchiver = async () => { try { await majEvt({ statut: "actif" }); } catch (er) { return echec(er.message); } rendre(); toast("Événement réactivé"); };
+RES.supprimerEvt = async () => {
+  const e = evtCourant();
+  if ((S.insc || []).length) return echec("Cet événement a des inscriptions : archivez-le plutôt (ou utilisez « Effacer la liste » dans Suivi).");
+  if (!(await confirmer("Supprimer définitivement « " + e.titre + " » ?", "Supprimer", { danger: true, bouton: "Supprimer" }))) return;
+  const { data, error } = await sb.from("bil_evenements").delete().eq("id", e.id).select();
+  if (error || !data || !data.length) return echec(msgErreur(error || "Refusé par le serveur."));
+  RES.retourComm();
+};
+RES.verifier = async () => {
+  const z = $("verifRes"); const L = [];
+  const ligne = (ok, t, d = "") => { L.push(`<div class="li" style="margin-top:6px"><span style="font-size:18px">${ok === true ? "✅" : ok === "warn" ? "⚠️" : "❌"}</span><div class="m"><div class="n" style="font-weight:500">${esc(t)}</div>${d ? `<div class="x">${esc(d)}</div>` : ""}</div></div>`); z.innerHTML = L.join(""); };
+  z.innerHTML = `<p class="du">Vérification en cours…</p>`;
+  if (!enLigne()) return ligne(false, "Connexion internet", "Ce téléphone est hors ligne.");
+  const t0 = Date.now(); let v = null;
+  try { const r = await sb.rpc("bil_verifier", { p_eid: S.evtId }); if (r.error) throw r.error; v = r.data; ligne(true, "Connexion au serveur", "Réponse en " + (Date.now() - t0) + " ms"); }
+  catch (e) { return ligne(false, "Connexion au serveur", msgErreur(e)); }
+  ligne(v.droits, "Droits de responsable", v.droits ? "Vous gérez cette commission." : "Vous n'êtes pas responsable de cette commission.");
+  ligne(v.date && v.lieu && v.heure ? true : "warn", "Infos pratiques", [v.date ? "" : "date manquante", v.heure ? "" : "heure manquante", v.lieu ? "" : "lieu manquant"].filter(Boolean).join(", ") || "Date, heure et lieu renseignés.");
+  ligne(v.ouvert === "" ? true : "warn", "Inscriptions", v.ouvert === "" ? "Ouvertes." : { ferme: "Fermées.", pas_encore: "Pas encore ouvertes.", termine: "Terminées.", maintenance: "Billetterie en maintenance." }[v.ouvert] || v.ouvert);
+  ligne(v.payant_ok, "Paiement", v.payant_ok ? (evtCourant().payant ? "Prix et QR de virement prêts." : "Événement gratuit.") : "Payant sans prix.");
+  let cam = false; try { const d = await navigator.mediaDevices.enumerateDevices(); cam = d.some((x) => x.kind === "videoinput"); } catch (e) {}
+  ligne(cam && typeof Html5Qrcode !== "undefined" ? true : "warn", "Caméra du scanner", cam ? (typeof Html5Qrcode !== "undefined" ? "Caméra détectée, module de scan chargé." : "Module de scan non chargé.") : "Aucune caméra détectée sur cet appareil (la saisie manuelle reste possible).");
+  try { const r = await sb.rpc("bil_scan", { p_code: "TESTTEST", p_evenements: [S.evtId], p_appareil: appareil() }); if (r.error) throw r.error; ligne(r.data.resultat === "inconnu", "Scanner (serveur)", "Le serveur valide les scans (" + v.scanner + " billet(s) à scanner)."); }
+  catch (e) { ligne(false, "Scanner (serveur)", msgErreur(e)); }
+  let sto = false; try { localStorage.setItem("bil:test", "1"); sto = localStorage.getItem("bil:test") === "1"; localStorage.removeItem("bil:test"); } catch (e) {}
+  let sw = false; try { sw = !!(navigator.serviceWorker && await navigator.serviceWorker.getRegistration()); } catch (e) {}
+  ligne(sto && sw ? true : "warn", "Scanner hors ligne", sto ? (sw ? "La page et la liste restent disponibles sans réseau." : "Rechargez la page une fois en ligne pour activer le mode hors ligne.") : "Stockage du téléphone indisponible (navigation privée ?).");
+  ligne(v.scan_code ? true : "warn", "Code des bénévoles", v.scan_code ? "Généré." : "Pas encore généré (seulement si des bénévoles hors CA scannent).");
+  const m = await appelFn({ action: "test", evenement_id: S.evtId });
+  ligne(!!m.ok, "Envoi des mails", m.ok ? "Mail de test envoyé à " + m.email + " (via " + m.via + "). Vérifiez votre boîte (et les spams)." : (m.erreur || "Échec de l'envoi."));
+};
+
+/* ---------------- Scanner global ---------------- */
+RES.ouvrirGlobal = async () => {
+  S.vue = "global"; S.evtId = null; history.replaceState(null, "", APP_URL);
+  let evts = [];
+  if (enLigne()) {
+    const ids = S.comms.map((c) => c.id);
+    const { data } = await sb.from("bil_evenements").select("id,titre,date_evt,commission_id").in("commission_id", ids).eq("statut", "actif");
+    evts = data || []; store.set("cache:global", evts);
+  } else evts = store.get("cache:global", []);
+  S.global = evts;
+  scanFermer(); rendre();
+  SC.par = null;
+  scanOuvrir({ ids: evts.map((e) => e.id), titre: "Scanner global", cle: "global" }); scanMajUI();
+};
+function vueGlobal() {
+  const E = S.global || [];
+  return `<button class="link" data-a="retourComm">← Retour</button><h1 class="titre">🎯 Scanner global</h1>
+    <p class="sub">Tous les billets des événements actifs de ${S.estOwner ? "toutes les commissions" : "vos commissions"} (${E.length} événement(s)).</p>${scanHtml()}`;
+}
+function vueScannerEvt(e) {
+  setTimeout(() => { scanOuvrir({ ids: [e.id], titre: e.titre, cle: "evt:" + e.id }); scanMajUI(); }, 0);
+  return scanHtml() + `<p class="du">Plusieurs téléphones peuvent scanner en même temps : chaque billet n'est accepté qu'une fois. Sans réseau, les entrées sont gardées sur le téléphone et envoyées au retour de la connexion.</p>`;
+}
+
+/* =====================================================================
+   INSCRIPTIONS · SUIVI · EXPORTS · BILAN
+   ===================================================================== */
+const nomI = (i) => ((i.prenom || "") + " " + (i.nom || "")).trim() || "(sans nom)";
+async function signerUrl(chemin) {
+  S.urls = S.urls || {};
+  if (S.urls[chemin] && S.urls[chemin].t > Date.now() - 600000) return S.urls[chemin].u;
+  const { data, error } = await sb.storage.from("billets").createSignedUrl(chemin, 900);
+  if (error || !data) return "";
+  S.urls[chemin] = { u: data.signedUrl, t: Date.now() };
+  return data.signedUrl;
+}
+async function chargerApercus() {
+  for (const el of document.querySelectorAll("[data-fichier]")) {
+    if (el.dataset.fait) continue; el.dataset.fait = "1";
+    const u = await signerUrl(el.dataset.fichier);
+    if (!u) { el.textContent = "fichier indisponible"; continue; }
+    if (el.tagName === "IMG") { el.src = u; el.parentElement && el.parentElement.setAttribute("href", u); }
+    else el.setAttribute("href", u);
+  }
+}
+async function actionFn(corps, ok) {
+  const r = await appelFn(corps);
+  if (!r.ok) { echec(r.erreur || "Action impossible."); return null; }
+  await chargerInscriptions(); rendre();
+  if (ok) toast(ok);
+  return r;
+}
+
+/* ---------------- Onglet Inscriptions ---------------- */
+function vueInscriptions(e) {
+  const I = S.insc || [];
+  const av = I.filter((i) => i.statut === "a_valider"), at = I.filter((i) => i.statut === "attente").sort((a, b) => String(a.email_confirme_le || a.created_at).localeCompare(String(b.email_confirme_le || b.created_at)));
+  const ac = I.filter((i) => i.statut === "a_confirmer"), rd = I.filter((i) => i.statut === "refuse" || i.statut === "desinscrit");
+  const nonEnv = I.filter((i) => i.statut === "inscrit" && i.email && !i.billet_envoye_le).length;
+  const c = commCourante() || {};
+  const ferme = !c.inscriptions_ouvertes || !e.inscriptions_ouvertes;
+  setTimeout(chargerApercus, 0);
+  return `${ferme ? `<div class="alerte">⛔ <b>Inscriptions fermées</b>${!c.inscriptions_ouvertes ? " pour toute la commission" : ""} : le formulaire en ligne et l'ajout manuel sont bloqués.</div>` : ""}
+    ${e.payant || av.length ? `<div class="grp-h"><h2>Preuves de paiement à vérifier</h2><span class="c">${av.length}</span><span class="l"></span></div>
+      ${av.length ? av.map((i) => `<div class="card" style="padding:12px"><div class="row" style="align-items:flex-start">
+        ${i.preuve_path ? (/\.pdf$/i.test(i.preuve_path) ? `<a class="btn ghost sm" target="_blank" rel="noopener" data-fichier="${esc(i.preuve_path)}">📄 Ouvrir la preuve (PDF)</a>` : `<a target="_blank" rel="noopener"><img data-fichier="${esc(i.preuve_path)}" alt="Preuve" style="width:120px;max-height:160px;object-fit:cover;border-radius:8px;background:#111"></a>`) : `<span class="badge no">Pas de preuve</span>`}
+        <div style="flex:1;min-width:200px"><div style="font-weight:600;font-size:15px">${esc(nomI(i))}</div><div class="du">${esc(i.email || "")}</div>
+          <div class="du">Montant : <b>${eur(i.montant || e.prix)}</b> · communication <span class="mono">${esc(i.communication || "—")}</span></div>
+          <div class="du">Inscrit·e le ${esc(quand(i.created_at))}</div>${resumeReponses(e, i)}
+          <div class="row" style="margin-top:8px"><button class="btn ok sm" data-a="valider" data-id="${i.id}">✓ Accepter</button><button class="btn danger sm" data-a="refuser" data-id="${i.id}">✕ Refuser</button><button class="link" data-a="details" data-id="${i.id}">Détails</button></div></div></div></div>`).join("")
+        : `<div class="empty">Aucune preuve en attente.</div>`}` : ""}
+    <div class="grp-h"><h2>Liste d'attente</h2><span class="c">${at.length}</span><span class="l"></span></div>
+    ${at.length ? `<div class="lst">${at.map((i, k) => `<div class="li"><span class="badge">${k + 1}</span><div class="m"><div class="n">${esc(nomI(i))}</div><div class="x">${esc(i.email || "")} · depuis le ${esc(quand(i.email_confirme_le || i.created_at))}</div></div>
+      <button class="btn ghost sm" data-a="repecher" data-id="${i.id}">Repêcher</button><button class="link" data-a="details" data-id="${i.id}">Détails</button></div>`).join("")}</div>
+      <p class="du">Automatique : dès qu'une place se libère, la première personne passe et reçoit un mail. « Repêcher » la fait passer tout de suite, même si c'est complet.</p>` : `<div class="empty">Personne en liste d'attente.</div>`}
+    <div class="grp-h"><h2>Ajouter des personnes</h2><span class="l"></span></div>
+    <div class="card"><p class="du" style="margin-top:0">Billet créé directement (sans formulaire ni confirmation d'e-mail).</p>
+      <div class="three"><input class="f" id="amNom" placeholder="Nom"><input class="f" id="amPrenom" placeholder="Prénom"><input class="f" id="amMail" type="email" placeholder="E-mail" onkeydown="if(event.key==='Enter')RES.ajoutUn()"></div>
+      <div class="row"><button class="btn sm" data-a="ajoutUn">Ajouter cette personne</button></div>
+      <label class="l" style="margin-top:14px">…ou collez une liste — une ligne par personne : Nom, Prénom, e-mail (collage Excel / Google Sheets accepté)</label>
+      <textarea class="f" id="amListe" rows="4" placeholder="Belkacem, Amina, amina.belkacem@gmail.com&#10;Dupont, Thomas, thomas.dupont@gmail.com"></textarea>
+      <div class="row"><button class="btn sm" data-a="ajoutListe">Générer les billets</button></div>
+      ${nonEnv ? `<div class="warn" style="margin-top:12px"><b>${nonEnv} billet(s) pas encore envoyé(s) par mail.</b><div class="row" style="margin-top:8px"><button class="btn sm" data-a="envoyerBillets">Envoyer les billets par mail</button></div></div>` : ""}</div>
+    ${ac.length ? `<details><summary class="grp-h" style="cursor:pointer"><h2>En attente de confirmation d'e-mail</h2><span class="c">${ac.length}</span><span class="l"></span></summary>
+      <p class="du">Ces personnes n'ont pas encore cliqué sur le lien reçu. Sans confirmation sous 7 jours, l'inscription est supprimée.</p>
+      <div class="lst">${ac.map((i) => `<div class="li"><div class="m"><div class="n">${esc(nomI(i))}</div><div class="x">${esc(i.email || "")} · ${esc(quand(i.created_at))}</div></div><button class="link" data-a="details" data-id="${i.id}">Détails</button></div>`).join("")}</div></details>` : ""}
+    ${rd.length ? `<details><summary class="grp-h" style="cursor:pointer"><h2>Refusées et désinscrites</h2><span class="c">${rd.length}</span><span class="l"></span></summary>
+      <div class="lst">${rd.map((i) => `<div class="li"><div class="m"><div class="n">${esc(nomI(i))}</div><div class="x">${esc(i.email || "")}${i.refus_motif ? " · motif : " + esc(i.refus_motif) : ""}</div></div>${badgeStatut(i.statut)}
+        ${i.statut === "refuse" ? `<button class="btn ghost sm" data-a="repecher" data-id="${i.id}">Repêcher</button>` : ""}</div>`).join("")}</div></details>` : ""}`;
+}
+function valeurReponse(c, v) {
+  if (v === undefined || v === null || v === "") return "";
+  if (Array.isArray(v)) return v.join(", ");
+  if (v === true) return "Oui"; if (v === false) return "Non";
+  return String(v);
+}
+function resumeReponses(e, i) {
+  const l = (e.formulaire || []).filter((c) => c.type !== "photo" && c.type !== "fichier").map((c) => [c.label, valeurReponse(c, (i.reponses || {})[c.id])]).filter((x) => x[1]).slice(0, 4);
+  return l.length ? `<div class="du">${l.map(([k, v]) => `${esc(k)} : <b>${esc(v)}</b>`).join(" · ")}</div>` : "";
+}
+RES.valider = (el) => actionFn({ action: "valider", id: el.dataset.id }, "Billet envoyé");
+RES.refuser = async (el) => {
+  const i = (S.insc || []).find((x) => x.id === el.dataset.id);
+  const m = await saisir("Refuser l'inscription de " + nomI(i) + " ?\n\nMotif (facultatif) : il sera indiqué dans le mail envoyé à la personne.", "Refuser", { long: true, bouton: "Refuser", danger: true, placeholder: "Ex. Preuve illisible, montant incomplet…" });
+  if (m === null) return;
+  actionFn({ action: "refuser", id: i.id, motif: m.trim() }, "Refus envoyé");
+};
+RES.repecher = async (el) => {
+  const i = (S.insc || []).find((x) => x.id === el.dataset.id), e = evtCourant();
+  if (!(await confirmer("Repêcher " + nomI(i) + " ?\n\n" + (e.payant && !i.paye ? "Sa preuve de paiement passera dans « à vérifier »." : "Son billet lui sera envoyé tout de suite, même si l'événement est complet."), "Repêcher"))) return;
+  actionFn({ action: "repecher", id: i.id }, "Repêché·e");
+};
+function lignesCollees(t) {
+  const out = [];
+  for (const brut of String(t || "").split(/\r?\n/)) {
+    const l = brut.trim(); if (!l) continue;
+    const m = l.match(/[^\s,;<>()"']+@[^\s,;<>()"']+\.[a-z]{2,}/i); const mail = m ? m[0].toLowerCase() : "";
+    const reste = l.replace(m ? m[0] : "", "").replace(/[<>()"]/g, " ");
+    const p = reste.split(/[,;\t]+/).map((x) => x.trim()).filter(Boolean);
+    let nom = p[0] || "", prenom = p[1] || "";
+    if (p.length === 1) { const w = p[0].split(/\s+/); prenom = w.shift() || ""; nom = w.join(" "); }
+    out.push({ nom, prenom, email: mail });
+  }
+  return out;
+}
+async function ajouter(liste) {
+  if (!liste.length) return echec("Rien à ajouter.");
+  const e = evtCourant(), I = S.insc || [];
+  const res = I.filter((i) => i.statut === "inscrit" || i.statut === "a_valider").length;
+  if (e.places && res + liste.length > e.places && !(await confirmer(`Attention : ${res + liste.length} billets pour ${e.places} places. Ajouter quand même ?`, "Jauge dépassée"))) return;
+  const { data, error } = await sb.rpc("bil_ajout_manuel", { p_eid: S.evtId, p_personnes: liste });
+  if (error) return echec(msgErreur(error));
+  await chargerInscriptions(); rendre();
+  const sansMail = liste.filter((p) => !p.email).length;
+  const txt = data.ajoutes + " billet(s) créé(s)." + (data.doublons.length ? "\n\nDéjà inscrit·es (ignoré·es) :\n" + data.doublons.join("\n") : "") + (sansMail ? `\n\n${sansMail} personne(s) sans e-mail : billet créé mais impossible à envoyer par mail.` : "");
+  const env = data.ajoutes && liste.some((p) => p.email);
+  if (env && await modale({ titre: "✓ Billets créés", type: "ok", html: `<p>${esc(txt)}</p>`, boutons: [{ t: "Plus tard", v: false }, { t: "Envoyer les billets par mail", v: true }] })) RES.envoyerBillets();
+  else if (!env) succes(txt, "Billets créés");
+}
+RES.ajoutUn = () => { const p = { nom: $("amNom").value.trim(), prenom: $("amPrenom").value.trim(), email: $("amMail").value.trim().toLowerCase() };
+  if (!p.nom && !p.prenom) return echec("Indiquez au moins un nom ou un prénom.");
+  if (p.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(p.email)) return echec("Adresse e-mail invalide.");
+  ajouter([p]); };
+RES.ajoutListe = () => ajouter(lignesCollees($("amListe").value));
+/* Envois groupés : par lots, avec suivi de la progression. */
+async function envoiGroupe(action, titre, extra = {}) {
+  let total = 0, echecs = [], tour = 0, via = "", erreur = "";
+  const d = document.createElement("div"); d.className = "ca-mod";
+  d.innerHTML = `<div class="ca-mod-box"><h3>${esc(titre)}</h3><p id="egTxt">Envoi en cours…</p><div class="bar"><i id="egBar" style="width:5%"></i></div></div>`;
+  document.body.appendChild(d);
+  try {
+    while (tour++ < 40) {
+      const r = await appelFn(Object.assign({ action, evenement_id: S.evtId }, extra));
+      if (!r.ok) { erreur = r.erreur || "Échec."; break; }
+      total += r.envoyes; echecs = echecs.concat(r.echecs || []); via = r.via || via; if (r.erreur) erreur = r.erreur;
+      d.querySelector("#egTxt").textContent = total + " envoyé(s)" + (r.restants ? ", " + r.restants + " restant(s)…" : "");
+      d.querySelector("#egBar").style.width = r.restants ? Math.min(95, 100 * total / (total + r.restants)) + "%" : "100%";
+      if (!r.restants || extra.ids) break;
+    }
+  } finally { d.remove(); }
+  await chargerInscriptions(); rendre();
+  if (!total && !echecs.length && !erreur) return info("Personne à qui envoyer ce message.", titre);
+  (echecs.length || (erreur && !total) ? echec : succes)(total + " mail(s) envoyé(s)." + (echecs.length ? "\n\nÉchecs (" + echecs.length + ") :\n" + echecs.slice(0, 15).join("\n") + (erreur ? "\n\nRaison : " + erreur : "") : (erreur && !total ? "\n\n" + erreur : "")), titre);
+}
+RES.envoyerBillets = () => envoiGroupe("envoyer_billets", "Envoi des billets");
+
+/* ---------------- Onglet Suivi ---------------- */
+function vueSuivi(e) {
+  const I = (S.insc || []).filter((i) => i.statut === "inscrit");
+  const ent = I.filter((i) => i.entre_le).length, tot = I.length, pct = tot ? Math.round(100 * ent / tot) : 0;
+  const now = Date.now(), hs = I.map((i) => i.entre_le && new Date(i.entre_le).getTime()).filter(Boolean);
+  const q = sansAccents(S.cherche || "");
+  let L = (S.insc || []).filter((i) => S.filtre === "tous" ? i.statut === "inscrit" : S.filtre === "non" ? i.statut === "inscrit" && !i.entre_le : S.filtre === "coopte" ? i.coopte && !["refuse", "desinscrit"].includes(i.statut) : true);
+  if (q) L = L.filter((i) => sansAccents(nomI(i) + " " + i.nom + " " + i.prenom + " " + (i.email || "") + " " + i.code).includes(q));
+  L.sort((a, b) => (a.nom || "").localeCompare(b.nom || "", "fr") || (a.prenom || "").localeCompare(b.prenom || "", "fr"));
+  const f = (k, t) => `<button class="btn ${S.filtre === k ? "" : "ghost"} sm" data-a="filtre" data-k="${k}">${t}</button>`;
+  return `<div class="card" style="padding:14px">
+      <div class="counter" style="margin:0"><b>${ent}</b><span>entrés sur <b>${tot}</b> · ${tot - ent} restant(s) · ${pct} %</span></div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      <div class="row du" style="justify-content:center;gap:14px"><span>${hs.filter((x) => x >= now - 900000).length} sur 15 min</span><span>${hs.filter((x) => x >= now - 3600000).length} sur 1 h</span><span>${hs.length ? "dernière entrée à " + heure(Math.max(...hs)) : "aucune entrée"}</span>
+        <span>${I.filter((i) => i.presence === "oui").length} ont confirmé leur présence</span></div>
+      <input class="f" id="suCherche" data-in="cherche" placeholder="Rechercher un nom, un e-mail ou un code…" value="${esc(S.cherche || "")}" autocomplete="off">
+      <div class="row">${f("tous", "Inscrit·es")}${f("non", "Non entrés")}${f("coopte", "Cooptation")}${f("toutes", "Toutes les inscriptions")}
+        <button class="btn ghost sm" data-a="rafraichir">↻ Rafraîchir</button></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ghost sm" data-a="relance">Relancer les non-venus</button>
+        <button class="btn ghost sm" data-a="presenceTous">Demander la confirmation de présence</button>
+        <button class="btn ghost sm" data-a="rappelTous">Envoyer le rappel maintenant</button>
+        <details class="menu"><summary class="btn ghost sm">Exporter ▾</summary><div class="ml">
+          <button class="btn ghost sm" data-a="export" data-k="xlsx">Toutes les inscriptions (Excel)</button>
+          <button class="btn ghost sm" data-a="export" data-k="csv">Toutes les inscriptions (CSV)</button>
+          <button class="btn ghost sm" data-a="export" data-k="presents">Présents (CSV)</button>
+          <button class="btn ghost sm" data-a="export" data-k="absents">Non-entrés (CSV)</button>
+          <button class="btn ghost sm" data-a="export" data-k="coopte">Cooptation (CSV)</button>
+          <button class="btn ghost sm" data-a="pdfTous">Billets en PDF (tout télécharger)</button>
+          <button class="btn ghost sm" data-a="copierMails">Copier les adresses e-mail</button>
+          <button class="btn ghost sm" data-a="affiche">Affiche de l'événement</button></div></details>
+        <details class="menu zone"><summary class="btn ghost sm" style="border-color:#7a2a2a;color:#ffb3b0">Actions irréversibles ▾</summary><div class="ml">
+          <p class="du" style="margin:0 4px 4px">Ces actions ne peuvent pas être annulées.</p>
+          <button class="btn danger sm" data-a="masse" data-k="doublons">Supprimer les doublons</button>
+          <button class="btn danger sm" data-a="masse" data-k="non_entres">Supprimer les non-entrés</button>
+          <button class="btn danger sm" data-a="masse" data-k="reset_entrees">Réinitialiser les entrées</button>
+          <button class="btn danger sm" data-a="masse" data-k="effacer">Effacer la liste</button></div></details></div></div>
+    ${L.length ? `<div class="lst">${L.map((i) => `<div class="li ${i.entre_le ? "in" : ""}"><div class="m"><div class="n">${esc(nomI(i))}${i.coopte ? ` <span class="badge info">cooptation</span>` : ""}</div>
+      <div class="x"><span class="mono">${esc(i.code)}</span> · ${esc(i.email || "sans e-mail")}${i.source === "manuel" ? " · ajout manuel" : ""}${i.presence ? " · présence : " + (i.presence === "oui" ? "✅" : "❌") : ""}${i.statut === "inscrit" && i.email && !i.billet_envoye_le ? " · <b style='color:var(--amber)'>billet non envoyé</b>" : ""}</div></div>
+      ${i.statut !== "inscrit" ? badgeStatut(i.statut) : i.entre_le ? `<span class="badge ok">Entré ${esc(heure(i.entre_le))}</span>` : `<span class="badge">Attendu</span>`}
+      <button class="ico" data-a="details" data-id="${i.id}" title="Détails">⋯</button></div>`).join("")}</div>` : `<div class="empty">Aucune personne dans cette liste.</div>`}`;
+}
+RES.filtre = (el) => { S.filtre = el.dataset.k; rendre(); };
+RES.cherche = (el) => { S.cherche = el.value; clearTimeout(S.chT); S.chT = setTimeout(() => { const p = el.selectionStart; rendre(); const n = $("suCherche"); if (n) { n.focus(); try { n.setSelectionRange(p, p); } catch (e) {} } }, 160); };
+RES.rafraichir = async () => { await chargerInscriptions(); rendre(); toast("Liste à jour"); };
+RES.relance = async () => { const n = (S.insc || []).filter((i) => i.statut === "inscrit" && !i.entre_le && i.email).length; if (!n) return info("Aucun non-venu avec e-mail.");
+  if (await confirmer("Renvoyer leur billet aux " + n + " personne(s) non entrée(s) (« l'événement a commencé… ») ?", "Relancer les non-venus")) envoiGroupe("relance", "Relance des non-venus"); };
+RES.presenceTous = async () => { const n = (S.insc || []).filter((i) => i.statut === "inscrit" && !i.presence && i.email).length; if (!n) return info("Tout le monde a déjà répondu (ou personne n'a d'e-mail).");
+  if (await confirmer("Demander la confirmation de présence aux " + n + " inscrit·es qui n'ont pas encore répondu ?\n(Personne ne la reçoit deux fois en 6 heures.)", "Confirmation de présence")) envoiGroupe("presence", "Demande de confirmation de présence"); };
+RES.rappelTous = async () => { const n = (S.insc || []).filter((i) => i.statut === "inscrit" && i.email).length; if (!n) return info("Aucun inscrit avec e-mail.");
+  if (await confirmer("Envoyer maintenant le rappel (infos pratiques + billet) aux " + n + " inscrit·es ?\n(Le rappel automatique de la veille reste actif si l'option est cochée.)", "Rappel")) envoiGroupe("rappel", "Rappel"); };
+RES.masse = async (el) => {
+  const k = el.dataset.k, e = evtCourant();
+  const t = { doublons: ["Supprimer les doublons", "Les inscriptions en double (même e-mail, ou même nom sans e-mail) sont supprimées ; on garde la plus ancienne ou celle déjà entrée."],
+    non_entres: ["Supprimer les non-entrés", "Toutes les personnes inscrites qui ne sont pas entrées sont supprimées de la liste."],
+    reset_entrees: ["Réinitialiser les entrées", "Toutes les entrées scannées sont effacées : tous les billets redeviennent valables."],
+    effacer: ["Effacer la liste", "TOUTES les inscriptions de « " + e.titre + " » sont supprimées (y compris la liste d'attente et les preuves de paiement)."] }[k];
+  if (k === "effacer") { const v = await saisir(t[1] + "\n\nAction irréversible. Tapez EFFACER pour confirmer.", t[0], { bouton: "Effacer", danger: true }); if (v === null) return; if (v.trim().toUpperCase() !== "EFFACER") return echec("Confirmation incorrecte : rien n'a été effacé.", "Annulé"); }
+  else if (!(await confirmer(t[1] + "\n\nAction irréversible.", t[0], { danger: true, bouton: t[0] }))) return;
+  const r = await appelFn({ action: "masse", evenement_id: S.evtId, quoi: k });
+  if (!r.ok) return echec(r.erreur || "Action impossible.");
+  await chargerInscriptions(); rendre(); succes(t[0] + " : " + r.n + " ligne(s) concernée(s)." + (r.promus ? "\n" + r.promus + " personne(s) de la liste d'attente ont reçu une place." : ""), "Fait");
+};
+RES.details = async (el) => {
+  const i = (S.insc || []).find((x) => x.id === el.dataset.id); if (!i) return;
+  const e = evtCourant();
+  const lg = (k, v) => v ? `<div class="pay" style="margin:0;padding:0;border:none;background:none"><div class="lg"><span>${esc(k)}</span><b style="font-family:inherit;font-weight:600">${esc(v)}</b></div></div>` : "";
+  const rep = (e.formulaire || []).map((c) => {
+    if (c.type === "photo" || c.type === "fichier") { const f = (i.fichiers || []).find((x) => x.champ === c.id); return f ? `<div class="lg"><span>${esc(c.label)}</span><a target="_blank" rel="noopener" data-fichier="${esc(f.path)}">${esc(f.nom || "ouvrir")}</a></div>` : ""; }
+    const v = valeurReponse(c, (i.reponses || {})[c.id]); return v ? lg(c.label, v) : "";
+  }).join("");
+  const boutons = [{ t: "Fermer", v: null }];
+  if (i.statut === "inscrit") { boutons.unshift({ t: "Voir le billet", v: "voir" }); if (i.email) { boutons.unshift({ t: "Demander la présence", v: "presence" }); boutons.unshift({ t: i.billet_envoye_le ? "Renvoyer le billet" : "Envoyer le billet", v: "billet" }); } }
+  if (i.entre_le) boutons.unshift({ t: "Annuler l'entrée", v: "annulerEntree" });
+  boutons.unshift({ t: "Supprimer", v: "suppr", cls: "danger" });
+  const v = await modale({ titre: nomI(i), large: true, html: `<div class="row" style="margin-bottom:8px">${badgeStatut(i.statut)}${i.coopte ? ` <span class="badge info">cooptation</span>` : ""}</div>
+    <div class="pay" style="margin:0">${lg("E-mail", i.email || "—")}${lg("Code du billet", i.code)}${lg("Source", i.source === "manuel" ? "Ajout manuel" : "Formulaire en ligne")}
+      ${lg("Inscrit·e le", quand(i.created_at))}${lg("Adresse confirmée le", quand(i.email_confirme_le))}${e.payant ? lg("Paiement", i.paye ? "validé (" + eur(i.montant) + ")" : "non validé") + lg("Communication", i.communication) : ""}
+      ${lg("Validé par", i.valide_par ? i.valide_par + " le " + quand(i.valide_le) : "")}${lg("Motif du refus", i.refus_motif)}${lg("Billet envoyé le", quand(i.billet_envoye_le))}
+      ${lg("Présence", i.presence ? (i.presence === "oui" ? "confirmée" : "ne viendra pas") : "")}${lg("Entrée", i.entre_le ? quand(i.entre_le) + (i.entre_par ? " par " + i.entre_par : "") : "")}
+      ${i.preuve_path ? `<div class="lg"><span>Preuve de paiement</span><a target="_blank" rel="noopener" data-fichier="${esc(i.preuve_path)}">ouvrir</a></div>` : ""}${rep}</div>`,
+    boutons, auto: () => setTimeout(chargerApercus, 0) });
+  if (v === "billet") envoiGroupe("envoyer_billets", "Envoi du billet", { ids: [i.id] });
+  else if (v === "presence") envoiGroupe("presence", "Demande de présence", { ids: [i.id] });
+  else if (v === "voir") window.open(APP_URL + "?t=" + i.secret, "_blank", "noopener");
+  else if (v === "annulerEntree") {
+    if (!(await confirmer("Annuler l'entrée de " + nomI(i) + " ? Son billet redevient valable.", "Annuler l'entrée"))) return;
+    const { data, error } = await sb.from("bil_inscriptions").update({ entre_le: null, entre_par: null, entre_appareil: null }).eq("id", i.id).select();
+    if (error || !data || !data.length) return echec(msgErreur(error || "Refusé."));
+    await chargerInscriptions(); rendre(); toast("Entrée annulée");
+  } else if (v === "suppr") {
+    if (!(await confirmer("Supprimer définitivement l'inscription de " + nomI(i) + " ?" + (["inscrit", "a_valider"].includes(i.statut) ? "\nSa place ira à la première personne en liste d'attente." : ""), "Supprimer", { danger: true, bouton: "Supprimer" }))) return;
+    actionFn({ action: "supprimer", id: i.id }, "Inscription supprimée");
+  }
+};
+
+/* ---------------- Exports ---------------- */
+function colonnes(e) {
+  const base = [["Nom", (i) => i.nom], ["Prénom", (i) => i.prenom], ["E-mail", (i) => i.email || ""], ["Code", (i) => i.code], ["Statut", (i) => (STATUTS[i.statut] || [i.statut])[0]],
+    ["Source", (i) => i.source === "manuel" ? "Manuel" : "En ligne"]];
+  if (e.payant) base.push(["Payé", (i) => i.paye ? "Oui" : "Non"], ["Montant", (i) => i.paye ? Number(i.montant || 0) : ""], ["Communication", (i) => i.communication || ""]);
+  base.push(["Entré le", (i) => i.entre_le ? quand(i.entre_le) : ""], ["Présence", (i) => i.presence || ""], ["Cooptation", (i) => i.coopte ? "Oui" : ""], ["Inscrit le", (i) => quand(i.created_at)]);
+  for (const c of e.formulaire || []) base.push([c.label, (i) => (c.type === "photo" || c.type === "fichier") ? (((i.fichiers || []).find((f) => f.champ === c.id) || {}).nom || "") : valeurReponse(c, (i.reponses || {})[c.id])]);
+  return base;
+}
+function tableau(e, liste) { const C = colonnes(e); return [C.map((c) => c[0])].concat(liste.map((i) => C.map((c) => { const v = c[1](i); return v == null ? "" : v; }))); }
+function csv(rows) { return "﻿" + rows.map((r) => r.map((v) => { const s = String(v); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(";")).join("\r\n"); }
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { let c = 0xffffffff; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function zip(fichiers) {
+  const enc = new TextEncoder(), parts = [], centre = []; let off = 0;
+  for (const [nom, txt] of fichiers) {
+    const n = enc.encode(nom), d = enc.encode(txt), c = crc32(d);
+    const h = new DataView(new ArrayBuffer(30)); h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(8, 0, true); h.setUint32(14, c, true); h.setUint32(18, d.length, true); h.setUint32(22, d.length, true); h.setUint16(26, n.length, true);
+    parts.push(new Uint8Array(h.buffer), n, d);
+    const z = new DataView(new ArrayBuffer(46)); z.setUint32(0, 0x02014b50, true); z.setUint16(4, 20, true); z.setUint16(6, 20, true); z.setUint32(16, c, true); z.setUint32(20, d.length, true); z.setUint32(24, d.length, true); z.setUint16(28, n.length, true); z.setUint32(42, off, true);
+    centre.push(new Uint8Array(z.buffer), n); off += 30 + n.length + d.length;
+  }
+  const tc = centre.reduce((a, b) => a + b.length, 0);
+  const f = new DataView(new ArrayBuffer(22)); f.setUint32(0, 0x06054b50, true); f.setUint16(8, fichiers.length, true); f.setUint16(10, fichiers.length, true); f.setUint32(12, tc, true); f.setUint32(16, off, true);
+  return new Blob([...parts, ...centre, new Uint8Array(f.buffer)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+function xlsx(rows, feuille) {
+  const x = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
+  const col = (n) => { let s = ""; n++; while (n) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetData>`
+    + rows.map((r, ri) => `<row r="${ri + 1}">` + r.map((v, ci) => { const ref = col(ci) + (ri + 1); return typeof v === "number" ? `<c r="${ref}"${ri === 0 ? ' s="1"' : ""}><v>${v}</v></c>` : `<c r="${ref}" t="inlineStr"${ri === 0 ? ' s="1"' : ""}><is><t xml:space="preserve">${x(v)}</t></is></c>`; }).join("") + `</row>`).join("") + `</sheetData></worksheet>`;
+  return zip([
+    ["[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`],
+    ["_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+    ["xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${x(String(feuille || "Inscriptions").replace(/[\\/?*[\]:]/g, " ").slice(0, 31))}" sheetId="1" r:id="rId1"/></sheets></workbook>`],
+    ["xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+    ["xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>`],
+    ["xl/worksheets/sheet1.xml", sheet]]);
+}
+const nomExport = (e, s, ext) => sansAccents(e.titre).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) + "-" + s + "-" + aujourdhui() + "." + ext;
+RES.export = async (el) => {
+  const e = evtCourant(), k = el.dataset.k; if (enLigne()) await chargerInscriptions();
+  const I = S.insc || [];
+  const ins = I.filter((i) => i.statut === "inscrit");
+  const liste = k === "presents" ? ins.filter((i) => i.entre_le) : k === "absents" ? ins.filter((i) => !i.entre_le) : k === "coopte" ? I.filter((i) => i.coopte && !["refuse", "desinscrit"].includes(i.statut)) : I;
+  const rows = tableau(e, liste);
+  if (k === "xlsx") return telecharger(xlsx(rows, e.titre), nomExport(e, "inscriptions", "xlsx"));
+  telecharger(new Blob([csv(rows)], { type: "text/csv;charset=utf-8" }), nomExport(e, { csv: "inscriptions", presents: "presents", absents: "non-entres", coopte: "cooptation" }[k], "csv"));
+};
+RES.copierMails = async () => {
+  const l = [...new Set((S.insc || []).filter((i) => i.statut === "inscrit" && i.email).map((i) => i.email))];
+  if (!l.length) return info("Aucune adresse à copier.");
+  const ok = await copier(l.join(", ")); toast(ok ? l.length + " adresse(s) copiée(s)" : "Copie impossible");
+};
+RES.pdfTous = () => {
+  const e = evtCourant(), I = (S.insc || []).filter((i) => i.statut === "inscrit");
+  if (!I.length) return info("Aucun billet.");
+  if (!(window.jspdf && window.jspdf.jsPDF)) return info("Le module PDF n'est pas chargé. Vérifiez votre connexion.");
+  const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a6", compress: true });
+  const ev = { titre: e.titre, commission: (commCourante() || {}).nom || "", date: e.date_evt, heure_debut: e.heure_debut, lieu: e.lieu };
+  I.slice().sort((a, b) => (a.nom || "").localeCompare(b.nom || "", "fr")).forEach((i, k) => pdfPageBillet(doc, ev, i, k === 0));
+  doc.save(nomExport(e, "billets", "pdf"));
+};
+
+/* ---------------- Onglet Bilan ---------------- */
+async function chargerBilan() {
+  S.bilan = { charge: true };
+  try {
+    const e = evtCourant();
+    const [st, cmp, so] = await Promise.all([sb.rpc("bil_stats", { p_eid: e.id }), sb.rpc("bil_stats_commission", { p_cid: e.commission_id }), sb.from("bil_sondages").select("note,organisation,reviendrait,commentaire,created_at").eq("evenement_id", e.id).order("created_at", { ascending: false })]);
+    if (st.error) throw st.error;
+    S.bilan = { stats: st.data, comp: cmp.data || [], sond: so.data || [], pour: e.id };
+  } catch (er) { S.bilan = { err: msgErreur(er) }; }
+  if (S.onglet === "bilan") rendre();
+}
+function vueBilan(e) {
+  if (!S.bilan || (S.bilan.pour && S.bilan.pour !== e.id) || (!S.bilan.pour && !S.bilan.charge && !S.bilan.err)) { setTimeout(chargerBilan, 0); return `<p class="du">Chargement du bilan…</p>`; }
+  if (S.bilan.charge) return `<p class="du">Chargement du bilan…</p>`;
+  if (S.bilan.err) return `<div class="alerte">${esc(S.bilan.err)}</div><button class="btn ghost sm" data-a="bilanRecharger">Réessayer</button>`;
+  const s = S.bilan.stats, so = s.sondage || {};
+  const k = (t, v) => `<div class="kpi"><div class="k">${t}</div><div class="v">${v}</div></div>`;
+  const taux = s.inscrits ? Math.round(100 * s.presents / s.inscrits) + " %" : "—";
+  const dist = (n) => S.bilan.sond.filter((x) => x.note === n).length;
+  return `<div class="kpis">${k("Inscrit·es", s.inscrits)}${e.payant ? k("Payés", s.payes) : ""}${k("Présent·es", s.presents)}${k("Absent·es", s.absents)}${k("Taux de présence", taux)}
+      ${k("Liste d'attente", s.attente)}${k("Refus", s.refuses)}${k("Désinscriptions", s.desinscrits)}${e.payant ? k("Recettes", eur(s.recettes)) : ""}${s.cooptes ? k("Cooptation", s.cooptes) : ""}</div>
+    ${e.donnees_purgees_le ? `<div class="note">Données des participants supprimées le ${esc(quand(e.donnees_purgees_le))} (RGPD, 12 mois après l'événement) : seules les statistiques sont conservées.</div>` : ""}
+    <div class="row"><button class="btn ghost sm" data-a="bilanMail">Envoyer le bilan par mail</button><button class="btn ghost sm" data-a="bilanRecharger">↻ Actualiser</button></div>
+    ${e.payant ? `<div class="card" style="margin-top:14px"><h3>Recettes vers la Caisse</h3>
+      ${e.recettes_envoyees_le ? `<p>✓ Recette de <b>${eur(e.recettes_montant)}</b> envoyée à la Caisse le ${esc(quand(e.recettes_envoyees_le))}.</p>`
+        : `<p class="du">Une seule recette pour l'événement (« Billetterie — ${esc(e.titre)} », ${eur(s.recettes)}, ${s.payes} paiement(s) validé(s), virement), à faire après l'événement.</p>
+        <button class="btn sm" data-a="recettes" ${e.date_evt && e.date_evt > aujourdhui() ? "disabled" : ""}>Envoyer les recettes à la Caisse</button>${e.date_evt && e.date_evt > aujourdhui() ? `<p class="du">Disponible après l'événement.</p>` : ""}`}</div>` : ""}
+    <div class="grp-h"><h2>Sondage de satisfaction</h2><span class="c">${so.n || 0} réponse(s)</span><span class="l"></span></div>
+    ${so.n ? `<div class="kpis">${k("Note globale", (so.note || 0) + " / 5")}${k("Organisation", (so.organisation || 0) + " / 5")}${k("Reviendraient", so.oui)}${k("Peut-être", so.peut)}${k("Non", so.non)}</div>
+      <div class="card">${[5, 4, 3, 2, 1].map((n) => `<div class="row" style="gap:10px;font-size:13px"><span style="width:28px">${n} ★</span><div class="bar" style="flex:1"><i style="width:${so.n ? 100 * dist(n) / so.n : 0}%"></i></div><span style="width:24px">${dist(n)}</span></div>`).join("")}</div>
+      ${S.bilan.sond.filter((x) => x.commentaire).length ? `<div class="lst">${S.bilan.sond.filter((x) => x.commentaire).map((x) => `<div class="li"><div class="m"><div class="x">${"★".repeat(x.note)} · ${esc(quand(x.created_at))}</div><div style="font-size:14px;white-space:pre-wrap">${esc(x.commentaire)}</div></div></div>`).join("")}</div>` : ""}`
+      : `<div class="empty">${e.sondage_auto ? "Le sondage part automatiquement le lendemain de l'événement." : "Sondage automatique désactivé (onglet Réglages)."}</div>`}
+    <div class="grp-h"><h2>Comparaison avec les événements de la commission</h2><span class="l"></span></div>
+    <div class="card" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="color:var(--slate);text-align:left"><th style="padding:6px">Événement</th><th>Date</th><th>Inscrit·es</th><th>Présent·es</th><th>Taux</th><th>Note</th></tr>
+      ${S.bilan.comp.map((c) => { const t = c.stats || {}; return `<tr style="border-top:1px solid var(--line);${c.id === e.id ? "color:var(--stamp)" : ""}"><td style="padding:6px">${esc(c.titre)}</td><td>${esc(c.date_evt ? dateCourte(c.date_evt) + " " + String(c.date_evt).slice(0, 4) : "—")}</td><td>${t.inscrits || 0}</td><td>${t.presents || 0}</td><td>${t.inscrits ? Math.round(100 * t.presents / t.inscrits) + " %" : "—"}</td><td>${t.sondage && t.sondage.n ? t.sondage.note + "/5" : "—"}</td></tr>`; }).join("")}</table></div>`;
+}
+RES.bilanRecharger = () => { S.bilan = null; rendre(); };
+RES.bilanMail = async () => { if (!(await confirmer("Envoyer le bilan de l'événement par mail aux responsables de la commission (et à vous) ?", "Bilan"))) return;
+  const r = await appelFn({ action: "bilan", evenement_id: S.evtId }); if (!r.ok) return echec(r.erreur || "Envoi impossible."); succes(r.envoyes + " mail(s) envoyé(s).", "Bilan envoyé"); };
+RES.recettes = async () => {
+  const e = evtCourant(), s = S.bilan.stats;
+  if (!(await confirmer(`Créer dans la Caisse une recette de ${eur(s.recettes)} (« Billetterie — ${e.titre} », ${s.payes} paiement(s) validé(s), méthode virement, catégorie Billetterie) ?\n\nUne seule fois par événement.`, "Recettes vers la Caisse"))) return;
+  const { data, error } = await sb.rpc("bil_envoyer_recettes", { p_eid: e.id });
+  if (error) return echec(msgErreur(error));
+  await rechargerEvt(); S.bilan = null; rendre();
+  succes(`Recette de ${eur(data.montant)} créée dans la Caisse (${data.nombre} paiement(s)).`, "Recettes envoyées");
+};
+
+/* =====================================================================
+   FORMULAIRE D'INSCRIPTION (paramétrable, un par événement)
+   ===================================================================== */
+function fbEtat(e) {
+  if (!S.fb || S.fb.pour !== e.id) S.fb = { pour: e.id, champs: JSON.parse(JSON.stringify(e.formulaire || [])), coopt: Object.assign({ actif: false, libelle: "" }, e.cooptation || {}) };
+  return S.fb;
+}
+function nouvelId(l) { let k; do { k = "c" + Math.random().toString(36).slice(2, 7); } while (l.some((c) => c.id === k)); return k; }
+function vueFormulaire(e) {
+  const F = fbEtat(e);
+  const ch = F.champs.map((c, k) => `<div class="fb" data-idx="${k}">
+      <div class="top"><select class="f" style="width:auto;flex:none" data-ch="fbType" data-k="${k}">${Object.entries(TYPES_CHAMPS).map(([v, t]) => `<option value="${v}" ${c.type === v ? "selected" : ""}>${t}</option>`).join("")}</select>
+        <input class="f" style="flex:1;min-width:180px" placeholder="Intitulé (ex. Régime alimentaire)" value="${esc(c.label || "")}" data-in="fbChamp" data-k="${k}" data-p="label" maxlength="200">
+        <button class="ico" data-a="fbMonter" data-k="${k}" ${k === 0 ? "disabled" : ""} title="Monter">↑</button><button class="ico" data-a="fbDescendre" data-k="${k}" ${k === F.champs.length - 1 ? "disabled" : ""} title="Descendre">↓</button>
+        <button class="ico" data-a="fbSuppr" data-k="${k}" title="Retirer" style="color:var(--red)">✕</button></div>
+      <input class="f" placeholder="Aide facultative (texte sous l'intitulé)" value="${esc(c.aide || "")}" data-in="fbChamp" data-k="${k}" data-p="aide" maxlength="300">
+      ${c.type === "choix_unique" || c.type === "choix_multiple" ? `<textarea class="f" rows="3" placeholder="Options — une par ligne" data-in="fbChamp" data-k="${k}" data-p="options">${esc((c.options || []).join("\n"))}</textarea>` : ""}
+      <label class="swl" style="margin:4px 0 0"><input type="checkbox" class="sw" data-ch="fbRequis" data-k="${k}" ${c.requis ? "checked" : ""}><span>${c.requis ? "Obligatoire" : "Facultatif"}</span></label></div>`).join("");
+  return `<div class="note">Toujours présents, non retirables : <b>nom, prénom, e-mail</b>${e.payant ? ", <b>preuve de paiement</b> (événement payant)" : ""} et la <b>case RGPD</b>, dont le texte liste automatiquement les données demandées.</div>
+    ${ch || `<div class="empty">Aucun champ en plus. Ajoutez-en ci-dessous.</div>`}
+    <div class="row" style="margin:10px 0 4px"><select class="f" id="fbNouveau" style="width:auto">${Object.entries(TYPES_CHAMPS).map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select><button class="btn ghost sm" data-a="fbAjouter">＋ Ajouter un champ</button></div>
+    <div class="card" style="margin-top:14px"><h3>Case « Cooptation » (facultative)</h3>
+      <label class="swl"><input type="checkbox" class="sw" data-ch="fbCoopt" ${F.coopt.actif ? "checked" : ""}><span>Afficher la case dans le formulaire</span></label>
+      ${F.coopt.actif ? `<input class="f" maxlength="200" placeholder="Je souhaite rejoindre…" value="${esc(F.coopt.libelle || "")}" data-in="fbCooptTxt">` : ""}
+      <p class="du">Les personnes qui la cochent apparaissent dans Suivi › filtre « Cooptation » (et l'export dédié).</p></div>
+    <div class="row" style="position:sticky;bottom:0;background:rgba(0,0,0,.9);padding:12px 0;margin-top:6px;border-top:1px solid var(--line)">
+      <button class="btn" data-a="fbEnregistrer">Enregistrer</button><button class="btn ghost" data-a="fbApercu">👁 Aperçu</button>
+      ${S.fbModif ? `<span class="du" style="color:var(--amber)">Modifications non enregistrées</span><button class="link" data-a="fbAnnuler">Annuler les modifications</button>` : ""}</div>`;
+}
+const fbModifie = () => { if (!S.fbModif) { S.fbModif = true; rendreEnPreservantForce(); } };
+function rendreEnPreservantForce() { const y = window.scrollY, a = document.activeElement, id = a && a.dataset ? [a.dataset.in, a.dataset.k, a.dataset.p] : null, pos = a && a.selectionStart; rendre(); window.scrollTo(0, y);
+  if (id && id[0]) { const n = document.querySelector(`[data-in="${id[0]}"]${id[1] != null ? `[data-k="${id[1]}"]` : ""}${id[2] ? `[data-p="${id[2]}"]` : ""}`); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) {} } } }
+RES.fbChamp = (el) => { const c = S.fb.champs[+el.dataset.k]; if (!c) return; if (el.dataset.p === "options") c.options = el.value.split("\n"); else c[el.dataset.p] = el.value; fbModifie(); };
+RES.fbType = (el) => { const c = S.fb.champs[+el.dataset.k]; c.type = el.value; if ((c.type === "choix_unique" || c.type === "choix_multiple") && !c.options) c.options = []; S.fbModif = true; rendreEnPreservantForce(); };
+RES.fbRequis = (el) => { S.fb.champs[+el.dataset.k].requis = el.checked; S.fbModif = true; rendreEnPreservantForce(); };
+RES.fbAjouter = () => { const t = $("fbNouveau").value; S.fb.champs.push({ id: nouvelId(S.fb.champs), type: t, label: "", aide: "", requis: false, options: (t === "choix_unique" || t === "choix_multiple") ? [] : undefined }); S.fbModif = true; rendre();
+  const l = document.querySelectorAll('[data-p="label"]'); if (l.length) l[l.length - 1].focus(); };
+RES.fbSuppr = async (el) => { const c = S.fb.champs[+el.dataset.k]; if (c.label && !(await confirmer("Retirer le champ « " + c.label + " » ? Les réponses déjà reçues restent dans les inscriptions existantes.", "Retirer"))) return; S.fb.champs.splice(+el.dataset.k, 1); S.fbModif = true; rendre(); };
+RES.fbMonter = (el) => { const k = +el.dataset.k; if (k < 1) return; const l = S.fb.champs; [l[k - 1], l[k]] = [l[k], l[k - 1]]; S.fbModif = true; rendre(); };
+RES.fbDescendre = (el) => { const k = +el.dataset.k, l = S.fb.champs; if (k >= l.length - 1) return; [l[k + 1], l[k]] = [l[k], l[k + 1]]; S.fbModif = true; rendre(); };
+RES.fbCoopt = (el) => { S.fb.coopt.actif = el.checked; S.fbModif = true; rendre(); };
+RES.fbCooptTxt = (el) => { S.fb.coopt.libelle = el.value; fbModifie(); };
+RES.fbAnnuler = () => { S.fb = null; S.fbModif = false; rendre(); };
+function fbNettoyer() {
+  return S.fb.champs.map((c) => { const o = { id: c.id, type: c.type, label: String(c.label || "").trim(), aide: String(c.aide || "").trim(), requis: !!c.requis };
+    if (c.type === "choix_unique" || c.type === "choix_multiple") o.options = [...new Set((c.options || []).map((x) => String(x).trim()).filter(Boolean))]; return o; });
+}
+RES.fbApercu = () => {
+  const e = evtCourant();
+  const faux = { titre: e.titre, commission: (commCourante() || {}).nom || "", formulaire: fbNettoyer().filter((c) => c.label), payant: e.payant, prix: e.prix, iban: "BE74363057740807", titulaire: "Le bureau étudiant ASBL",
+    cooptation: S.fb.coopt.actif ? (S.fb.coopt.libelle || "Je souhaite rejoindre…") : null, contact_rgpd: "esat.bojku@ulb.be" };
+  const ancien = S.pub; S.pub = { comm: "+++123/4567/89002+++", fichiers: {} };
+  modale({ titre: "Aperçu du formulaire", large: true, html: `<div class="pub" style="padding:0">${enteteUlb()}<h1>${esc(faux.titre)}</h1><p class="org">Organisé par la commission ${esc(faux.commission)}</p>${formulaireHtml(faux, true)}
+    <button class="btn block" style="margin-top:16px" disabled>Je m'inscris</button></div>`, auto: (d) => { const z = d.querySelector("#qrEpc"); if (z) z.appendChild(qrCanvas(epc(faux.titulaire, faux.iban, faux.prix, S.pub.comm), 200)); } }).then(() => { S.pub = ancien; });
+};
+RES.fbEnregistrer = async () => {
+  const champs = fbNettoyer();
+  if (champs.some((c) => !c.label)) return echec("Un champ n'a pas d'intitulé.");
+  const vide = champs.find((c) => (c.type === "choix_unique" || c.type === "choix_multiple") && !c.options.length);
+  if (vide) return echec("Une liste à choix n'a aucune option (« " + vide.label + " »).");
+  if (S.fb.coopt.actif && !String(S.fb.coopt.libelle || "").trim()) return echec("La case « Cooptation » n'a pas de texte.");
+  if (!enLigne()) return echec("Pas de connexion internet.");
+  try { await majEvt({ formulaire: champs, cooptation: { actif: !!S.fb.coopt.actif, libelle: String(S.fb.coopt.libelle || "").trim() } }); }
+  catch (er) { return echec(er.message); }
+  S.fb = null; S.fbModif = false; rendre();
+  succes("Le formulaire est enregistré sur le serveur (" + champs.length + " champ(s) en plus des champs fixes). La page d'inscription l'affiche dès maintenant ; le lien ne change pas.");
+};
+
+/* =====================================================================
+   DÉMARRAGE
+   ===================================================================== */
+function apresRendu() {
+  const q = $("qrEpc");
+  if (q && !q.firstChild) {
+    const e = S.mode === "form" ? S.pub.evt : (S.billet && S.billet.evenement) || {};
+    const b = S.mode === "form" ? { titulaire: e.titulaire, iban: e.iban, montant: e.prix, comm: S.pub.comm } : { titulaire: S.billet.titulaire, iban: S.billet.iban, montant: S.billet.montant || e.prix, comm: S.billet.communication };
+    if (b.iban) q.appendChild(qrCanvas(epc(b.titulaire, b.iban, b.montant, b.comm || ""), 210));
+  }
+  const t = $("qrBillet");
+  if (t && !t.firstChild && S.billet) t.appendChild(qrCanvas(S.billet.code, 300, { level: "M", padding: 8 }));
+  if (S.mode === "resp" && (S.vue === "global" || (S.vue === "evt" && S.onglet === "scanner"))) setTimeout(scanRattacher, 0);
+}
+/* Après un redessin, la caméra doit se rattacher au nouvel emplacement. */
+function scanRattacher() {
+  scanMajUI();
+  if (SC.camOn && !document.querySelector("#reader video")) { scanCamStop().then(scanCamStart); }
+}
+async function demarrer() {
+  majReseau();
+  if (!sb) {
+    app().innerHTML = `<div class="pub"><div class="alerte"><b>${enLigne() ? "Le serveur n'a pas pu être chargé." : "Hors ligne."}</b> ${enLigne() ? "La librairie Supabase n'a pas passé le contrôle d'intégrité, ou elle a été bloquée." : "Reconnectez-vous à internet puis rechargez la page."}</div></div>`;
+    return;
+  }
+  const p = S.params;
+  await lireEtat();
+  if (p.has("e")) { S.mode = "form"; if (S.etat.maintenance) { S.mode = "maintenance"; return rendre(); } return chargerFormPublic(); }
+  if (p.has("agenda")) { S.mode = "agenda"; if (S.etat.maintenance) { S.mode = "maintenance"; return rendre(); } return chargerAgenda(); }
+  if (p.has("c")) { S.mode = "confirm"; return chargerConfirm(); }
+  if (p.has("t")) { S.mode = "billet"; return chargerBillet("t"); }
+  if (p.has("v")) { S.mode = "virement"; return chargerBillet("v"); }
+  if (p.has("d")) { S.mode = "desinsc"; return chargerBillet("d"); }
+  if (p.has("p")) { S.mode = "presence"; return chargerBillet("p"); }
+  if (p.has("s")) { S.mode = "sondage"; return chargerBillet("s"); }
+  if (p.has("scan")) { S.mode = "benevole"; return chargerBenevole(); }
+  return demarrerResp();
+}
+// Toutes les 30 s : page d'erreur, maintenance, « déconnecter tous les appareils ».
+setInterval(async () => {
+  if (document.visibilityState !== "visible" || !enLigne() || !sb) return;
+  const avant = JSON.stringify([S.etat.maintenance, S.etat.deco_le]);
+  await lireEtat();
+  if (S.mode === "resp" || S.mode === "maintenance" || S.mode === "benevole") {
+    const ok = store.get("auth_ok", 0);
+    if (S.mode === "resp" && S.etat.deco_le && ok && new Date(S.etat.deco_le).getTime() > ok && !SC.file.length) { scanFermer(); S.mode = "login"; S.loginMsg = "Le propriétaire a déconnecté tous les appareils de la Billetterie : reconnectez-vous."; return rendre(); }
+    if (S.mode === "benevole" && S.etat.deco_le) { const b = store.get("benevole", null); if (b && (!b.depuis || new Date(S.etat.deco_le).getTime() > b.depuis) && !SC.file.length) { scanFermer(); store.set("benevole", null); return chargerBenevole(); } }
+    if (avant !== JSON.stringify([S.etat.maintenance, S.etat.deco_le])) location.reload();
+  }
+}, 30000);
+// Toutes les 15 s, événement ouvert : on reprend les inscriptions (preuves, liste d'attente, entrées).
+setInterval(async () => {
+  if (document.visibilityState !== "visible" || !enLigne() || S.mode !== "resp" || S.vue !== "evt" || !["inscriptions", "suivi"].includes(S.onglet)) return;
+  if (document.querySelector(".ca-mod") || SC.camOn) return;
+  const avant = JSON.stringify(S.insc);
+  await chargerInscriptions();
+  if (avant !== JSON.stringify(S.insc)) rendreEnPreservant();
+}, 15000);
+window.addEventListener("beforeunload", (e) => { if (SC.file && SC.file.length) { e.preventDefault(); e.returnValue = ""; } });
+if ("serviceWorker" in navigator) window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js", { scope: "./" }).catch(() => {}); });
+demarrer();
+
+</script>
+</body>
+</html>

@@ -157,6 +157,7 @@ input[type=date]{color-scheme:dark}
 .cal-ev{background:#c9772a}
 .cal-tache{background:#8a3a5a}
 .cal-salle{background:#2e7d4f}
+.cal-bil{background:#8a5a12}
 .cal-salle-att{background:transparent;border:1px dashed #f2ac3f!important;color:#f2ac3f}
 @media(max-width:640px){ .cal-cell{min-height:56px} .cal-ev-chip{font-size:9px} }
 select.f{width:100%}
@@ -614,7 +615,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-23 \u00b7 salle fac";
+const CA_VERSION="2026-10-23 \u00b7 billetterie";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1170,16 +1171,16 @@ async function refreshSession(){
   const jobsCoopte=[loadConflits,loadEvenements,loadMeta,loadAvis,loadAvisVotes,loadMediation,loadSoutien];
   const jobs=(S.session.role==="coopte")?jobsCoopte:[loadDocs,loadMessages,loadConflits,loadTaches,loadContacts,loadAnnonces,loadReactions,loadPresence,
     loadEvenements,loadReunions,loadCreneaux,loadOrg,loadBudgets,loadVotes,loadMeta,loadBilans,loadJournal,
-    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes,loadSalle];
+    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes,loadSalle,loadBillets];
   if(S.session.role==="coopte"){ ["docs","messages","taches","contacts","annonces","reunions","creneaux","budgets","votes","bilans","journal","mailing","procurations"].forEach(k=>{ S[k]=[]; }); }
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
 }
-const ONGLETS_OPTIONNELS=[["taches","Tâches"],["planning","Planning"],["evenements","Événements"],["salle","Réservation salle fac"],["contacts","Contacts"]];
+const ONGLETS_OPTIONNELS=[["taches","Tâches"],["planning","Planning"],["evenements","Événements"],["salle","Réservation salle fac"],["billetterie","Billetterie"],["contacts","Contacts"]];
 function ongletActif(k){ return ongletsOff().indexOf(k)<0; }
 function ongletsOff(){ return (S.meta&&Array.isArray(S.meta.ongletsOff))?S.meta.ongletsOff:[]; }
 /* Notes d'un point : le secrétariat partout, chaque membre seulement sous son propre point. */
 function peutNoterPoint(pt){ const me=S.session; if(!me||!pt) return false; return estSecretaire() || (!!pt.parId && pt.parId===me.id); }
-async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; S.meta.ongletsOff=Array.isArray(data.onglets_off)?data.onglets_off:[]; S.meta.cesActif=(data.ces_actif!==false); S.meta.erreurCa=data.erreur_ca||""; S.meta.salleResp=Array.isArray(data.salle_resp)?data.salle_resp:[]; S.meta.salleCharte=Array.isArray(data.salle_charte)?data.salle_charte:null; S.meta.salleFermetures=Array.isArray(data.salle_fermetures)?data.salle_fermetures:[]; S.meta.erreurCaisse=data.erreur_caisse||""; } }catch(e){} }
+async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; S.meta.ongletsOff=Array.isArray(data.onglets_off)?data.onglets_off:[]; S.meta.cesActif=(data.ces_actif!==false); S.meta.erreurCa=data.erreur_ca||""; S.meta.salleResp=Array.isArray(data.salle_resp)?data.salle_resp:[]; S.meta.salleCharte=Array.isArray(data.salle_charte)?data.salle_charte:null; S.meta.salleFermetures=Array.isArray(data.salle_fermetures)?data.salle_fermetures:[]; S.meta.erreurCaisse=data.erreur_caisse||""; S.meta.erreurBillets=data.erreur_billets||""; } }catch(e){} }
 async function loadBilans(){
   /* Aucun tri : l'ordre de lecture ne doit rien laisser deviner de l'ordre de dépôt.
      La base ne renvoie ces lignes qu'au secrétariat, et seulement après clôture. */
@@ -1378,6 +1379,7 @@ function evenementsCalendrier(){
   if(ongletActif("evenements")) (S.evenements||[]).forEach(e=>{ if(e.date) items.push({date:String(e.date).slice(0,10),type:"Événement",titre:e.titre||"Événement",lieu:e.lieu||"",cls:"cal-ev"}); });
   if(ongletActif("taches")) (S.taches||[]).forEach(t=>{ if(t.echeance && t.statut!=="done") items.push({date:String(t.echeance).slice(0,10),type:"Échéance tâche",titre:t.titre||"Tâche",lieu:"",cls:"cal-tache"}); });
   if(ongletActif("salle") && typeof salleIsoLocal==="function") (S.salle||[]).forEach(r=>{ if(r.statut==="validee") items.push({date:salleIsoLocal(new Date(r.debut)),type:"Salle fac",titre:salleH(r.debut)+"–"+salleH(r.fin)+" "+(r.demandeur_nom||""),lieu:"Salle facultaire",cls:"cal-salle"}); });
+  if(ongletActif("billetterie")) (S.billets&&S.billets.cal||[]).forEach(b=>{ if(b.date_evt && !(b.ca_evenement_id && (S.evenements||[]).some(e=>String(e.id)===String(b.ca_evenement_id) && String(e.date||"").slice(0,10)===String(b.date_evt)))) items.push({date:String(b.date_evt).slice(0,10),type:"Billetterie",titre:(b.heure_debut?String(b.heure_debut).slice(0,5).replace(":","h")+" ":"")+b.titre,lieu:b.lieu||"",cls:"cal-bil"}); });
   return items;
 }
 function icsDate(d){ return String(d).slice(0,10).replace(/-/g,""); }
@@ -1667,6 +1669,7 @@ function viewAdmin(){
       ${directionExtra().length?`<p class="du">${directionExtra().length} médiateur(s) enregistré(s).</p>`:`<p class="du" style="color:var(--red)">Aucun médiateur enregistré : vous ne pourrez attribuer aucun dossier.</p>`}
     </div>
     ${salleCarteAdmin()}
+    ${typeof billetsCarteAdmin==="function"?billetsCarteAdmin():""}
     <div class="card2"><h3 class="serif">Commission Entraide Sociale (CES)</h3>
       <p class="du">Activez ou désactivez l'onglet « Soutien social — CES » de Waled Buzzian, quand vous le voulez. Désactivé, l'onglet disparaît pour lui (vous le gardez). Ses dossiers ne sont ni modifiés ni effacés.</p>
       <label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:15px;font-weight:700;cursor:pointer">
@@ -1787,9 +1790,9 @@ function viewAuth(){
 function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textContent=msg; e.style.display="block"; } }
 
 /* ---- DASHBOARD ---- */
-const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
+const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,notifs:tabNotifs,search:tabSearch};
+  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,notifs:tabNotifs,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
@@ -2862,6 +2865,7 @@ function tabEvenements(){
     <div class="grp-h" style="margin-top:22px"><h2 class="serif">Présence</h2><span class="l"></span></div>
     ${blocPresence(ev.id)}
     ${blocRappel("evenement", ev)}
+    ${typeof blocBilletterieEvt==="function"?blocBilletterieEvt(ev):""}
     <div class="grp-h" style="margin-top:22px"><h2 class="serif">Notes</h2><span class="l"></span></div>
     <textarea data-change="evfield" data-field="notes" placeholder="Notes sur l'événement…">${esc(ev.notes||"")}</textarea>`;
 }
@@ -3056,7 +3060,7 @@ function tabCalendrier(){
         <button class="btn sm" data-action="cal-ics">\u2b07 Exporter (.ics)</button>
       </div>
     </div>
-    <div class="cal-legend"><span class="cal-ev-chip cal-salle">Salle fac</span><span class="cal-ev-chip cal-reu">R\u00e9union</span><span class="cal-ev-chip cal-ev">\u00c9v\u00e9nement</span><span class="cal-ev-chip cal-tache">\u00c9ch\u00e9ance t\u00e2che</span></div>
+    <div class="cal-legend"><span class="cal-ev-chip cal-salle">Salle fac</span><span class="cal-ev-chip cal-reu">R\u00e9union</span><span class="cal-ev-chip cal-ev">\u00c9v\u00e9nement</span><span class="cal-ev-chip cal-bil">Billetterie</span><span class="cal-ev-chip cal-tache">\u00c9ch\u00e9ance t\u00e2che</span></div>
     <div class="cal-grid-h">${dows.map(d=>`<div>${d}</div>`).join("")}</div>
     <div class="cal-grid">${cells.join("")}</div>
     <p style="font-size:11.5px;color:var(--slate);margin:10px 0 0">Le calendrier reprend automatiquement vos r\u00e9unions, \u00e9v\u00e9nements et \u00e9ch\u00e9ances de t\u00e2ches. L'export .ics s'ouvre dans Google Agenda, Apple Calendrier, Outlook\u2026</p>
@@ -7716,6 +7720,121 @@ document.addEventListener("change", e=>{
   if(e.target && e.target.id==="salle_date" && S.salleUI){ S.salleUI.jour=e.target.value; rendreEnPreservant(); }
 });
 
+/* =====================================================================
+   BILLETTERIE (page à part : billets/)
+   - Onglet « Billetterie » : accès à l'espace des responsables de commission.
+   - Onglet Événements : création de la billetterie en un clic.
+   - Calendrier : les événements avec billetterie y apparaissent.
+   - Admin › Billetterie : commissions actives, maintenance, déconnexion.
+   Les droits sont revérifiés par le serveur (script billetterie.sql).
+   ===================================================================== */
+function billetsUrl(q){ return new URL("billets/", caAppUrl()).href + (q||""); }
+async function loadBillets(){
+  if(!sb || estCoopte()) { S.billets={comms:[],evts:[],cal:[]}; return; }
+  const B={comms:[],evts:[],cal:[],err:""};
+  try{
+    const [c,e,k]=await Promise.all([sb.rpc("bil_mes_commissions"), sb.rpc("bil_mes_evenements"), sb.rpc("bil_calendrier")]);
+    if(c.error) B.err=c.error.message;
+    B.comms=(c&&c.data)||[]; B.evts=(e&&e.data)||[]; B.cal=(k&&k.data)||[];
+  }catch(err){ B.err=String(err&&err.message||err); }
+  S.billets=B;
+}
+function billetsNonInstalle(){ const e=(S.billets&&S.billets.err)||""; return /bil_|does not exist|Could not find/i.test(e); }
+function tabBilletterie(){
+  if(estCoopte()) return `<div class="empty">Réservé aux membres du CA.</div>`;
+  const B=S.billets||{comms:[],evts:[]};
+  if(billetsNonInstalle()) return `<div class="sout-card"><p class="sout-p" style="color:var(--red)">La billetterie n'est pas encore installée sur le serveur : le script SQL « billetterie.sql » doit être exécuté dans Supabase.</p><p class="du">${esc(B.err)}</p></div>`;
+  const a=B.comms.length>0;
+  const lignes=(B.evts||[]).map(e=>`<a class="msg-row" href="${esc(billetsUrl("?ev="+e.id))}" style="text-decoration:none"><span class="msg-av">${esc(e.date_evt?String(e.date_evt).slice(8,10):"·")}</span>
+      <span style="flex:1"><span class="nm">${esc(e.titre)}</span><br><span class="fn">${esc([e.commission, e.date_evt?fmtDateLong(String(e.date_evt).slice(0,10)):"date à fixer", e.lieu].filter(Boolean).join(" · "))}</span></span>
+      <span class="fn" style="text-align:right;white-space:nowrap">${e.places?(e.inscrits+e.a_valider)+" / "+e.places:e.inscrits+" inscrit·e(s)"}${e.a_valider?`<br><span class="pill" style="background:var(--amber);color:#241100">${e.a_valider} à vérifier</span>`:""}</span></a>`).join("");
+  return `<div class="sout-top"><h2 class="serif" style="margin:0;font-size:22px">🎟 Billetterie</h2>${a?`<span class="badge">${esc(B.comms.map(c=>c.nom).join(" · "))}</span>`:""}</div>
+    <div class="compose"><h3 class="serif">Inscriptions, billets QR et contrôle d'entrée</h3>
+      <p style="color:var(--ink-soft);font-size:13px;margin:0 0 10px">${a?"Vous êtes responsable de commission : créez vos événements, réglez le formulaire d'inscription, validez les paiements et scannez les billets. Vous êtes déjà connecté·e avec votre compte du CA.":"La billetterie est réservée aux responsables de commission (postes « Responsable … » de l'organigramme). Votre compte n'en gère aucune."}</p>
+      <div class="row-btn">${a?`<a class="btn" href="${esc(billetsUrl())}">Ouvrir la Billetterie →</a>`:""}<button class="btn ghost" data-action="bil-copier-agenda">Copier le lien de l'agenda public</button></div></div>
+    ${a?`<div class="grp-h"><h2 class="serif">Événements en cours</h2><span class="c">${(B.evts||[]).length}</span><span class="l"></span></div>${lignes?`<div class="msg-list">${lignes}</div>`:`<div class="empty">Aucun événement avec billetterie. Créez-en un dans la Billetterie, ou en un clic depuis l'onglet Événements.</div>`}`:""}`;
+}
+/* Sous un événement de l'onglet Événements : créer ou ouvrir sa billetterie. */
+function blocBilletterieEvt(ev){
+  if(!ongletActif("billetterie") || estCoopte()) return "";
+  const B=S.billets||{comms:[],evts:[]};
+  if(!B.comms.length) return "";
+  const lies=(B.evts||[]).filter(x=>String(x.ca_evenement_id||"")===String(ev.id));
+  const liesCal=(B.cal||[]).filter(x=>String(x.ca_evenement_id||"")===String(ev.id));
+  return `<div class="grp-h" style="margin-top:22px"><h2 class="serif">🎟 Billetterie</h2><span class="l"></span></div>
+    <div class="compose" style="padding:12px 14px"><div class="row-btn" style="margin:0">
+      ${(lies.length?lies:liesCal).map(x=>`<a class="btn ghost sm" href="${esc(billetsUrl("?ev="+x.id))}">Ouvrir la billetterie${(lies.length?lies:liesCal).length>1?" — "+esc(x.commission||""):""} →</a>`).join("")}
+      ${lies.length?"":`<button class="btn sm" data-action="bil-creer" data-id="${esc(ev.id)}">Créer la billetterie de cet événement</button>`}</div>
+      ${lies.length?"":`<p class="du" style="margin:8px 0 0">Reprend le titre, la date et le lieu. Vous réglerez ensuite le formulaire, les places et le paiement.</p>`}</div>`;
+}
+function billetsCarteAdmin(){
+  if(!(S.session&&S.session.role==="owner")) return "";
+  const A=S.billetsAdmin;
+  if(!A){ if(!S.billetsAdminCharge){ S.billetsAdminCharge=true; sb.rpc("bil_admin_etat").then(r=>{ S.billetsAdmin=(r&&!r.error&&r.data)||{err:(r&&r.error&&r.error.message)||"?"}; rendreEnPreservant(); }).catch(()=>{ S.billetsAdminCharge=false; }); }
+    return `<div class="card2"><h3 class="serif">🎟 Billetterie</h3><p class="du">Chargement…</p></div>`; }
+  if(A.err) return `<div class="card2"><h3 class="serif">🎟 Billetterie</h3><p class="du" style="color:var(--red)">${/bil_|does not exist|Could not find/i.test(A.err)?"Le script SQL « billetterie.sql » n'a pas encore été exécuté dans Supabase.":esc(A.err)}</p></div>`;
+  return `<div class="card2"><h3 class="serif">🎟 Billetterie</h3>
+    <p class="du">Page à part : <a href="${esc(billetsUrl())}" target="_blank" rel="noopener">${esc(billetsUrl())}</a>. La page d'erreur de la Billetterie se règle dans la carte « Page d'erreur » ci-dessus.</p>
+    <p class="fld" style="margin:12px 0 6px;font-weight:600">Commissions actives</p>
+    <p class="du">Une commission retirée disparaît de la Billetterie pour ses responsables (vous la voyez toujours). Les billets déjà émis, les inscriptions en ligne et le scanner continuent de fonctionner.</p>
+    ${(A.commissions||[]).map(c=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
+      <input type="checkbox" class="sw" role="switch" ${c.actif?"checked":""} data-action="bil-comm" data-id="${esc(c.id)}"> ${esc(c.nom)} <span class="du">${esc(c.responsables||"aucun compte responsable")}${c.evenements?" · "+c.evenements+" événement(s)":""}</span></label>`).join("")}
+    <p class="fld" style="margin:16px 0 6px;font-weight:600">🛠️ Mode maintenance</p>
+    <label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:15px;font-weight:700;cursor:pointer">
+      <input type="checkbox" class="sw" role="switch" ${A.maintenance?"checked":""} data-action="bil-maint"> ${A.maintenance?"Maintenance ACTIVÉE":"Maintenance désactivée"}</label>
+    <p class="du">Activée : la Billetterie affiche « En maintenance » partout (responsables, bénévoles, formulaire bloqué), sauf pour vous. Les billets des participants restent affichables.</p>
+    <p class="fld" style="margin:16px 0 6px;font-weight:600">Déconnecter tous les appareils</p>
+    <p class="du">Tous les appareils ouverts sur la Billetterie (responsables et bénévoles) devront se reconnecter (dans les 30 secondes s'ils sont ouverts). L'espace CA n'est pas touché.${A.deco_le?" Dernière fois : "+esc(fmtQuand(A.deco_le))+".":""}</p>
+    <div class="row-btn"><button class="btn ghost sm" style="border-color:var(--red);color:var(--red)" data-action="bil-deco">🔒 Déconnecter partout</button></div></div>`;
+}
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-action^='bil-']"); if(!el||!sb) return;
+  const a=el.dataset.action;
+  try{
+    if(a==="bil-copier-agenda"){
+      const l=billetsUrl("?agenda"); let ok=false;
+      try{ await navigator.clipboard.writeText(l); ok=true; }catch(_){ }
+      modaleLien("Agenda public de la Billetterie","Un seul lien à partager : il liste tous les événements aux inscriptions ouvertes.",l,ok); return;
+    }
+    if(a==="bil-creer"){
+      const B=S.billets||{comms:[]}; let cid=B.comms.length===1?B.comms[0].id:null;
+      if(!cid){
+        const noms=B.comms.map((c,i)=>(i+1)+". "+c.nom).join("\n");
+        const v=await modaleChamp("Pour quelle commission ?\n\n"+noms+"\n\nTapez le numéro.","Créer la billetterie",{placeholder:"1",bouton:"Créer"});
+        if(v===null) return; const c=B.comms[parseInt(v,10)-1]; if(!c){ modaleInfo("Numéro invalide."); return; } cid=c.id;
+      }
+      el.disabled=true; el.textContent="Création…";
+      const r=await sb.rpc("bil_creer_depuis_ca",{p_ca_id:String(el.dataset.id),p_cid:cid});
+      if(r.error){ el.disabled=false; el.textContent="Créer la billetterie de cet événement"; modaleInfo("Création impossible : "+r.error.message,"Billetterie"); return; }
+      try{ logAct("Billetterie créée pour l'événement "+((S.evenements||[]).find(x=>String(x.id)===String(el.dataset.id))||{}).titre); }catch(_){ }
+      location.href=billetsUrl("?ev="+r.data+"&onglet=reglages"); return;
+    }
+    if(!(S.session&&S.session.role==="owner")) return;
+    if(a==="bil-comm"){
+      const v=el.checked, c=(S.billetsAdmin.commissions||[]).find(x=>x.id===el.dataset.id);
+      const r=await sb.rpc("bil_admin_commission",{p_cid:el.dataset.id,p_actif:v});
+      if(r.error||r.data!==v){ el.checked=!v; modaleInfo("❌ Non enregistré : "+((r.error&&r.error.message)||"le serveur a refusé")+".","Billetterie"); return; }
+      c.actif=v; logAct("Billetterie — commission "+(c?c.nom:"")+(v?" remise":" retirée")); rendreEnPreservant();
+      modaleInfo("✓ Commission « "+(c?c.nom:"")+" » "+(v?"remise dans":"retirée de")+" la Billetterie.","Enregistré"); return;
+    }
+    if(a==="bil-maint"){
+      const v=el.checked;
+      if(!(await modaleConfirm(v?"Activer le mode maintenance ? Toute la Billetterie affichera « En maintenance » (sauf pour vous) et le formulaire d'inscription sera bloqué.":"Désactiver le mode maintenance ?","Maintenance"))){ el.checked=!v; return; }
+      const r=await sb.rpc("bil_admin_maintenance",{p_on:v});
+      if(r.error||r.data!==v){ el.checked=!v; modaleInfo("❌ Non enregistré : "+((r.error&&r.error.message)||"le serveur a refusé")+".","Maintenance"); return; }
+      S.billetsAdmin.maintenance=v; logAct("Billetterie — maintenance "+(v?"activée":"désactivée")); rendreEnPreservant();
+      modaleInfo(v?"✓ Mode maintenance ACTIVÉ.":"✓ Mode maintenance désactivé.","Enregistré"); return;
+    }
+    if(a==="bil-deco"){
+      if(!(await modaleConfirm("Déconnecter tous les appareils de la Billetterie ? Responsables et bénévoles devront se reconnecter. L'espace CA n'est pas touché.","Déconnecter partout"))) return;
+      const r=await sb.rpc("bil_admin_deconnecter");
+      if(r.error){ modaleInfo("❌ Non enregistré : "+r.error.message,"Billetterie"); return; }
+      S.billetsAdmin.deco_le=r.data; logAct("Billetterie — tous les appareils déconnectés"); rendreEnPreservant();
+      modaleInfo("✓ Tous les appareils de la Billetterie vont être déconnectés.","Enregistré"); return;
+    }
+  }catch(err){ modaleInfo(String(err&&err.message||err)); }
+});
+
 boot();
 
 </script>
@@ -7811,7 +7930,7 @@ setInterval(verifierErrCA, 20000);
 try{ sb && sb.auth.onAuthStateChange(function(){ setTimeout(verifierErrCA, 600); }); }catch(e){}
 
 /* ---------- Carte des réglages (propriétaire) ---------- */
-function errValeurs(){ return { ca: S.meta.erreurCa||"", caisse: S.meta.erreurCaisse||"" }; }
+function errValeurs(){ return { ca: S.meta.erreurCa||"", caisse: S.meta.erreurCaisse||"", billets: S.meta.erreurBillets||"" }; }
 function errLib(v){ return v ? (v+" · "+ERR_TXT[v][1]) : "désactivée"; }
 function carteErreurCA(){
   if(!ERR_DRAFT) ERR_DRAFT = errValeurs();
@@ -7827,10 +7946,11 @@ function carteErreurCA(){
   }
   return '<div class="card2"><h3 class="serif">🚫 Page d\'erreur</h3>'
     + '<p class="du">Choisis l\'erreur à afficher, puis « Enregistrer ». Activée : tout le monde voit cette page à la place de l\'app, sauf toi quand tu es connecté avec ce compte. Pour entrer depuis un appareil non connecté : l\'adresse de l\'app suivie de <b>#admin</b>.</p>'
-    + ligne("ca","App CA") + ligne("caisse","Caisse")
+    + ligne("ca","App CA") + ligne("caisse","Caisse") + ligne("billets","Billetterie")
     + '<div class="row-btn" style="margin-top:12px"><button class="btn" type="button" data-erract="save">Enregistrer</button>'
     + '<button class="btn ghost" type="button" data-erract="apercu" data-app="ca">👁 Aperçu App CA</button>'
-    + '<button class="btn ghost" type="button" data-erract="apercu" data-app="caisse">👁 Aperçu Caisse</button></div></div>';
+    + '<button class="btn ghost" type="button" data-erract="apercu" data-app="caisse">👁 Aperçu Caisse</button>'
+    + '<button class="btn ghost" type="button" data-erract="apercu" data-app="billets">👁 Aperçu Billetterie</button></div></div>';
 }
 document.addEventListener("click", async function(ev){
   var el = ev.target && ev.target.closest ? ev.target.closest("[data-erract]") : null;
@@ -7846,20 +7966,21 @@ document.addEventListener("click", async function(ev){
     var act = errValeurs(), lignes=[];
     if(ERR_DRAFT.ca!==act.ca) lignes.push("App CA : "+(ERR_DRAFT.ca?"ACTIVÉE ("+errLib(ERR_DRAFT.ca)+")":"DÉSACTIVÉE"));
     if(ERR_DRAFT.caisse!==act.caisse) lignes.push("Caisse : "+(ERR_DRAFT.caisse?"ACTIVÉE ("+errLib(ERR_DRAFT.caisse)+")":"DÉSACTIVÉE"));
+    if((ERR_DRAFT.billets||"")!==act.billets) lignes.push("Billetterie : "+(ERR_DRAFT.billets?"ACTIVÉE ("+errLib(ERR_DRAFT.billets)+")":"DÉSACTIVÉE"));
     if(!lignes.length){ modaleInfo("Aucun changement à enregistrer."); return; }
     var recap = lignes.join("\n");
     if(!(await modaleConfirm("Confirmer ce changement ?\n\n"+recap))) return;
     ERR_SAVING=true; el.disabled=true; el.textContent="Enregistrement…";
     var ok=false, souci="";
     try{
-      var r = await sb.from("ca_meta").update({ erreur_ca: ERR_DRAFT.ca||null, erreur_caisse: ERR_DRAFT.caisse||null }).eq("id",1).select();
-      if(r && r.error){ souci = r.error.message + (/erreur_c/.test(r.error.message) ? " — le script SQL n'a pas encore été exécuté dans Supabase" : ""); }
+      var r = await sb.from("ca_meta").update({ erreur_ca: ERR_DRAFT.ca||null, erreur_caisse: ERR_DRAFT.caisse||null, erreur_billets: ERR_DRAFT.billets||null }).eq("id",1).select();
+      if(r && r.error){ souci = r.error.message + (/erreur_(c|b)/.test(r.error.message) ? " — le script SQL n'a pas encore été exécuté dans Supabase" : ""); }
       else if(!r || !r.data || !r.data.length){ souci = "le serveur a refusé la modification"; }
       else {
-        var d2 = await sb.from("ca_meta").select("erreur_ca,erreur_caisse").eq("id",1).maybeSingle();   // relecture
+        var d2 = await sb.from("ca_meta").select("erreur_ca,erreur_caisse,erreur_billets").eq("id",1).maybeSingle();   // relecture
         var v = d2 && d2.data;
-        ok = !!v && (v.erreur_ca||"")===ERR_DRAFT.ca && (v.erreur_caisse||"")===ERR_DRAFT.caisse;
-        if(ok){ S.meta.erreurCa=v.erreur_ca||""; S.meta.erreurCaisse=v.erreur_caisse||""; } else souci="la relecture ne correspond pas";
+        ok = !!v && (v.erreur_ca||"")===ERR_DRAFT.ca && (v.erreur_caisse||"")===ERR_DRAFT.caisse && (v.erreur_billets||"")===(ERR_DRAFT.billets||"");
+        if(ok){ S.meta.erreurCa=v.erreur_ca||""; S.meta.erreurCaisse=v.erreur_caisse||""; S.meta.erreurBillets=v.erreur_billets||""; } else souci="la relecture ne correspond pas";
       }
     }catch(e){ souci="pas de connexion"; }
     ERR_SAVING=false;
