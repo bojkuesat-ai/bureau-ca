@@ -6327,10 +6327,11 @@ function lireHorairesUI(){
 async function saveHoraires(){
   const H = lireHorairesUI();
   const { data, error } = await sb.from("caisse_config").upsert({ id:1, horaires:H, updated_at:new Date().toISOString() }).select("horaires");
-  if(error){ toast("Échec : "+error.message); return; }
+  if(error){ dire("Horaires non enregistrés", "Échec : "+error.message); return; }
   // Une règle de droits peut refuser sans message : on vérifie que la base a vraiment pris le réglage.
-  if(!data || !data.length){ toast("Non enregistré : seul le compte trésorier de la Caisse peut modifier les horaires."); return; }
-  state.horaires = H; state.horEdited = false; renderHoraires(); majHoraire && majHoraire(); toast("Horaires enregistrés.");
+  if(!data || !data.length){ dire("Horaires non enregistrés", "Seul le compte trésorier de la Caisse peut modifier les horaires."); return; }
+  state.horaires = H; state.horEdited = false; renderHoraires(); majHoraire && majHoraire();
+  dire("Horaires enregistrés ✓", texteHoraires() + "\n\nC'est appliqué tout de suite pour tous les membres. Aujourd'hui, le dépôt est " + (fenetreOuverte() ? "OUVERT." : "FERMÉ."));
 }
 function renderOverview(){
   const sel = $("#o_annee");
