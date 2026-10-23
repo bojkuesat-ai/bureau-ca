@@ -7431,11 +7431,27 @@ if($("#fd_pour")) $("#fd_pour").addEventListener("change", () => majBudgetForm("
 ["#reqForm","#directForm"].forEach(id => { const f = $(id); if(f) f.addEventListener("reset", () => setTimeout(() => {
   const px = id === "#reqForm" ? "f" : "fd"; const u = $("#" + px + "_urg"); if(u) u.checked = false; majBudgetForm(px); }, 0)); });
 
+// lien « Demander une rallonge » des mails d'alerte : …#complement=<id du budget>
+let _complPending = (function(){ const m=(window.location.hash||"").match(/complement=([A-Za-z0-9-]+)/); return m?decodeURIComponent(m[1]):null; })();
+function verifierLienComplement(liste){
+  if(!_complPending) return;
+  const bid = _complPending;
+  const b = liste.find(x => String(x.id) === bid);
+  if(!b) return;   // budgets pas encore chargés, ou pas titulaire : on réessaiera au prochain affichage
+  _complPending = null;
+  try{ history.replaceState(null, "", window.location.pathname); }catch(_){}
+  setTimeout(() => {
+    try{ $("#m_budgets").scrollIntoView({ behavior:"smooth", block:"start" }); }catch(_){}
+    if(b.cloture) return toast("Ce budget est clôturé : une rallonge n'est plus possible.");
+    demanderComplement(bid);
+  }, 400);
+}
 // carte « Mes budgets » dans Mes demandes (membres seulement : le trésorier a l'onglet Budget)
 function renderMesBudgets(){
   const box = $("#m_budgets"); if(!box || !state.profile) return;
   const liste = isTreso() || state.budErr ? [] : budgetsDe(state.profile.id);
   box.hidden = !liste.length;
+  setTimeout(() => verifierLienComplement(liste), 0);
   if(!liste.length) return;
   $("#m_budgetsList").innerHTML = liste.map(b => {
     const nb = (state.items||[]).filter(i => i.budget_id === b.id && i.status !== "Refusée").length;
@@ -7444,6 +7460,7 @@ function renderMesBudgets(){
     const et = budgetEtat(b, dateLocale());
     const v3 = !state.budMetaErr && !state.resaErr;
     return `<div>${jaugeHTML(b, 0)}<div class="bud-txt">${nb} de vos demande(s) rattachée(s)${partage}</div>
+      ${detailDemandesBudget(b.id, nb, "mes-" + b.id)}
       ${mes.length ? `<div class="bud-txt" style="margin-top:6px"><b>Vos réservations :</b></div>` + mes.map(x => `<div class="bud-txt">• ${euro(x.montant)} — ${esc(x.objet)}
         <span class="hint">(${fstamp(x.created_at)})</span> <button class="btn ghost sm" data-resa-modif="${esc(x.id)}">Modifier</button> <button class="btn ghost sm" data-resa-annul="${esc(x.id)}">Annuler</button></div>`).join("")
         + `<div class="hint" style="margin:4px 0 0">Votre prochaine demande sur ce budget utilisera ces réservations.</div>` : ""}
@@ -7620,6 +7637,47 @@ function messageBudgetServeur(m){
   return m.replace(/^.*?(Budget |Limite atteinte|Les demandes urgentes|Demande urgente :|Ce budget )/, "$1");
 }
 
+/* Récapitulatif des demandes glissé dans les mails d'alerte.
+   Les totaux par statut viennent du serveur (complets pour tout le monde).
+   La liste ligne à ligne vient des demandes chargées dans l'app : complète quand
+   l'envoi part du trésorier, limitée aux siennes quand il part d'un membre. */
+function detailDemandesMail(b){
+  const td = "padding:6px 8px;border-bottom:1px solid #eee;font-size:13px;vertical-align:top";
+  const tdn = td + ";text-align:right;white-space:nowrap";
+  const totaux = b.paye != null ? `<table style="border-collapse:collapse;margin:0 0 12px;font-size:13px">
+      <tr><td style="padding:3px 12px 3px 0;color:#0f6b37;font-weight:bold">Payé</td><td style="text-align:right">${euro(b.paye)}</td></tr>
+      <tr><td style="padding:3px 12px 3px 0;color:#1c5fa8;font-weight:bold">Validé, à payer</td><td style="text-align:right">${euro(b.valide)}</td></tr>
+      <tr><td style="padding:3px 12px 3px 0;color:#8f4a00;font-weight:bold">En attente</td><td style="text-align:right">${euro(b.attente)}</td></tr>
+      ${b.reserve ? `<tr><td style="padding:3px 12px 3px 0;font-weight:bold">Réservé</td><td style="text-align:right">${euro(b.reserve)}</td></tr>` : ""}
+      <tr><td style="padding:5px 12px 3px 0;border-top:1px solid #ccc;font-weight:bold">Total engagé</td><td style="padding-top:5px;border-top:1px solid #ccc;text-align:right;font-weight:bold">${euro(b.consomme)} / ${euro(b.cout)}</td></tr></table>` : "";
+  const L = demandesDuBudget(b.id);
+  const complet = isTreso();
+  const MAX = 40;
+  const lignes = L.slice(0, MAX).map(i => { const s = stDem(i.status);
+    return `<tr><td style="${td};white-space:nowrap">${mailEsc(i.expense_date ? fdate(String(i.expense_date).slice(0,10)) : "")}</td>
+      <td style="${td}">${mailEsc(i.requester_name||"")}</td>
+      <td style="${td}">${mailEsc(i.object||"")}${i.hors_budget ? " <b style='color:#a4161a'>(urgente)</b>" : ""}</td>
+      <td style="${tdn}${i.status === "Refusée" ? ";text-decoration:line-through;color:#888" : ""}">${euro(i.amount)}</td>
+      <td style="${td};white-space:nowrap;font-weight:bold;color:${s.coul}">${mailEsc(s.lib)}</td></tr>`; }).join("");
+  const tableau = L.length ? `<p style="margin:14px 0 6px"><b>${complet ? "Détail des demandes" : "Demandes de " + mailEsc((state.profile && state.profile.name) || "ce membre") + " sur ce budget"}</b></p>
+    <table style="border-collapse:collapse;width:100%">
+      <tr style="background:#f4f4f4"><th style="${td};text-align:left">Date</th><th style="${td};text-align:left">Demandeur</th><th style="${td};text-align:left">Objet</th><th style="${tdn}">Montant</th><th style="${td};text-align:left">Statut</th></tr>
+      ${lignes}</table>
+    ${L.length > MAX ? `<p style="color:#777;font-size:12px">… et ${L.length - MAX} autre(s) demande(s), visibles dans la Caisse.</p>` : ""}` : "";
+  const note = complet ? "" : `<p style="color:#777;font-size:12px;margin:6px 0 0">Le détail de toutes les demandes du budget est disponible dans la Caisse.</p>`;
+  return totaux || tableau ? `<div style="margin:16px 0">${totaux}${tableau}${note}</div>` : "";
+}
+
+/* Encadré « rallonge » des mails d'alerte : le titulaire peut demander un complément,
+   soumis au vote du CA. Le lien ouvre la Caisse sur « Mes budgets » avec le formulaire prêt. */
+function blocRallongeMail(bid, pourTreso){
+  if(pourTreso) return `<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px;margin:16px 0">Les titulaires ont été invités à demander une rallonge si nécessaire. Elle sera soumise au vote du CA dans l'app CA.</p>`;
+  const lien = window.location.origin + window.location.pathname + "#complement=" + encodeURIComponent(String(bid));
+  return `<div style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:14px;margin:16px 0">
+    <p style="margin:0 0 8px"><b>Besoin de plus ?</b> Vous pouvez demander une rallonge. Indiquez le montant et la raison : votre demande sera soumise au vote du CA dans l'app CA. Une fois approuvée, elle s'ajoute à ce budget.</p>
+    <p style="text-align:center;margin:12px 0 0"><a href="${lien}" style="background:#1c5fa8;color:#fff;padding:11px 20px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Demander une rallonge</a></p></div>`;
+}
+
 // alertes uniques quand un budget atteint 80 % puis 100 % (le serveur garantit un seul envoi)
 async function alertesBudget(bid){
   if(!bid || state.budErr) return;
@@ -7634,11 +7692,13 @@ async function alerteBudget80(bid){
   try{ await chargerBudgetsCaisse(); }catch(_){}
   const b = budgetParId(bid) || { titre:"Budget", cout:0, consomme:0 };
   const pct = b.cout > 0 ? Math.round(b.consomme / b.cout * 100) : 0;
-  const corps = nom => `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+  const detail = detailDemandesMail({ ...b, id:String(bid) });
+  const corps = nom => `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
     <h2 style="margin:0 0 10px">Budget presque épuisé</h2>
     <p>Bonjour ${mailEsc(nom)},</p>
     <p>Le budget <b>${mailEsc(b.titre)}</b> est utilisé à <b>${pct} %</b> : ${euro(b.consomme)} sur ${euro(b.cout)}. Il reste <b>${euro(b.cout - b.consomme)}</b>.</p>
     <p>Au-delà, les nouvelles demandes sur ce budget seront bloquées, sauf demande urgente hors budget.</p>
+    ${detail}${blocRallongeMail(bid, nom === "trésorier")}
     <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant</p></div>`;
@@ -7656,11 +7716,13 @@ async function alerteBudget100(bid){
   if(!rows.length) return;
   try{ await chargerBudgetsCaisse(); }catch(_){}
   const b = budgetParId(bid) || { titre:"Budget", cout:0, consomme:0 };
-  const corps = nom => `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+  const detail = detailDemandesMail({ ...b, id:String(bid) });
+  const corps = nom => `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
     <h2 style="margin:0 0 10px">Budget épuisé</h2>
     <p>Bonjour ${mailEsc(nom)},</p>
     <p>Le budget <b>${mailEsc(b.titre)}</b> est entièrement engagé : ${euro(b.consomme)} sur ${euro(b.cout)}.</p>
-    <p>Plus aucune demande ne peut y être rattachée. Pour une dépense indispensable, il reste la demande urgente hors budget, que le trésorier examinera, ou un complément de budget à faire voter par le CA.</p>
+    <p>Plus aucune demande ne peut y être rattachée. Pour une dépense indispensable, il reste la demande urgente hors budget, que le trésorier examinera, ou une rallonge à faire voter par le CA.</p>
+    ${detail}${blocRallongeMail(bid, nom === "trésorier")}
     <p style="text-align:center;margin:22px 0"><a href="${window.location.origin + window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Alerte automatique — Caisse du bureau étudiant</p></div>`;
@@ -10427,7 +10489,8 @@ function tableauBordBudget(){
         <button type="button" class="btn ghost sm" data-baction="dashaller" data-id="${esc(bc.id)}">Ouvrir ↓</button></div>
       <div style="margin:8px 0">${st.map(c => badgeDash(c, c === "fin" ? "dans " + joursAvant(bc.fin) + " j" : c === "retour" && rt ? "(" + rt.pct + " %)" : "")).join("")}</div>
       <div style="height:18px;border-radius:9px;background:var(--bg);border:2px solid var(--line);overflow:hidden"><div style="height:100%;width:${Math.min(100, pct)}%;background:${coul}"></div></div>
-      <div style="font-size:15px;margin-top:6px"><b style="color:${coul}">${pct} %</b> utilisé · ${euro(bc.consomme)} sur ${euro(bc.cout)} · <b>reste ${euro(bc.cout - bc.consomme)}</b>${bc.fin ? " · jusqu'au " + fdate(bc.fin) : ""}</div></div>`; }).join("");
+      <div style="font-size:15px;margin-top:6px"><b style="color:${coul}">${pct} %</b> utilisé · ${euro(bc.consomme)} sur ${euro(bc.cout)} · <b>reste ${euro(bc.cout - bc.consomme)}</b>${bc.fin ? " · jusqu'au " + fdate(bc.fin) : ""}</div>
+      ${detailDemandesBudget(bc.id, null, "dash-" + bc.id)}</div>`; }).join("");
   return `<div class="card pad" style="margin-bottom:14px"><h3 style="margin:0 0 4px;font-size:20px">Tableau de bord des budgets</h3>
     <p class="hint" style="margin:0 0 10px">Clique sur une case pour ne voir que ces budgets${f ? " — <b>filtre actif</b> : clique à nouveau pour l'enlever" : ""}.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap">${tuiles}</div>${lignes || `<p class="hint">Aucun budget dans cette catégorie.</p>`}</div>`;
@@ -10493,20 +10556,43 @@ document.addEventListener("toggle", e => {
   const d = e.target; if(!d || !d.dataset || d.dataset.bdetail == null) return;
   state.budDetailOuvert[d.dataset.bdetail] = d.open;
 }, true);
-function detailDemandesBudget(bid, nb){
-  const lies = (state.items||[]).filter(i => String(i.budget_id||"") === String(bid) && i.status !== "Refusée")
+/* ---------- détail des demandes d'un budget : partagé par les mails, le tableau de bord et la fiche ---------- */
+const ST_DEM = {
+  "En attente": { lib:"En attente",        coul:"#8f4a00", ordre:1 },
+  "À corriger": { lib:"À corriger",        coul:"#a4161a", ordre:2 },
+  "Validée":    { lib:"Validée (à payer)", coul:"#1c5fa8", ordre:3 },
+  "Remboursée": { lib:"Payée",             coul:"#0f6b37", ordre:4 },
+  "Refusée":    { lib:"Refusée",           coul:"#666666", ordre:5 },
+};
+const stDem = s => ST_DEM[s] || { lib:String(s || "—"), coul:"#666666", ordre:9 };
+function demandesDuBudget(bid){
+  return (state.items||[]).filter(i => String(i.budget_id||"") === String(bid))
     .sort((a,b) => String(b.expense_date || b.created_at || "").localeCompare(String(a.expense_date || a.created_at || "")));
+}
+// regroupe par statut : [{ st, lib, coul, n, v }] dans l'ordre en attente → payée → refusée
+function resumeDemandes(L){
+  const r = {};
+  L.forEach(i => { const k = i.status || "—"; r[k] = r[k] || { n:0, v:0 }; r[k].n++; r[k].v += Number(i.amount||0); });
+  return Object.keys(r).sort((a,b) => stDem(a).ordre - stDem(b).ordre)
+    .map(k => ({ st:k, lib:stDem(k).lib, coul:stDem(k).coul, n:r[k].n, v:r[k].v }));
+}
+function detailDemandesBudget(bid, nb, cle){
+  cle = cle || String(bid);
+  const tout = demandesDuBudget(bid);
+  const lies = tout.filter(i => i.status !== "Refusée");
   const resas = resasDe(bid);
   const recettes = (state.incomes||[]).filter(r => String(r.budget_id||"") === String(bid));
-  const stCoul = { "Remboursée":"#0f6b37", "Validée":"#1c5fa8", "En attente":"#8f4a00", "À corriger":"#a4161a" };
-  const ligne = i => `<div data-ouvrir-dem="${esc(i.id)}" role="button" tabindex="0" style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;border-bottom:1px solid var(--line);padding:8px 2px;cursor:pointer">
+  const ligne = i => `<div data-ouvrir-dem="${esc(i.id)}" role="button" tabindex="0" style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;border-bottom:1px solid var(--line);padding:8px 2px;cursor:pointer${i.status === "Refusée" ? ";opacity:.6" : ""}">
       <b style="min-width:92px">${esc(refOf(i))}</b><span style="flex:1;min-width:160px">${esc(i.requester_name||"")} — ${esc(i.object||"")}${i.hors_budget ? " 🔴 urgente" : ""}</span>
-      <b>${esc(euro(i.amount))}</b><span style="font-weight:700;color:${stCoul[i.status]||"var(--muted)"}">${esc(i.status)}</span>
+      <b${i.status === "Refusée" ? ' style="text-decoration:line-through"' : ""}>${esc(euro(i.amount))}</b><span style="font-weight:700;color:${stDem(i.status).coul}">${esc(stDem(i.status).lib)}</span>
       <span class="hint" style="margin:0">${esc(i.expense_date ? fdate(String(i.expense_date).slice(0,10)) : "")}</span></div>`;
   const tot = lies.reduce((t,i) => t + Number(i.amount||0), 0);
-  return `<details data-bdetail="${esc(bid)}" ${state.budDetailOuvert[bid] ? "open" : ""} style="margin:6px 0">
-    <summary class="bud-txt" style="cursor:pointer;font-weight:700;font-size:15px">▶ ${nb} demande(s) rattachée(s) — ${esc(euro(tot))} · cliquer pour voir le détail</summary>
-    ${lies.length ? lies.map(ligne).join("") : `<p class="hint">Aucune demande rattachée.</p>`}
+  const res = resumeDemandes(tout);
+  const resume = res.length ? `<div class="bud-txt" style="margin:6px 0 4px">${res.map(x => `<span style="font-weight:700;color:${x.coul}">${esc(x.lib)}</span> : ${x.n} (${esc(euro(x.v))})`).join(" · ")}</div>` : "";
+  if(nb == null) nb = lies.length;
+  return `<details data-bdetail="${esc(cle)}" ${state.budDetailOuvert[cle] ? "open" : ""} style="margin:6px 0">
+    <summary class="bud-txt" style="cursor:pointer;font-weight:700;font-size:15px">▶ ${nb} demande(s) rattachée(s) — ${esc(euro(tot))}${tout.length > lies.length ? " · " + (tout.length - lies.length) + " refusée(s)" : ""} · cliquer pour voir le détail</summary>
+    ${resume}${tout.length ? tout.map(ligne).join("") : `<p class="hint">Aucune demande rattachée.</p>`}
     ${resas.length ? `<div class="bud-txt" style="margin-top:8px"><b>Réservations actives :</b> ${resas.map(x => esc(euro(x.montant)) + " — " + esc(x.objet) + " (" + esc(x.user_name||"") + ")").join(" · ")}</div>` : ""}
     ${recettes.length ? `<div class="bud-txt" style="margin-top:8px"><b>Recettes rattachées :</b> ${recettes.map(r => esc(euro(r.amount)) + (r.source ? " — " + esc(r.source) : "")).join(" · ")}</div>` : ""}
   </details>`;
@@ -11260,6 +11346,14 @@ tr.tot td{font-weight:bold;border-top:2px solid #333}.noprint{margin:14px 0}@med
 <table><thead><tr><th>Budget</th><th class="n">Approuvé</th><th class="n">Payé</th><th class="n">Engagé non payé</th><th class="n">Reste</th><th class="n">%</th><th class="n">Urgences</th></tr></thead>
 <tbody>${L.map(ligne).join("")}
 <tr class="tot"><td>Total des budgets approuvés</td><td class="n">${esc(euro(tot("cout")))}</td><td class="n">${esc(euro(tot("paye")))}</td><td class="n">${esc(euro(tot("valide")+tot("attente")))}</td><td class="n">${esc(euro(tot("reste")))}</td><td></td><td></td></tr></tbody></table>
+<h2>Détail des demandes</h2>
+${L.map(x => { const D = demandesDuBudget(x.b.id); if(!D.length) return seulId ? `<p class="meta">Aucune demande rattachée.</p>` : "";
+  const res = resumeDemandes(D);
+  return `${seulId ? "" : `<p style="margin:12px 0 2px"><b>${esc(x.titre)}</b></p>`}
+<div class="s" style="margin:2px 0 4px">${res.map(r => `<b style="color:${r.coul}">${esc(r.lib)}</b> : ${r.n} (${esc(euro(r.v))})`).join(" · ")}</div>
+<table><thead><tr><th>Réf.</th><th>Date</th><th>Demandeur</th><th>Objet</th><th class="n">Montant</th><th>Statut</th></tr></thead><tbody>
+${D.map(i => `<tr><td style="white-space:nowrap">${esc(refOf(i))}</td><td style="white-space:nowrap">${esc(i.expense_date ? fdate(String(i.expense_date).slice(0,10)) : "")}</td><td>${esc(i.requester_name||"")}</td><td>${esc(i.object||"")}${i.hors_budget ? " <b class='ko'>(urgente)</b>" : ""}</td><td class="n"${i.status === "Refusée" ? ' style="text-decoration:line-through;color:#888"' : ""}>${esc(euro(i.amount))}</td><td style="white-space:nowrap;font-weight:bold;color:${stDem(i.status).coul}">${esc(stDem(i.status).lib)}</td></tr>`).join("")}
+</tbody></table>`; }).join("")}
 <h2>Historique des changements</h2>
 ${L.some(x => x.histo.length) ? L.filter(x => x.histo.length).map(x => `<p style="margin:10px 0 2px"><b>${esc(x.titre)}</b></p>${x.histo.slice(0,30).map(h => `<div class="s">${esc(fstamp(h.quand))} — ${esc(h.qui||"")} : ${esc(h.quoi)}</div>`).join("")}`).join("") : `<p class="meta">Aucun changement enregistré.</p>`}
 ${seulId ? "" : "<h2>Urgences hors budget non imputées</h2>"}
