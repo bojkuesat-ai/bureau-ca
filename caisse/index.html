@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="22.10.2026 · 8">
+<meta name="app-build" content="23.10.2026 · 9">
+<!-- Politique de sécurité (CSP) : la Caisse ne peut charger du code que depuis ces adresses précises, et n'échanger des données qu'avec Supabase. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/ https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; media-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; connect-src 'self' https://mlgzdfyqjhvyubrywuim.supabase.co wss://mlgzdfyqjhvyubrywuim.supabase.co https://esm.sh https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/; frame-src 'self' blob: data:; worker-src 'self' blob: https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/; manifest-src 'self' blob: data:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<link rel="preconnect" href="https://mlgzdfyqjhvyubrywuim.supabase.co" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -2117,8 +2121,10 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 
 <div class="toast" id="toast"></div>
 
+<!-- Supabase à version figée + empreinte de contrôle (SRI) : un fichier modifié sur le CDN serait refusé. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js" integrity="sha384-CLZeq1dk8+Uzrs7TVvBUdlFoV5F0DMqgRoeHa8g5wJcuPe5SkVfEvdxB0ZuzlnBQ" crossorigin="anonymous"></script>
 <script type="module">
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const { createClient } = window.supabase;
 
 /* =====================================================================
    À REMPLIR : Supabase > Project Settings > API
