@@ -721,7 +721,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-23 \u00b7 journal";
+const CA_VERSION="2026-10-23 \u00b7 journal 2";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1803,8 +1803,7 @@ function viewAdmin(){
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Exportez une sauvegarde de toutes les données (recommandé avant la bascule Supabase), ou réimportez-la.</p>
       <div class="row-btn"><button class="btn sm" data-action="export-data">Exporter (JSON)</button>
         <label class="btn ghost sm" style="cursor:pointer">Importer<input type="file" accept="application/json" data-change="importfile" style="display:none"></label></div></div>
-    <div class="grp-h" style="margin:20px 0 10px"><h2 class="serif" style="font-size:17px">Journal d'activité</h2><span class="l"></span></div>
-    ${(S.journal||[]).slice(0,30).map(e=>`<div class="doc" style="cursor:default;padding:8px 12px"><span class="meta"><p class="dt" style="font-size:13px">${esc(e.txt)}</p><p class="du">${esc(e.who)} · ${dateFR(e.ts)}</p></span></div>`).join("")||`<div class="empty">Aucune activité enregistrée.</div>`}
+    <p class="du" style="margin:14px 0 0">Le journal des connexions et des actions des membres est dans l'onglet <b>📜 Journal</b>.</p>
   </div>`;
 }
 function viewPending(){
@@ -4630,7 +4629,12 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
         contacts:S.contacts||[], creneaux:S.creneaux||[], documents:(S.docs||[]).map(d=>({titre:d.titre,categorie:d.cat,chemin:d.chemin})),
         bilan_publie:S.meta.bilanPublie||"", journal:S.journal||[]
       };
+      /* Journal de sécurité (12 mois) : joint à l'archive, en JSON et en CSV lisible. */
+      let jsec=[];
+      try{ for(let pg=0;pg<200;pg++){ const r=await sb.from("ca_audit").select("*").order("le",{ascending:false}).range(pg*1000,pg*1000+999); if(r.error) break; jsec.push(...(r.data||[])); if(!r.data||r.data.length<1000) break; } }catch(_){ }
+      dump.journal_securite=jsec;
       telechargerJSON("archive-mandat-"+an+".json", dump);
+      if(jsec.length && typeof audCsv==="function") setTimeout(()=>audCsv(jsec,"archive-mandat-"+an+"-journal-securite.csv"),600);
       const R=(S.reunions||[]).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
       const blocsR=R.map(m=>{
         const pres=Object.entries(m.presences||{}).filter(([k,v])=>v==="present").length;
