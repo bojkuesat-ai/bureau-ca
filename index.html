@@ -8368,6 +8368,8 @@ function carteAmeliorations(){
     taches=`<div class="mail-hist">${lignes||`<div class="empty">Aucune tâche planifiée trouvée.</div>`}
       <div class="mail-hist-row"><span class="mail-hist-txt">${h.erreurs?"🟠":"🟢"} <b>Appels aux fonctions serveur (24 h)</b> <span style="color:var(--slate)">· ${Number(h.total||0)} appel(s), ${Number(h.erreurs||0)} en erreur${h.derniere_erreur?` (dernière : ${esc(fmt(h.derniere_erreur))})`:""}</span>
       ${(h.exemples||[]).slice(0,3).map(x=>`<br><span style="color:var(--red);font-size:12px">${esc(fmt(x.le))} · ${esc(String(x.code==null?"sans réponse":x.code))} · ${esc(x.msg||"")}</span>`).join("")}</span></div></div>
+      ${A.mails?`<div class="mail-hist"><div class="mail-hist-row"><span class="mail-hist-txt">${A.mails.refuses?"🟠":"🟢"} <b>Mails (24 h) — protection anti-spam</b> <span style="color:var(--slate)">· ${Number(A.mails.envoyes||0)} destinataire(s) servi(s), ${Number(A.mails.refuses||0)} envoi(s) bloqué(s)${A.mails.echecs?`, ${A.mails.echecs} échec(s) Amazon`:""}</span>
+      ${(A.mails.derniers_refus||[]).slice(0,3).map(x=>`<br><span style="color:var(--red);font-size:12px">${esc(fmt(x.le))} · ${esc(x.niveau)} · ${esc(x.ip||"")}${x.origine?" · "+esc(x.origine):" · (sans site : fonction serveur ?)"} · ${esc(x.refus||"")}</span>`).join("")}</span></div></div>`:""}
       <p class="du">En cas d'échec, un mail d'alerte vous est envoyé automatiquement (une fois par problème et par jour).</p>`;
   }
   const L=A.liste;
@@ -8385,6 +8387,7 @@ function carteAmeliorations(){
 async function amelCharger(){
   const A=S.amel;
   try{ const r=await sb.rpc("ca_taches_etat"); A.taches=r.error?{err:r.error.message.includes("ca_taches_etat")?"Le script SQL « améliorations » n'est pas encore installé.":r.error.message}:r.data; }catch(e){ A.taches={err:String(e&&e.message||e)}; }
+  try{ const r=await sb.rpc("ca_mail_stats"); A.mails=r.error?null:r.data; }catch(_){ A.mails=null; }
   try{ A.liste=await amelAppel(SAUV_FN,{action:"liste"}); }catch(e){ A.liste={erreur:String(e&&e.message||e)}; }
 }
 /* Lecture d'une sauvegarde (.besav) : tout se passe dans le navigateur, rien n'est envoyé. */
