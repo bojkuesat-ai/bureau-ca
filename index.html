@@ -7693,6 +7693,23 @@ document.addEventListener("click", async e=>{
       break; }
   } }catch(err){ modaleInfo(err.message||String(err)); }
 });
+/* Toutes les 30 secondes, onglet salle ouvert : on redemande les réservations au serveur
+   (validation, refus, annulation, blocage…) et on ne redessine que si quelque chose a changé.
+   On ne touche à rien pendant qu'une fenêtre est ouverte ou qu'un formulaire est en cours. */
+setInterval(async ()=>{
+  if(document.visibilityState!=="visible"||!S.session||estCoopte()||S.tab!=="salle"||S.salleErr) return;
+  const vue=(S.salleUI&&S.salleUI.vue)||"accueil";
+  if(vue==="nouvelle"||vue==="reglages") return;
+  if(document.querySelector(".ca-mod")) return;
+  if(S.salleSync) return; S.salleSync=true;
+  try{
+    const avant=JSON.stringify([S.salle,S.salleBloques,S.meta&&S.meta.salleResp,S.meta&&S.meta.salleCharte,S.meta&&S.meta.salleFermetures]);
+    try{ await sb.rpc("ca_salle_echeances"); }catch(_){ }
+    await loadSalle(); await loadMeta();
+    const apres=JSON.stringify([S.salle,S.salleBloques,S.meta&&S.meta.salleResp,S.meta&&S.meta.salleCharte,S.meta&&S.meta.salleFermetures]);
+    if(avant!==apres && S.tab==="salle" && !document.querySelector(".ca-mod")) rendreEnPreservant();
+  }catch(_){ } finally{ S.salleSync=false; }
+}, 30000);
 /* Toutes les 5 minutes, quand l'app est ouverte : rappels, blocages, mise à jour de l'onglet. */
 setInterval(()=>{ if(document.visibilityState!=="visible"||!S.session||estCoopte()) return; traiterSalle().then(()=>{ if(S.tab==="salle") rendreEnPreservant(); }).catch(()=>{}); }, 5*60000);
 document.addEventListener("change", e=>{
