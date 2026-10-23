@@ -511,6 +511,67 @@ const store = {
 const SB_URL="https://mlgzdfyqjhvyubrywuim.supabase.co";
 const SB_KEY="sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createClient(SB_URL,SB_KEY):null;
+/* =====================================================================
+   DOUBLE AUTHENTIFICATION (application d'authentification, code à 6 chiffres)
+   Pour un compte qui l'a activée (CA › Admin), un code est demandé après le
+   mot de passe, sur le CA, la Caisse et la Billetterie (même session).
+   Le serveur refuse les données tant que le code n'est pas validé
+   (script double_authentification.sql) : cet écran n'est que la porte.
+   ===================================================================== */
+(function(){
+  if(typeof sb==="undefined" || !sb || !sb.auth || !sb.auth.mfa) return;
+  var ouvert=false;
+  async function niveau(){
+    try{ var r=await sb.auth.mfa.getAuthenticatorAssuranceLevel(); if(r && !r.error && r.data) return r.data; }catch(e){}
+    return null;
+  }
+  async function garde(){
+    if(ouvert) return true;
+    var n=await niveau();
+    if(n && n.nextLevel==="aal2" && n.currentLevel!=="aal2"){ afficher(); return true; }
+    return false;
+  }
+  function afficher(){
+    if(ouvert) return; ouvert=true;
+    var d=document.createElement("div"); d.id="mfaGarde";
+    d.style.cssText="position:fixed;inset:0;z-index:2147482000;background:#0b0816;color:#fff;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;display:flex;align-items:center;justify-content:center;padding:20px";
+    d.innerHTML='<div style="width:100%;max-width:380px;background:#241c46;border:1px solid #3b3170;border-radius:16px;padding:24px;text-align:center;box-shadow:0 18px 50px rgba(0,0,0,.55)">'
+      +'<div style="font-size:42px;line-height:1">🔐</div>'
+      +'<h2 style="font-family:Fraunces,Georgia,serif;font-weight:500;font-size:22px;margin:10px 0 6px">Double authentification</h2>'
+      +'<p style="font-size:14px;color:#c9c3e4;margin:0 0 16px;line-height:1.5">Entrez le code à 6 chiffres affiché dans votre application d\'authentification.</p>'
+      +'<input id="mfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="width:100%;box-sizing:border-box;font-size:28px;letter-spacing:8px;text-align:center;padding:12px;border-radius:10px;border:1px solid #3b3170;background:#000;color:#fff;font-family:\'IBM Plex Mono\',monospace">'
+      +'<p id="mfaErr" style="color:#f2645f;font-size:13px;min-height:18px;margin:10px 0 0"></p>'
+      +'<button id="mfaOk" style="width:100%;margin-top:8px;border:none;border-radius:11px;padding:13px;font-size:15px;font-weight:700;background:linear-gradient(150deg,#e8b04b,#9c7628);color:#241100;cursor:pointer">Valider</button>'
+      +'<button id="mfaOut" style="margin-top:14px;background:none;border:none;color:#a49dc6;text-decoration:underline;font-size:13px;cursor:pointer">Se déconnecter</button>'
+      +'<p style="font-size:11.5px;color:#a49dc6;margin:16px 0 0;line-height:1.5">Téléphone perdu ? Le facteur se supprime dans Supabase › Authentication › Users › votre compte.</p></div>';
+    (document.body||document.documentElement).appendChild(d);
+    document.documentElement.style.visibility="";
+    var champ=d.querySelector("#mfaCode"), err=d.querySelector("#mfaErr"), ok=d.querySelector("#mfaOk");
+    async function valider(){
+      var code=String(champ.value||"").replace(/\D/g,"");
+      if(code.length!==6){ err.textContent="Le code compte 6 chiffres."; return; }
+      ok.disabled=true; ok.textContent="Vérification…"; err.textContent="";
+      try{
+        var f=await sb.auth.mfa.listFactors();
+        var fac=f && f.data && f.data.totp && f.data.totp[0];
+        if(!fac){ err.textContent="Aucune application enregistrée pour ce compte."; ok.disabled=false; ok.textContent="Valider"; return; }
+        var r=await sb.auth.mfa.challengeAndVerify({ factorId:fac.id, code:code });
+        if(r && r.error){ err.textContent=/invalid|expired/i.test(r.error.message)?"Code incorrect ou expiré. Réessayez avec le code affiché maintenant.":r.error.message; champ.value=""; champ.focus(); ok.disabled=false; ok.textContent="Valider"; return; }
+        location.reload();
+      }catch(e){ err.textContent=(navigator.onLine===false)?"Pas de connexion internet.":"Le serveur n'a pas répondu. Réessayez."; ok.disabled=false; ok.textContent="Valider"; }
+    }
+    ok.addEventListener("click",valider);
+    champ.addEventListener("input",function(){ if(String(champ.value).replace(/\D/g,"").length===6) valider(); });
+    champ.addEventListener("keydown",function(e){ if(e.key==="Enter") valider(); });
+    d.querySelector("#mfaOut").addEventListener("click",async function(){ try{ await sb.auth.signOut({scope:"local"}); }catch(e){} location.reload(); });
+    setTimeout(function(){ try{ champ.focus(); }catch(e){} },50);
+  }
+  window.mfaGarde=garde;
+  setTimeout(garde,0);
+  /* Pas d'appel Supabase directement dans l'écouteur (risque de blocage) : on diffère. */
+  sb.auth.onAuthStateChange(function(evt){ if(evt==="SIGNED_IN"||evt==="INITIAL_SESSION"||evt==="TOKEN_REFRESHED"||evt==="MFA_CHALLENGE_VERIFIED") setTimeout(garde,60); });
+})();
+
 /* Un compte arrivé par le lien des coopté·es (via_code) ou dont la fonction est « Coopté·e »
    est TOUJOURS traité comme coopté·e, même si la base l'a enregistré comme « membre »
    (cas d'une validation avec le mauvais bouton). Le propriétaire n'est jamais concerné. */
@@ -615,7 +676,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-23 \u00b7 billetterie";
+const CA_VERSION="2026-10-23 \u00b7 double authentification";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1607,6 +1668,7 @@ function viewAdmin(){
   return `<div>
     <h1 class="serif" style="font-size:26px;margin:0 0 6px">Validation des comptes</h1>
     <p style="color:var(--slate);font-size:11px;margin:0 0 16px">Version de l'application : <b>${esc(CA_VERSION)}</b></p>
+    ${typeof carteMfaCA==="function"?carteMfaCA():""}
     ${S.session&&S.session.role==="owner"&&typeof carteErreurCA==="function"?carteErreurCA():""}
     <p style="color:var(--slate);font-size:12px;margin:2px 0 0">Mot de passe oublié d'un membre ? Le bouton « Réinitialiser le mot de passe » lui envoie un lien par e-mail ; chacun peut aussi le demander depuis l'écran de connexion.</p>
     <div class="compose"><h3 class="serif">Comptes en attente</h3>
@@ -7831,6 +7893,82 @@ document.addEventListener("click", async e=>{
       if(r.error){ modaleInfo("❌ Non enregistré : "+r.error.message,"Billetterie"); return; }
       S.billetsAdmin.deco_le=r.data; logAct("Billetterie — tous les appareils déconnectés"); rendreEnPreservant();
       modaleInfo("✓ Tous les appareils de la Billetterie vont être déconnectés.","Enregistré"); return;
+    }
+  }catch(err){ modaleInfo(String(err&&err.message||err)); }
+});
+
+/* =====================================================================
+   DOUBLE AUTHENTIFICATION DU PROPRIÉTAIRE — carte dans Admin.
+   Activée : code de l'application d'authentification exigé après le mot
+   de passe sur le CA, la Caisse et la Billetterie (même compte, même session).
+   ===================================================================== */
+function carteMfaCA(){
+  if(!(S.session&&S.session.role==="owner")) return "";
+  const M=S.mfa;
+  if(!M){ if(!S.mfaCharge){ S.mfaCharge=true; chargerMfaCA().then(()=>rendreEnPreservant()); } return `<div class="card2"><h3 class="serif">🔐 Double authentification</h3><p class="du">Chargement…</p></div>`; }
+  if(M.err) return `<div class="card2"><h3 class="serif">🔐 Double authentification</h3><p class="du" style="color:var(--red)">${esc(M.err)}</p></div>`;
+  return `<div class="card2" style="${M.actif?"border-color:#1f6a4a":"border-color:var(--gold-dim)"}"><h3 class="serif">🔐 Double authentification ${M.actif?`<span class="badge ok">activée</span>`:`<span class="badge" style="background:var(--amber);color:#241100">désactivée</span>`}</h3>
+    <p class="du">${M.actif
+      ?`Votre compte demande un code à 6 chiffres (application d'authentification « ${esc(M.nom||"")} ») après le mot de passe, sur le CA, la Caisse et la Billetterie. Sans ce code, le serveur ne donne accès à aucune donnée.`
+      :`Protégez le compte propriétaire : après le mot de passe, un code à 6 chiffres de votre téléphone (Google Authenticator, Microsoft Authenticator, Authy…) sera demandé sur le CA, la Caisse et la Billetterie.`}</p>
+    <div class="row-btn">${M.actif?`<button class="btn ghost sm" style="border-color:var(--red);color:var(--red)" data-action="mfa-desactiver">Désactiver</button>`:`<button class="btn sm" data-action="mfa-activer">Activer la double authentification</button>`}</div></div>`;
+}
+async function chargerMfaCA(){
+  try{
+    const r=await sb.auth.mfa.listFactors();
+    if(r.error) throw r.error;
+    const f=(r.data&&r.data.totp)||[];
+    S.mfa={actif:f.length>0, id:f[0]&&f[0].id, nom:f[0]&&f[0].friendly_name, brouillons:((r.data&&r.data.all)||[]).filter(x=>x.status!=="verified").map(x=>x.id)};
+  }catch(e){ S.mfa={err:"Impossible de lire l'état de la double authentification : "+String(e&&e.message||e)}; }
+}
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-action^='mfa-']"); if(!el||!sb) return;
+  if(!(S.session&&S.session.role==="owner")) return;
+  try{
+    if(el.dataset.action==="mfa-activer"){
+      await chargerMfaCA();
+      for(const id of (S.mfa.brouillons||[])){ try{ await sb.auth.mfa.unenroll({factorId:id}); }catch(_){ } }
+      const r=await sb.auth.mfa.enroll({factorType:"totp", friendlyName:"Bureau étudiant "+new Date().toLocaleDateString("fr-BE")});
+      if(r.error){ modaleInfo("Activation impossible : "+r.error.message+(/disabled|not enabled/i.test(r.error.message)?"\n\nActivez « TOTP » dans Supabase › Authentication › Multi-Factor.":""),"Double authentification"); return; }
+      const fid=r.data.id, qr=r.data.totp.qr_code, secret=r.data.totp.secret;
+      const ok=await new Promise(resolve=>{
+        const d=document.createElement("div"); d.className="ca-mod";
+        d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true" style="max-width:440px">'
+          +'<h3>Activer la double authentification</h3>'
+          +'<p style="color:var(--ink);font-size:14px">1. Installez une application d\'authentification sur votre téléphone (Google Authenticator, Microsoft Authenticator…).<br>2. Dans l\'app : « Ajouter » › « Scanner un QR code », et scannez :</p>'
+          +'<div style="background:#fff;border-radius:12px;padding:10px;width:fit-content;margin:4px auto 8px"><img src="'+esc(qr)+'" alt="QR" width="200" height="200" style="display:block"></div>'
+          +'<p style="font-size:12px;color:var(--slate);text-align:center;word-break:break-all">Pas de caméra ? Clé à saisir : <b style="font-family:monospace;color:var(--ink)">'+esc(secret)+'</b></p>'
+          +'<p style="color:var(--ink);font-size:14px;margin-top:8px">3. Tapez le code à 6 chiffres affiché par l\'app :</p>'
+          +'<input class="f" id="mfa_c" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="width:100%;font-size:24px;letter-spacing:6px;text-align:center;margin:0 0 6px">'
+          +'<p id="mfa_e" style="color:var(--red);font-size:13px;min-height:18px;margin:0 0 6px"></p>'
+          +'<div class="ca-mod-btns"><button class="btn ghost sm" id="mfa_no">Annuler</button><button class="btn sm" id="mfa_ok">Activer</button></div></div>';
+        document.body.appendChild(d);
+        const c=d.querySelector("#mfa_c"), er=d.querySelector("#mfa_e"), b=d.querySelector("#mfa_ok");
+        const fin=v=>{ d.remove(); resolve(v); };
+        d.querySelector("#mfa_no").addEventListener("click",()=>fin(false));
+        b.addEventListener("click",async()=>{
+          const code=String(c.value||"").replace(/\D/g,"");
+          if(code.length!==6){ er.textContent="Le code compte 6 chiffres."; return; }
+          b.disabled=true; b.textContent="Vérification…";
+          const v=await sb.auth.mfa.challengeAndVerify({factorId:fid, code});
+          if(v.error){ er.textContent="Code incorrect : tapez le code affiché maintenant dans l'app."; b.disabled=false; b.textContent="Activer"; c.value=""; c.focus(); return; }
+          fin(true);
+        });
+        setTimeout(()=>{ try{ c.focus(); }catch(_){ } },50);
+      });
+      if(!ok){ try{ await sb.auth.mfa.unenroll({factorId:fid}); }catch(_){ } return; }
+      await chargerMfaCA(); try{ logAct("Double authentification activée sur le compte propriétaire"); }catch(_){ } rendreEnPreservant();
+      modaleInfo("✓ Double authentification activée.\n\nÀ chaque nouvelle connexion (CA, Caisse, Billetterie), le code de l'app sera demandé après le mot de passe.\n\nGardez l'app sur votre téléphone. En cas de perte : Supabase › Authentication › Users › votre compte › supprimer le facteur.","Activée");
+      return;
+    }
+    if(el.dataset.action==="mfa-desactiver"){
+      if(!(await modaleConfirm("Désactiver la double authentification ? Le mot de passe suffira à nouveau pour entrer avec le compte propriétaire.","Double authentification"))) return;
+      const n=await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+      if(!n.data||n.data.currentLevel!=="aal2"){ modaleInfo("Reconnectez-vous avec le code de l'app avant de désactiver.","Double authentification"); return; }
+      const r=await sb.auth.mfa.unenroll({factorId:S.mfa.id});
+      if(r.error){ modaleInfo("Désactivation impossible : "+r.error.message,"Double authentification"); return; }
+      await chargerMfaCA(); try{ logAct("Double authentification désactivée sur le compte propriétaire"); }catch(_){ } rendreEnPreservant();
+      modaleInfo("Double authentification désactivée.","Désactivée");
     }
   }catch(err){ modaleInfo(String(err&&err.message||err)); }
 });
