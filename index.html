@@ -8431,7 +8431,7 @@ document.addEventListener("click", async e=>{
       if(!(await modaleConfirm("Faire une sauvegarde chiffrée de toute la base maintenant ? Elle sera aussi envoyée sur votre e-mail.","Sauvegarde"))) return;
       el.disabled=true; el.textContent="Sauvegarde en cours…";
       const r=await amelAppel(SAUV_FN,{action:"maintenant"});
-      modaleInfo(r.ok?`Sauvegarde faite ✓\n${r.tables} tables · ${r.lignes} lignes · ${r.ko} Ko${r.mails?" · envoyée par e-mail":""}`:(r.erreur||"Échec."),"Sauvegarde");
+      modaleInfo(r.ok?`Sauvegarde faite ✓\n${r.tables} tables · ${r.lignes} lignes · ${r.ko} Ko${r.mails?" · envoyée par e-mail":""}${r.erreurMail?"\n\n⚠️ Mail : "+r.erreurMail:(!r.mails?"\n\n⚠️ Mail non envoyé.":"")}`:(r.erreur||"Échec."),"Sauvegarde");
       S.amel={charge:true}; await amelCharger(); rendreEnPreservant(); return;
     }
     if(a==="amel-sauv-dl"){
