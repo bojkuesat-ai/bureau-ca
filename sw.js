@@ -3,7 +3,7 @@
    - librairies à version figée (jsDelivr) et polices : gardées sur l'appareil ;
    - Supabase et tout le reste : jamais touchés (toujours en direct) ;
    - notifications sur le téléphone. */
-const CACHE = "ca-v1-2026-10-23";
+const CACHE = "ca-v2-2026-10-23";
 self.addEventListener("install", e => { self.skipWaiting(); });
 self.addEventListener("activate", e => {
   e.waitUntil((async () => {
@@ -12,7 +12,7 @@ self.addEventListener("activate", e => {
   })());
 });
 function figee(u) {
-  return (u.hostname === "cdn.jsdelivr.net" && /@\d+\.\d+\.\d+/.test(u.pathname)) || u.hostname === "fonts.gstatic.com" || u.hostname === "fonts.googleapis.com";
+  return (u.origin === self.location.origin && /\/lib\/[a-z-]+-\d+\.\d+\.\d+/.test(u.pathname)) || (u.hostname === "cdn.jsdelivr.net" && /@\d+\.\d+\.\d+/.test(u.pathname)) || u.hostname === "fonts.gstatic.com" || u.hostname === "fonts.googleapis.com";
 }
 self.addEventListener("fetch", e => {
   const r = e.request; if (r.method !== "GET") return;

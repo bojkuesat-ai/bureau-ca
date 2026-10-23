@@ -723,7 +723,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-23 \u00b7 notifications, sauvegardes";
+const CA_VERSION="2026-10-23 \u00b7 restauration";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -8381,7 +8381,8 @@ function carteAmeliorations(){
       ${(L.fichiers||[]).length?`<div class="mail-hist">${L.fichiers.slice(0,8).map(f=>`<div class="mail-hist-row"><span class="mail-hist-txt">💾 ${esc(f.nom)} <span style="color:var(--slate)">· ${f.ko} Ko</span></span><button class="link" data-action="amel-sauv-dl" data-id="${esc(f.nom)}">Télécharger</button></div>`).join("")}</div>`:""}`;
   }
   return `<div class="card2"><h3 class="serif">💾 Sauvegardes</h3>${sauv}
-      <div class="row-btn"><button class="btn sm" data-action="amel-sauv-go">Sauvegarder maintenant</button><button class="btn ghost sm" data-action="amel-sauv-lire">Lire une sauvegarde…</button></div></div>
+      <div class="row-btn"><button class="btn sm" data-action="amel-sauv-go">Sauvegarder maintenant</button><button class="btn ghost sm" data-action="amel-sauv-fichiers">Copie des fichiers…</button><button class="btn ghost sm" data-action="amel-sauv-lire">Lire / restaurer…</button></div>
+      <p class="du" style="margin-top:8px">La sauvegarde du dimanche contient toutes les données. Les fichiers (justificatifs, PDF, photos) sont à copier à part avec « Copie des fichiers… », idéalement une fois par mois.</p></div>
     <div class="card2"><h3 class="serif">🩺 Tâches automatiques <button class="link" data-action="amel-rafraichir" style="font-size:12px">actualiser</button></h3>${taches}</div>`;
 }
 async function amelCharger(){
@@ -8391,15 +8392,112 @@ async function amelCharger(){
   try{ A.liste=await amelAppel(SAUV_FN,{action:"liste"}); }catch(e){ A.liste={erreur:String(e&&e.message||e)}; }
 }
 /* Lecture d'une sauvegarde (.besav) : tout se passe dans le navigateur, rien n'est envoyé. */
+/* Formats : « BESAV1 » = base (JSON compressé, chiffré) ; « BESAF1 » = fichiers stockés (ZIP chiffré). */
+async function cleSauvegarde(phrase, sel, usage){
+  const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(phrase),"PBKDF2",false,["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2",salt:sel,iterations:250000,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,[usage]);
+}
 async function dechiffrerSauvegarde(octets, phrase){
   const tete=new TextDecoder().decode(octets.slice(0,6));
-  if(tete!=="BESAV1") throw new Error("Ce fichier n'est pas une sauvegarde du Bureau étudiant.");
+  if(tete!=="BESAV1" && tete!=="BESAF1") throw new Error("Ce fichier n'est pas une sauvegarde du Bureau étudiant.");
   const sel=octets.slice(6,22), iv=octets.slice(22,34), ct=octets.slice(34);
-  const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(phrase),"PBKDF2",false,["deriveKey"]);
-  const cle=await crypto.subtle.deriveKey({name:"PBKDF2",salt:sel,iterations:250000,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["decrypt"]);
-  let gz; try{ gz=await crypto.subtle.decrypt({name:"AES-GCM",iv},cle,ct); }catch(_){ throw new Error("Phrase secrète incorrecte (ou fichier abîmé)."); }
-  const txt=await new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  const cle=await cleSauvegarde(phrase, sel, "decrypt");
+  let clair; try{ clair=await crypto.subtle.decrypt({name:"AES-GCM",iv},cle,ct); }catch(_){ throw new Error("Phrase secrète incorrecte (ou fichier abîmé)."); }
+  if(tete==="BESAF1") return { __fichiers:true, zip:new Blob([clair],{type:"application/zip"}) };
+  const txt=await new Response(new Blob([clair]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
   return JSON.parse(txt);
+}
+async function chiffrerFichiers(zipBlob, phrase){
+  const sel=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12));
+  const cle=await cleSauvegarde(phrase, sel, "encrypt");
+  const ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},cle,await zipBlob.arrayBuffer());
+  return new Blob([new TextEncoder().encode("BESAF1"), sel, iv, new Uint8Array(ct)],{type:"application/octet-stream"});
+}
+function telechargerBlob(blob, nom){ const u=URL.createObjectURL(blob), l=document.createElement("a"); l.href=u; l.download=nom; document.body.appendChild(l); l.click(); l.remove(); setTimeout(()=>URL.revokeObjectURL(u),8000); }
+/* ZIP sans compression (les photos et PDF sont déjà compressés). */
+const AMEL_CRC=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xedb88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function amelCrc(b){ let c=0xffffffff; for(let i=0;i<b.length;i++) c=AMEL_CRC[(c^b[i])&0xff]^(c>>>8); return (c^0xffffffff)>>>0; }
+function amelZip(fichiers){
+  const enc=new TextEncoder(), parts=[], centre=[]; let off=0;
+  for(const [nom, d] of fichiers){
+    const n=enc.encode(nom), c=amelCrc(d);
+    const h=new DataView(new ArrayBuffer(30)); h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(6,0x0800,true); h.setUint32(14,c,true); h.setUint32(18,d.length,true); h.setUint32(22,d.length,true); h.setUint16(26,n.length,true);
+    parts.push(new Uint8Array(h.buffer), n, d);
+    const z=new DataView(new ArrayBuffer(46)); z.setUint32(0,0x02014b50,true); z.setUint16(4,20,true); z.setUint16(6,20,true); z.setUint16(8,0x0800,true); z.setUint32(16,c,true); z.setUint32(20,d.length,true); z.setUint32(24,d.length,true); z.setUint16(28,n.length,true); z.setUint32(42,off,true);
+    centre.push(new Uint8Array(z.buffer), n); off+=30+n.length+d.length;
+  }
+  const tc=centre.reduce((a,b)=>a+b.length,0);
+  const f=new DataView(new ArrayBuffer(22)); f.setUint32(0,0x06054b50,true); f.setUint16(8,fichiers.length,true); f.setUint16(10,fichiers.length,true); f.setUint32(12,tc,true); f.setUint32(16,off,true);
+  return new Blob([...parts, ...centre, new Uint8Array(f.buffer)],{type:"application/zip"});
+}
+function amelProgres(txt){
+  let d=document.getElementById("amel_prog");
+  if(txt==null){ if(d) d.remove(); return; }
+  if(!d){ d=document.createElement("div"); d.id="amel_prog"; d.className="ca-mod"; d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true"><h3>Patientez…</h3><p id="amel_prog_t" style="color:var(--ink);font-size:14px;white-space:pre-wrap"></p></div>'; document.body.appendChild(d); }
+  d.querySelector("#amel_prog_t").textContent=txt;
+}
+async function amelSauverFichiers(){
+  const l=await amelAppel(SAUV_FN,{action:"fichiers"});
+  if(!l.ok) return modaleInfo(l.erreur||"Liste des fichiers indisponible.","Fichiers");
+  const F=l.fichiers||[]; if(!F.length) return modaleInfo("Aucun fichier stocké.","Fichiers");
+  const total=F.reduce((a,f)=>a+(f.taille||0),0), mo=(total/1048576).toFixed(1);
+  let ph=null, err="";
+  for(;;){
+    ph=await modaleChamp(F.length+" fichier(s), "+mo+" Mo (justificatifs, PDF, photos…).\n\nIls seront réunis et chiffrés sur cet appareil. Utilisez de préférence la même phrase secrète que pour les sauvegardes (12 caractères au moins) : sans elle, le fichier sera illisible.","Copie chiffrée des fichiers",{type:"password",erreur:err,bouton:"Continuer"});
+    if(ph==null) return;
+    if(ph.length<12){ err="12 caractères au moins."; continue; }
+    const ph2=await modaleChamp("Retapez la phrase secrète pour confirmer.","Confirmation",{type:"password",bouton:"Créer la copie"});
+    if(ph2==null) return;
+    if(ph2!==ph){ err="Les deux phrases ne sont pas identiques."; continue; }
+    break;
+  }
+  const lot=[], rates=[];
+  try{
+    for(let i=0;i<F.length;i++){
+      const f=F[i]; amelProgres("Téléchargement "+(i+1)+" / "+F.length+"\n"+f.bucket+"/"+f.chemin);
+      try{ const r=await fetch(f.url); if(!r.ok) throw new Error(r.status); lot.push([f.bucket+"/"+f.chemin, new Uint8Array(await r.arrayBuffer())]); }
+      catch(_){ rates.push(f.bucket+"/"+f.chemin); }
+    }
+    if(rates.length) lot.push(["_NON_COPIES.txt", new TextEncoder().encode("Fichiers non copiés (réessayez plus tard) :\n"+rates.join("\n"))]);
+    amelProgres("Chiffrement…");
+    const blob=await chiffrerFichiers(amelZip(lot), ph);
+    amelProgres(null);
+    telechargerBlob(blob, "fichiers-bureau-etudiant-"+new Date().toISOString().slice(0,10)+".besav");
+    modaleInfo("Copie faite ✓ "+(lot.length-(rates.length?1:0))+" fichier(s)"+(rates.length?" ("+rates.length+" non copié(s))":"")+".\n\nGardez ce fichier en lieu sûr (clé USB, disque, cloud personnel). Pour l'ouvrir : « Lire / restaurer… ».","Fichiers");
+  }catch(e){ amelProgres(null); modaleInfo("Échec : "+String(e&&e.message||e),"Fichiers"); }
+}
+/* Fenêtre d'une sauvegarde ouverte : contenu, téléchargement, restauration table par table. */
+function amelFenetreSauvegarde(d, nomFichier){
+  const anc=document.getElementById("amel_sauv"); if(anc) anc.remove();
+  const tables=Object.keys(d.tables||{}).filter(t=>!t.startsWith("__")).sort();
+  const box=document.createElement("div"); box.id="amel_sauv"; box.className="ca-mod";
+  box.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true" style="max-width:560px;max-height:86vh;overflow:auto">'
+    +'<h3>Sauvegarde ouverte ✓</h3><p style="color:var(--ink);font-size:14px;margin:0 0 8px">Du '+esc(new Date(d.cree_le).toLocaleString("fr-BE"))+' — '+esc(String(d.lignes))+' ligne(s).</p>'
+    +'<p style="color:var(--ink-soft);font-size:12.5px;margin:0 0 10px">« Restaurer » remet les lignes de la sauvegarde : les lignes supprimées reviennent, les lignes modifiées reprennent leur ancienne valeur, les lignes ajoutées depuis restent. Rien n\'est supprimé.</p>'
+    +'<div style="border:1px solid var(--line);border-radius:8px;max-height:46vh;overflow:auto">'
+    +tables.map(t=>{ const n=(d.tables[t]||[]).length; return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--line);font-size:13px"><span style="flex:1;font-family:\'IBM Plex Mono\',monospace">'+esc(t)+'</span><span style="color:var(--slate)">'+n+'</span>'+(n&&!["push_config","mail_envois","ca_audit"].includes(t)?'<button class="link" data-amel-rest="'+esc(t)+'">Restaurer</button>':'')+'</div>'; }).join("")
+    +'</div><div class="ca-mod-btns" style="margin-top:12px"><button class="btn ghost sm" id="amel_sauv_json">Télécharger (JSON lisible)</button><button class="btn sm" id="amel_sauv_ok">Fermer</button></div></div>';
+  document.body.appendChild(box);
+  const fermer=()=>box.remove();
+  box.addEventListener("click",async e=>{
+    if(e.target===box||e.target.id==="amel_sauv_ok") return fermer();
+    if(e.target.id==="amel_sauv_json") return telechargerJSON(String(nomFichier||"sauvegarde").replace(/\.besav(\.[a-z]+)?$/,"")+".json", d);
+    const t=e.target.closest("[data-amel-rest]"); if(!t) return;
+    const table=t.dataset.amelRest, lignes=d.tables[table]||[];
+    fermer();
+    if(!(await modaleConfirm("Restaurer la table « "+table+" » ("+lignes.length+" ligne(s)) telle qu'elle était le "+new Date(d.cree_le).toLocaleString("fr-BE")+" ?\n\nLes lignes modifiées depuis reprendront leur ancienne valeur. Les lignes ajoutées depuis restent. Rien n'est supprimé.","Restauration"))) return amelFenetreSauvegarde(d, nomFichier);
+    let ins=0, mod=0;
+    try{
+      for(let i=0;i<lignes.length;i+=500){
+        amelProgres("Restauration de « "+table+" » : "+Math.min(i+500,lignes.length)+" / "+lignes.length);
+        const r=await sb.rpc("sauvegarde_restaurer",{p_table:table, p_lignes:lignes.slice(i,i+500)});
+        if(r.error) throw new Error(r.error.message.includes("sauvegarde_restaurer")?"Le script SQL « restauration » n'est pas encore installé.":r.error.message);
+        ins+=Number(r.data&&r.data.inseres||0); mod+=Number(r.data&&r.data.modifies||0);
+      }
+      amelProgres(null);
+      modaleInfo("Restauration faite ✓\n« "+table+" » : "+ins+" ligne(s) recréée(s), "+mod+" remise(s) à l'état de la sauvegarde.\n\nRechargez l'application pour voir le résultat.","Restauration");
+    }catch(er){ amelProgres(null); modaleInfo("Restauration interrompue"+(ins+mod?" (après "+(ins+mod)+" ligne(s))":"")+" : "+String(er&&er.message||er),"Restauration"); }
+  });
 }
 async function amelLireSauvegarde(){
   const inp=document.createElement("input"); inp.type="file";
@@ -8407,16 +8505,20 @@ async function amelLireSauvegarde(){
     const f=inp.files&&inp.files[0]; if(!f) return;
     let err="";
     for(;;){
-      const ph=await modaleChamp("Phrase secrète de sauvegarde (celle réglée dans Supabase). Le fichier est ouvert sur cet appareil uniquement.","Lire « "+f.name+" »",{type:"password",erreur:err,bouton:"Ouvrir"});
+      const ph=await modaleChamp("Phrase secrète de sauvegarde. Le fichier est ouvert sur cet appareil uniquement.","Lire « "+f.name+" »",{type:"password",erreur:err,bouton:"Ouvrir"});
       if(ph==null) return;
       try{
+        amelProgres("Déchiffrement…");
         const d=await dechiffrerSauvegarde(new Uint8Array(await f.arrayBuffer()), ph);
-        const tables=Object.keys(d.tables||{}).filter(t=>!t.startsWith("__")).sort();
-        const res=tables.map(t=>t+" : "+(d.tables[t]||[]).length).join("\n");
-        const ok=await modaleConfirm("Sauvegarde du "+new Date(d.cree_le).toLocaleString("fr-BE")+" — "+d.lignes+" ligne(s).\n\n"+res+"\n\nTélécharger le contenu lisible (JSON) ?","Sauvegarde ouverte ✓");
-        if(ok) telechargerJSON(f.name.replace(/\.besav$/,"")+".json", d);
+        amelProgres(null);
+        if(d.__fichiers){
+          if(await modaleConfirm("C'est une copie des fichiers stockés (justificatifs, PDF…). Télécharger le dossier ZIP déchiffré ?\n\nAttention : le ZIP n'est plus protégé, ne le laissez pas traîner.","Fichiers ✓"))
+            telechargerBlob(d.zip, f.name.replace(/\.besav(\.[a-z]+)?$/,"")+".zip");
+          return;
+        }
+        amelFenetreSauvegarde(d, f.name);
         return;
-      }catch(e){ err=String(e&&e.message||e); }
+      }catch(e){ amelProgres(null); err=String(e&&e.message||e); }
     }
   };
   inp.click();
@@ -8442,6 +8544,7 @@ document.addEventListener("click", async e=>{
       const b=await (await fetch(r.url)).blob(); const u=URL.createObjectURL(b); const l=document.createElement("a"); l.href=u; l.download=el.dataset.id; document.body.appendChild(l); l.click(); l.remove(); setTimeout(()=>URL.revokeObjectURL(u),4000); return;
     }
     if(a==="amel-sauv-lire"){ await amelLireSauvegarde(); return; }
+    if(a==="amel-sauv-fichiers"){ await amelSauverFichiers(); return; }
   }catch(err){ modaleInfo("Erreur : "+String(err&&err.message||err)); }
 });
 </script>

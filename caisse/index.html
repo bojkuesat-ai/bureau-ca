@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-build" content="23.10.2026 · 11">
+<meta name="app-build" content="23.10.2026 · 12">
 <!-- Politique de sécurité (CSP) : la Caisse ne peut charger du code que depuis ces adresses précises, et n'échanger des données qu'avec Supabase. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/ https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; media-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; connect-src 'self' https://mlgzdfyqjhvyubrywuim.supabase.co wss://mlgzdfyqjhvyubrywuim.supabase.co https://esm.sh https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/; frame-src 'self' blob: data:; worker-src 'self' blob: https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/; manifest-src 'self' blob: data:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; media-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; connect-src 'self' https://mlgzdfyqjhvyubrywuim.supabase.co wss://mlgzdfyqjhvyubrywuim.supabase.co; frame-src 'self' blob: data:; worker-src 'self' blob:; manifest-src 'self' blob: data:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <link rel="preconnect" href="https://mlgzdfyqjhvyubrywuim.supabase.co" crossorigin>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <title>Caisse — Demandes de remboursement</title>
@@ -2766,7 +2766,7 @@ async function mailRecapTreso(){
 
 async function genererRecuPDF(it){
   let mod;
-  try{ mod = await import("https://esm.sh/jspdf@2.5.1"); }
+  try{ mod = await import("./lib/jspdf-4.2.1.js"); }
   catch(e){ toast("Module PDF indisponible (connexion ?)."); return; }
   const jsPDF = mod.jsPDF || (mod.default && mod.default.jsPDF) || mod.default;
   const montant = Number(it.amount||0).toFixed(2).replace(".",",") + " EUR";
@@ -3871,7 +3871,7 @@ function erreurForm(sel, msg){
 }
 
 async function tamponnerPdf(file, refLabel){
-  const { PDFDocument, rgb, StandardFonts } = await import("https://esm.sh/pdf-lib@1.17.1");
+  const { PDFDocument, rgb, StandardFonts } = await import("./lib/pdf-lib-1.17.1.js");
   const buf = await file.arrayBuffer();
   const pdf = await PDFDocument.load(buf);
   const font = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -3951,7 +3951,7 @@ $("#zipBtn").onclick = async () => {
 
   const btn = $("#zipBtn"); btn.disabled = true; btn.textContent = "Préparation…";
   try{
-    const { default: JSZip } = await import("https://esm.sh/jszip@3.10.1");
+    const { default: JSZip } = await import("./lib/jszip-3.10.1.js");
     const zip = new JSZip();
     const propre = t => String(t).normalize("NFD").replace(/[\u0300-\u036f]/g,"")
       .replace(/[^a-zA-Z0-9 ._-]/g,"-").replace(/\s+/g," ").trim().slice(0,80);
@@ -4225,7 +4225,7 @@ if($("#repXlsx")) $("#repXlsx").onclick = async () => {
   const btn = $("#repXlsx"); btn.disabled = true; btn.textContent = "Préparation…";
   try{
     let XLSX;
-    try{ XLSX = await import("https://esm.sh/xlsx@0.18.5"); }
+    try{ XLSX = await import("./lib/xlsx-mini.js"); }
     catch(_){ throw new Error("module Excel indisponible (connexion ?)"); }
     const lignes = liste.slice().sort((a,b)=>String(a.expense_date).localeCompare(String(b.expense_date)))
       .map(e => [e.expense_date, e.object||"", e.payee||"", carteDe(e) || "—", refExtrait(e),
@@ -5320,7 +5320,7 @@ $("#docZip").onclick = async () => {
   if(!liste.length) return toast("Aucun document à exporter.");
   const btn = $("#docZip"); btn.disabled = true;
   try{
-    const { default: JSZip } = await import("https://esm.sh/jszip@3.10.1");
+    const { default: JSZip } = await import("./lib/jszip-3.10.1.js");
     const zip = new JSZip(); let n = 0;
     const total = liste.reduce((s,d) => s + (d.fichiers || []).length, 0);
     for(const d of liste){
@@ -5494,7 +5494,7 @@ async function rappelerPreuves(its, auto){
 
 /* PDF d'attestation (déclaration de perte du membre, ou attestation du trésorier) */
 async function attestationPdf({ titre, champs, texte, pied }){
-  const mod = await import("https://esm.sh/jspdf@2.5.1");
+  const mod = await import("./lib/jspdf-4.2.1.js");
   const jsPDF = mod.jsPDF || (mod.default && mod.default.jsPDF) || mod.default;
   const doc = new jsPDF({ unit:"mm", format:"a4" });
   let y = 22;
@@ -8996,9 +8996,9 @@ async function feLignesDepuis(lib, data){
 let _fePdfLib = null;
 async function fePdfLib(){
   if(_fePdfLib) return _fePdfLib;
-  const base = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/";
-  const lib = await import(base + "pdf.min.mjs");
-  lib.GlobalWorkerOptions.workerSrc = base + "pdf.worker.min.mjs";
+  // pdf.js est hébergé avec l'app (version figée) : aucun code externe.
+  const lib = await import("./lib/pdfjs-4.10.38.min.js");
+  lib.GlobalWorkerOptions.workerSrc = new URL("lib/pdfjs-4.10.38.worker.min.js", location.href).href;
   return (_fePdfLib = lib);
 }
 // remplit un champ vide (ou déjà rempli par une lecture précédente), jamais une saisie à la main
@@ -9935,7 +9935,7 @@ function _flatRow(o){ const r={}; for(const k in (o||{})){ const v=o[k]; r[k]=(v
 if($("#c_backupXlsx")) $("#c_backupXlsx").onclick = async () => {
   const btn=$("#c_backupXlsx"); const t0=btn.textContent; btn.disabled=true; btn.textContent="Préparation…";
   try{
-    const XLSX = await import("https://esm.sh/xlsx@0.18.5");
+    const XLSX = await import("./lib/xlsx-mini.js");
     const wb = XLSX.utils.book_new();
     const addSheet = (nom, rows) => {
       const data = (rows && rows.length) ? rows.map(_flatRow) : [{ info:"(aucune donnée)" }];
@@ -12820,7 +12820,7 @@ $("#exportXlsx").onclick = async () => {
   if(!state.items.length && !state.expenses.length && !state.incomes.length) return toast("Rien à exporter.");
   const btn = $("#exportXlsx"); btn.disabled = true; btn.textContent = "Préparation…";
   let XLSX;
-  try{ XLSX = await import("https://esm.sh/xlsx@0.18.5"); }
+  try{ XLSX = await import("./lib/xlsx-mini.js"); }
   catch(e){ btn.disabled=false; btn.textContent="Télécharger en Excel"; return toast("Module Excel indisponible (connexion ?)."); }
   const jour = t => t ? new Date(t).toISOString().slice(0,10) : "";
   const num = v => (v===""||v==null) ? "" : Number(v);
@@ -13001,7 +13001,7 @@ async function dosCharger(ecr, prog, docs){
 }
 
 async function dosPDF(ecr, per, cache, prog, docs){
-  const { PDFDocument, StandardFonts, rgb } = await import("https://esm.sh/pdf-lib@1.17.1");
+  const { PDFDocument, StandardFonts, rgb } = await import("./lib/pdf-lib-1.17.1.js");
   const pdf = await PDFDocument.create();
   const F  = await pdf.embedFont(StandardFonts.Helvetica);
   const FB = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -13212,7 +13212,7 @@ async function dosPDF(ecr, per, cache, prog, docs){
 
 async function dosZip(ecr, per, cache, pdfBytes, prog, docs){
   prog("Préparation du ZIP…");
-  const { default: JSZip } = await import("https://esm.sh/jszip@3.10.1");
+  const { default: JSZip } = await import("./lib/jszip-3.10.1.js");
   const zip = new JSZip();
   const lignes = [["Nature", "Reference", "Date", "Tiers", "Objet", "Categorie", "Montant", "Statut", "Pieces", "Fichiers"]];
   for(const e of ecr){
@@ -13351,7 +13351,7 @@ $("#bilanPdfBtn").onclick = async () => {
   const btn = $("#bilanPdfBtn"); btn.disabled = true; btn.textContent = "Préparation…";
   const fini = () => { btn.disabled = false; btn.textContent = "Télécharger en PDF"; };
   let mod;
-  try{ mod = await import("https://esm.sh/jspdf@2.5.1"); }
+  try{ mod = await import("./lib/jspdf-4.2.1.js"); }
   catch(e){ fini(); return toast("Module PDF indisponible (connexion ?)."); }
   try{
     const jsPDF = mod.jsPDF || (mod.default && mod.default.jsPDF) || mod.default;
@@ -13517,7 +13517,7 @@ $("#bilanXlsBtn").onclick = async () => {
   const btn = $("#bilanXlsBtn"); btn.disabled = true; btn.textContent = "Préparation…";
   const fini = () => { btn.disabled = false; btn.textContent = "Télécharger en Excel"; };
   let XLSX;
-  try{ XLSX = await import("https://esm.sh/xlsx@0.18.5"); }
+  try{ XLSX = await import("./lib/xlsx-mini.js"); }
   catch(e){ fini(); return toast("Module Excel indisponible (connexion ?)."); }
   try{
     const b = bilanCalc();
@@ -13559,7 +13559,7 @@ $("#bilanPptBtn").onclick = async () => {
   const btn = $("#bilanPptBtn"); btn.disabled = true; btn.textContent = "Préparation…";
   const fini = () => { btn.disabled = false; btn.textContent = "Télécharger en PowerPoint"; };
   let mod;
-  try{ mod = await import("https://esm.sh/pptxgenjs@3.12.0"); }
+  try{ mod = await import("./lib/pptxgenjs-3.12.0.js"); }
   catch(e){ fini(); return toast("Module PowerPoint indisponible (connexion ?)."); }
   try{
     const PptxGenJS = mod.default || mod.PptxGenJS || mod;
