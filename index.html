@@ -723,7 +723,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-23 \u00b7 restauration";
+const CA_VERSION="2026-10-24 \u00b7 notifs";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1095,15 +1095,18 @@ const MAIL_TEMPLATES = [
   { nom:"Demande / partenariat", objet:"Demande — [objet]",
     corps:"Bonjour,\n\nDans le cadre de nos activités, nous nous permettons de vous contacter concernant [objet de la demande].\n\n[Présentation de la demande / proposition de partenariat.]\n\nNous restons à votre disposition pour en discuter.\n\nBien à vous," },
 ];
-async function envoyerNotifCA(subject, corpsHtml, avecCaisse, exp){
+async function envoyerNotifCA(subject, corpsHtml, avecCaisse, exp, cat, urgent){
   /* Liste brute (membres actifs + diffusion externe) avant filtrage des désabonnés,
      pour pouvoir dire à l'expéditeur combien d'adresses ont été écartées. */
   const brut=new Set();
   membresActifs().forEach(a=>{ if(a.email) brut.add(String(a.email).toLowerCase().trim()); });
   (S.mailing||[]).forEach(m=>{ if(m.email) brut.add(String(m.email).toLowerCase().trim()); });
-  const dest=destinatairesCA();
-  const nbDesab=Math.max(0, [...brut].filter(Boolean).length - dest.length);
-  if(!dest.length) return {ok:0, err:0, total:0, desabonnes:nbDesab};
+  const tous=destinatairesCA();
+  const nbDesab=Math.max(0, [...brut].filter(Boolean).length - tous.length);
+  if(!tous.length) return {ok:0, err:0, total:0, desabonnes:nbDesab};
+  /* Choix de notifications de chacun (onglet Notifs) : certains coupent, d'autres veulent le résumé de 18 h. */
+  const dest=await notifFiltre(cat, tous, subject, corpsHtml, urgent);
+  if(!dest.length) return {ok:0, err:0, total:0, desabonnes:nbDesab, masque:true};
   const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corpsHtml}${blocInvitationCA()}${avecCaisse?blocCaisseCA():""}${blocNoReplyCA()}</div>`;
   const headers=await caSendHeaders();
   let ok=0, err=0;
@@ -1113,9 +1116,11 @@ async function envoyerNotifCA(subject, corpsHtml, avecCaisse, exp){
   }
   return {ok, err, total:dest.length, desabonnes:nbDesab};
 }
-async function envoyerNotifCAListe(dest, subject, corpsHtml, sansInvitation, exp){
-  const liste=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))].filter(e=>!estDesabonne(e));
+async function envoyerNotifCAListe(dest, subject, corpsHtml, sansInvitation, exp, cat, urgent){
+  let liste=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))].filter(e=>!estDesabonne(e));
   if(!liste.length) return {ok:0,err:0};
+  liste=await notifFiltre(cat, liste, subject, corpsHtml, urgent);
+  if(!liste.length) return {ok:0,err:0,masque:true};
   const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corpsHtml}${sansInvitation?"":blocInvitationCA()}${blocNoReplyCA()}</div>`;
   const headers=await caSendHeaders();
   let ok=0,err=0;
@@ -1124,11 +1129,11 @@ async function envoyerNotifCAListe(dest, subject, corpsHtml, sansInvitation, exp
 }
 function notifDocCA(titre, cat, avecCaisse){
   const corps=`<h2 style="margin:0 0 10px">Nouveau document</h2><p>Un nouveau document vient d'être déposé sur l'espace CA :</p><p style="font-size:16px"><b>${caMailEsc(titre)}</b>${cat?` <span style="color:#888">(${caMailEsc(cat)})</span>`:""}</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-  return envoyerNotifCA("Nouveau document — "+titre, corps, avecCaisse, EXP_DOCS);
+  return envoyerNotifCA("Nouveau document — "+titre, corps, avecCaisse, EXP_DOCS, "document");
 }
 function notifAnnonceCA(texte){
   const corps=`<h2 style="margin:0 0 10px">Nouvelle annonce</h2><p style="white-space:pre-wrap;background:#f7f7fb;border-radius:8px;padding:12px">${caMailEsc(texte)}</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-  return envoyerNotifCA("Nouvelle annonce du bureau étudiant", corps, false, EXP_ANNONCE);
+  return envoyerNotifCA("Nouvelle annonce du bureau étudiant", corps, false, EXP_ANNONCE, "annonce");
 }
 /* ---- Rappel de réunion, envoyé à la main (secrétariat ou propriétaire) ---- */
 function peutRappelerReunion(){ return estSecretaire() || !!(S.session && S.session.role==="owner"); }
@@ -1155,7 +1160,7 @@ async function rappelReunionCA(id){
     +(m.lieu?`<p><b>Lieu :</b> ${caMailEsc(m.lieu)}</p>`:"")
     +(pts?`<p><b>Ordre du jour :</b></p><ul>${pts}</ul>`:"")
     +`<p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-  const res=await envoyerNotifCAListe(dest, "Rappel \u2014 "+(m.titre||"réunion")+(m.date?" ("+fmtDateLong(m.date)+")":""), corps);
+  const res=await envoyerNotifCAListe(dest, "Rappel \u2014 "+(m.titre||"réunion")+(m.date?" ("+fmtDateLong(m.date)+")":""), corps, false, undefined, "reunion", true);
   const quand=new Date().toISOString();
   try{ await sb.from("ca_rappels_envoyes").insert({cle:"reunion-rappel:"+id+":"+quand}); }catch(_){ }
   S.reuRappelLe=S.reuRappelLe||{}; S.reuRappelLe[id]=quand;
@@ -1170,14 +1175,16 @@ function convocationCA(m){
     +(m.lieu?`<p><b>Lieu :</b> ${caMailEsc(m.lieu)}</p>`:"")
     +(pts?`<p><b>Ordre du jour :</b></p><ul>${pts}</ul>`:`<p>L'ordre du jour sera compl\u00e9t\u00e9 prochainement. Vous pouvez proposer un point dans l'application.</p>`)
     +`<p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-  return envoyerNotifCAListe(destinatairesMembres(), "Convocation \u2014 "+m.titre, corps);
+  /* Urgente si la réunion a lieu aujourd'hui ou demain : elle n'attend pas le résumé de 18 h. */
+  const proche=!m.date || (new Date(String(m.date).slice(0,10)+"T23:59").getTime()-Date.now()) < 2*86400000;
+  return envoyerNotifCAListe(destinatairesMembres(), "Convocation \u2014 "+m.titre, corps, false, undefined, "reunion", proche);
 }
 async function notifEvenementCA(titre, quand){
   const corps='<h2 style="margin:0 0 10px">Nouvel evenement</h2>'
     +"<p>Le bureau organise : <b>"+caMailEsc(titre)+"</b>"+(quand?" \u2014 "+caMailEsc(quand):"")+".</p>"
     +'<p>Rendez-vous sur l\'espace CA pour le detail.</p>'
     +'<p><a href="'+caAppUrl()+'" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;display:inline-block">Ouvrir l\'espace CA</a></p>';
-  const dest=destinatairesEvenements(); if(!dest.length) return;
+  const dest=await notifFiltre("evenement", destinatairesEvenements(), "Evenement \u2014 "+titre, corps); if(!dest.length) return;
   const html='<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">'+corps+blocNoReplyCA()+'</div>';
   const headers=await caSendHeaders();
   for(const to of dest){
@@ -1185,9 +1192,9 @@ async function notifEvenementCA(titre, quand){
     await new Promise(r=>setTimeout(r,120));
   }
 }
-function notifCreationCA(type, titre, extra, exp){
+function notifCreationCA(type, titre, extra, exp, cat, urgent){
   const corps=`<h2 style="margin:0 0 10px">${caMailEsc(type)}</h2><p>${caMailEsc(type)} : <b>${caMailEsc(titre)}</b>${extra?` — ${caMailEsc(extra)}`:""}</p><p>Connectez-vous à l'espace CA pour voir le détail.</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-  return envoyerNotifCA(type+" — "+titre, corps, false, exp);
+  return envoyerNotifCA(type+" — "+titre, corps, false, exp, cat, urgent);
 }
 /* ============ RAPPELS DE VOTE / DE PRÉSENCE ============
    Un bouton « Rappeler » sur les budgets en vote, les votes ouverts et les
@@ -1259,7 +1266,7 @@ function blocRappel(type, obj){
 }
 function notifVoteCA(question){
   const corps=`<h2 style="margin:0 0 10px">Nouveau vote / projet</h2><p>Un vote vient d'être lancé :</p><p style="font-size:16px"><b>${caMailEsc(question)}</b></p><p>Connectez-vous à l'espace CA pour donner votre voix.</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Voter sur l'espace CA</a></p>`;
-  return envoyerNotifCA("Nouveau vote — "+question, corps, false);
+  return envoyerNotifCA("Nouveau vote — "+question, corps, false, undefined, "vote", true);
 }
 
 async function refreshSession(){
@@ -1406,7 +1413,7 @@ async function traiterRappels(){
       const ins=await sb.from("ca_rappels_envoyes").insert({cle:j.cle}).select();
       if(ins&&ins.error) continue;                       // déjà envoyé (clé en doublon)
       if(!ins||!ins.data||!ins.data.length) continue;
-      await envoyerNotifCAListe(j.dest, j.sujet, "<p>"+caMailEsc(j.corps)+"</p>");
+      await envoyerNotifCAListe(j.dest, j.sujet, "<p>"+caMailEsc(j.corps)+"</p>", false, undefined, "tache", true);
       logAct("Rappel automatique envoyé : "+j.sujet);
     }catch(e){}
   }
@@ -1451,7 +1458,7 @@ async function traiterRecapIdees(){
   const dest=[...new Set([...destinatairesMembres(), ...cooptesActifs().map(a=>String(a.email||"").toLowerCase().trim())])]
     .filter(Boolean).filter(e=>!estDesabonne(e));
   if(!dest.length) return;
-  await envoyerNotifCAListe(dest, "Id\u00e9es de la semaine \u2014 r\u00e9capitulatif", corps);
+  await envoyerNotifCAListe(dest, "Id\u00e9es de la semaine \u2014 r\u00e9capitulatif", corps, false, undefined, "idees");
   logAct("R\u00e9cap hebdomadaire des id\u00e9es envoy\u00e9");
 }
 /* Une tâche ne concerne que le titulaire du poste et la personne qui l'a créée. */
@@ -1901,7 +1908,7 @@ function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textC
 /* ---- DASHBOARD ---- */
 const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,search:tabSearch};
+  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
@@ -1928,6 +1935,9 @@ function viewDash(){
   if(!estCoopte()){ const OFF=ongletsOff();
     for(let i=tabs.length-1;i>=0;i--){ if(OFF.indexOf(tabs[i][0])>=0) tabs.splice(i,1); }
     if(OFF.indexOf(S.tab)>=0) S.tab="accueil"; }
+  /* Onglet Notifs : toujours le dernier, à droite, pour chaque membre du CA. */
+  if(!estCoopte()) tabs.push(["notifprefs","\ud83d\udd14","Notifs"]);
+  if(S.tab==="notifprefs" && estCoopte()) S.tab="agenda";
   const notifOwner = S.session.role==="owner" ? (S.admins||[]).filter(a=>a.statut==="attente").length : 0;
   const notifBud = (S.budgets||[]).filter(b=>b.statut==="vote" && !(b.votes||[]).some(v=>(v.nom||"").toLowerCase()===(S.session.sig||"").toLowerCase())).length;
   const notifTot = notifOwner + notifBud;
@@ -4501,7 +4511,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       const quand=(r&&r.data)||new Date().toISOString();
       S.meta.bilanPublie=txt; S.meta.bilanPublieLe=quand; S.bilanPubDraft=undefined;
       const corps=`<h2 style="margin:0 0 10px">Bilans moraux \u2014 synth\u00e8se</h2><p>La synth\u00e8se des bilans moraux vient d'\u00eatre publi\u00e9e sur l'espace CA.</p><div style="white-space:pre-wrap;background:#f7f7fb;border-radius:8px;padding:12px;font-size:13px">${caMailEsc(txt)}</div>`;
-      const res=await envoyerNotifCAListe(destinatairesMembres(), "Bilans moraux \u2014 synth\u00e8se publi\u00e9e", corps);
+      const res=await envoyerNotifCAListe(destinatairesMembres(), "Bilans moraux \u2014 synth\u00e8se publi\u00e9e", corps, false, undefined, "bilans");
       logAct("Synthèse des bilans moraux publiée");
       if(window.alert) window.alert("Publié. "+((res&&res.ok)||0)+" membre(s) prévenu(s) par e-mail.");
       render(); break; }
@@ -4921,13 +4931,13 @@ ${sections||"<p>Aucun retour.</p>"}
         if(r&&r.error){ modaleInfo("Réactivation impossible : "+r.error.message); break; }
         logAct("Compte réactivé : "+lab2); }
       await loadAccounts(); render(); break; }
-    case "set-tab": S.tab=el.dataset.tab; S.mailFlash=null; try{ const _t=(TABS.concat([["admin","","Admin"],["journal","","Journal"],["avis","","Idées & avis"],["agenda","","Agenda"],["bilan","","Bilans moraux"],["soutien_etu","","Soutien psy — étudiants"],["soutien_ces","","Soutien social — CES"],["notifs","","À traiter"],["search","","Recherche"]])).find(x=>x[0]===S.tab); auditNav(_t?_t[2]:S.tab); }catch(_){ } if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
+    case "set-tab": S.tab=el.dataset.tab; S.mailFlash=null; try{ const _t=(TABS.concat([["admin","","Admin"],["journal","","Journal"],["avis","","Idées & avis"],["agenda","","Agenda"],["bilan","","Bilans moraux"],["soutien_etu","","Soutien psy — étudiants"],["soutien_ces","","Soutien social — CES"],["notifs","","À traiter"],["notifprefs","","Notifs"],["search","","Recherche"]])).find(x=>x[0]===S.tab); auditNav(_t?_t[2]:S.tab); }catch(_){ } if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
     /* organigramme */
     case "edit-poste": S.editPoste=id; render(); break;
     case "cancel-edit": S.editPoste=null; render(); break;
     case "save-org": { if(!sb) break; const missions=val("m_"+id).trim(), contact=val("c_"+id).trim(); const ligne={poste_id:id,missions:missions,contact:contact}; const estProp=!!(S.session&&S.session.role==="owner"); if(estProp) ligne.qui=val("q_"+id).trim(); const r=await sb.from("ca_org").upsert(ligne,{onConflict:"poste_id"}); if(r&&r.error){ modaleInfo("Enregistrement impossible : "+r.error.message+(/qui/.test(r.error.message)?"\n\nLa colonne « qui » n'existe pas encore : exécutez le script SQL.":"")); break; } S.org[id]={missions:missions,contact:contact,qui:estProp?ligne.qui:((S.org[id]||{}).qui||"")}; S.editPoste=null; logAct("Fiche de poste modifiée : "+((POSTE_PAR_ID[id]||{}).titre||id)); render(); break; }
     /* tâches */
-    case "add-tache": { const t=val("t_titre").trim(); if(!t) return; if(!sb) break; await sb.from("ca_taches").insert({titre:t,poste_id:val("t_poste"),statut:"todo",echeance:val("t_ech")||null,priorite:val("t_prio"),cree_par:me.sig}); { const n=document.getElementById("t_notify"); if(n&&n.checked) notifCreationCA("Nouvelle tâche", t, ""); } await loadTaches(); render(); break; }
+    case "add-tache": { const t=val("t_titre").trim(); if(!t) return; if(!sb) break; await sb.from("ca_taches").insert({titre:t,poste_id:val("t_poste"),statut:"todo",echeance:val("t_ech")||null,priorite:val("t_prio"),cree_par:me.sig}); { const n=document.getElementById("t_notify"); if(n&&n.checked) notifCreationCA("Nouvelle tâche", t, "", undefined, "tache"); } await loadTaches(); render(); break; }
     case "move-tache": if(!sb) break; await sb.from("ca_taches").update({statut:el.dataset.to}).eq("id",id); await loadTaches(); render(); break;
     case "del-tache": { if(!sb) break;
       const t=(S.taches||[]).find(x=>x.id===id);
@@ -4937,7 +4947,7 @@ ${sections||"<p>Aucun retour.</p>"}
       if(!(await modaleConfirm("Supprimer cette tâche ?"))) break;
       await sb.from("ca_taches").delete().eq("id",id); logAct("Tâche supprimée"); await loadTaches(); render(); break; }
     /* planning */
-    case "add-creneau": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secr\u00e9tariat peut ajouter \u00e0 l'agenda."); break; } const t=val("cr_titre").trim(), d=val("cr_date"); if(!t||!d||!sb) return; await sb.from("ca_creneaux").insert({titre:t,date:d,lieu:val("cr_lieu").trim(),cree_par:me.sig}); { const n=document.getElementById("cr_notify"); if(n&&n.checked) notifCreationCA("Nouvel \u00e9l\u00e9ment \u00e0 l'agenda", t, (d?fmtDateLong(d):"")+(val("cr_lieu").trim()?" \u00b7 "+val("cr_lieu").trim():"")); } await loadCreneaux(); render(); break; }
+    case "add-creneau": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secr\u00e9tariat peut ajouter \u00e0 l'agenda."); break; } const t=val("cr_titre").trim(), d=val("cr_date"); if(!t||!d||!sb) return; await sb.from("ca_creneaux").insert({titre:t,date:d,lieu:val("cr_lieu").trim(),cree_par:me.sig}); { const n=document.getElementById("cr_notify"); if(n&&n.checked) notifCreationCA("Nouvel \u00e9l\u00e9ment \u00e0 l'agenda", t, (d?fmtDateLong(d):"")+(val("cr_lieu").trim()?" \u00b7 "+val("cr_lieu").trim():""), undefined, "agenda"); } await loadCreneaux(); render(); break; }
     case "rsvp": { if(!sb) break; const r=await sb.from("ca_dispos").upsert({creneau_id:id,membre_id:S.session.id,nom:me.sig,statut:el.dataset.st},{onConflict:"creneau_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Disponibilité non enregistrée : "+r.error.message); break; } await loadCreneaux(); render(); break; }
     case "del-creneau": if(!estSecretaire()){ if(window.alert) window.alert("Seul le secr\u00e9tariat peut retirer un cr\u00e9neau."); break; } if(!sb) break; await sb.from("ca_creneaux").delete().eq("id",id); await loadCreneaux(); render(); break;
     /* budgets */
@@ -4947,9 +4957,10 @@ ${sections||"<p>Aucun retour.</p>"}
       await loadBudgets(); render();
       /* Un budget soumis au vote est toujours notifié : ce n'est pas une info facultative. */
       let res=null;
-      try{ res=await notifCreationCA("Nouveau budget/projet soumis au vote", t, cout?(cout.toFixed(2)+" €"):"", EXP_BUDGET); }
+      try{ res=await notifCreationCA("Nouveau budget/projet soumis au vote", t, cout?(cout.toFixed(2)+" €"):"", EXP_BUDGET, "budget", true); }
       catch(e){ res=null; }
       const exclus = (res&&res.desabonnes)? " "+res.desabonnes+" adresse(s) désabonnée(s) ont été écartées." : "";
+      if(res && res.masque){ modaleInfo("✓ Demande enregistrée et soumise au vote.", "Budget soumis au vote"); break; }
       if(!res || res.total===0){ modaleInfo("Demande enregistrée, mais aucun e-mail n'a pu être envoyé : aucun destinataire disponible."+exclus, "Budget soumis au vote"); }
       else if(res.err && !res.ok){ modaleInfo("Demande enregistrée, mais l'envoi des e-mails a échoué. Vérifiez la connexion et prévenez les membres autrement."+exclus, "Budget soumis au vote"); }
       else if(res.err){ modaleInfo(res.ok+" membre(s) prévenu(s), "+res.err+" échec(s)."+exclus, "Budget soumis au vote"); }
@@ -8545,6 +8556,148 @@ document.addEventListener("click", async e=>{
     }
     if(a==="amel-sauv-lire"){ await amelLireSauvegarde(); return; }
     if(a==="amel-sauv-fichiers"){ await amelSauverFichiers(); return; }
+  }catch(err){ modaleInfo("Erreur : "+String(err&&err.message||err)); }
+});
+/* ===== Onglet « Notifs » : chacun choisit les notifications qu'il reçoit ===== */
+/* Une catégorie couvre le téléphone et les mails automatiques du même sujet. */
+const NOTIF_CATS=[
+  ["vote","🗳️","Votes ouverts","Téléphone et mail quand un vote s'ouvre."],
+  ["annonce","📣","Annonces","Téléphone et mail à chaque nouvelle annonce."],
+  ["message","💬","Messages","Téléphone quand on vous écrit (jamais le contenu)."],
+  ["reunion","📋","Réunions","Convocations et rappels de réunion."],
+  ["echeances","⏰","Échéances du lendemain","Mail du soir : tâches, réunions et créneaux du lendemain."],
+  ["tache","✅","Tâches","Nouvelle tâche et rappel la veille de l'échéance."],
+  ["agenda","📅","Agenda","Nouvel élément à l'agenda."],
+  ["evenement","🎉","Événements","Nouvel événement organisé par le bureau."],
+  ["document","📄","Documents","Nouveau document déposé."],
+  ["idees","💡","Récapitulatif des idées","Mail du dimanche avec les idées de la semaine."],
+  ["bilans","📝","Bilans moraux","Publication de la synthèse."],
+  ["salle","🏫","Demandes de salle","Téléphone quand une réservation attend une décision."],
+  ["caisse","💶","Caisse","Téléphone : nouvelle demande ou nouvelle preuve à vérifier.","treso"],
+  ["billetterie","🎟️","Billetterie","Téléphone : paiement d'une inscription à vérifier.","treso"]
+];
+function npLibelle(id){ const c=NOTIF_CATS.find(x=>x[0]===id); return c?c[2]:(id==="budget"?"Budgets à voter":id); }
+function npEstProprio(){ return !!(S.session&&S.session.role==="owner"); }
+function npVisibles(){
+  const treso=npEstProprio()||/^tr[ée]sor/i.test(String((S.session&&S.session.fonction)||"").trim());
+  return NOTIF_CATS.filter(c=>c[4]!=="treso"||treso);
+}
+/* Avant chaque mail automatique : retire ceux qui ont coupé la catégorie et met de côté
+   ceux qui ont choisi le résumé de 18 h. Si la base ne répond pas, on envoie comme avant. */
+async function notifFiltre(cat, dest, sujet, corps, urgent){
+  const liste=(dest||[]).filter(Boolean);
+  if(!cat||!sb||!liste.length) return liste;
+  try{
+    const r=await sb.rpc("notif_preparer",{p_categorie:cat,p_emails:liste,p_sujet:String(sujet||""),p_html:String(corps||""),p_urgent:!!urgent});
+    if(!r||r.error||!Array.isArray(r.data)) return liste;
+    const ok=new Set(r.data.map(x=>String(x).toLowerCase().trim()));
+    return liste.filter(e=>ok.has(String(e).toLowerCase().trim()));
+  }catch(_){ return liste; }
+}
+async function npCharger(){
+  const N=S.np||(S.np={});
+  N.err=null;
+  const r=await sb.rpc("notif_mes_choix");
+  if(r.error){ N.err=/notif_mes_choix|function|schema cache/i.test(r.error.message)?"Le script SQL des notifications n'est pas encore installé.":r.error.message; N.pret=true; return; }
+  const d=r.data||{};
+  N.base={coupees:(d.coupees||[]).slice(), mode:d.mode||"immediat", oblig:(d.obligatoires||[]).slice(), budget:d.budget_actif!==false};
+  N.proprio=!!d.proprio;
+  N.draft={coupees:N.base.coupees.slice(), mode:N.base.mode, oblig:N.base.oblig.slice(), budget:N.base.budget};
+  if(N.proprio){ const v=await sb.rpc("notif_vue_proprio"); N.vue=v.error?{err:v.error.message}:(v.data||[]); }
+  N.pret=true;
+}
+function tabNotifPrefs(){
+  const N=S.np||(S.np={});
+  if(!N.pret){ if(!N.charge){ N.charge=true; npCharger().then(()=>rendreEnPreservant()).catch(e=>{ N.err=String(e&&e.message||e); N.pret=true; rendreEnPreservant(); }); }
+    return `<div class="compose"><h3 class="serif">🔔 Mes notifications</h3><p class="du">Chargement…</p></div>`; }
+  if(N.err) return `<div class="compose"><h3 class="serif">🔔 Mes notifications</h3><p class="du" style="color:var(--red)">${esc(N.err)}</p>
+    <div class="row-btn"><button class="btn ghost sm" data-np="recharger">Réessayer</button></div></div>`;
+  const D=N.draft, pro=N.proprio;
+  const lignes=npVisibles().map(([id,ic,lib,desc])=>{
+    const verrou=D.oblig.indexOf(id)>=0, on=verrou||D.coupees.indexOf(id)<0;
+    return `<div class="mail-hist-row" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:10px;flex:1;min-width:220px;cursor:${verrou?"not-allowed":"pointer"}">
+        <input type="checkbox" class="sw" role="switch" data-np-cat="${id}" ${on?"checked":""} ${verrou?"disabled":""}>
+        <span><b>${ic} ${esc(lib)}</b>${verrou?` <span title="Obligatoire : ne peut pas être coupée">🔒</span>`:""}<br><span class="du" style="font-size:12.5px">${esc(desc)}</span></span></label>
+      ${pro?`<label class="du" style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer"><input type="checkbox" data-np-oblig="${id}" ${verrou?"checked":""}> 🔒 obligatoire pour tous</label>`:""}
+    </div>`; }).join("");
+  const budget=pro?`<div class="mail-hist-row" style="display:flex;align-items:center;gap:12px;border-left:3px solid var(--gold-dim);padding-left:10px">
+      <label style="display:flex;align-items:center;gap:10px;flex:1;cursor:pointer">
+        <input type="checkbox" class="sw" role="switch" data-np-budget="1" ${D.budget?"checked":""}>
+        <span><b>💰 Budgets à voter</b> <span class="du">· pour tout le monde</span><br><span class="du" style="font-size:12.5px">Toujours reçue par tous les membres, qui ne voient pas ce réglage. Coupée ici, plus aucune notification ni aucun mail ne part, pour personne.</span></span></label></div>`:"";
+  const mode=`<div class="compose" style="margin-top:14px"><h3 class="serif" style="margin:0 0 6px">✉️ Mails automatiques</h3>
+    <label style="display:flex;gap:8px;align-items:center;margin:6px 0;cursor:pointer"><input type="radio" name="np_mode" data-np-mode="immediat" ${D.mode!=="resume"?"checked":""}> Un par un, tout de suite</label>
+    <label style="display:flex;gap:8px;align-items:center;margin:6px 0;cursor:pointer"><input type="radio" name="np_mode" data-np-mode="resume" ${D.mode==="resume"?"checked":""}> Un seul résumé par jour, à 18 h</label>
+    <p class="du" style="font-size:12.5px;margin:6px 0 0">Les urgences partent toujours tout de suite : votes, réunions et échéances du lendemain. Le résumé ne concerne pas le téléphone.</p></div>`;
+  const change=npModifie();
+  let tableau="";
+  if(pro){
+    const V=N.vue;
+    let corps;
+    if(!V) corps=`<p class="du">Chargement…</p>`;
+    else if(V.err) corps=`<p class="du" style="color:var(--red)">${esc(V.err)}</p>`;
+    else corps=`<div class="mail-hist">${V.map(m=>{ const c=(m.coupees||[]).filter(x=>x!=="budget");
+      return `<div class="mail-hist-row"><span class="mail-hist-txt"><b>${esc(m.nom||"—")}</b> <span style="color:var(--slate)">· ${esc(m.fonction||"")}${m.mode==="resume"?" · résumé de 18 h":""}</span><br>
+        ${c.length?`<span style="color:var(--red);font-size:12.5px">Coupé : ${c.map(x=>esc(npLibelle(x))).join(", ")}</span>`:`<span style="color:var(--slate);font-size:12.5px">Tout est activé</span>`}${m.maj?` <span class="du" style="font-size:11.5px">· modifié le ${esc(new Date(m.maj).toLocaleString("fr-BE",{dateStyle:"short",timeStyle:"short"}))}</span>`:""}</span></div>`; }).join("")||`<div class="empty">Aucun membre.</div>`}</div>`;
+    tableau=`<div class="compose" style="margin-top:14px"><h3 class="serif" style="margin:0 0 6px">👁 Qui a coupé quoi</h3>
+      <p class="du" style="margin:0 0 8px">Visible par vous seul.</p>${corps}
+      <div class="row-btn"><button class="btn ghost sm" data-np="recharger">Actualiser</button></div></div>`;
+  }
+  return `<div class="compose"><h3 class="serif" style="margin:0 0 6px">🔔 Mes notifications</h3>
+      <p style="color:var(--ink-soft);font-size:13px;margin:0 0 10px">Activez ce que vous voulez recevoir, sur le téléphone et par mail, puis cliquez sur <b>Enregistrer</b>. Un mail de confirmation vous est envoyé.</p>
+      <div class="row-btn" style="margin:0 0 8px"><button class="btn ghost sm" data-np="tout-on">Tout activer</button><button class="btn ghost sm" data-np="tout-off">Tout désactiver</button></div>
+      <div class="mail-hist">${budget}${lignes}</div>
+      <div class="row-btn"><button class="btn" data-np="enregistrer" ${change?"":"disabled"}>Enregistrer</button>${change?`<button class="btn ghost sm" data-np="annuler">Annuler les changements</button>`:""}</div></div>
+    ${mode}${tableau}`;
+}
+function npModifie(){
+  const N=S.np; if(!N||!N.base||!N.draft) return false;
+  const eq=(a,b)=>a.slice().sort().join()===b.slice().sort().join();
+  return !eq(N.base.coupees,N.draft.coupees)||N.base.mode!==N.draft.mode||(N.proprio&&(!eq(N.base.oblig,N.draft.oblig)||N.base.budget!==N.draft.budget));
+}
+async function npEnregistrer(){
+  const N=S.np, B=N.base, D=N.draft, pro=N.proprio;
+  const vis=npVisibles().map(c=>c[0]);
+  const off=D.coupees.filter(x=>B.coupees.indexOf(x)<0&&D.oblig.indexOf(x)<0);
+  const on=B.coupees.filter(x=>D.coupees.indexOf(x)<0);
+  const lignes=[];
+  if(off.length) lignes.push("Désactivées :\n"+off.map(x=>"  • "+npLibelle(x)).join("\n"));
+  if(on.length) lignes.push("Réactivées :\n"+on.map(x=>"  • "+npLibelle(x)).join("\n"));
+  if(B.mode!==D.mode) lignes.push("Mails : "+(D.mode==="resume"?"un résumé par jour à 18 h":"un par un, tout de suite"));
+  if(pro&&B.budget!==D.budget) lignes.push("Budgets à voter : "+(D.budget?"réactivés":"coupés")+" pour tout le monde");
+  if(pro){ const lk=D.oblig.filter(x=>B.oblig.indexOf(x)<0), ul=B.oblig.filter(x=>D.oblig.indexOf(x)<0);
+    if(lk.length) lignes.push("Rendues obligatoires 🔒 :\n"+lk.map(x=>"  • "+npLibelle(x)).join("\n"));
+    if(ul.length) lignes.push("Plus obligatoires :\n"+ul.map(x=>"  • "+npLibelle(x)).join("\n")); }
+  if(!(await modaleConfirm("Enregistrer ces changements ?\n\n"+lignes.join("\n\n"),"Mes notifications"))) return;
+  const params={p_coupees:D.coupees.filter(x=>vis.indexOf(x)>=0||B.coupees.indexOf(x)>=0), p_mode:D.mode};
+  if(pro){ params.p_budget_actif=D.budget; params.p_obligatoires=D.oblig.slice(); }
+  const r=await sb.rpc("notif_enregistrer",params);
+  if(r.error){ modaleInfo("Enregistrement impossible : "+r.error.message,"Mes notifications"); return; }
+  const j=r.data||{};
+  N.pret=false; N.charge=true; await npCharger(); rendreEnPreservant();
+  modaleInfo("✓ Vos choix sont enregistrés."+(j.mail?"\n\nUn mail de confirmation vient de vous être envoyé par notifis-be.":""),"Mes notifications");
+}
+document.addEventListener("change", e=>{
+  const N=S.np; if(!N||!N.draft) return;
+  const t=e.target; if(!t||!t.dataset) return;
+  const D=N.draft;
+  if(t.dataset.npCat){ const id=t.dataset.npCat; D.coupees=D.coupees.filter(x=>x!==id); if(!t.checked) D.coupees.push(id); }
+  else if(t.dataset.npOblig){ const id=t.dataset.npOblig; D.oblig=D.oblig.filter(x=>x!==id); if(t.checked){ D.oblig.push(id); D.coupees=D.coupees.filter(x=>x!==id); } }
+  else if(t.dataset.npBudget){ D.budget=!!t.checked; }
+  else if(t.dataset.npMode){ D.mode=t.dataset.npMode; }
+  else return;
+  rendreEnPreservant();
+});
+document.addEventListener("click", async e=>{
+  const el=e.target.closest&&e.target.closest("[data-np]"); if(!el||!sb) return;
+  const N=S.np||(S.np={}), a=el.dataset.np;
+  try{
+    if(a==="recharger"){ N.pret=false; N.charge=true; N.vue=null; render(); await npCharger(); rendreEnPreservant(); return; }
+    if(!N.draft) return;
+    if(a==="tout-on"){ N.draft.coupees=[]; if(N.proprio) N.draft.budget=true; rendreEnPreservant(); return; }
+    if(a==="tout-off"){ N.draft.coupees=npVisibles().map(c=>c[0]).filter(x=>N.draft.oblig.indexOf(x)<0); rendreEnPreservant(); return; }
+    if(a==="annuler"){ N.draft={coupees:N.base.coupees.slice(),mode:N.base.mode,oblig:N.base.oblig.slice(),budget:N.base.budget}; rendreEnPreservant(); return; }
+    if(a==="enregistrer"){ el.disabled=true; await npEnregistrer(); return; }
   }catch(err){ modaleInfo("Erreur : "+String(err&&err.message||err)); }
 });
 </script>
