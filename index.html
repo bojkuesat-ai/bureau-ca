@@ -4722,7 +4722,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
         ${cooptesActifs().length?`<h2>Coopté·es (hors CA)</h2><ul>${cooptesActifs().map(a=>`<li>${esc(((a.prenom||"")+" "+(a.nom||"")).trim())}</li>`).join("")}</ul>`:""}
         <h2>Réunions et procès-verbaux</h2>${blocsR||"<p>Aucune réunion.</p>"}
         <h2>Votes</h2>${blocsV||"<p>Aucun vote.</p>"}
-        <h2>Registre des votes électroniques (art. 16.3)</h2><p>Joint à cette archive dans un PDF séparé (« registre-des-votes ») : ${(()=>{ try{ const sv=[S.regDu,S.regAu]; S.regDu=""; S.regAu=""; const n=regBudgets().length; [S.regDu,S.regAu]=sv; return n; }catch(_){ return 0; } })()} budget(s) voté(s) en ligne, avec le vote nominatif de chaque administrateur.</p>
+        <h2>Registre des votes électroniques (art. 16.3)</h2><p>Joint à cette archive dans un PDF séparé (« registre-des-votes ») : ${(()=>{ try{ const sv=[S.regDu,S.regAu]; S.regDu=""; S.regAu=""; const n=regBudgets().length; [S.regDu,S.regAu]=sv; return n; }catch(_){ return 0; } })()} budget(s) voté(s) en ligne, avec le vote nominatif de chaque administrateur.</p>${ligneRegle162PDF()}
         ${S.meta.bilanPublie?`<h2>Synthèse des bilans moraux</h2><p style="white-space:pre-wrap">${esc(S.meta.bilanPublie)}</p>`:""}`;
       telechargerPDF(nomPDF("archive-mandat-"+an), cssArch, corpsArch);
       setTimeout(async()=>{ const sv=[S.regDu,S.regAu]; S.regDu=""; S.regAu=""; try{ await regExportPDF(); }catch(_){ } [S.regDu,S.regAu]=sv; }, 1500);
