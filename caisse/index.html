@@ -691,13 +691,14 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 24.10.2026 · gestion journalière</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 24.10.2026 · TB</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabHoraires" aria-pressed="false" hidden>Horaires</button>
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
     <button id="tabMine" aria-pressed="true">Mes demandes</button>
     <button id="tabDirect" aria-pressed="false">Paiement direct</button>
+    <button id="tabTB" aria-pressed="false" hidden>TB</button>
     <button id="tabFactures" aria-pressed="false">Factures à échéance<span class="pill" id="pillFact" hidden>0</span></button>
     <button id="tabNovelles" aria-pressed="false" hidden>Novelles</button>
     <button id="tabPres" aria-pressed="false" hidden>Dépenses présidente</button>
@@ -1977,6 +1978,9 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
       <div class="card" style="overflow:hidden"><div id="presList"></div></div>
     </div>
   </section>
+
+  <!-- TB : 15 € par présent, responsables de commission et trésorier -->
+  <section id="viewTB" class="stack" hidden><div id="tbBox" class="stack"></div></section>
 
   <!-- gestion journalière (article 20) : trésorier et présidente -->
   <section id="viewGJ" class="stack" hidden><div id="gjBox" class="stack"></div></section>
@@ -3273,6 +3277,7 @@ async function loadProfile(user){
        if(dp && dp.data) state.depensier = dp.data; }catch(_){}
   if($("#tabPres")) $("#tabPres").hidden = !state.depensier || isTreso();
   await gjInit();
+  await tbInit();
   await nvChargerAcces();
   if($("#btnMsg")) $("#btnMsg").style.display = isTreso() ? "none" : "inline-flex";
   try{ brancherBrouillon("req"); brancherBrouillon("dir"); restaurerBrouillon("req"); restaurerBrouillon("dir"); }catch(_){}
@@ -7522,6 +7527,8 @@ function uidFormulaire(px){
 const dateFormulaire = px => ($(PFX_BUD[px].date) && $(PFX_BUD[px].date).value) || dateLocale();
 function majBudgetForm(px){
   const box = $("#" + px + "_budBox"); if(!box || !state.profile) return;
+  // demande partie d'une TB : le budget est celui de la TB, pas de choix de budget
+  if(state.tbForm && state.tbForm.px === px){ box.hidden = true; return; }
   const uid = uidFormulaire(px);
   const pourAutre = uid !== state.profile.id;
   // le trésorier n'est pas concerné pour ses propres demandes
@@ -8000,6 +8007,7 @@ $("#reqForm").addEventListener("submit", async e => {
     }
     const { data, error } = await sb.from("requests").insert({
       ...(budR || {}),
+      ...tbChamps("f"),
       attachments: [],
       user_id: state.profile.id, requester_name: state.profile.name || "",
       requester_position: state.profile.position || "",
@@ -8039,6 +8047,7 @@ $("#reqForm").addEventListener("submit", async e => {
     $("#reqForm").reset(); staged.req = []; renderStaged("req"); majControle();
     $("#f_date").value = dateLocale(); majFormulaire();
     await refresh();
+    await tbApresEnvoi("f");
     if(data.budget_id) alertesBudget(data.budget_id);
     if(!piecesOk){
       await dire("Justificatif non envoyé", "Votre demande a bien été enregistrée, mais le justificatif n'a pas pu être envoyé"
@@ -8142,6 +8151,7 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     }
     const { data, error } = await sb.from("requests").insert({
       ...(budD || {}),
+      ...tbChamps("fd"),
       user_id: pour ? pour.id : state.profile.id,
       requester_name: (pour ? pour.name : state.profile.name) || "",
       requester_position: (pour ? pour.position : state.profile.position) || "",
@@ -8200,6 +8210,7 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     $("#directForm").reset(); if($("#fd_virementBox")) $("#fd_virementBox").style.display=""; staged.dir = []; renderStaged("dir");
     majPourQui();
     await refresh();
+    await tbApresEnvoi("fd");
     if(data.budget_id) alertesBudget(data.budget_id);
     if(!dirPiecesOk){
       await dire("Pièce jointe non envoyée", "La demande a bien été enregistrée, mais la pièce jointe n'a pas pu être envoyée"
@@ -8239,7 +8250,7 @@ const barreAvancement = it => {
 };
 const rowHTML = (it, showWho) => `<div class="row" data-id="${it.id}" tabindex="0" role="button">
   <div class="date mono" style="font-size:13px">${showWho?`<input type="checkbox" class="tgl sm" data-selchk data-id="${it.id}" ${state.sel&&state.sel.has(it.id)?"checked":""} style="margin-right:9px;vertical-align:middle;cursor:pointer">`:""}${fdate(it.expense_date)}</div>
-  <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}${it.hors_budget?` <span title="Demande urgente hors budget" style="color:var(--red);font-weight:700;font-size:12px">🔴 URGENTE</span>`:""}${showWho && budgetNonApprouve(it)?` <span title="Rattachée à un budget qui n'est plus approuvé" style="color:var(--amber);font-weight:700;font-size:12px">⚠ budget non approuvé</span>`:""}${showWho && it.status!=="Remboursée" && depensesSimilaires(it).length?` <span title="Une dépense du même montant, à une date proche, figure déjà dans les dépenses de l'ASBL" style="color:var(--red);font-weight:700;font-size:12px">\u26a0 déjà payée ?</span>`:""}${showWho && attesteDoublon(it)?` <span title="Doublon possible écarté par le demandeur — attestation signée jointe" style="color:var(--amber);font-weight:700;font-size:12px">\u26a0 doublon ?</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div><div style="margin-top:4px">${barreAvancement(it)}</div></div>
+  <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}${it.hors_budget?` <span title="Demande urgente hors budget" style="color:var(--red);font-weight:700;font-size:12px">🔴 URGENTE</span>`:""}${tbBadge(it)}${showWho && budgetNonApprouve(it)?` <span title="Rattachée à un budget qui n'est plus approuvé" style="color:var(--amber);font-weight:700;font-size:12px">⚠ budget non approuvé</span>`:""}${showWho && it.status!=="Remboursée" && depensesSimilaires(it).length?` <span title="Une dépense du même montant, à une date proche, figure déjà dans les dépenses de l'ASBL" style="color:var(--red);font-weight:700;font-size:12px">\u26a0 déjà payée ?</span>`:""}${showWho && attesteDoublon(it)?` <span title="Doublon possible écarté par le demandeur — attestation signée jointe" style="color:var(--amber);font-weight:700;font-size:12px">\u26a0 doublon ?</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div><div style="margin-top:4px">${barreAvancement(it)}</div></div>
   <div><span class="tag ${tagClass(it.status)}">${it.status}</span></div>
   <div class="amt">${euro(it.amount)}</div><div class="chev">›</div></div>`;
 const emptyHTML = (t,m) => `<div class="empty"><strong>${t}</strong>${m}</div>`;
@@ -8249,6 +8260,10 @@ function setView(v){
   if($("#tabGJ")) $("#tabGJ").setAttribute("aria-pressed", v==="gj");
   if($("#viewGJ")) $("#viewGJ").hidden = v!=="gj";
   if(v==="gj"){ try{ renderGJ(); }catch(_){ } }
+  if($("#tabTB")) $("#tabTB").setAttribute("aria-pressed", v==="tb");
+  if($("#viewTB")) $("#viewTB").hidden = v!=="tb";
+  if(v!=="tb" && state.tbForm){ try{ tbFermerForm(true); }catch(_){ } }
+  if(v==="tb"){ try{ renderTB(); tbCharger().then(() => { if(state.view==="tb") renderTB(); }); }catch(_){ } }
   /* La gestion journalière n'est jamais notée dans le journal. */
   if(v!=="gj") try{ auditNav(({mine:"Mes demandes",treso:"Trésorerie",reexam:"Réexamens",overview:"Vue d'ensemble",horaires:"Horaires",expenses:"Dépenses",incomes:"Recettes",members:"Membres",messages:"Messages",budget:"Budgets",compta:"Comptabilité",tva:"TVA",direct:"Paiement direct",factures:"Factures",novelles:"Novelles"})[v]||v); }catch(_){ }
   $("#tabMine").setAttribute("aria-pressed", v==="mine");
@@ -12284,7 +12299,7 @@ function renderDrawer(it){
       ${it.pay_mode==="virement"&&it.communication?`<dt>Communication</dt><dd>${esc(it.communication)}</dd>`:""}` : ""}
       <dt>Demandeur</dt><dd>${esc(it.requester_name)}${it.requester_position?`<br><span class="hint">${esc(it.requester_position)}</span>`:""}</dd>
       <dt>Date dépense</dt><dd>${fdate(it.expense_date)}</dd>
-      ${(it.budget_id || it.hors_budget) ? `<dt>Budget</dt><dd>${it.budget_id ? esc((budgetParId(it.budget_id)||{}).titre || "Budget") : "—"}${it.hors_budget ? ` <span style="color:var(--red);font-weight:700">· URGENTE hors budget</span>` : ""}</dd>` : ""}
+      ${(it.budget_id || it.hors_budget) ? `<dt>Budget</dt><dd>${it.budget_id ? esc((budgetParId(it.budget_id)||{}).titre || "Budget") : "—"}${it.hors_budget ? ` <span style="color:var(--red);font-weight:700">· URGENTE hors budget</span>` : ""}</dd>` : ""}${tbDetail(it)}
       <dt>Catégorie</dt><dd>${esc(it.category)}</dd>
       ${it.kind==="direct" ? "" : `<dt>Payé par</dt><dd>${esc(it.payment_method||"—")}</dd>`}
       ${it.kind==="direct"&&it.pay_mode!=="virement" ? `<dt>Paiement</dt><dd>${libelleModePaiement(it.pay_mode)}</dd>` : `<dt>Virement vers</dt><dd class="mono" style="font-size:13px">${esc(payeeIban(it)||"IBAN manquant")}</dd>`}
@@ -14419,6 +14434,242 @@ document.addEventListener("input", e => {
   const n = $("#gj_q"); if(n){ n.focus(); try{ n.setSelectionRange(pos, pos); }catch(_){} }
 });
 if($("#tabGJ")) $("#tabGJ").onclick = () => choisirVue("gj");
+
+
+/* =====================================================================
+   TB (15 € par présent, 2 TB par commission et par période)
+   Le responsable réserve sa TB (estimation), déclare les présents, puis
+   envoie ses demandes de remboursement ou de paiement direct depuis l'onglet.
+   Les formulaires utilisés sont ceux de la Caisse, déplacés dans la carte de
+   la TB : pièces, doublons, signature et horaires restent les mêmes.
+   ===================================================================== */
+async function tbInit(){
+  state.tb = null;
+  const btn = $("#tabTB"); if(btn) btn.hidden = true;
+  try{
+    const r = await sb.rpc("tb_etat");
+    if(r.error || !r.data || !r.data.role) return;
+    state.tb = { ...r.data, liste: [], ouverts: {} };
+    if(btn) btn.hidden = false;
+    await tbCharger();
+    if(!state.tbCanal){
+      state.tbCanal = sb.channel("caisse-tb")
+        .on("postgres_changes", { event:"*", schema:"public", table:"tb_sessions" }, async () => { await tbCharger(); if(state.view === "tb") renderTB(); })
+        .subscribe();
+    }
+  }catch(_){ }
+}
+async function tbCharger(){
+  const T = state.tb; if(!T) return;
+  const [l, e] = await Promise.all([sb.rpc("tb_liste"), sb.rpc("tb_etat")]);
+  if(l.error){ T.err = l.error.message; return; }
+  T.err = null; T.liste = l.data || [];
+  if(e && !e.error && e.data){ T.forfait = e.data.forfait; T.debut = e.data.debut; T.fin = e.data.fin; T.ouverte = e.data.ouverte; }
+}
+const tbRef = s => "TB " + (s.libelle || s.commission) + " n°" + s.numero;
+const tbParId = id => (state.tb && state.tb.liste || []).find(s => s.id === id) || null;
+const tbAujourdhui = () => dateLocale();
+function tbBadge(it){
+  if(!it || !it.tb_id) return "";
+  const s = tbParId(it.tb_id);
+  return ` <span title="Demande rattachée à une TB${it.tb_justif ? " — dépassement justifié : " + esc(it.tb_justif) : ""}" style="color:#8b7bd8;font-weight:700;font-size:12px">🎉 ${esc(s ? tbRef(s) : "TB")}${it.tb_justif ? " ⚠" : ""}</span>`;
+}
+function tbDetail(it){
+  if(!it || !it.tb_id) return "";
+  const s = tbParId(it.tb_id);
+  return `<dt>TB</dt><dd>${esc(s ? tbRef(s) + " du " + fdate(String(s.date_tb).slice(0,10)) : "TB")}${s ? " · budget " + esc(euro(s.plafond)) : ""}${it.tb_justif ? `<br><span style="color:var(--amber)">⚠ Dépassement justifié : ${esc(it.tb_justif)}</span>` : ""}</dd>`;
+}
+
+/* ---------- affichage ---------- */
+function renderTB(){
+  const box = $("#tbBox"), T = state.tb; if(!box) return;
+  // le formulaire déplacé dans une carte doit survivre au nouveau rendu
+  const F = state.tbForm, formEl = F ? $(F.px === "f" ? "#reqForm" : "#directForm") : null, banEl = F ? $("#tbFormBan") : null;
+  if(formEl) formEl.remove(); if(banEl) banEl.remove();
+  if(!T){ box.innerHTML = `<div class="card pad"><p class="hint">Onglet réservé aux responsables de commission et au trésorier.</p></div>`; return; }
+  const treso = T.role === "tresorier";
+  const actives = T.liste.filter(s => s.statut === "reservee");
+  const miennes = actives.filter(s => s.commission === T.commission && String(s.periode_debut).slice(0,10) === String(T.debut).slice(0,10));
+  let tete = `<div class="card pad">
+    <div class="eyebrow">TB</div>
+    <p class="hint" style="margin:6px 0 0"><b>${esc(euro(T.forfait))} par personne présente</b> · 2 TB par commission · période du ${esc(fdate(String(T.debut).slice(0,10)))} au ${esc(fdate(String(T.fin).slice(0,10)))}. Budget déjà voté.</p>`;
+  if(!treso){
+    tete += `<p style="margin:10px 0 0">Commission <b>${esc(T.libelle)}</b> : <b>${miennes.length}</b> TB réservée(s) sur 2.</p>`;
+    if(!T.ouverte) tete += `<p class="hint" style="color:var(--amber)">La période est terminée : le trésorier doit ouvrir la suivante.</p>`;
+    else if(miennes.length < 2) tete += `<div class="stack" style="gap:10px;margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+        <b>Réserver une TB</b>
+        <div class="grid2"><div class="field"><label for="tb_date">Date de la TB</label><input type="date" id="tb_date" min="${esc(String(T.debut).slice(0,10))}" max="${esc(String(T.fin).slice(0,10))}"></div>
+          <div class="field"><label for="tb_est">Participants estimés</label><input type="number" id="tb_est" min="1" step="1" placeholder="Ex. 40"></div></div>
+        <div class="hint" id="tb_estHint"></div>
+        <div><button class="btn ok" data-tb="reserver">Réserver la TB</button></div></div>`;
+  } else {
+    tete += `<details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Réglages (forfait et période)</summary>
+      <div class="grid2" style="margin-top:10px"><div class="field"><label>Forfait par présent (€)</label><input type="number" id="tb_cfgF" step="0.01" value="${esc(T.forfait)}"></div><div></div>
+        <div class="field"><label>Début de période</label><input type="date" id="tb_cfgD" value="${esc(String(T.debut).slice(0,10))}"></div>
+        <div class="field"><label>Fin de période</label><input type="date" id="tb_cfgE" value="${esc(String(T.fin).slice(0,10))}"></div></div>
+      <div style="margin-top:10px"><button class="btn sm" data-tb="config">Enregistrer les réglages</button></div></details>`;
+  }
+  tete += `</div>`;
+  if(T.err) tete += `<div class="card pad"><p class="hint" style="color:var(--red)">${esc(T.err)}</p></div>`;
+  const cartes = T.liste.map(s => tbCarteHTML(s, treso)).join("") || `<div class="card pad"><p class="hint" style="margin:0">Aucune TB pour l'instant.</p></div>`;
+  box.innerHTML = tete + `<div class="stack" style="gap:12px">${cartes}</div>`;
+  if(F){
+    const host = $("#tbHost-" + F.id);
+    if(host && formEl){ if(banEl) host.appendChild(banEl); host.appendChild(formEl); tbMajBandeau(); }
+    else if(formEl){ F.parent.insertBefore(formEl, F.next); state.tbForm = null; }
+  }
+}
+function tbCarteHTML(s, treso){
+  const T = state.tb, annulee = s.statut === "annulee", passee = String(s.date_tb).slice(0,10) <= tbAujourdhui();
+  const reste = Number(s.plafond) - Number(s.engage), depasse = reste < -0.005;
+  const demandes = (state.items || []).filter(i => i.tb_id === s.id);
+  const actions = [];
+  if(!annulee){
+    if(!treso){
+      if(s.presents == null && passee) actions.push(`<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap"><div class="field" style="min-width:150px"><label>Nombre exact de présents</label><input type="number" min="0" step="1" data-tb-pres="${esc(s.id)}"></div><button class="btn ok sm" data-tb="declarer" data-id="${esc(s.id)}">Déclarer les présents</button></div>`);
+      if(s.presents == null && !passee) actions.push(`<span class="hint">Le nombre de présents se déclare le jour de la TB ou le lendemain.</span>`);
+      if(s.presents != null) actions.push(`<button class="btn sm" data-tb="rembourser" data-id="${esc(s.id)}">Demande de remboursement</button><button class="btn sm" data-tb="direct" data-id="${esc(s.id)}">Demande de paiement direct</button>`);
+      if(!s.nb_demandes) actions.push(`<button class="btn ghost sm" data-tb="annuler" data-id="${esc(s.id)}" style="color:var(--red)">Annuler la TB</button>`);
+    } else {
+      actions.push(`<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap"><div class="field" style="min-width:150px"><label>Présents ${s.presents_confirmes ? "(confirmés)" : "(à confirmer)"}</label><input type="number" min="0" step="1" data-tb-conf="${esc(s.id)}" value="${s.presents != null ? esc(s.presents) : ""}"></div><button class="btn ok sm" data-tb="confirmer" data-id="${esc(s.id)}">${s.presents_confirmes ? "Corriger" : "Confirmer"}</button></div>`);
+      actions.push(`<button class="btn ghost sm" data-tb="modifier" data-id="${esc(s.id)}">Modifier date / estimation</button>`);
+      if(!s.nb_demandes) actions.push(`<button class="btn ghost sm" data-tb="annuler" data-id="${esc(s.id)}">Annuler</button>`);
+      actions.push(`<button class="btn ghost sm" data-tb="supprimer" data-id="${esc(s.id)}" style="color:var(--red)">Supprimer</button>`);
+    }
+  }
+  return `<div class="card pad"${annulee ? ' style="opacity:.55"' : depasse ? ' style="border-color:#7a2531"' : ""}>
+    <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px">
+        <div style="font-size:17px;font-weight:600">🎉 ${esc(tbRef(s))}${annulee ? ` <span class="tag">Annulée</span>` : ""}</div>
+        <div class="hint" style="margin:3px 0 0">TB du <b>${esc(fdate(String(s.date_tb).slice(0,10)))}</b> · réservée par ${esc(s.cree_nom || "")} · estimation ${esc(s.estimation)} personne(s)</div>
+        <div class="hint" style="margin:3px 0 0">${s.presents != null ? `Présents : <b>${esc(s.presents)}</b> ${s.presents_confirmes ? "✓ confirmé" + (s.confirme_par ? " par " + esc(s.confirme_par) : "") : "· à confirmer par le trésorier"}` : "Présents : pas encore déclarés"}</div>
+      </div>
+      ${annulee ? "" : `<div style="text-align:right;min-width:170px">
+        <div class="hint" style="margin:0">${s.presents != null ? "Budget" : "Réservé (provisoire)"}</div>
+        <div style="font-size:19px;font-weight:700">${euro(s.plafond)}</div>
+        <div class="hint" style="margin:2px 0 0">Dépensé ${euro(s.engage)} · <b style="color:${depasse ? "var(--red)" : "var(--green)"}">${depasse ? "dépassement " + euro(-reste) : "reste " + euro(reste)}</b></div></div>`}
+    </div>
+    ${demandes.length ? `<div class="hint" style="margin:10px 0 0">${demandes.map(i => esc(refOf(i) + " · " + (i.requester_name || "") + " · " + (i.object || "") + " · " + euro(i.amount) + " · " + i.status) + (i.tb_justif ? ` <span style="color:var(--amber)">· justification : ${esc(i.tb_justif)}</span>` : "")).join("<br>")}</div>` : ""}
+    ${actions.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:flex-end">${actions.join("")}</div>` : ""}
+    <div id="tbHost-${esc(s.id)}"></div>
+  </div>`;
+}
+
+/* ---------- le formulaire de demande dans la carte de la TB ---------- */
+function tbOuvrirForm(id, px){
+  const s = tbParId(id); if(!s) return;
+  if(state.tbForm) tbFermerForm(true);
+  const form = $(px === "f" ? "#reqForm" : "#directForm"); if(!form) return;
+  state.tbForm = { id, px, parent: form.parentNode, next: form.nextSibling };
+  const ban = document.createElement("div");
+  ban.id = "tbFormBan"; ban.className = "callout"; ban.style.margin = "14px 0";
+  ban.innerHTML = `<b>${px === "f" ? "Demande de remboursement" : "Demande de paiement direct"} — ${esc(tbRef(s))}</b>
+    <p id="tbBanTxt" style="margin:6px 0 8px"></p>
+    <div id="tbJustBox" hidden class="field"><label for="tb_justif">Justification du dépassement (obligatoire)</label>
+      <textarea id="tb_justif" maxlength="400" placeholder="Ex. 5 cooptés sont venus en plus de la liste prévue"></textarea></div>
+    <button type="button" class="btn ghost sm" data-tb="fermer">Fermer le formulaire</button>`;
+  const host = $("#tbHost-" + id);
+  host.appendChild(ban); host.appendChild(form);
+  majBudgetForm(px);
+  const m = $(px === "f" ? "#f_amount" : "#fd_amount");
+  if(m && !m._tbEcoute){ m._tbEcoute = true; m.addEventListener("input", () => { if(state.tbForm) tbMajBandeau(); }); }
+  tbMajBandeau();
+  ban.scrollIntoView({ behavior:"smooth", block:"start" });
+}
+function tbMontantForm(){ const F = state.tbForm; if(!F) return 0; return parseFloat(String($(F.px === "f" ? "#f_amount" : "#fd_amount").value || "").replace(",", ".")) || 0; }
+function tbMajBandeau(){
+  const F = state.tbForm; if(!F) return; const s = tbParId(F.id); if(!s) return;
+  const reste = Number(s.plafond) - Number(s.engage), m = tbMontantForm(), dep = m > 0 && m > reste + 0.005;
+  const t = $("#tbBanTxt"); if(t) t.innerHTML = `Budget de la TB : <b>${euro(s.plafond)}</b> (${esc(s.presents)} présent(s) × ${euro(state.tb.forfait)}) · déjà demandé ${euro(s.engage)} · <b>reste ${euro(Math.max(0, reste))}</b>`
+    + (dep ? `<br><span style="color:var(--red);font-weight:700">Cette demande dépasse le budget de la TB de ${euro(m - Math.max(0, reste))} : justifiez-la ci-dessous.</span>` : "");
+  const j = $("#tbJustBox"); if(j) j.hidden = !dep;
+}
+function tbFermerForm(silencieux){
+  const F = state.tbForm; if(!F) return;
+  const form = $(F.px === "f" ? "#reqForm" : "#directForm"), ban = $("#tbFormBan");
+  if(ban) ban.remove();
+  if(form){ try{ F.parent.insertBefore(form, F.next && F.next.parentNode === F.parent ? F.next : null); }catch(_){ F.parent.appendChild(form); } }
+  state.tbForm = null;
+  try{ majBudgetForm(F.px); }catch(_){}
+  if(!silencieux && state.view === "tb") renderTB();
+}
+/* Champs ajoutés à la demande quand elle part d'une TB (appelé par les deux formulaires). */
+function tbChamps(px){
+  const F = state.tbForm; if(!F || F.px !== px) return {};
+  const s = tbParId(F.id); if(!s) throw new Error("TB introuvable : rouvrez l'onglet TB.");
+  if(s.presents == null) throw new Error("Déclarez d'abord le nombre exact de présents de la TB.");
+  const reste = Number(s.plafond) - Number(s.engage), m = tbMontantForm();
+  const just = (($("#tb_justif") || {}).value || "").trim();
+  if(m > reste + 0.005 && just.length < 5) throw new Error("Cette demande dépasse le budget de la TB : écrivez la justification du dépassement (par exemple des cooptés venus en plus).");
+  return { tb_id: F.id, tb_justif: m > reste + 0.005 ? just : null, budget_id: null, hors_budget: false, urgence_motif: null };
+}
+async function tbApresEnvoi(px){
+  const F = state.tbForm; if(!F || F.px !== px) return;
+  tbFermerForm(true);
+  await tbCharger();
+  if(state.view === "tb") renderTB();
+}
+
+/* ---------- actions ---------- */
+document.addEventListener("click", async e => {
+  const el = e.target.closest && e.target.closest("[data-tb]"); if(!el || !state.tb) return;
+  const a = el.dataset.tb, id = el.dataset.id, s = id ? tbParId(id) : null;
+  const rpc = async (fn, args, ok) => { const r = await sb.rpc(fn, args); if(r.error){ await dire("TB", r.error.message); return false; } await tbCharger(); renderTB(); if(ok) toast(ok); return true; };
+  try{
+    if(a === "reserver"){
+      const d = ($("#tb_date") || {}).value, n = parseInt(($("#tb_est") || {}).value, 10);
+      if(!d) return dire("TB", "Indiquez la date de la TB.");
+      if(!(n > 0)) return dire("TB", "Indiquez le nombre de participants estimés.");
+      if(!(await demander("Réserver la TB ?", "TB du " + fdate(d) + " · " + n + " participant(s) estimé(s), soit " + euro(n * state.tb.forfait) + " réservés.\n\nUn mail de confirmation vous sera envoyé.", { bouton:"Réserver" }))) return;
+      el.disabled = true;
+      await rpc("tb_reserver", { p_date: d, p_estimation: n }, "TB réservée.");
+      return;
+    }
+    if(a === "declarer" && s){
+      const inp = document.querySelector(`[data-tb-pres="${CSS.escape(id)}"]`), n = parseInt(inp && inp.value, 10);
+      if(!(n >= 0)) return dire("TB", "Indiquez le nombre exact de présents.");
+      if(!(await demander("Déclarer " + n + " présent(s) ?", "Le budget de la " + tbRef(s) + " devient " + euro(n * state.tb.forfait) + ". Vous pourrez ensuite envoyer vos demandes.", { bouton:"Déclarer" }))) return;
+      await rpc("tb_declarer", { p_id: id, p_presents: n }, "Présents déclarés.");
+      return;
+    }
+    if(a === "rembourser" && s){ tbOuvrirForm(id, "f"); return; }
+    if(a === "direct" && s){ tbOuvrirForm(id, "fd"); return; }
+    if(a === "fermer"){ tbFermerForm(); return; }
+    if(a === "annuler" && s){
+      if(!(await demander("Annuler la " + tbRef(s) + " ?", "La place est libérée : une autre TB pourra être réservée.", { bouton:"Annuler la TB", danger:true }))) return;
+      await rpc("tb_annuler", { p_id: id }, "TB annulée.");
+      return;
+    }
+    if(a === "confirmer" && s){
+      const inp = document.querySelector(`[data-tb-conf="${CSS.escape(id)}"]`), n = parseInt(inp && inp.value, 10);
+      if(!(n >= 0)) return dire("TB", "Indiquez le nombre de présents.");
+      await rpc("tb_confirmer", { p_id: id, p_presents: n }, "Présents confirmés : budget " + euro(n * state.tb.forfait) + ".");
+      return;
+    }
+    if(a === "modifier" && s){
+      const d = await saisir("Date de la TB", "Nouvelle date (AAAA-MM-JJ) :", { valeur: String(s.date_tb).slice(0,10) }); if(d == null) return;
+      const n = await saisir("Participants estimés", "Nouvelle estimation :", { valeur: String(s.estimation) }); if(n == null) return;
+      await rpc("tb_modifier", { p_id: id, p_date: d.trim(), p_estimation: parseInt(n, 10) }, "TB modifiée.");
+      return;
+    }
+    if(a === "supprimer" && s){
+      if(!(await demander("Supprimer la " + tbRef(s) + " ?", "La TB est supprimée définitivement. Ses demandes restent dans la Caisse, sans TB.", { bouton:"Supprimer", danger:true }))) return;
+      await rpc("tb_supprimer", { p_id: id }, "TB supprimée.");
+      return;
+    }
+    if(a === "config"){
+      const f = parseFloat(($("#tb_cfgF") || {}).value), d = ($("#tb_cfgD") || {}).value, fin = ($("#tb_cfgE") || {}).value;
+      await rpc("tb_config_maj", { p_forfait: f, p_debut: d, p_fin: fin }, "Réglages enregistrés.");
+      return;
+    }
+  }catch(err){ dire("TB", String(err && err.message || err)); }
+});
+document.addEventListener("input", e => {
+  if(!state.tb || !e.target || e.target.id !== "tb_est") return;
+  const n = parseInt(e.target.value, 10), h = $("#tb_estHint");
+  if(h) h.textContent = n > 0 ? "Réservation provisoire : " + euro(n * state.tb.forfait) + "." : "";
+});
+if($("#tabTB")) $("#tabTB").onclick = () => choisirVue("tb");
 
 
 /* ---------- démarrage ---------- */
