@@ -8747,7 +8747,10 @@ function tabNotifPrefs(){
   return `<div class="compose"><h3 class="serif" style="margin:0 0 6px">🔔 Mes notifications</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 10px">Activez ce que vous voulez recevoir, sur le téléphone et par mail, puis cliquez sur <b>Enregistrer</b>. Un mail de confirmation vous est envoyé.</p>
       <div class="row-btn" style="margin:0 0 8px"><button class="btn ghost sm" data-np="tout-on">Tout activer</button><button class="btn ghost sm" data-np="tout-off">Tout désactiver</button></div>
-      <div class="mail-hist">${budget}${lignes}</div>
+      <div class="mail-hist">${budget}${lignes}
+        <div class="mail-hist-row" style="display:flex;align-items:center;gap:10px;opacity:.75">
+          <input type="checkbox" class="sw" role="switch" checked disabled>
+          <span><b>🧾 Caisse : relances de pièces justificatives</b> <span title="Obligation comptable : ne peut pas être coupée">🔒</span><br><span class="du" style="font-size:12.5px">Toujours envoyées : obligation comptable, impossible à désactiver.</span></span></div></div>
       <div class="row-btn"><button class="btn" data-np="enregistrer" ${change?"":"disabled"}>Enregistrer</button>${change?`<button class="btn ghost sm" data-np="annuler">Annuler les changements</button>`:""}</div></div>
     ${mode}${tableau}`;
 }

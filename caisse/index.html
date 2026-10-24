@@ -2324,6 +2324,12 @@ const EXP_TRESO = "Trésorerie du BE <noreply@bureauetuidant.xyz>";
 // mails reçus par le trésorier : demandes de remboursement, paiements directs, messages de la Caisse
 const EXP_REMB = "remboursement-caisse <noreply@bureauetuidant.xyz>";
 const envoyerRemb = (to, subject, html, reply_to) => envoyerMail(to, subject, html, reply_to, EXP_REMB);   // expéditeur de tous les autres mails
+/* Mails OBLIGATOIRES : relances de pièces justificatives et rappels de promesse de
+   retour (automatiques ou envoyés à la main). Ils ne doivent JAMAIS pouvoir être
+   bloqués : ils partent directement, sans passer par les choix de notifications
+   du CA (onglet Notifs), la liste des désabonnés ni le résumé de 18 h.
+   Ne pas faire passer ces envois par un filtre, quel qu'il soit. */
+function envoyerMailObligatoire(to, subject, html, reply_to, from){ return envoyerMail(to, subject, html, reply_to, from); }
 async function envoyerMail(to, subject, html, reply_to, from){
   if(!to){ dernierEchecMail = "adresse du destinataire introuvable"; return false; }
   try{
@@ -5480,8 +5486,9 @@ async function mailRappelPreuves(its, auto){
     ${bloc ? `<p style="color:#b3261e;font-size:13px">Attention : au-delà de 30 jours sans preuve, vous ne pourrez plus introduire de nouvelle demande.</p>` : ""}
     <p style="text-align:center;margin:22px 0"><a href="${lienDemande(it0)}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Déposer ma preuve</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+    <p style="color:#777;font-size:12px">Ce rappel concerne une obligation comptable : il ne peut pas être désactivé.</p>
     <p style="color:#999;font-size:12px">${auto ? "Rappel automatique — " : ""}Le bureau étudiant, Trésorerie</p></div>`;
-  return envoyerMail(to, (its.length>1 ? its.length + " preuves à déposer" : "Preuve à déposer — " + refOf(it0)), html, emailTreso());
+  return envoyerMailObligatoire(to, (its.length>1 ? its.length + " preuves à déposer" : "Preuve à déposer — " + refOf(it0)), html, emailTreso());
 }
 
 async function rappelerPreuves(its, auto){
@@ -7393,7 +7400,7 @@ async function rappelRecettesTitulaires(){
         <p>À ce jour, <b>aucun sponsor ni aucune recette</b> n'est enregistré. Si vous en avez reçu, pensez à les transmettre au trésorier pour qu'ils soient rattachés au budget. Sinon, merci de faire le point avec le trésorier.</p>
         <p style="text-align:center;margin:22px 0"><a href="${lien}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir la Caisse</a></p>
         <p>La trésorerie du Bureau étudiant</p></div>`;
-      try{ if(await envoyerMail(m.email, "« " + bc.titre + " » — sponsors et recettes à enregistrer", html, emailTreso())) ok++; }catch(_){}
+      try{ if(await envoyerMailObligatoire(m.email, "« " + bc.titre + " » — sponsors et recettes à enregistrer", html, emailTreso())) ok++; }catch(_){}
     }
     if(ok){ envoyes++; await histoBudget(bc.id, "Rappel au titulaire : sponsors et recettes à enregistrer (" + ok + "/" + dest.length + " envoyés)"); }
   }
@@ -10861,7 +10868,7 @@ async function informerCARetour(id){
   if(!ok0) return;
   let ok = 0; const rates = [];
   for(const to of dest){
-    let bon = false; try{ bon = await envoyerMail(to, mail.sujet, mail.html, emailTreso(), EXP_CA_BUDGET); }catch(_){}
+    let bon = false; try{ bon = await envoyerMailObligatoire(to, mail.sujet, mail.html, emailTreso(), EXP_CA_BUDGET); }catch(_){}
     if(bon) ok++; else rates.push(to + " (" + (dernierEchecMail || "raison inconnue") + ")");
     await new Promise(r => setTimeout(r, 120));
   }
@@ -10908,7 +10915,7 @@ async function prevenirCARetour(id){
   if(!v) return;
   const mail = mailRetourCA(bc, v.mot);
   let ok = 0;
-  for(const to of dest){ try{ if(await envoyerMail(to, mail.sujet, mail.html, emailTreso(), EXP_CA_BUDGET)) ok++; }catch(_){} await new Promise(r2 => setTimeout(r2, 120)); }
+  for(const to of dest){ try{ if(await envoyerMailObligatoire(to, mail.sujet, mail.html, emailTreso(), EXP_CA_BUDGET)) ok++; }catch(_){} await new Promise(r2 => setTimeout(r2, 120)); }
   if(!ok) return dire("Mail non envoyé", dernierEchecMail || "Aucun envoi n'a réussi.");
   try{ await majMetaBudget(id, { retour_alerte_at:new Date().toISOString() }); }catch(_){}
   await histoBudget(id, "CA prévenu : " + (mail.zero ? "aucune recette" : "retour partiel " + r.pct + " %") + " (" + ok + "/" + dest.length + " envoyés)");
