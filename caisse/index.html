@@ -10837,7 +10837,7 @@ function blocGestionBudget(b, bc){
     <div class="bud-txt" style="margin-top:6px"><b>Retour promis</b> (sponsoring, entrées…)${r ? ` : <b>${euro(r.recu)}</b> reçus sur <b>${euro(r.promis)}</b> promis · ${badgeR}` : " : aucun"}</div>
     <div class="attach">
       <label class="hint" style="margin:0">Montant promis (€)<br><input type="text" inputmode="decimal" autocomplete="off" data-bret="${esc(b.id)}" value="${esc(retSaisie(b.id, "mt", bc.retourMontant != null ? String(Number(bc.retourMontant)) : ""))}" placeholder="ex. 1500" style="width:150px"></label>
-      <label class="hint" style="margin:0">Date limite<br><input type="date" data-bretd="${esc(b.id)}" value="${esc(retSaisie(b.id, "d", bc.retourDate || ""))}" style="width:auto"></label>
+      <label class="hint" style="margin:0">Échéance du retour (aucun envoi automatique)<br><input type="date" data-bretd="${esc(b.id)}" value="${esc(retSaisie(b.id, "d", bc.retourDate || ""))}" style="width:auto"></label>
       <button class="btn ghost sm" data-baction="retour" data-id="${esc(b.id)}">Enregistrer le retour promis</button>
       <button class="btn ghost sm" data-baction="retourinfo" data-id="${esc(b.id)}">Informer le CA</button>
       ${r ? `<button class="btn ghost sm" data-baction="retourtit" data-id="${esc(b.id)}">Rappeler le titulaire</button>` : ""}
