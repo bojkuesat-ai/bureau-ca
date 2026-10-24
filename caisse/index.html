@@ -11512,6 +11512,7 @@ th{font-size:11px;text-transform:uppercase;color:#555}td.n,th.n{text-align:right
 tr.tot td{font-weight:bold;border-top:2px solid #333}.noprint{margin:14px 0}@media print{.noprint{display:none}body{margin:0}}</style></head><body>
 <div class="noprint"><button onclick="window.print()">Imprimer / enregistrer en PDF</button></div>
 <h1>${esc(nomA)} — ${seulId ? "fiche du budget « " + esc(L[0].titre) + " »" : "rapport par budget"}</h1><div class="meta">Édité le ${esc(fdate(dateLocale()))} · engagé = payé + validé + en attente</div>
+<p style="font-size:11px;color:#444;border-left:3px solid #241c46;padding:5px 9px;background:#f5f4fb">Règle de vote des budgets (articles 16.2 et 16.3 des statuts) : vote en ligne ou en séance, décision à la majorité simple des voix si au moins la moitié des administrateurs votent ; les abstentions comptent pour le quorum, pas pour la majorité ; en cas d'égalité, la voix de la présidence est prépondérante.</p>
 <table><thead><tr><th>Budget</th><th class="n">Approuvé</th><th class="n">Payé</th><th class="n">Engagé non payé</th><th class="n">Reste</th><th class="n">%</th><th class="n">Urgences</th></tr></thead>
 <tbody>${L.map(ligne).join("")}
 <tr class="tot"><td>Total des budgets approuvés</td><td class="n">${esc(euro(tot("cout")))}</td><td class="n">${esc(euro(tot("paye")))}</td><td class="n">${esc(euro(tot("valide")+tot("attente")))}</td><td class="n">${esc(euro(tot("reste")))}</td><td></td><td></td></tr></tbody></table>
