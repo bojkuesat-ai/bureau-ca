@@ -3346,7 +3346,7 @@ async function refresh(){
     if(!state.relanceAutoFaite){ state.relanceAutoFaite = true; alerterDormantes(true); }
   }
   try{ await chargerBudgetsCaisse(); }catch(eB){ state.budErr = eB.message || String(eB); }
-  if(isTreso() && !state.tachesBudgetFaites && !state.budErr && !state.budMetaErr){ state.tachesBudgetFaites = true; tachesBudgetTreso().then(() => rappelRecettesTitulaires()).catch(() => {}); }
+  if(isTreso() && !state.tachesBudgetFaites && !state.budErr && !state.budMetaErr){ state.tachesBudgetFaites = true; tachesBudgetTreso().catch(() => {}); }
   try{ majBudgetForm("f"); majBudgetForm("fd"); }catch(_){}
   try{ await chargerFactures(); }catch(eF){ state.feErr = eF.message || String(eF); }
   try{ await chargerNovelles(); }catch(eN){ state.nvErr = eN.message || String(eN); }
@@ -7390,9 +7390,17 @@ function majBudgetRecette(){
    2. récapitulatif hebdomadaire au trésorier
    Les retours promis non tenus ne partent jamais seuls : le trésorier clique « Prévenir le CA ». */
 const joursAvant = iso => Math.round((new Date(iso + "T12:00:00") - new Date(dateLocale() + "T12:00:00")) / 86400000);
-async function rappelRecettesTitulaires(){
-  const L = (state.budCaisse||[]).filter(bc => !bc.cloture && bc.retourMontant > 0 && (bc.recettes||0) < 0.005 && bc.retourDate
-    && joursAvant(bc.retourDate) <= 7 && !histoDe(bc.id).some(h => /Rappel au titulaire/.test(h.quoi || "")));
+/* Promesse de retour : rappel aux titulaires, UNIQUEMENT à la main par le trésorier
+   (bouton « Rappeler le titulaire » sur la carte du budget). Aucun envoi automatique. */
+async function rappelRecettesTitulaires(bid){
+  const b0 = (state.budCaisse||[]).find(bc => String(bc.id) === String(bid));
+  if(!b0 || !(b0.retourMontant > 0) || !b0.retourDate) return dire("Rappel impossible", "Aucun retour promis (montant et date) n'est enregistré sur ce budget.");
+  const dest0 = (b0.membres||[]).map(id => (state.members||[]).find(m => m.id === id)).filter(m => m && m.email);
+  if(!dest0.length) return dire("Rappel impossible", "Aucun titulaire de ce budget n'a d'adresse e-mail.");
+  const deja = histoDe(b0.id).filter(h => /Rappel au titulaire/.test(h.quoi || "")).length;
+  if(!(await demander("Rappeler le titulaire ?", "Envoyer le rappel « sponsors et recettes à enregistrer » à " + dest0.map(m => m.name || m.email).join(", ") + " pour « " + b0.titre + " » ?"
+      + (deja ? "\n\nDéjà envoyé " + deja + " fois." : ""), { bouton:"Envoyer" }))) return;
+  const L = [b0];
   let envoyes = 0;
   for(const bc of L){
     const dest = (bc.membres||[]).map(id => (state.members||[]).find(m => m.id === id)).filter(m => m && m.email);
@@ -7409,7 +7417,9 @@ async function rappelRecettesTitulaires(){
     }
     if(ok){ envoyes++; await histoBudget(bc.id, "Rappel au titulaire : sponsors et recettes à enregistrer (" + ok + "/" + dest.length + " envoyés)"); }
   }
-  if(envoyes) toast("Rappel envoyé aux titulaires de " + envoyes + " budget(s) sans sponsor ni recette.");
+  if(envoyes) toast("Rappel envoyé au titulaire.");
+  else dire("Erreur : mail non envoyé", "Le rappel n'est pas parti. " + (dernierEchecMail || ""));
+  try{ renderBudget(); }catch(_){}
 }
 async function tachesBudgetTreso(){
   const lien = window.location.origin + window.location.pathname;
@@ -10830,6 +10840,7 @@ function blocGestionBudget(b, bc){
       <label class="hint" style="margin:0">Date limite<br><input type="date" data-bretd="${esc(b.id)}" value="${esc(retSaisie(b.id, "d", bc.retourDate || ""))}" style="width:auto"></label>
       <button class="btn ghost sm" data-baction="retour" data-id="${esc(b.id)}">Enregistrer le retour promis</button>
       <button class="btn ghost sm" data-baction="retourinfo" data-id="${esc(b.id)}">Informer le CA</button>
+      ${r ? `<button class="btn ghost sm" data-baction="retourtit" data-id="${esc(b.id)}">Rappeler le titulaire</button>` : ""}
       ${r && (r.etat === "zero" || r.etat === "partiel") ? `<button class="btn sm" data-baction="retourCA" data-id="${esc(b.id)}">${r.alerte ? "Prévenir à nouveau le CA" : "Prévenir le CA"}</button>` : ""}
     </div>
     ${r && r.alerte ? `<div class="hint" style="margin:0">CA prévenu le ${fstamp(r.alerte)}.</div>` : ""}
@@ -11161,6 +11172,7 @@ async function budgetAction(action, ds){
   }
   if(action === "retourCA") return prevenirCARetour(ds.id);
   if(action === "retourinfo") return informerCARetour(String(ds.id));
+  if(action === "retourtit") return rappelRecettesTitulaires(String(ds.id));
   if(action === "retourannul"){
     const id = String(ds.id), bc = budgetParId(id);
     if(!bc || bc.retourMontant == null) return dire("Rien à supprimer", "Aucun retour promis n'est enregistré sur ce budget.");
