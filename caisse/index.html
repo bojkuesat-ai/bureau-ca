@@ -691,7 +691,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 22.10.2026 · 8</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 24.10.2026 · gestion journalière</div></div>
   <div class="spacer"></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabHoraires" aria-pressed="false" hidden>Horaires</button>
@@ -714,6 +714,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     <button id="tabBudget" aria-pressed="false" hidden>Budget</button>
     <button id="tabCompta" aria-pressed="false" hidden>Comptabilité</button>
     <button id="tabTva" aria-pressed="false" hidden>TVA</button>
+    <button id="tabGJ" aria-pressed="false" hidden>Gestion journalière<span class="pill" id="pillGJ" hidden>0</span></button>
   </div>
   <div class="who"><b id="whoName">—</b><span id="whoRole">—</span><button id="btnMsg" class="btn ghost sm" style="display:none;margin-left:auto">✉️ Messagerie<span class="pill" id="btnMsgPill" hidden>0</span></button></div>
   <button class="btn ghost sm" id="changePass">Mot de passe</button>
@@ -1976,6 +1977,9 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
       <div class="card" style="overflow:hidden"><div id="presList"></div></div>
     </div>
   </section>
+
+  <!-- gestion journalière (article 20) : trésorier et présidente -->
+  <section id="viewGJ" class="stack" hidden><div id="gjBox" class="stack"></div></section>
 </main>
 
 <footer style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -3262,6 +3266,7 @@ async function loadProfile(user){
   try{ const dp = await sb.from("depensiers").select("user_id,titre").eq("user_id", prof.id).maybeSingle();
        if(dp && dp.data) state.depensier = dp.data; }catch(_){}
   if($("#tabPres")) $("#tabPres").hidden = !state.depensier || isTreso();
+  await gjInit();
   await nvChargerAcces();
   if($("#btnMsg")) $("#btnMsg").style.display = isTreso() ? "none" : "inline-flex";
   try{ brancherBrouillon("req"); brancherBrouillon("dir"); restaurerBrouillon("req"); restaurerBrouillon("dir"); }catch(_){}
@@ -8234,7 +8239,11 @@ const emptyHTML = (t,m) => `<div class="empty"><strong>${t}</strong>${m}</div>`;
 
 function setView(v){
   state.view = v;
-  try{ auditNav(({mine:"Mes demandes",treso:"Trésorerie",reexam:"Réexamens",overview:"Vue d'ensemble",horaires:"Horaires",expenses:"Dépenses",incomes:"Recettes",members:"Membres",messages:"Messages",budget:"Budgets",compta:"Comptabilité",tva:"TVA",direct:"Paiement direct",factures:"Factures",novelles:"Novelles"})[v]||v); }catch(_){ }
+  if($("#tabGJ")) $("#tabGJ").setAttribute("aria-pressed", v==="gj");
+  if($("#viewGJ")) $("#viewGJ").hidden = v!=="gj";
+  if(v==="gj"){ try{ renderGJ(); }catch(_){ } }
+  /* La gestion journalière n'est jamais notée dans le journal. */
+  if(v!=="gj") try{ auditNav(({mine:"Mes demandes",treso:"Trésorerie",reexam:"Réexamens",overview:"Vue d'ensemble",horaires:"Horaires",expenses:"Dépenses",incomes:"Recettes",members:"Membres",messages:"Messages",budget:"Budgets",compta:"Comptabilité",tva:"TVA",direct:"Paiement direct",factures:"Factures",novelles:"Novelles"})[v]||v); }catch(_){ }
   $("#tabMine").setAttribute("aria-pressed", v==="mine");
   $("#tabTreso").setAttribute("aria-pressed", v==="treso");
   $("#tabReexam").setAttribute("aria-pressed", v==="reexam");
@@ -13975,6 +13984,435 @@ majErrCaisse();
 verifierErrCaisse();
 setInterval(verifierErrCaisse, 20000);
 sb.auth.onAuthStateChange(() => { setTimeout(verifierErrCaisse, 600); });
+
+/* =====================================================================
+   GESTION JOURNALIÈRE (article 20 des statuts)
+   Onglet réservé au trésorier et à la présidente. Chaque acte (budget ou
+   dépense) est introduit et signé par l'un, puis signé ou refusé par l'autre,
+   avec le mot de passe. Rien n'est noté dans les journaux.
+   ===================================================================== */
+const GJ_ART20 = "Article 20 : Délégués à la gestion journalière. L'Organe d'Administration peut déléguer la gestion journalière de l'association, ainsi que sa représentation dans ce cadre, à deux administrateur.trice.s agissant conjointement. L'un.e des deux délégué.e.s à la gestion journalière doit nécessairement assurer la fonction de Président.e de l'Organe d'Administration. La gestion journalière comprend aussi bien les actes et les décisions qui n'excèdent pas les besoins de la vie quotidienne de l'association que les actes et les décisions qui, soit en raison de l'intérêt mineur qu'ils représentent, soit en raison de leur caractère urgent, ne justifient pas l'intervention de l'Organe d'Administration.";
+const gjRef = a => "GJ-" + a.annee + "-" + String(a.numero).padStart(3, "0");
+const gjEstTreso = () => state.gj && state.gj.role === "tresorier";
+const gjFmtHeure = ts => ts ? new Date(ts).toLocaleString("fr-BE", { timeZone:"Europe/Brussels", day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }) : "";
+
+async function gjInit(){
+  state.gj = null;
+  const btn = $("#tabGJ"); if(btn) btn.hidden = true;
+  try{
+    const r = await sb.rpc("gj_etat");
+    if(r.error || !r.data || !r.data.role) return;
+    state.gj = { role: r.data.role, tres: r.data.tresorier || {}, pres: r.data.presidente || {}, actes: [], liens: [], filtre: "tout", form: null, dispo: null };
+    if(btn) btn.hidden = false;
+    await gjCharger();
+    if(!state.gjCanal){
+      state.gjCanal = sb.channel("caisse-gj")
+        .on("postgres_changes", { event:"*", schema:"public", table:"gj_actes" }, async () => { await gjCharger(); if(state.view === "gj") renderGJ(); })
+        .subscribe();
+    }
+  }catch(_){ }
+}
+async function gjCharger(){
+  const G = state.gj; if(!G) return;
+  const [a, l] = await Promise.all([
+    sb.from("gj_actes").select("*").order("date_decision", { ascending:false }).order("numero", { ascending:false }),
+    sb.from("gj_liens").select("*")
+  ]);
+  if(a.error){ G.err = a.error.message; return; }
+  G.err = null; G.actes = a.data || []; G.liens = (l && l.data) || [];
+  const n = G.actes.filter(gjAMoiDeSigner).length;
+  const p = $("#pillGJ"); if(p){ p.textContent = n; p.hidden = !n; }
+}
+function gjAMoiDeSigner(a){
+  const G = state.gj; if(!G || a.statut !== "attente") return false;
+  return G.role === "tresorier" ? !a.sig_treso_at : !a.sig_pres_at;
+}
+const gjLiensDe = id => (state.gj.liens || []).filter(l => l.acte_id === id);
+const gjDepensesDuBudget = id => (state.gj.actes || []).filter(x => x.type === "depense" && x.budget_id === id && x.statut !== "refuse");
+function gjUtilise(b){ return gjDepensesDuBudget(b.id).reduce((s, x) => s + Number(x.montant || 0), 0); }
+
+/* ---------- affichage ---------- */
+function renderGJ(){
+  const box = $("#gjBox"); const G = state.gj; if(!box) return;
+  if(!G){ box.innerHTML = `<div class="card" style="padding:16px"><p class="hint">Onglet réservé au trésorier et à la présidente.</p></div>`; return; }
+  const filtres = [["tout","Tout"],["signer","À signer"],["budget","Budgets"],["depense","Dépenses"],["refuse","Refusés"]];
+  const liste = G.actes.filter(a => G.filtre === "tout" ? true : G.filtre === "signer" ? gjAMoiDeSigner(a)
+    : G.filtre === "refuse" ? a.statut === "refuse" : a.type === G.filtre);
+  box.innerHTML = `
+    <div class="card" style="padding:16px 18px">
+      <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px">
+          <div class="eyebrow">Gestion journalière</div>
+          <p class="hint" style="margin:6px 0 0">Délégués : <b>${esc(G.pres.nom || "présidente")}</b> (présidente) et <b>${esc(G.tres.nom || "trésorier")}</b> (trésorier). Chaque acte demande vos deux signatures.</p>
+        </div>
+        <button class="btn" data-gj="nouveau">+ Nouvel acte</button>
+      </div>
+    </div>
+    ${G.form ? gjFormHTML() : ""}
+    ${G.err ? `<div class="card" style="padding:14px"><p class="hint" style="color:#e88">${esc(G.err)}</p></div>` : ""}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${filtres.map(([k, l]) => `<button class="btn ${G.filtre === k ? "" : "ghost"} sm" data-gj="filtre" data-k="${k}">${l}${k === "signer" && G.actes.filter(gjAMoiDeSigner).length ? " (" + G.actes.filter(gjAMoiDeSigner).length + ")" : ""}</button>`).join("")}</div>
+    <div class="stack" style="gap:12px">${liste.map(gjCarteHTML).join("") || `<div class="card" style="padding:16px"><p class="hint" style="margin:0">Aucun acte${G.filtre === "tout" ? " pour l'instant" : " dans cette catégorie"}.</p></div>`}</div>`;
+}
+
+function gjCarteHTML(a){
+  const G = state.gj;
+  const badge = a.statut === "valide" ? `<span class="pill" style="background:#1f4d36;color:#bfe8cf">Validé</span>`
+    : a.statut === "refuse" ? `<span class="pill" style="background:#5a1f26;color:#f3c4c9">Refusé</span>`
+    : `<span class="pill" style="background:#5a4718;color:#f2dc9b">En attente de la 2e signature</span>`;
+  const sig = (nomRole, nom, at) => `<div style="flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+      <div class="hint" style="margin:0">${nomRole}</div>
+      <div style="font-size:13.5px;margin-top:2px">${at ? `✓ <b>${esc(nom || "")}</b><div class="hint" style="margin:2px 0 0">signé le ${esc(gjFmtHeure(at))}</div>` : `<span style="color:var(--muted)">pas encore signé</span>`}</div></div>`;
+  const liens = gjLiensDe(a.id);
+  const budget = a.budget_id ? G.actes.find(x => x.id === a.budget_id) : null;
+  let extra = "";
+  if(a.type === "budget"){
+    const u = gjUtilise(a), deps = gjDepensesDuBudget(a.id), pct = a.montant > 0 ? Math.min(100, Math.round(u / a.montant * 100)) : 0;
+    extra = `<div style="margin-top:10px"><div class="hint" style="margin:0 0 5px">Utilisé <b>${euro(u)}</b> sur ${euro(a.montant)} · reste <b>${euro(Math.max(0, a.montant - u))}</b></div>
+      <div style="height:7px;border-radius:5px;background:var(--surface2);overflow:hidden"><div style="height:100%;width:${pct}%;background:${u > a.montant ? "#c0392b" : "var(--gold)"}"></div></div>
+      ${deps.length ? `<div class="hint" style="margin:7px 0 0">${deps.map(d => esc(gjRef(d) + " · " + d.intitule + " · " + euro(d.montant))).join("<br>")}</div>` : ""}</div>`;
+  } else {
+    extra = (budget ? `<div class="hint" style="margin:8px 0 0">Budget : <b>${esc(gjRef(budget) + " · " + budget.intitule)}</b></div>` : "")
+      + (liens.length ? `<div class="hint" style="margin:6px 0 0">${liens.map(l => esc((l.date_depense ? fdate(l.date_depense) + " · " : "") + l.libelle + " · " + euro(l.montant))).join("<br>")}</div>` : "");
+  }
+  const actions = [];
+  if(gjAMoiDeSigner(a)){
+    actions.push(`<button class="btn ok sm" data-gj="signer" data-id="${a.id}">Signer</button>`);
+    if(gjEstTreso()) actions.push(`<button class="btn sm" data-gj="reserve" data-id="${a.id}">Signer avec réserve</button>`);
+    actions.push(`<button class="btn ghost sm" data-gj="refuser" data-id="${a.id}" style="color:#e88">Refuser</button>`);
+  }
+  if(a.statut === "valide"){
+    actions.push(`<button class="btn ghost sm" data-gj="pdf" data-id="${a.id}">📄 PDF</button>`);
+    actions.push(`<button class="btn ghost sm" data-gj="renvoyer" data-id="${a.id}">✉️ Renvoyer le PDF</button>`);
+  }
+  if(gjEstTreso()){
+    actions.push(`<button class="btn ghost sm" data-gj="modifier" data-id="${a.id}">Modifier</button>`);
+    actions.push(`<button class="btn ghost sm" data-gj="supprimer" data-id="${a.id}" style="color:#e88">Supprimer</button>`);
+  }
+  return `<div class="card" style="padding:14px 16px">
+    <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px">
+        <div class="hint" style="margin:0">${esc(gjRef(a))} · ${a.type === "budget" ? "Budget" : "Dépense"} · décision du ${esc(fdate(a.date_decision))}</div>
+        <div style="font-size:16px;font-weight:600;margin-top:3px">${esc(a.intitule)}</div>
+        ${a.description ? `<div class="hint" style="margin:3px 0 0;white-space:pre-wrap">${esc(a.description)}</div>` : ""}
+      </div>
+      <div style="text-align:right"><div style="font-size:18px;font-weight:700">${euro(a.montant)}</div>${badge}</div>
+    </div>
+    ${extra}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">${sig("La présidente", a.sig_pres_nom, a.sig_pres_at)}${sig("Le trésorier", a.sig_treso_nom, a.sig_treso_at)}</div>
+    ${a.reserve ? `<div class="callout" style="margin-top:10px"><b>Signé avec réserve par le trésorier</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(a.reserve)}</p></div>` : ""}
+    ${a.statut === "refuse" ? `<div class="callout" style="margin-top:10px;border-color:#7a2531;background:#2a1216"><b style="color:#f3c4c9">Refusé par ${esc(a.refus_par || "")}${a.refus_at ? " le " + esc(gjFmtHeure(a.refus_at)) : ""}</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(a.refus_motif || "")}</p></div>` : ""}
+    ${actions.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${actions.join("")}</div>` : ""}
+  </div>`;
+}
+
+/* ---------- formulaire (nouvel acte / modification) ---------- */
+function gjFormHTML(){
+  const G = state.gj, F = G.form, edit = !!F.id;
+  const budgets = G.actes.filter(b => b.type === "budget" && b.statut !== "refuse" && b.id !== F.id);
+  let partDep = "";
+  if(F.type === "depense"){
+    const q = (F.q || "").toLowerCase().trim();
+    const dispo = G.dispo === null ? null : (G.dispo || []).filter(d => !q || (d.libelle + " " + d.montant).toLowerCase().includes(q));
+    const total = gjTotalCoches();
+    partDep = `
+      <div class="field"><label>Budget de gestion journalière (facultatif)</label>
+        <select id="gj_budget"><option value="">— Aucun —</option>${budgets.map(b => `<option value="${b.id}" ${F.budget === b.id ? "selected" : ""}>${esc(gjRef(b) + " · " + b.intitule + " · reste " + euro(Math.max(0, b.montant - gjUtilise(b) + (edit && F.budget === b.id ? Number(F.montantInitial || 0) : 0))))}</option>`).join("")}</select></div>
+      <div class="field"><label>Dépenses déjà enregistrées dans la Caisse</label>
+        <input id="gj_q" placeholder="Rechercher : nom, objet, montant…" value="${esc(F.q || "")}">
+        <div style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:4px 8px;margin-top:6px">
+          ${dispo === null ? `<p class="hint">Chargement…</p>` : dispo.length ? dispo.map(d => { const k = d.source + ":" + d.ref_id;
+            return `<label style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);text-transform:none;letter-spacing:0;font-weight:500;color:var(--text);font-size:13px;cursor:pointer">
+              <input type="checkbox" data-gj-lien="${esc(k)}" ${F.coches[k] ? "checked" : ""}>
+              <span style="flex:1">${esc(d.libelle)}<span class="hint" style="display:block;margin:0">${d.date_depense ? esc(fdate(d.date_depense)) + " · " : ""}${esc(d.statut || "")}</span></span>
+              <b>${euro(d.montant)}</b></label>`; }).join("") : `<p class="hint">Aucune dépense disponible.</p>`}
+        </div>
+        <p class="hint">${Object.keys(F.coches).length ? `${Object.keys(F.coches).length} dépense(s) cochée(s) · total <b>${euro(total)}</b>` : "Aucune dépense cochée : indiquez le montant ci-dessous."}</p></div>`;
+  }
+  const montantAuto = F.type === "depense" && Object.keys(F.coches).length;
+  return `<div class="card" style="padding:16px 18px;border-color:var(--gold-dim, #8a7341)">
+    <div class="eyebrow" style="margin-bottom:10px">${edit ? "Modifier l'acte " + esc(F.ref) : "Nouvel acte de gestion journalière"}</div>
+    <div class="stack" style="gap:12px">
+      ${edit ? "" : `<div style="display:flex;gap:8px"><button class="btn ${F.type === "budget" ? "" : "ghost"} sm" data-gj="type" data-k="budget">Budget</button><button class="btn ${F.type === "depense" ? "" : "ghost"} sm" data-gj="type" data-k="depense">Dépense</button></div>`}
+      <div class="field"><label>Intitulé</label><input id="gj_intitule" value="${esc(F.intitule || "")}" placeholder="${F.type === "budget" ? "Ex. Fournitures du bureau, octobre" : "Ex. Paiements soirée TB"}"></div>
+      <div class="field"><label>Date de la décision</label><input type="date" id="gj_date" value="${esc(F.date || dateLocale())}" max="${dateLocale()}"><p class="hint">Peut être antérieure : c'est la date de la décision qui figure sur l'acte, pas celle des signatures.</p></div>
+      ${partDep}
+      <div class="field"><label>${F.type === "budget" ? "Montant maximum" : "Montant"} (€)</label><input type="number" step="0.01" min="0" id="gj_montant" value="${montantAuto ? gjTotalCoches().toFixed(2) : esc(F.montant != null ? F.montant : "")}" ${montantAuto ? "disabled" : ""}></div>
+      <div class="field"><label>Description (facultatif)</label><textarea id="gj_desc" rows="2">${esc(F.description || "")}</textarea></div>
+      <div class="err" id="gj_err" hidden></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn ok" data-gj="${edit ? "enregistrer" : "introduire"}">${edit ? "Enregistrer les modifications" : "Introduire et signer"}</button>
+        <button class="btn ghost" data-gj="annuler">Annuler</button></div>
+    </div></div>`;
+}
+function gjTotalCoches(){
+  const G = state.gj, F = G.form; if(!F) return 0;
+  return Object.keys(F.coches).reduce((s, k) => { const d = (G.dispo || []).find(x => x.source + ":" + x.ref_id === k); return s + Number(d ? d.montant : (F.coches[k] || 0)); }, 0);
+}
+function gjLireForm(){
+  const F = state.gj.form; if(!F) return;
+  const v = id => { const el = $("#" + id); return el ? el.value : undefined; };
+  if(v("gj_intitule") !== undefined) F.intitule = v("gj_intitule");
+  if(v("gj_date") !== undefined) F.date = v("gj_date");
+  if(v("gj_desc") !== undefined) F.description = v("gj_desc");
+  if(v("gj_budget") !== undefined) F.budget = v("gj_budget") || "";
+  const m = $("#gj_montant"); if(m && !m.disabled) F.montant = m.value;
+  if(v("gj_q") !== undefined) F.q = v("gj_q");
+}
+async function gjChargerDispo(acteId){
+  const G = state.gj; G.dispo = null; renderGJ();
+  const r = await sb.rpc("gj_depenses_disponibles", { p_acte: acteId || null });
+  G.dispo = r.error ? [] : (r.data || []);
+  if(r.error) toast("Dépenses indisponibles : " + r.error.message);
+  renderGJ();
+}
+
+/* ---------- signature : popup + mot de passe ---------- */
+function gjPopupSignature({ titre, acte, motif, motifTitre, bouton, danger }){
+  return new Promise(resolve => {
+    const ov = document.createElement("div");
+    ov.className = "overlay open";
+    ov.innerHTML = `<div class="sheetd" style="max-width:520px"><div class="sb" style="padding:22px">
+      <h2 style="font-size:20px;margin:0 0 8px">${esc(titre)}</h2>
+      ${acte ? `<div style="background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 12px;font-size:13.5px"><b>${esc(acte.ref)}</b> · ${esc(acte.intitule)}<div class="hint" style="margin:3px 0 0">${esc(acte.type === "budget" ? "Budget" : "Dépense")} · ${euro(acte.montant)} · décision du ${esc(fdate(acte.date))}</div></div>` : ""}
+      ${motif ? `<div class="field" style="margin-bottom:12px"><label>${esc(motifTitre || "Motif")}</label><textarea data-gj-motif rows="3"></textarea></div>` : ""}
+      <label class="check" style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:13px;font-weight:600;color:var(--text);margin:0 0 12px;cursor:pointer">
+        <input type="checkbox" data-gj-ok style="margin-top:2px;width:17px;height:17px;flex:none;accent-color:var(--gold)">
+        <span>Je ${danger ? "refuse" : "signe"} en qualité de délégué(e) à la gestion journalière, conformément à l'article 20 des statuts du Bureau étudiant.</span></label>
+      <div class="field"><label>Votre mot de passe</label><input type="password" data-gj-mdp autocomplete="current-password"></div>
+      <div class="err" data-gj-err hidden style="margin-top:10px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <button class="btn ghost" data-gj-non>Annuler</button>
+        <button class="btn ${danger ? "" : "ok"}" data-gj-oui ${danger ? 'style="background:#b02a2a;color:#fff"' : ""}>${esc(bouton || "Signer")}</button></div>
+    </div></div>`;
+    document.body.appendChild(ov);
+    const q = s => ov.querySelector(s), err = q("[data-gj-err]");
+    const fin = v => { ov.remove(); document.removeEventListener("keydown", clav, true); resolve(v); };
+    const clav = e => { if(e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); fin(null); } };
+    document.addEventListener("keydown", clav, true);
+    q("[data-gj-non]").onclick = () => fin(null);
+    ov.onclick = e => { if(e.target === ov) fin(null); };
+    const valider = () => {
+      const m = motif ? q("[data-gj-motif]").value.trim() : null;
+      const mdp = q("[data-gj-mdp]").value;
+      const souci = motif && !m ? "Indiquez le motif." : !q("[data-gj-ok]").checked ? "Cochez la case de signature." : !mdp ? "Tapez votre mot de passe." : "";
+      if(souci){ err.textContent = souci; err.hidden = false; return; }
+      fin({ motif: m, mdp });
+    };
+    q("[data-gj-oui]").onclick = valider;
+    q("[data-gj-mdp]").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); valider(); } });
+    setTimeout(() => (motif ? q("[data-gj-motif]") : q("[data-gj-mdp]")).focus(), 60);
+  });
+}
+/* Le mot de passe ouvre une session courte, à part : c'est elle qui signe,
+   et le serveur vérifie que le mot de passe vient d'être tapé. */
+async function gjAvecMotDePasse(mdp, action){
+  let email = "";
+  try{ const { data:{ session } } = await sb.auth.getSession(); email = (session && session.user && session.user.email) || ""; }catch(_){}
+  if(!email) email = (state.profile && state.profile.email) || "";
+  if(!email) throw new Error("Adresse e-mail du compte introuvable.");
+  const { data, error } = await sbSignature.auth.signInWithPassword({ email, password: mdp });
+  if(error) throw new Error(/Invalid login/i.test(error.message) ? "Mot de passe incorrect." : error.message);
+  try{
+    if(!data || !data.user || data.user.id !== state.profile.id) throw new Error("Ce mot de passe ne correspond pas à votre compte.");
+    return await action(sbSignature);
+  }finally{ try{ await sbSignature.auth.signOut({ scope:"local" }); }catch(_){} }
+}
+
+/* ---------- PDF de l'acte (article 20) ---------- */
+function gjTxt(s){
+  return String(s == null ? "" : s).replace(/€/g, "EUR").replace(/[‘’]/g, "'").replace(/[“”«»]/g, '"').replace(/[–—]/g, "-")
+    .replace(/·/g, "-").replace(/…/g, "...").replace(/ | /g, " ").replace(/[^\x00-\xff]/g, "");
+}
+const gjEur = n => (Number(n) || 0).toFixed(2).replace(".", ",") + " EUR";
+async function gjEmpreinte(a, liens){
+  const canon = JSON.stringify({ ref: gjRef(a), type: a.type, intitule: a.intitule, description: a.description, montant: Number(a.montant).toFixed(2),
+    date: a.date_decision, budget: a.budget_id || null, pres: [a.sig_pres_nom, a.sig_pres_at], treso: [a.sig_treso_nom, a.sig_treso_at], reserve: a.reserve || null,
+    liens: liens.map(l => [l.source, l.ref_id, l.libelle, Number(l.montant).toFixed(2), l.date_depense]) });
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canon));
+  return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+async function gjPdf(a){
+  const mod = await import("./lib/jspdf-4.2.1.js");
+  const jsPDF = mod.jsPDF || (mod.default && mod.default.jsPDF) || mod.default;
+  const G = state.gj, liens = gjLiensDe(a.id), budget = a.budget_id ? G.actes.find(x => x.id === a.budget_id) : null;
+  const empreinte = await gjEmpreinte(a, liens);
+  const doc = new jsPDF({ unit:"mm", format:"a4" });
+  const X = 18, W = 174; let y = 20;
+  const page = h => { if(y + h > 278){ doc.addPage(); y = 20; } };
+  const para = (t, taille, style, couleur) => {
+    doc.setFont("helvetica", style || "normal"); doc.setFontSize(taille || 10); doc.setTextColor(couleur == null ? 0 : couleur);
+    const l = doc.splitTextToSize(gjTxt(t), W); page(l.length * taille * 0.42 + 2); doc.text(l, X, y); y += l.length * taille * 0.42 + 2;
+  };
+  const champ = (k, v) => {
+    doc.setFontSize(10); const l = doc.splitTextToSize(gjTxt(v || "-"), 120); page(5.2 * l.length + 1);
+    doc.setFont("helvetica", "bold"); doc.setTextColor(110); doc.text(gjTxt(k), X, y);
+    doc.setFont("helvetica", "normal"); doc.setTextColor(0); doc.text(l, X + 50, y); y += 5.2 * l.length + 1.5;
+  };
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text(gjTxt((comptaCfg().nomAsbl) || "Le Bureau étudiant"), X, y);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(110); doc.text("Gestion journalière", X, y + 5);
+  doc.setDrawColor(200); doc.line(X, y + 9, X + W, y + 9); y += 20;
+  para("Acte de gestion journalière", 18, "bold");
+  para(gjRef(a) + "  -  Date de la décision : " + fdate(a.date_decision), 11, "normal", 70); y += 3;
+  doc.setDrawColor(180); doc.setFillColor(246, 245, 251);
+  const ref = "Acte pris en application de l'article 20 des statuts : gestion journalière déléguée à deux administrateur.trice.s agissant conjointement, dont la présidence.";
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); const lr = doc.splitTextToSize(gjTxt(ref), W - 8);
+  doc.setFont("helvetica", "italic"); doc.setFontSize(8.5); const la = doc.splitTextToSize(gjTxt(GJ_ART20), W - 8);
+  const hBox = lr.length * 4.6 + la.length * 3.6 + 7; page(hBox);
+  doc.rect(X, y - 4, W, hBox, "FD");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.setTextColor(0); doc.text(lr, X + 4, y + 1);
+  doc.setFont("helvetica", "italic"); doc.setFontSize(8.5); doc.setTextColor(80); doc.text(la, X + 4, y + 2 + lr.length * 4.6);
+  y += hBox + 4;
+  para("Objet de l'acte", 12, "bold"); y += 1;
+  champ("Type", a.type === "budget" ? "Budget" : "Dépense");
+  champ("Intitulé", a.intitule);
+  if(a.description) champ("Description", a.description);
+  champ(a.type === "budget" ? "Montant maximum" : "Montant", gjEur(a.montant));
+  if(budget) champ("Budget rattaché", gjRef(budget) + " - " + budget.intitule);
+  if(a.type === "budget"){
+    const deps = gjDepensesDuBudget(a.id), u = gjUtilise(a);
+    champ("Utilisé à ce jour", gjEur(u) + " (reste " + gjEur(Math.max(0, a.montant - u)) + ")");
+    if(deps.length){ y += 2; para("Dépenses imputées sur ce budget", 11, "bold");
+      deps.forEach(d => champ(gjRef(d), d.intitule + " - " + gjEur(d.montant) + (d.statut === "attente" ? " (en attente de signature)" : ""))); }
+  }
+  if(liens.length){
+    y += 2; para("Dépenses rattachées", 11, "bold");
+    liens.forEach(l => champ(l.date_depense ? fdate(l.date_depense) : "-", l.libelle + " - " + gjEur(l.montant)));
+    champ("Total", gjEur(liens.reduce((s, l) => s + Number(l.montant || 0), 0)));
+  }
+  y += 6; page(48);
+  para("Signatures", 12, "bold"); y += 1;
+  const bloc = (x, role, nom, at) => {
+    doc.setDrawColor(190); doc.rect(x, y, 84, 30);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(110); doc.text(gjTxt(role), x + 4, y + 6);
+    doc.setFontSize(11); doc.setTextColor(0); doc.text(gjTxt(nom || "-"), x + 4, y + 13);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(60);
+    doc.text(doc.splitTextToSize(gjTxt(at ? "Signé électroniquement par mot de passe le " + gjFmtHeure(at) : "Non signé"), 76), x + 4, y + 19);
+  };
+  bloc(X, "La présidente, déléguée à la gestion journalière", a.sig_pres_nom, a.sig_pres_at);
+  bloc(X + 90, "Le trésorier, délégué à la gestion journalière", a.sig_treso_nom, a.sig_treso_at);
+  y += 36;
+  if(a.reserve){
+    const lres = doc.splitTextToSize(gjTxt(a.reserve), W - 8); const h = lres.length * 4.6 + 11; page(h);
+    doc.setFillColor(255, 247, 230); doc.setDrawColor(232, 217, 168); doc.rect(X, y - 4, W, h, "FD");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(90, 74, 26); doc.text("Signé avec réserve par le trésorier", X + 4, y + 1);
+    doc.setFont("helvetica", "normal"); doc.setTextColor(0); doc.text(lres, X + 4, y + 7); y += h + 3;
+  }
+  const derniere = [a.sig_pres_at, a.sig_treso_at].filter(Boolean).sort().pop();
+  if(derniere && a.updated_at && new Date(a.updated_at) - new Date(derniere) > 60000)
+    para("Acte modifié le " + gjFmtHeure(a.updated_at) + ", après les signatures.", 8.5, "italic", 90);
+  const n = doc.getNumberOfPages();
+  for(let i = 1; i <= n; i++){
+    doc.setPage(i); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(120);
+    doc.text(gjTxt("Gestion journalière du BE - acte pris en application de l'article 20 des statuts. Empreinte SHA-256 : " + empreinte.slice(0, 32)), X, 289);
+    doc.text(i + " / " + n, X + W, 289, { align:"right" });
+  }
+  return { blob: doc.output("blob"), nom: gjRef(a) + ".pdf" };
+}
+async function gjEnvoyerPdf(a, silencieux){
+  try{
+    const { blob, nom } = await gjPdf(a);
+    const b64 = await new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1] || ""); fr.onerror = ko; fr.readAsDataURL(blob); });
+    const r = await sb.rpc("gj_envoyer_pdf", { p_acte: a.id, p_pdf_b64: b64, p_nom: nom });
+    if(r.error) throw new Error(r.error.message);
+    if(!silencieux) dire("PDF envoyé ✓", "L'acte " + gjRef(a) + " signé vient d'être envoyé par mail à la présidente et au trésorier.");
+    return true;
+  }catch(e){ dire("Envoi du PDF impossible", String(e && e.message || e)); return false; }
+}
+
+/* ---------- actions ---------- */
+document.addEventListener("click", async e => {
+  const el = e.target.closest && e.target.closest("[data-gj]"); if(!el || !state.gj) return;
+  const G = state.gj, a = el.dataset.gj, id = el.dataset.id, acte = id ? G.actes.find(x => x.id === id) : null;
+  try{
+    if(a === "filtre"){ G.filtre = el.dataset.k; renderGJ(); return; }
+    if(a === "nouveau"){ G.form = { type:"depense", coches:{}, date: dateLocale() }; renderGJ(); await gjChargerDispo(null); return; }
+    if(a === "annuler"){ G.form = null; renderGJ(); return; }
+    if(a === "type"){ gjLireForm(); G.form.type = el.dataset.k; renderGJ(); return; }
+    if(a === "modifier" && acte){
+      const coches = {}; gjLiensDe(acte.id).forEach(l => { coches[l.source + ":" + l.ref_id] = Number(l.montant); });
+      G.form = { id: acte.id, ref: gjRef(acte), type: acte.type, intitule: acte.intitule, description: acte.description, date: acte.date_decision,
+        montant: acte.montant, montantInitial: acte.montant, budget: acte.budget_id || "", coches };
+      renderGJ(); window.scrollTo({ top: 0, behavior: "smooth" });
+      if(acte.type === "depense") await gjChargerDispo(acte.id);
+      return;
+    }
+    if(a === "introduire" || a === "enregistrer"){
+      gjLireForm(); const F = G.form, err = $("#gj_err");
+      const montantAuto = F.type === "depense" && Object.keys(F.coches).length;
+      const montant = montantAuto ? gjTotalCoches() : parseFloat(String(F.montant || "").replace(",", "."));
+      const souci = !String(F.intitule || "").trim() ? "Indiquez un intitulé." : !F.date ? "Indiquez la date de la décision."
+        : F.date > dateLocale() ? "La date de la décision ne peut pas être dans le futur." : !(montant > 0) ? "Le montant doit être supérieur à zéro." : "";
+      if(souci){ if(err){ err.textContent = souci; err.hidden = false; } return; }
+      const liens = F.type === "depense" ? Object.keys(F.coches).map(k => { const i = k.indexOf(":"); return { source: k.slice(0, i), ref_id: k.slice(i + 1) }; }) : [];
+      if(a === "enregistrer"){
+        if(!(await demander("Enregistrer les modifications ?", "L'acte " + F.ref + " est modifié sans nouvelle signature.", { bouton:"Enregistrer" }))) return;
+        const r = await sb.rpc("gj_modifier", { p_acte: F.id, p_intitule: F.intitule.trim(), p_description: (F.description || "").trim(), p_montant: montant,
+          p_date: F.date, p_budget: F.type === "depense" && F.budget ? F.budget : null, p_liens: F.type === "depense" ? liens : null });
+        if(r.error){ if(err){ err.textContent = r.error.message; err.hidden = false; } return; }
+        G.form = null; await gjCharger(); renderGJ(); toast("Acte " + F.ref + " modifié."); return;
+      }
+      const autre = G.role === "tresorier" ? (G.pres.nom || "la présidente") : (G.tres.nom || "le trésorier");
+      const rep = await gjPopupSignature({ titre: "Introduire et signer l'acte", bouton: "Introduire et signer",
+        acte: { ref: "Nouvel acte", intitule: F.intitule.trim(), type: F.type, montant, date: F.date } });
+      if(!rep) return;
+      await gjAvecMotDePasse(rep.mdp, cli => cli.rpc("gj_creer", { p_type: F.type, p_intitule: F.intitule.trim(), p_description: (F.description || "").trim(),
+        p_montant: montant, p_date: F.date, p_budget: F.type === "depense" && F.budget ? F.budget : null, p_liens: liens })
+        .then(r => { if(r.error) throw new Error(r.error.message); return r.data; }));
+      G.form = null; await gjCharger(); renderGJ();
+      dire("Acte introduit et signé ✓", "Votre signature est enregistrée. " + autre + " vient d'être prévenu(e) par mail pour la deuxième signature.");
+      return;
+    }
+    if((a === "signer" || a === "reserve" || a === "refuser") && acte){
+      const info = { ref: gjRef(acte), intitule: acte.intitule, type: acte.type, montant: acte.montant, date: acte.date_decision };
+      const rep = await gjPopupSignature({
+        titre: a === "signer" ? "Signer l'acte" : a === "reserve" ? "Signer avec réserve" : "Refuser l'acte",
+        bouton: a === "signer" ? "Signer" : a === "reserve" ? "Signer avec réserve" : "Refuser",
+        motif: a !== "signer", motifTitre: a === "reserve" ? "Votre réserve" : "Motif du refus", danger: a === "refuser", acte: info });
+      if(!rep) return;
+      const res = await gjAvecMotDePasse(rep.mdp, cli => cli.rpc("gj_signer", { p_acte: acte.id, p_decision: a, p_motif: rep.motif })
+        .then(r => { if(r.error) throw new Error(r.error.message); return r.data; }));
+      await gjCharger(); renderGJ();
+      if(res && res.statut === "valide"){
+        const maj = state.gj.actes.find(x => x.id === acte.id) || acte;
+        const ok = await gjEnvoyerPdf(maj, true);
+        dire("Acte validé ✓", "Les deux signatures sont réunies." + (ok ? " L'acte signé (PDF) vient d'être envoyé par mail à vous deux." : ""));
+      } else if(res && res.statut === "refuse"){
+        dire("Acte refusé", "Le refus est enregistré. La personne qui a introduit l'acte est prévenue par mail, avec le motif.");
+      }
+      return;
+    }
+    if(a === "pdf" && acte){
+      const { blob, nom } = await gjPdf(acte);
+      const u = URL.createObjectURL(blob), l = document.createElement("a"); l.href = u; l.download = nom; document.body.appendChild(l); l.click(); l.remove();
+      setTimeout(() => URL.revokeObjectURL(u), 4000); return;
+    }
+    if(a === "renvoyer" && acte){
+      if(!(await demander("Renvoyer le PDF ?", "L'acte " + gjRef(acte) + " signé sera envoyé par mail à la présidente et au trésorier.", { bouton:"Envoyer" }))) return;
+      await gjEnvoyerPdf(acte); return;
+    }
+    if(a === "supprimer" && acte){
+      if(!(await demander("Supprimer l'acte " + gjRef(acte) + " ?", "« " + acte.intitule + " » sera supprimé définitivement, avec ses rattachements. Les dépenses de la Caisse, elles, ne bougent pas.", { bouton:"Supprimer", danger:true }))) return;
+      const r = await sb.rpc("gj_supprimer", { p_acte: acte.id });
+      if(r.error) return dire("Suppression impossible", r.error.message);
+      await gjCharger(); renderGJ(); toast("Acte " + gjRef(acte) + " supprimé."); return;
+    }
+  }catch(err){ dire("Gestion journalière", String(err && err.message || err)); }
+});
+document.addEventListener("change", e => {
+  const t = e.target; if(!t || !state.gj || !state.gj.form) return;
+  if(t.dataset && t.dataset.gjLien){
+    gjLireForm(); const F = state.gj.form, k = t.dataset.gjLien;
+    if(t.checked) F.coches[k] = 1; else delete F.coches[k];
+    renderGJ();
+  } else if(t.id === "gj_budget"){ gjLireForm(); }
+});
+document.addEventListener("input", e => {
+  const t = e.target; if(!t || t.id !== "gj_q" || !state.gj || !state.gj.form) return;
+  gjLireForm(); const pos = t.selectionStart; renderGJ();
+  const n = $("#gj_q"); if(n){ n.focus(); try{ n.setSelectionRange(pos, pos); }catch(_){} }
+});
+if($("#tabGJ")) $("#tabGJ").onclick = () => choisirVue("gj");
+
 
 /* ---------- démarrage ---------- */
 setMode("signin");
