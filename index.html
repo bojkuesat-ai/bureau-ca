@@ -723,7 +723,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-24 \u00b7 notifs";
+const CA_VERSION="2026-10-24 \u00b7 notifs urgentes";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1127,13 +1127,13 @@ async function envoyerNotifCAListe(dest, subject, corpsHtml, sansInvitation, exp
   for(const to of liste){ try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify(exp?{to,subject,html,from:exp}:{to,subject,html})}); if(r&&r.ok===false) err++; else ok++; }catch(e){ err++; } await new Promise(r=>setTimeout(r,120)); }
   return {ok,err};
 }
-function notifDocCA(titre, cat, avecCaisse){
+function notifDocCA(titre, cat, avecCaisse, urgent){
   const corps=`<h2 style="margin:0 0 10px">Nouveau document</h2><p>Un nouveau document vient d'être déposé sur l'espace CA :</p><p style="font-size:16px"><b>${caMailEsc(titre)}</b>${cat?` <span style="color:#888">(${caMailEsc(cat)})</span>`:""}</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-  return envoyerNotifCA("Nouveau document — "+titre, corps, avecCaisse, EXP_DOCS, "document");
+  return envoyerNotifCA("Nouveau document — "+titre, corps, avecCaisse, EXP_DOCS, "document", urgent);
 }
-function notifAnnonceCA(texte){
+function notifAnnonceCA(texte, urgent){
   const corps=`<h2 style="margin:0 0 10px">Nouvelle annonce</h2><p style="white-space:pre-wrap;background:#f7f7fb;border-radius:8px;padding:12px">${caMailEsc(texte)}</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-  return envoyerNotifCA("Nouvelle annonce du bureau étudiant", corps, false, EXP_ANNONCE, "annonce");
+  return envoyerNotifCA("Nouvelle annonce du bureau étudiant", corps, false, EXP_ANNONCE, "annonce", urgent);
 }
 /* ---- Rappel de réunion, envoyé à la main (secrétariat ou propriétaire) ---- */
 function peutRappelerReunion(){ return estSecretaire() || !!(S.session && S.session.role==="owner"); }
@@ -1168,7 +1168,7 @@ async function rappelReunionCA(id){
   render();
   modaleInfo("✓ Rappel envoyé à "+res.ok+" membre(s)."+(res.err?"\n⚠ "+res.err+" échec(s).":""),"Rappel envoyé");
 }
-function convocationCA(m){
+function convocationCA(m, urgent){
   const pts=(m.ordre||[]).map((p,i)=>`<li>${caMailEsc(p.texte)}</li>`).join("");
   const corps=`<h2 style="margin:0 0 10px">Convocation \u2014 ${caMailEsc(m.titre)}</h2>`
     +`<p><b>Date :</b> ${m.date?caMailEsc(fmtDateLong(m.date)):"\u00e0 pr\u00e9ciser"}</p>`
@@ -1176,15 +1176,15 @@ function convocationCA(m){
     +(pts?`<p><b>Ordre du jour :</b></p><ul>${pts}</ul>`:`<p>L'ordre du jour sera compl\u00e9t\u00e9 prochainement. Vous pouvez proposer un point dans l'application.</p>`)
     +`<p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
   /* Urgente si la réunion a lieu aujourd'hui ou demain : elle n'attend pas le résumé de 18 h. */
-  const proche=!m.date || (new Date(String(m.date).slice(0,10)+"T23:59").getTime()-Date.now()) < 2*86400000;
+  const proche=!!urgent || !m.date || (new Date(String(m.date).slice(0,10)+"T23:59").getTime()-Date.now()) < 2*86400000;
   return envoyerNotifCAListe(destinatairesMembres(), "Convocation \u2014 "+m.titre, corps, false, undefined, "reunion", proche);
 }
-async function notifEvenementCA(titre, quand){
+async function notifEvenementCA(titre, quand, urgent){
   const corps='<h2 style="margin:0 0 10px">Nouvel evenement</h2>'
     +"<p>Le bureau organise : <b>"+caMailEsc(titre)+"</b>"+(quand?" \u2014 "+caMailEsc(quand):"")+".</p>"
     +'<p>Rendez-vous sur l\'espace CA pour le detail.</p>'
     +'<p><a href="'+caAppUrl()+'" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;display:inline-block">Ouvrir l\'espace CA</a></p>';
-  const dest=await notifFiltre("evenement", destinatairesEvenements(), "Evenement \u2014 "+titre, corps); if(!dest.length) return;
+  const dest=await notifFiltre("evenement", destinatairesEvenements(), "Evenement \u2014 "+titre, corps, urgent); if(!dest.length) return;
   const html='<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">'+corps+blocNoReplyCA()+'</div>';
   const headers=await caSendHeaders();
   for(const to of dest){
@@ -2005,6 +2005,7 @@ function tabTaches(){
       <input class="f" id="t_ech" type="date" title="Échéance"></div>
     <select class="f" id="t_prio"><option value="normale">Priorité normale</option><option value="haute">Priorité haute</option><option value="basse">Priorité basse</option></select>
     <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="t_notify"> Prévenir les membres par e-mail</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px" title="Part tout de suite, même chez ceux qui ont choisi le résumé de 18 h. Ceux qui ont coupé cette notification ne la reçoivent pas."><input type="checkbox" class="sw" role="switch" id="t_urgent"> ⚡ Urgent : envoyer tout de suite, sans attendre le résumé de 18 h</label>
     <div class="row-btn"><button class="btn" data-action="add-tache">Ajouter la tâche</button></div></div>`;
   if(S.taches.length===0) return compose+`<div class="empty">Aucune tâche pour l’instant.</div>`;
   const cols=STATUTS.map(s=>{
@@ -2033,6 +2034,7 @@ function tabPlanning(){
     <input class="f" id="cr_titre" placeholder="Ex. Permanence salle · Conférence · AG">
     <div class="two"><input class="f" id="cr_date" type="date"><input class="f" id="cr_lieu" placeholder="Lieu (facultatif)"></div>
     <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="cr_notify" checked> Prévenir les membres par e-mail</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px" title="Part tout de suite, même chez ceux qui ont choisi le résumé de 18 h. Ceux qui ont coupé cette notification ne la reçoivent pas."><input type="checkbox" class="sw" role="switch" id="cr_urgent"> ⚡ Urgent : envoyer tout de suite, sans attendre le résumé de 18 h</label>
     <div class="row-btn"><button class="btn" data-action="add-creneau">Ajouter le créneau</button></div></div>`
     :`<p class="du" style="margin-bottom:12px">L'agenda est tenu par le secr\u00e9tariat. Vous pouvez le consulter et indiquer vos disponibilit\u00e9s.</p>`;
   if(S.creneaux.length===0) return compose+`<div class="empty">Aucun créneau pour l’instant.</div>`;
@@ -2402,6 +2404,7 @@ function tabDocs(){
       <input class="f" id="d_file" type="file"></div>
     <p class="err" id="d_err" style="display:none"></p>
     <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="d_notify"> Prévenir les membres par e-mail</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px" title="Part tout de suite, même chez ceux qui ont choisi le résumé de 18 h. Ceux qui ont coupé cette notification ne la reçoivent pas."><input type="checkbox" class="sw" role="switch" id="d_urgent"> ⚡ Urgent : envoyer tout de suite, sans attendre le résumé de 18 h</label>
     ${owner?`<label style="display:flex;align-items:center;gap:8px;margin:2px 0 6px;font-size:13px"><input type="checkbox" class="sw" role="switch" id="d_treso"> Ajouter le message : remboursements &amp; contact uniquement via l'app Caisse</label>`:""}
     <div class="row-btn"><button class="btn" data-action="upload-doc">Déposer le fichier</button></div></div>`;
   if(!S.docs||S.docs.length===0) return compose+`<div class="empty">Aucun document. Déposez vos PV, budgets, fichiers…</div>`;
@@ -2420,6 +2423,7 @@ function tabAnnonces(){
   const compose=`<div class="compose"><h3 class="serif">Publier une annonce</h3>
     <textarea id="a_txt" placeholder="Info, décision de réunion, rappel…"></textarea>
     <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="an_notify"> Prévenir les membres par e-mail</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px" title="Part tout de suite, même chez ceux qui ont choisi le résumé de 18 h. Ceux qui ont coupé cette notification ne la reçoivent pas."><input type="checkbox" class="sw" role="switch" id="an_urgent"> ⚡ Urgent : envoyer tout de suite, sans attendre le résumé de 18 h</label>
     <div class="row-btn"><button class="btn" data-action="add-annonce">Publier en tant que ${esc(S.session.sig||S.session.nom)}</button></div></div>`;
   if(S.annonces.length===0) return compose+`<div class="empty">Pas encore d’annonce.</div>`;
   const list=S.annonces.map(a=>{
@@ -2911,6 +2915,7 @@ function tabReunions(){
       <input class="f" id="reu_lieu" placeholder="Lieu (facultatif)">
       <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="reu_modele" checked> Pr\u00e9-remplir avec les points r\u00e9currents</label>
       <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="reu_notify"> Prévenir les membres par e-mail</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px" title="Part tout de suite, même chez ceux qui ont choisi le résumé de 18 h. Ceux qui ont coupé cette notification ne la reçoivent pas."><input type="checkbox" class="sw" role="switch" id="reu_urgent"> ⚡ Urgent : envoyer tout de suite, sans attendre le résumé de 18 h</label>
       <div class="row-btn"><button class="btn" data-action="reu-create">Créer la réunion</button></div></div>`:`<p class="du" style="margin-bottom:12px">Les réunions sont créées par le secrétariat. Vous pouvez les consulter et proposer des points à l'ordre du jour.</p>`}
       <div class="row-btn" style="margin-bottom:12px"><button class="btn ghost" data-action="registre-pv">Registre des PV</button>${peutVoirRapports()?`<button class="btn ghost" data-action="rapport-activite">Rapport d'activit\u00e9</button><button class="btn ghost" data-action="suivi-presence">Suivi de pr\u00e9sence</button>`:""}</div>
       ${R.length?`<div class="msg-list">${list}</div>`:`<div class="empty">Aucune réunion pour l'instant.</div>`}`;
@@ -2957,6 +2962,7 @@ function tabEvenements(){
       <input class="f" id="ev_titre" placeholder="Ex. Events Week BE">
       <input class="f" id="ev_date" type="date">
       <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="ev_notify"> Prévenir les membres par e-mail</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px" title="Part tout de suite, même chez ceux qui ont choisi le résumé de 18 h. Ceux qui ont coupé cette notification ne la reçoivent pas."><input type="checkbox" class="sw" role="switch" id="ev_urgent"> ⚡ Urgent : envoyer tout de suite, sans attendre le résumé de 18 h</label>
       <div class="row-btn"><button class="btn" data-action="ev-create">Créer l'événement</button></div></div>
       ${E.length?`<div class="msg-list">${list}</div>`:`<div class="empty">Aucun événement. Créez-en un ci-dessus.</div>`}`;
   }
@@ -4153,7 +4159,7 @@ document.addEventListener("click", async e=>{
       try{ const blob=new Blob([JSON.stringify(dump,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="bureau-etudiant-sauvegarde-"+todayISO()+".json"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); logAct("Sauvegarde exportée"); }catch(e){}
       break;
     }
-    case "ev-create": { const t=val("ev_titre").trim(), dt=val("ev_date"); if(!t||!sb) break; const {data,error}=await sb.from("ca_evenements").insert({titre:t,date:dt||null,lieu:"",responsable:"",budget_prevu:0,budget_reel:0,checklist:[],notes:""}).select().single(); if(error||!data) break; await loadEvenements(); { const n=document.getElementById("ev_notify"); if(n&&n.checked) notifEvenementCA(t, dt||""); } S.evUI={sel:data.id}; render(); break; }
+    case "ev-create": { const t=val("ev_titre").trim(), dt=val("ev_date"); if(!t||!sb) break; const {data,error}=await sb.from("ca_evenements").insert({titre:t,date:dt||null,lieu:"",responsable:"",budget_prevu:0,budget_reel:0,checklist:[],notes:""}).select().single(); if(error||!data) break; await loadEvenements(); { const n=document.getElementById("ev_notify"); if(n&&n.checked) notifEvenementCA(t, dt||"", !!(document.getElementById("ev_urgent")||{}).checked); } S.evUI={sel:data.id}; render(); break; }
     case "ev-open": S.evUI={sel:el.dataset.id}; render(); break;
     case "ev-back": S.evUI={sel:null}; render(); break;
     case "ev-del": { if(!sb) break; const evs=(S.evenements||[]).find(x=>x.id===el.dataset.id);
@@ -4265,7 +4271,7 @@ document.addEventListener("click", async e=>{
     case "reu-create": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut créer une réunion."); break; } const t=val("reu_titre").trim(), dt=val("reu_date"); if(!t||!sb) break; const lieu=val("reu_lieu")||null;
       const mod=document.getElementById("reu_modele");
       const base=(mod&&mod.checked&&Array.isArray(S.meta.modeleOdj))?S.meta.modeleOdj.map(x=>({id:uid(),texte:x,fait:false,notes:"",parId:null,par:"Mod\u00e8le"})):[];
-      const {data,error}=await sb.from("ca_reunions").insert({titre:t,date:dt||null,lieu:lieu,ordre:base,presences:{}}).select().single(); if(error||!data) break; await loadReunions(); { const n=document.getElementById("reu_notify"); if(n&&n.checked) convocationCA(data); } S.reuUI={sel:data.id}; render(); break; }
+      const {data,error}=await sb.from("ca_reunions").insert({titre:t,date:dt||null,lieu:lieu,ordre:base,presences:{}}).select().single(); if(error||!data) break; await loadReunions(); { const n=document.getElementById("reu_notify"); if(n&&n.checked) convocationCA(data, !!(document.getElementById("reu_urgent")||{}).checked); } S.reuUI={sel:data.id}; render(); break; }
     case "reu-open": S.reuUI={sel:el.dataset.id}; render(); break;
     case "reu-back": S.reuUI={sel:null}; render(); break;
     case "reu-del": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut supprimer une réunion."); break; } if(!sb) break; if(!(await modaleConfirm("Supprimer cette réunion ?"))) break; await sb.from("ca_reunions").delete().eq("id",el.dataset.id); await loadReunions(); S.reuUI={sel:null}; render(); break; }
@@ -4937,7 +4943,7 @@ ${sections||"<p>Aucun retour.</p>"}
     case "cancel-edit": S.editPoste=null; render(); break;
     case "save-org": { if(!sb) break; const missions=val("m_"+id).trim(), contact=val("c_"+id).trim(); const ligne={poste_id:id,missions:missions,contact:contact}; const estProp=!!(S.session&&S.session.role==="owner"); if(estProp) ligne.qui=val("q_"+id).trim(); const r=await sb.from("ca_org").upsert(ligne,{onConflict:"poste_id"}); if(r&&r.error){ modaleInfo("Enregistrement impossible : "+r.error.message+(/qui/.test(r.error.message)?"\n\nLa colonne « qui » n'existe pas encore : exécutez le script SQL.":"")); break; } S.org[id]={missions:missions,contact:contact,qui:estProp?ligne.qui:((S.org[id]||{}).qui||"")}; S.editPoste=null; logAct("Fiche de poste modifiée : "+((POSTE_PAR_ID[id]||{}).titre||id)); render(); break; }
     /* tâches */
-    case "add-tache": { const t=val("t_titre").trim(); if(!t) return; if(!sb) break; await sb.from("ca_taches").insert({titre:t,poste_id:val("t_poste"),statut:"todo",echeance:val("t_ech")||null,priorite:val("t_prio"),cree_par:me.sig}); { const n=document.getElementById("t_notify"); if(n&&n.checked) notifCreationCA("Nouvelle tâche", t, "", undefined, "tache"); } await loadTaches(); render(); break; }
+    case "add-tache": { const t=val("t_titre").trim(); if(!t) return; if(!sb) break; await sb.from("ca_taches").insert({titre:t,poste_id:val("t_poste"),statut:"todo",echeance:val("t_ech")||null,priorite:val("t_prio"),cree_par:me.sig}); { const n=document.getElementById("t_notify"); if(n&&n.checked) notifCreationCA("Nouvelle tâche", t, "", undefined, "tache", !!(document.getElementById("t_urgent")||{}).checked); } await loadTaches(); render(); break; }
     case "move-tache": if(!sb) break; await sb.from("ca_taches").update({statut:el.dataset.to}).eq("id",id); await loadTaches(); render(); break;
     case "del-tache": { if(!sb) break;
       const t=(S.taches||[]).find(x=>x.id===id);
@@ -4947,7 +4953,7 @@ ${sections||"<p>Aucun retour.</p>"}
       if(!(await modaleConfirm("Supprimer cette tâche ?"))) break;
       await sb.from("ca_taches").delete().eq("id",id); logAct("Tâche supprimée"); await loadTaches(); render(); break; }
     /* planning */
-    case "add-creneau": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secr\u00e9tariat peut ajouter \u00e0 l'agenda."); break; } const t=val("cr_titre").trim(), d=val("cr_date"); if(!t||!d||!sb) return; await sb.from("ca_creneaux").insert({titre:t,date:d,lieu:val("cr_lieu").trim(),cree_par:me.sig}); { const n=document.getElementById("cr_notify"); if(n&&n.checked) notifCreationCA("Nouvel \u00e9l\u00e9ment \u00e0 l'agenda", t, (d?fmtDateLong(d):"")+(val("cr_lieu").trim()?" \u00b7 "+val("cr_lieu").trim():""), undefined, "agenda"); } await loadCreneaux(); render(); break; }
+    case "add-creneau": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secr\u00e9tariat peut ajouter \u00e0 l'agenda."); break; } const t=val("cr_titre").trim(), d=val("cr_date"); if(!t||!d||!sb) return; await sb.from("ca_creneaux").insert({titre:t,date:d,lieu:val("cr_lieu").trim(),cree_par:me.sig}); { const n=document.getElementById("cr_notify"); if(n&&n.checked) notifCreationCA("Nouvel \u00e9l\u00e9ment \u00e0 l'agenda", t, (d?fmtDateLong(d):"")+(val("cr_lieu").trim()?" \u00b7 "+val("cr_lieu").trim():""), undefined, "agenda", !!(document.getElementById("cr_urgent")||{}).checked); } await loadCreneaux(); render(); break; }
     case "rsvp": { if(!sb) break; const r=await sb.from("ca_dispos").upsert({creneau_id:id,membre_id:S.session.id,nom:me.sig,statut:el.dataset.st},{onConflict:"creneau_id,membre_id"}); if(r&&r.error){ if(window.alert) window.alert("Disponibilité non enregistrée : "+r.error.message); break; } await loadCreneaux(); render(); break; }
     case "del-creneau": if(!estSecretaire()){ if(window.alert) window.alert("Seul le secr\u00e9tariat peut retirer un cr\u00e9neau."); break; } if(!sb) break; await sb.from("ca_creneaux").delete().eq("id",id); await loadCreneaux(); render(); break;
     /* budgets */
@@ -5069,7 +5075,7 @@ ${sections||"<p>Aucun retour.</p>"}
       const ins=await sb.from("ca_docs").insert({ titre:t, categorie:cat, chemin:path, cree_par:S.session.id });
       if(ins && ins.error) return derr("Fichier envoyé mais non enregistré : "+ins.error.message);
       await loadDocs();
-      { const dn=document.getElementById("d_notify"), dt=document.getElementById("d_treso"); if(dn&&dn.checked){ notifDocCA(t, cat, !!(dt&&dt.checked)); } }
+      { const dn=document.getElementById("d_notify"), dt=document.getElementById("d_treso"); if(dn&&dn.checked){ notifDocCA(t, cat, !!(dt&&dt.checked), !!(document.getElementById("d_urgent")||{}).checked); } }
       render(); break;
     }
     case "open-doc": {
@@ -5088,7 +5094,7 @@ ${sections||"<p>Aucun retour.</p>"}
       await loadDocs(); render(); break;
     }
     /* annonces */
-    case "add-annonce": { const tx=val("a_txt").trim(); if(!tx) return; if(!sb) break; await sb.from("ca_annonces").insert({auteur:me.sig,texte:tx,cree_par:S.session.id}); await loadAnnonces(); { const an=document.getElementById("an_notify"); if(an&&an.checked){ notifAnnonceCA(tx); } } render(); break; }
+    case "add-annonce": { const tx=val("a_txt").trim(); if(!tx) return; if(!sb) break; await sb.from("ca_annonces").insert({auteur:me.sig,texte:tx,cree_par:S.session.id}); await loadAnnonces(); { const an=document.getElementById("an_notify"); if(an&&an.checked){ notifAnnonceCA(tx, !!(document.getElementById("an_urgent")||{}).checked); } } render(); break; }
     case "ev-presence": { if(!sb||!me) break; const r=el.dataset.r; const nom=(me.nom||me.sig||"").trim();
       const mine=(S.presence||[]).find(x=>x.evenement_id===id&&x.membre_id===me.id);
       if(mine&&mine.reponse===r){ await sb.from("ca_event_presence").delete().eq("evenement_id",id).eq("membre_id",me.id); }
