@@ -5204,7 +5204,7 @@ ${sections||"<p>Aucun retour.</p>"}
     case "add-annonce": { const tx=val("a_txt").trim(); if(!tx) return; if(!sb) break; await sb.from("ca_annonces").insert({auteur:me.sig,texte:tx,cree_par:S.session.id}); await loadAnnonces(); { const an=document.getElementById("an_notify"); if(an&&an.checked){ notifAnnonceCA(tx, !!(document.getElementById("an_urgent")||{}).checked); } } render(); break; }
     case "add-annonce-urgent": { if(!sb||!(S.session&&S.session.role==="owner")) break;
       const tx=val("a_txt").trim(); if(!tx){ modaleInfo("Écrivez d'abord le texte de l'annonce.","🚨 Annonce urgente"); break; }
-      if(!(await modaleConfirm("Publier cette annonce en URGENT ?\n\nElle part tout de suite par mail à tous les membres, y compris à ceux qui ont coupé les annonces.","🚨 Annonce urgente"))) break;
+      if(!(await modaleConfirm("Publier cette annonce en URGENT ?\n\nElle part tout de suite par mail et sur le téléphone à tous les membres, y compris à ceux qui ont coupé les annonces.","🚨 Annonce urgente"))) break;
       el.disabled=true; const lib=el.textContent; el.textContent="Envoi en cours…";
       try{
         const ins=await sb.from("ca_annonces").insert({auteur:me.sig,texte:"🚨 URGENT — "+tx,cree_par:S.session.id});
