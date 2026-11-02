@@ -1135,6 +1135,56 @@ function notifAnnonceCA(texte, urgent){
   const corps=`<h2 style="margin:0 0 10px">Nouvelle annonce</h2><p style="white-space:pre-wrap;background:#f7f7fb;border-radius:8px;padding:12px">${caMailEsc(texte)}</p><p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
   return envoyerNotifCA("Nouvelle annonce du bureau étudiant", corps, false, EXP_ANNONCE, "annonce", urgent);
 }
+/* ---- Annonce URGENTE (propriétaire seul) ----
+   Part à tout le monde, tout de suite, même chez ceux qui ont coupé les annonces
+   dans l'onglet Notifs. Seuls les désabonnés de la liste de diffusion restent écartés. */
+async function annonceBloqueurs(){
+  /* Qui a coupé « annonce » : vue réservée au propriétaire. Renvoie [{nom, emails:[...]}]. */
+  const r=await sb.rpc("notif_vue_proprio");
+  if(r.error||!Array.isArray(r.data)) return null;
+  const norm=x=>String(x||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ").trim();
+  return r.data.filter(m=>(m.coupees||[]).indexOf("annonce")>=0).map(m=>{
+    const id=m.membre_id||m.id||null, mail=norm(m.email);
+    const a=(S.admins||[]).find(x=>(id&&x.id===id)||(mail&&norm(x.email)===mail)
+      ||(m.nom&&(norm(((x.prenom||"")+" "+(x.nom||"")))===norm(m.nom)||norm(x.nom)===norm(m.nom))));
+    const emails=a?[a.email,a.emailAlt].filter(Boolean).map(e=>String(e).toLowerCase().trim()):(mail?[mail]:[]);
+    return {nom:m.nom||(a?((a.prenom||"")+" "+(a.nom||"")).trim():"")||"—", emails};
+  });
+}
+async function envoyerAnnonceUrgenteCA(texte){
+  const bloqueurs=await annonceBloqueurs();
+  const dest=destinatairesCA();
+  const subject="🚨 URGENT — Annonce du bureau étudiant";
+  const corps=`<div style="background:#b3261e;color:#fff;border-radius:8px;padding:14px 16px;margin:0 0 14px;font-size:20px;font-weight:bold;letter-spacing:.5px;text-align:center">🚨 URGENT</div>`
+    +`<h2 style="margin:0 0 10px;color:#b3261e">Annonce urgente du bureau</h2>`
+    +`<p style="white-space:pre-wrap;background:#fdf0ef;border:2px solid #b3261e;border-radius:8px;padding:12px;font-size:15px">${caMailEsc(texte)}</p>`
+    +`<p><a href="${caAppUrl()}" style="background:#b3261e;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`
+    +`<p style="font-size:12px;color:#888">Ce message est marqué urgent par la présidence du bureau : il est envoyé à tous les membres, y compris à ceux qui ont coupé les annonces.</p>`;
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corps}${blocInvitationCA()}${blocNoReplyCA()}</div>`;
+  const headers=await caSendHeaders();
+  const reussis=new Set(), rates=[];
+  for(const to of dest){
+    try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html,from:EXP_ANNONCE})});
+      if(r&&r.ok===false) rates.push(to); else reussis.add(to); }catch(e){ rates.push(to); }
+    await new Promise(r=>setTimeout(r,120));
+  }
+  return {total:dest.length, ok:reussis.size, rates, bloqueurs:bloqueurs===null?null:bloqueurs.map(b=>{
+    const vises=b.emails.filter(e=>dest.indexOf(e)>=0);
+    return {nom:b.nom, recu:vises.some(e=>reussis.has(e)), raison:vises.length?"":(b.emails.length?"désabonné·e de tous les mails":"adresse introuvable")}; })};
+}
+function modaleUrgenceResultat(r){
+  let t=`Mail envoyé à ${r.ok} personne${r.ok>1?"s":""} sur ${r.total}.`;
+  if(r.bloqueurs===null) t+=`\n\nImpossible de vérifier qui avait coupé les annonces (vue propriétaire indisponible).`;
+  else if(!r.bloqueurs.length) t+=`\n\nPersonne n'avait coupé les annonces.`;
+  else {
+    const ok=r.bloqueurs.filter(b=>b.recu), ko=r.bloqueurs.filter(b=>!b.recu);
+    t+=`\n\nAvaient coupé les annonces : ${r.bloqueurs.length}.`;
+    if(ok.length) t+=`\n\n✅ Ont bien reçu le mail malgré tout :\n`+ok.map(b=>"  • "+b.nom).join("\n");
+    if(ko.length) t+=`\n\n❌ N'ont PAS reçu le mail :\n`+ko.map(b=>"  • "+b.nom+(b.raison?" ("+b.raison+")":" (échec d'envoi)")).join("\n");
+  }
+  if(r.rates.length) t+=`\n\n⚠️ Échecs d'envoi (${r.rates.length}) :\n`+r.rates.map(e=>"  • "+e).join("\n");
+  modaleInfo(t, r.rates.length?"🚨 Annonce urgente : envoi partiel":"🚨 Annonce urgente envoyée");
+}
 /* ---- Rappel de réunion, envoyé à la main (secrétariat ou propriétaire) ---- */
 function peutRappelerReunion(){ return estSecretaire() || !!(S.session && S.session.role==="owner"); }
 async function dernierRappelReunion(id){
@@ -2461,7 +2511,7 @@ function tabAnnonces(){
     <textarea id="a_txt" placeholder="Info, décision de réunion, rappel…"></textarea>
     <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="an_notify"> Prévenir les membres par e-mail</label>
     <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px" title="Part tout de suite, même chez ceux qui ont choisi le résumé de 18 h. Ceux qui ont coupé cette notification ne la reçoivent pas."><input type="checkbox" class="sw" role="switch" id="an_urgent"> ⚡ Urgent : envoyer tout de suite, sans attendre le résumé de 18 h</label>
-    <div class="row-btn"><button class="btn" data-action="add-annonce">Publier en tant que ${esc(S.session.sig||S.session.nom)}</button></div></div>`;
+    <div class="row-btn"><button class="btn" data-action="add-annonce">Publier en tant que ${esc(S.session.sig||S.session.nom)}</button>${S.session.role==="owner"?`<button class="btn" data-action="add-annonce-urgent" style="background:#b3261e;border-color:#b3261e;color:#fff" title="Part tout de suite à tout le monde, même chez ceux qui ont coupé les annonces">🚨 Publier en URGENT</button>`:""}</div></div>`;
   if(S.annonces.length===0) return compose+`<div class="empty">Pas encore d’annonce.</div>`;
   const list=S.annonces.map(a=>{
     return `<div class="note"><div class="note-h"><span class="who">${esc(a.auteur)}</span><span class="when">${dateFR(a.ts)}</span></div>
@@ -5152,6 +5202,20 @@ ${sections||"<p>Aucun retour.</p>"}
     }
     /* annonces */
     case "add-annonce": { const tx=val("a_txt").trim(); if(!tx) return; if(!sb) break; await sb.from("ca_annonces").insert({auteur:me.sig,texte:tx,cree_par:S.session.id}); await loadAnnonces(); { const an=document.getElementById("an_notify"); if(an&&an.checked){ notifAnnonceCA(tx, !!(document.getElementById("an_urgent")||{}).checked); } } render(); break; }
+    case "add-annonce-urgent": { if(!sb||!(S.session&&S.session.role==="owner")) break;
+      const tx=val("a_txt").trim(); if(!tx){ modaleInfo("Écrivez d'abord le texte de l'annonce.","🚨 Annonce urgente"); break; }
+      if(!(await modaleConfirm("Publier cette annonce en URGENT ?\n\nElle part tout de suite par mail à tous les membres, y compris à ceux qui ont coupé les annonces.","🚨 Annonce urgente"))) break;
+      el.disabled=true; const lib=el.textContent; el.textContent="Envoi en cours…";
+      try{
+        const ins=await sb.from("ca_annonces").insert({auteur:me.sig,texte:"🚨 URGENT — "+tx,cree_par:S.session.id});
+        if(ins&&ins.error){ modaleInfo("Publication impossible : "+ins.error.message,"🚨 Annonce urgente"); break; }
+        const f=document.getElementById("a_txt"); if(f) f.value="";
+        await loadAnnonces(); render();
+        const r=await envoyerAnnonceUrgenteCA(tx);
+        try{ logAct("Annonce URGENTE publiée : mail envoyé à "+r.ok+"/"+r.total); }catch(_){ }
+        modaleUrgenceResultat(r);
+      } finally { el.disabled=false; el.textContent=lib; }
+      break; }
     case "ev-presence": { if(!sb||!me) break; const r=el.dataset.r; const nom=(me.nom||me.sig||"").trim();
       const mine=(S.presence||[]).find(x=>x.evenement_id===id&&x.membre_id===me.id);
       if(mine&&mine.reponse===r){ await sb.from("ca_event_presence").delete().eq("evenement_id",id).eq("membre_id",me.id); }
