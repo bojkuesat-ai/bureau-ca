@@ -8731,6 +8731,8 @@ const NOTIF_CATS=[
   ["caisse","💶","Caisse","Téléphone : nouvelle demande ou nouvelle preuve à vérifier.","treso"],
   ["billetterie","🎟️","Billetterie","Téléphone : paiement d'une inscription à vérifier.","treso"]
 ];
+/* Catégories imposées par le bureau : toujours reçues, impossibles à couper. */
+const NP_FORCEES=["message"];
 function npLibelle(id){ const c=NOTIF_CATS.find(x=>x[0]===id); return c?c[2]:(id==="budget"?"Budgets à voter":id); }
 function npEstProprio(){ return !!(S.session&&S.session.role==="owner"); }
 function npVisibles(){
@@ -8755,7 +8757,8 @@ async function npCharger(){
   const r=await sb.rpc("notif_mes_choix");
   if(r.error){ N.err=/notif_mes_choix|function|schema cache/i.test(r.error.message)?"Le script SQL des notifications n'est pas encore installé.":r.error.message; N.pret=true; return; }
   const d=r.data||{};
-  N.base={coupees:(d.coupees||[]).slice(), mode:d.mode||"immediat", oblig:(d.obligatoires||[]).slice(), budget:d.budget_actif!==false};
+  const obl=(d.obligatoires||[]).slice(); NP_FORCEES.forEach(x=>{ if(obl.indexOf(x)<0) obl.push(x); });
+  N.base={coupees:(d.coupees||[]).filter(x=>NP_FORCEES.indexOf(x)<0), mode:d.mode||"immediat", oblig:obl, budget:d.budget_actif!==false};
   N.proprio=!!d.proprio;
   N.draft={coupees:N.base.coupees.slice(), mode:N.base.mode, oblig:N.base.oblig.slice(), budget:N.base.budget};
   if(N.proprio){ const v=await sb.rpc("notif_vue_proprio"); N.vue=v.error?{err:v.error.message}:(v.data||[]); }
@@ -8774,7 +8777,7 @@ function tabNotifPrefs(){
       <label style="display:flex;align-items:center;gap:10px;flex:1;min-width:220px;cursor:${verrou?"not-allowed":"pointer"}">
         <input type="checkbox" class="sw" role="switch" data-np-cat="${id}" ${on?"checked":""} ${verrou?"disabled":""}>
         <span><b>${ic} ${esc(lib)}</b>${verrou?` <span title="Obligatoire : ne peut pas être coupée">🔒</span>`:""}<br><span class="du" style="font-size:12.5px">${esc(desc)}</span></span></label>
-      ${pro?`<label class="du" style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer"><input type="checkbox" data-np-oblig="${id}" ${verrou?"checked":""}> 🔒 obligatoire pour tous</label>`:""}
+      ${pro?`<label class="du" style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer"><input type="checkbox" data-np-oblig="${id}" ${verrou?"checked":""} ${NP_FORCEES.indexOf(id)>=0?"disabled":""}> 🔒 obligatoire pour tous</label>`:""}
     </div>`; }).join("");
   const budget=pro?`<div class="mail-hist-row" style="display:flex;align-items:center;gap:12px;border-left:3px solid var(--gold-dim);padding-left:10px">
       <label style="display:flex;align-items:center;gap:10px;flex:1;cursor:pointer">
@@ -8827,7 +8830,7 @@ async function npEnregistrer(){
     if(lk.length) lignes.push("Rendues obligatoires 🔒 :\n"+lk.map(x=>"  • "+npLibelle(x)).join("\n"));
     if(ul.length) lignes.push("Plus obligatoires :\n"+ul.map(x=>"  • "+npLibelle(x)).join("\n")); }
   if(!(await modaleConfirm("Enregistrer ces changements ?\n\n"+lignes.join("\n\n"),"Mes notifications"))) return;
-  const params={p_coupees:D.coupees.filter(x=>vis.indexOf(x)>=0||B.coupees.indexOf(x)>=0), p_mode:D.mode};
+  const params={p_coupees:D.coupees.filter(x=>(vis.indexOf(x)>=0||B.coupees.indexOf(x)>=0)&&NP_FORCEES.indexOf(x)<0), p_mode:D.mode};
   if(pro){ params.p_budget_actif=D.budget; params.p_obligatoires=D.oblig.slice(); }
   const r=await sb.rpc("notif_enregistrer",params);
   if(r.error){ modaleInfo("Enregistrement impossible : "+r.error.message,"Mes notifications"); return; }
@@ -8839,8 +8842,8 @@ document.addEventListener("change", e=>{
   const N=S.np; if(!N||!N.draft) return;
   const t=e.target; if(!t||!t.dataset) return;
   const D=N.draft;
-  if(t.dataset.npCat){ const id=t.dataset.npCat; D.coupees=D.coupees.filter(x=>x!==id); if(!t.checked) D.coupees.push(id); }
-  else if(t.dataset.npOblig){ const id=t.dataset.npOblig; D.oblig=D.oblig.filter(x=>x!==id); if(t.checked){ D.oblig.push(id); D.coupees=D.coupees.filter(x=>x!==id); } }
+  if(t.dataset.npCat){ const id=t.dataset.npCat; if(NP_FORCEES.indexOf(id)>=0){ t.checked=true; return; } D.coupees=D.coupees.filter(x=>x!==id); if(!t.checked) D.coupees.push(id); }
+  else if(t.dataset.npOblig){ const id=t.dataset.npOblig; if(NP_FORCEES.indexOf(id)>=0){ t.checked=true; return; } D.oblig=D.oblig.filter(x=>x!==id); if(t.checked){ D.oblig.push(id); D.coupees=D.coupees.filter(x=>x!==id); } }
   else if(t.dataset.npBudget){ D.budget=!!t.checked; }
   else if(t.dataset.npMode){ D.mode=t.dataset.npMode; }
   else return;
