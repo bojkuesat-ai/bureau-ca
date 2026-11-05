@@ -716,6 +716,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     <button id="tabCompta" aria-pressed="false" hidden>Comptabilité</button>
     <button id="tabTva" aria-pressed="false" hidden>TVA</button>
     <button id="tabGJ" aria-pressed="false" hidden>Gestion journalière<span class="pill" id="pillGJ" hidden>0</span></button>
+    <button id="tabSC" aria-pressed="false" hidden>Signature conjointe<span class="pill" id="pillSC" hidden>0</span></button>
   </div>
   <div class="who"><b id="whoName">—</b><span id="whoRole">—</span><button id="btnMsg" class="btn ghost sm" style="display:none;margin-left:auto">✉️ Messagerie<span class="pill" id="btnMsgPill" hidden>0</span></button></div>
   <button class="btn ghost sm" id="changePass">Mot de passe</button>
@@ -1984,6 +1985,9 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 
   <!-- gestion journalière (article 20) : trésorier et présidente -->
   <section id="viewGJ" class="stack" hidden><div id="gjBox" class="stack"></div></section>
+
+  <!-- signature conjointe (article 10.2) : trésorier et administrateur activé (vice-président) -->
+  <section id="viewSC" class="stack" hidden><div id="scBox" class="stack"></div></section>
 </main>
 
 <footer style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -3277,6 +3281,7 @@ async function loadProfile(user){
        if(dp && dp.data) state.depensier = dp.data; }catch(_){}
   if($("#tabPres")) $("#tabPres").hidden = !state.depensier || isTreso();
   await gjInit();
+  await scInit();
   await tbInit();
   await nvChargerAcces();
   if($("#btnMsg")) $("#btnMsg").style.display = isTreso() ? "none" : "inline-flex";
@@ -8270,12 +8275,15 @@ function setView(v){
   if($("#tabGJ")) $("#tabGJ").setAttribute("aria-pressed", v==="gj");
   if($("#viewGJ")) $("#viewGJ").hidden = v!=="gj";
   if(v==="gj"){ try{ renderGJ(); }catch(_){ } }
+  if($("#tabSC")) $("#tabSC").setAttribute("aria-pressed", v==="sc");
+  if($("#viewSC")) $("#viewSC").hidden = v!=="sc";
+  if(v==="sc"){ try{ renderSC(); }catch(_){ } }
   if($("#tabTB")) $("#tabTB").setAttribute("aria-pressed", v==="tb");
   if($("#viewTB")) $("#viewTB").hidden = v!=="tb";
   if(v!=="tb" && state.tbForm){ try{ tbFermerForm(true); }catch(_){ } }
   if(v==="tb"){ try{ renderTB(); tbCharger().then(() => { if(state.view==="tb") renderTB(); }); }catch(_){ } }
   /* La gestion journalière n'est jamais notée dans le journal. */
-  if(v!=="gj") try{ auditNav(({mine:"Mes demandes",treso:"Trésorerie",reexam:"Réexamens",overview:"Vue d'ensemble",horaires:"Horaires",expenses:"Dépenses",incomes:"Recettes",members:"Membres",messages:"Messages",budget:"Budgets",compta:"Comptabilité",tva:"TVA",direct:"Paiement direct",factures:"Factures",novelles:"Novelles"})[v]||v); }catch(_){ }
+  if(v!=="gj" && v!=="sc") try{ auditNav(({mine:"Mes demandes",treso:"Trésorerie",reexam:"Réexamens",overview:"Vue d'ensemble",horaires:"Horaires",expenses:"Dépenses",incomes:"Recettes",members:"Membres",messages:"Messages",budget:"Budgets",compta:"Comptabilité",tva:"TVA",direct:"Paiement direct",factures:"Factures",novelles:"Novelles"})[v]||v); }catch(_){ }
   $("#tabMine").setAttribute("aria-pressed", v==="mine");
   $("#tabTreso").setAttribute("aria-pressed", v==="treso");
   $("#tabReexam").setAttribute("aria-pressed", v==="reexam");
@@ -11831,8 +11839,10 @@ function memberHTML(m, pending){
        <button class="btn ghost sm" data-m="poste" data-id="${m.id}">Changer le poste</button>
        <button class="btn ghost sm" data-m="iban" data-id="${m.id}">Corriger l'IBAN</button>
        ${me ? "" : `<button class="btn ghost sm" data-m="role" data-id="${m.id}">${m.role==="tresorier"?"Retirer le rôle de trésorier":"Nommer trésorier"}</button>
+     <button class="btn ${m.sc_actif ? "" : "ghost"} sm" data-m="sc" data-id="${m.id}">${m.sc_actif ? "✍️ Désactiver la signature conjointe" : "✍️ Activer la signature conjointe"}</button>
        <button class="btn no sm" data-m="revoke" data-id="${m.id}">Retirer l'accès</button>`}`;
-  const role = m.role==="tresorier" ? `<span class="tag t-valide" style="margin-left:8px">Trésorier</span>` : "";
+  const role = (m.role==="tresorier" ? `<span class="tag t-valide" style="margin-left:8px">Trésorier</span>` : "")
+    + (m.sc_actif ? `<span class="tag" style="margin-left:8px">Signature conjointe</span>` : "");
   const poste = m.position ? `<b style="font-weight:600">${esc(m.position)}</b> · ` : "";
   return `<div class="mrow">
     <div><div class="nm">${esc(m.name) || '<i style="color:var(--muted2)">sans nom</i>'}${role}${me?' <span class="hint">(vous)</span>':''}</div>
@@ -11868,6 +11878,19 @@ $("#viewMembers").addEventListener("click", async e => {
   let patch = null;
 
   if(act==="approve") patch = { approved:true };
+  if(act==="sc"){
+    const activer = !m.sc_actif;
+    if(!await demander(activer ? "Activer la signature conjointe" : "Désactiver la signature conjointe",
+      activer ? `${m.name || m.email} pourra introduire et signer des actes avec vous (article 10.2 des statuts), avec facture et preuve de paiement obligatoires. L'onglet « Signature conjointe » apparaîtra chez lui et chez vous.`
+              : `${m.name || m.email} n'aura plus accès à l'onglet « Signature conjointe ». Les actes déjà signés sont conservés.`,
+      { bouton: activer ? "Activer" : "Désactiver", danger: !activer })) return;
+    b.disabled = true;
+    const r = await sb.rpc("sc_activer", { p_membre: id, p_actif: activer });
+    b.disabled = false;
+    if(r.error) return toast("Impossible : " + r.error.message);
+    await refresh(); try{ await scInit(); }catch(_){}
+    return toast(activer ? "Signature conjointe activée." : "Signature conjointe désactivée.");
+  }
   if(act==="reject"){
     if(!await demander("Rejeter cette inscription", `${m.name || m.email} n'aura pas accès à la caisse.`, { bouton:"Rejeter", danger:true })) return;
     const { error } = await sb.from("profiles").delete().eq("id", id);
@@ -14202,7 +14225,7 @@ async function gjChargerDispo(acteId){
 }
 
 /* ---------- signature : popup + mot de passe ---------- */
-function gjPopupSignature({ titre, acte, motif, motifTitre, bouton, danger }){
+function gjPopupSignature({ titre, acte, motif, motifTitre, bouton, danger, mention }){
   return new Promise(resolve => {
     const ov = document.createElement("div");
     ov.className = "overlay open";
@@ -14212,7 +14235,7 @@ function gjPopupSignature({ titre, acte, motif, motifTitre, bouton, danger }){
       ${motif ? `<div class="field" style="margin-bottom:12px"><label>${esc(motifTitre || "Motif")}</label><textarea data-gj-motif rows="3"></textarea></div>` : ""}
       <label class="check" style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:13px;font-weight:600;color:var(--text);margin:0 0 12px;cursor:pointer">
         <input type="checkbox" data-gj-ok style="margin-top:2px;width:17px;height:17px;flex:none;accent-color:var(--gold)">
-        <span>Je ${danger ? "refuse" : "signe"} en qualité de délégué(e) à la gestion journalière, conformément à l'article 20 des statuts du Bureau étudiant.</span></label>
+        <span>Je ${danger ? "refuse" : "signe"} ${esc(mention || "en qualité de délégué(e) à la gestion journalière, conformément à l'article 20 des statuts du Bureau étudiant")}.</span></label>
       <div class="field"><label>Votre mot de passe</label><input type="password" data-gj-mdp autocomplete="current-password"></div>
       <div class="err" data-gj-err hidden style="margin-top:10px"></div>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
@@ -14447,6 +14470,329 @@ document.addEventListener("input", e => {
   const n = $("#gj_q"); if(n){ n.focus(); try{ n.setSelectionRange(pos, pos); }catch(_){} }
 });
 if($("#tabGJ")) $("#tabGJ").onclick = () => choisirVue("gj");
+
+
+/* =====================================================================
+   SIGNATURE CONJOINTE (article 10.2 des statuts)
+   Le trésorier active un administrateur (le vice-président) depuis Membres.
+   Le vice-président introduit et signe l'acte, avec la facture et la preuve
+   de paiement obligatoires ; le trésorier signe ou refuse ensuite, avec le
+   mot de passe. Mails : au trésorier pour la 2e signature, puis au
+   vice-président (PDF signé ou motif du refus).
+   ===================================================================== */
+const SC_ART102 = "Article 10.2 : L'association est valablement engagée envers les tiers par deux administrateur.trice.s agissant conjointement.";
+const SC_MENTION = "en qualité d'administrateur.trice, conformément à l'article 10.2 des statuts du Bureau étudiant (deux administrateur.trice.s agissant conjointement)";
+const scRef = a => "SC-" + String(a.date_decision || "").slice(0, 4) + "-" + String(a.numero).padStart(3, "0");
+const scEstTreso = () => state.sc && state.sc.role === "tresorier";
+const scLienApp = () => window.location.origin + window.location.pathname;
+/* adresse du vice-président qui a signé l'acte (même s'il a été désactivé depuis) */
+const scEmailVp = a => { const m = (state.members || []).find(x => a && x.id === a.vp_id); return (m && m.email) || (state.sc && state.sc.vp.email) || ""; };
+
+async function scInit(){
+  state.sc = null;
+  const btn = $("#tabSC"); if(btn) btn.hidden = true;
+  try{
+    const r = await sb.rpc("sc_etat");
+    if(r.error || !r.data || !r.data.role) return;
+    state.sc = { role: r.data.role, tres: r.data.tresorier || {}, vp: r.data.vp || {}, actes: [], filtre: "tout", form: null };
+    await scCharger();
+    /* chez le trésorier, l'onglet n'apparaît que si quelqu'un est activé (ou s'il reste des actes) */
+    if(btn) btn.hidden = !(state.sc.role === "vp" || state.sc.vp.id || state.sc.actes.length);
+    if(!state.scCanal){
+      state.scCanal = sb.channel("caisse-sc")
+        .on("postgres_changes", { event:"*", schema:"public", table:"sc_actes" }, async () => { await scCharger(); if(state.view === "sc") renderSC(); })
+        .subscribe();
+    }
+  }catch(_){ }
+}
+async function scCharger(){
+  const S = state.sc; if(!S) return;
+  const r = await sb.from("sc_actes").select("*").order("numero", { ascending:false });
+  if(r.error){ S.err = r.error.message; return; }
+  S.err = null; S.actes = r.data || [];
+  const n = S.actes.filter(scAMoiDeSigner).length;
+  const p = $("#pillSC"); if(p){ p.textContent = n; p.hidden = !n; }
+}
+const scAMoiDeSigner = a => scEstTreso() && a.statut === "attente" && !a.sig_treso_at;
+
+/* ---------- affichage ---------- */
+function renderSC(){
+  const box = $("#scBox"); const S = state.sc; if(!box) return;
+  if(!S){ box.innerHTML = `<div class="card" style="padding:16px"><p class="hint">Onglet réservé au trésorier et à l'administrateur activé.</p></div>`; return; }
+  const filtres = [["tout","Tout"],["signer", scEstTreso() ? "À signer" : "En attente"],["valide","Validés"],["refuse","Refusés"]];
+  const liste = S.actes.filter(a => S.filtre === "tout" ? true : S.filtre === "signer" ? a.statut === "attente" : a.statut === S.filtre);
+  const nAtt = S.actes.filter(a => a.statut === "attente").length;
+  box.innerHTML = `
+    <div class="card" style="padding:16px 18px">
+      <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px">
+          <div class="eyebrow">Signature conjointe · article 10.2</div>
+          <p class="hint" style="margin:6px 0 0">Signataires : <b>${esc(S.vp.nom || "vice-président")}</b> (vice-président) et <b>${esc(S.tres.nom || "trésorier")}</b> (trésorier).
+          Deux administrateurs agissant conjointement engagent l'association. La facture et la preuve de paiement sont obligatoires.</p>
+        </div>
+        ${S.role === "vp" ? `<button class="btn" data-sc="nouveau">+ Nouvel acte</button>` : ""}
+      </div>
+    </div>
+    ${S.form ? scFormHTML() : ""}
+    ${S.err ? `<div class="card" style="padding:14px"><p class="hint" style="color:#e88">${esc(S.err)}</p></div>` : ""}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${filtres.map(([k, l]) => `<button class="btn ${S.filtre === k ? "" : "ghost"} sm" data-sc="filtre" data-k="${k}">${l}${k === "signer" && nAtt ? " (" + nAtt + ")" : ""}</button>`).join("")}</div>
+    <div class="stack" style="gap:12px">${liste.map(scCarteHTML).join("") || `<div class="card" style="padding:16px"><p class="hint" style="margin:0">Aucun acte${S.filtre === "tout" ? " pour l'instant" : " dans cette catégorie"}.</p></div>`}</div>`;
+}
+
+function scCarteHTML(a){
+  const badge = a.statut === "valide" ? `<span class="pill" style="background:#1f4d36;color:#bfe8cf">Validé</span>`
+    : a.statut === "refuse" ? `<span class="pill" style="background:#5a1f26;color:#f3c4c9">Refusé</span>`
+    : `<span class="pill" style="background:#5a4718;color:#f2dc9b">En attente de la signature du trésorier</span>`;
+  const sig = (nomRole, nom, at) => `<div style="flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+      <div class="hint" style="margin:0">${nomRole}</div>
+      <div style="font-size:13.5px;margin-top:2px">${at ? `✓ <b>${esc(nom || "")}</b><div class="hint" style="margin:2px 0 0">signé le ${esc(gjFmtHeure(at))}</div>` : `<span style="color:var(--muted)">pas encore signé</span>`}</div></div>`;
+  const actions = [
+    `<button class="btn ghost sm" data-sc="voir" data-k="facture" data-id="${a.id}">🧾 Facture</button>`,
+    `<button class="btn ghost sm" data-sc="voir" data-k="preuve" data-id="${a.id}">💳 Preuve de paiement</button>`];
+  if(scAMoiDeSigner(a)){
+    actions.unshift(`<button class="btn ghost sm" data-sc="refuser" data-id="${a.id}" style="color:#e88">Refuser</button>`);
+    actions.unshift(`<button class="btn ok sm" data-sc="signer" data-id="${a.id}">Signer</button>`);
+  }
+  if(a.statut === "valide") actions.push(`<button class="btn ghost sm" data-sc="pdf" data-id="${a.id}">📄 PDF</button>`);
+  return `<div class="card" style="padding:14px 16px">
+    <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px">
+        <div class="hint" style="margin:0">${esc(scRef(a))} · décision du ${esc(fdate(a.date_decision))}</div>
+        <div style="font-size:16px;font-weight:600;margin-top:3px">${esc(a.intitule)}</div>
+        ${a.description ? `<div class="hint" style="margin:3px 0 0;white-space:pre-wrap">${esc(a.description)}</div>` : ""}
+      </div>
+      <div style="text-align:right"><div style="font-size:18px;font-weight:700">${euro(a.montant)}</div>${badge}</div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">${sig("Le vice-président, administrateur", a.vp_nom, a.sig_vp_at)}${sig("Le trésorier, administrateur", a.treso_nom, a.sig_treso_at)}</div>
+    ${a.statut === "refuse" ? `<div class="callout" style="margin-top:10px;border-color:#7a2531;background:#2a1216"><b style="color:#f3c4c9">Refusé par ${esc(a.treso_nom || "le trésorier")}</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(a.motif || "")}</p></div>` : ""}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${actions.join("")}</div>
+  </div>`;
+}
+
+/* ---------- formulaire (vice-président) ---------- */
+function scFormHTML(){
+  const F = state.sc.form;
+  const fichier = (k, titre) => `<div class="field"><label>${titre} (obligatoire)</label>
+      <input type="file" id="sc_${k}" accept="application/pdf,image/*">
+      ${F[k] ? `<p class="hint" style="margin:4px 0 0">✓ ${esc(F[k].name)}</p>` : ""}</div>`;
+  return `<div class="card" style="padding:16px 18px;border-color:var(--gold-dim, #8a7341)">
+    <div class="eyebrow" style="margin-bottom:10px">Nouvel acte · signature conjointe</div>
+    <div class="stack" style="gap:12px">
+      <div class="field"><label>Intitulé</label><input id="sc_intitule" value="${esc(F.intitule || "")}" placeholder="Ex. Achat d'un micro pour la communication"></div>
+      <div class="field"><label>Date de la décision</label><input type="date" id="sc_date" value="${esc(F.date || dateLocale())}" max="${dateLocale()}"></div>
+      <div class="field"><label>Montant (€)</label><input type="number" step="0.01" min="0" id="sc_montant" value="${esc(F.montant != null ? F.montant : "")}"></div>
+      <div class="field"><label>Description (facultatif)</label><textarea id="sc_desc" rows="2">${esc(F.description || "")}</textarea></div>
+      ${fichier("facture", "Facture")}
+      ${fichier("preuve", "Preuve de paiement")}
+      <div class="err" id="sc_err" hidden></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn ok" data-sc="introduire">Introduire et signer</button>
+        <button class="btn ghost" data-sc="annuler">Annuler</button></div>
+    </div></div>`;
+}
+function scLireForm(){
+  const F = state.sc.form; if(!F) return;
+  const v = id => { const el = $("#" + id); return el ? el.value : undefined; };
+  if(v("sc_intitule") !== undefined) F.intitule = v("sc_intitule");
+  if(v("sc_date") !== undefined) F.date = v("sc_date");
+  if(v("sc_montant") !== undefined) F.montant = v("sc_montant");
+  if(v("sc_desc") !== undefined) F.description = v("sc_desc");
+}
+async function scEnvoyerPiece(file, k){
+  const hash = await empreinte(file);
+  const ext = (String(file.name).split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+  const path = `${state.profile.id}/sc-${k}-${Date.now()}.${ext}`;
+  const up = await sb.storage.from("justificatifs").upload(path, file, { contentType: file.type || "application/octet-stream" });
+  if(up.error) throw new Error("Envoi de la " + (k === "facture" ? "facture" : "preuve de paiement") + " impossible : " + up.error.message);
+  return { path, type: file.type || "", name: file.name, hash };
+}
+
+/* ---------- PDF de l'acte (article 10.2) ---------- */
+async function scEmpreinte(a){
+  const canon = JSON.stringify({ ref: scRef(a), intitule: a.intitule, description: a.description, montant: Number(a.montant).toFixed(2), date: a.date_decision,
+    facture: a.facture && a.facture.hash, preuve: a.preuve && a.preuve.hash, vp: [a.vp_nom, a.sig_vp_at], treso: [a.treso_nom, a.sig_treso_at] });
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canon));
+  return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+async function scPdf(a){
+  const mod = await import("./lib/jspdf-4.2.1.js");
+  const jsPDF = mod.jsPDF || (mod.default && mod.default.jsPDF) || mod.default;
+  const empreinteActe = await scEmpreinte(a);
+  const doc = new jsPDF({ unit:"mm", format:"a4" });
+  const X = 18, W = 174; let y = 20;
+  const page = h => { if(y + h > 278){ doc.addPage(); y = 20; } };
+  const para = (t, taille, style, couleur) => {
+    doc.setFont("helvetica", style || "normal"); doc.setFontSize(taille || 10); doc.setTextColor(couleur == null ? 0 : couleur);
+    const l = doc.splitTextToSize(gjTxt(t), W); page(l.length * taille * 0.42 + 2); doc.text(l, X, y); y += l.length * taille * 0.42 + 2;
+  };
+  const champ = (k, v) => {
+    doc.setFontSize(10); const l = doc.splitTextToSize(gjTxt(v || "-"), 120); page(5.2 * l.length + 1);
+    doc.setFont("helvetica", "bold"); doc.setTextColor(110); doc.text(gjTxt(k), X, y);
+    doc.setFont("helvetica", "normal"); doc.setTextColor(0); doc.text(l, X + 50, y); y += 5.2 * l.length + 1.5;
+  };
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text(gjTxt((comptaCfg().nomAsbl) || "Le Bureau étudiant"), X, y);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(110); doc.text("Signature conjointe", X, y + 5);
+  doc.setDrawColor(200); doc.line(X, y + 9, X + W, y + 9); y += 20;
+  para("Acte signé par deux administrateurs", 18, "bold");
+  para(scRef(a) + "  -  Date de la décision : " + fdate(a.date_decision), 11, "normal", 70); y += 3;
+  doc.setDrawColor(180); doc.setFillColor(246, 245, 251);
+  const ref = "Acte pris en application de l'article 10.2 des statuts : l'association est engagée par deux administrateur.trice.s agissant conjointement.";
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); const lr = doc.splitTextToSize(gjTxt(ref), W - 8);
+  doc.setFont("helvetica", "italic"); doc.setFontSize(8.5); const la = doc.splitTextToSize(gjTxt(SC_ART102), W - 8);
+  const hBox = lr.length * 4.6 + la.length * 3.6 + 7; page(hBox);
+  doc.rect(X, y - 4, W, hBox, "FD");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.setTextColor(0); doc.text(lr, X + 4, y + 1);
+  doc.setFont("helvetica", "italic"); doc.setFontSize(8.5); doc.setTextColor(80); doc.text(la, X + 4, y + 2 + lr.length * 4.6);
+  y += hBox + 4;
+  para("Objet de l'acte", 12, "bold"); y += 1;
+  champ("Intitulé", a.intitule);
+  if(a.description) champ("Description", a.description);
+  champ("Montant", gjEur(a.montant));
+  y += 2; para("Pièces justificatives", 11, "bold");
+  champ("Facture", (a.facture && a.facture.name || "-") + (a.facture && a.facture.hash ? " - SHA-256 " + a.facture.hash.slice(0, 16) : ""));
+  champ("Preuve de paiement", (a.preuve && a.preuve.name || "-") + (a.preuve && a.preuve.hash ? " - SHA-256 " + a.preuve.hash.slice(0, 16) : ""));
+  y += 6; page(48);
+  para("Signatures", 12, "bold"); y += 1;
+  const bloc = (x, role, nom, at) => {
+    doc.setDrawColor(190); doc.rect(x, y, 84, 30);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(110); doc.text(gjTxt(role), x + 4, y + 6);
+    doc.setFontSize(11); doc.setTextColor(0); doc.text(gjTxt(nom || "-"), x + 4, y + 13);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(60);
+    doc.text(doc.splitTextToSize(gjTxt(at ? "Signé électroniquement par mot de passe le " + gjFmtHeure(at) : "Non signé"), 76), x + 4, y + 19);
+  };
+  bloc(X, "Le vice-président, administrateur", a.vp_nom, a.sig_vp_at);
+  bloc(X + 90, "Le trésorier, administrateur", a.treso_nom, a.sig_treso_at);
+  y += 36;
+  const n = doc.getNumberOfPages();
+  for(let i = 1; i <= n; i++){
+    doc.setPage(i); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(120);
+    doc.text(gjTxt("Signature conjointe du BE - acte pris en application de l'article 10.2 des statuts. Empreinte SHA-256 : " + empreinteActe.slice(0, 32)), X, 289);
+    doc.text(i + " / " + n, X + W, 289, { align:"right" });
+  }
+  return { blob: doc.output("blob"), nom: scRef(a) + ".pdf" };
+}
+
+/* ---------- mails ---------- */
+const scMailCadre = (titre, corps) => `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a1a">
+  <h2 style="margin:0 0 10px">${titre}</h2>${corps}
+  <hr style="border:none;border-top:1px solid #e5e5e5;margin:22px 0 10px">
+  <p style="font-size:12px;color:#777">Signature conjointe (article 10.2 des statuts) — Caisse du bureau étudiant</p></div>`;
+const scMailTable = a => `<table style="border-collapse:collapse;margin:12px 0;font-size:14px">
+  <tr><td style="padding:4px 14px 4px 0;color:#666">Acte</td><td><b>${mailEsc(scRef(a))}</b></td></tr>
+  <tr><td style="padding:4px 14px 4px 0;color:#666">Intitulé</td><td><b>${mailEsc(a.intitule)}</b></td></tr>
+  <tr><td style="padding:4px 14px 4px 0;color:#666">Montant</td><td><b>${mailEsc(euro(a.montant))}</b></td></tr>
+  <tr><td style="padding:4px 14px 4px 0;color:#666">Date de la décision</td><td>${mailEsc(fdate(a.date_decision))}</td></tr></table>`;
+const scBouton = (url, txt) => `<p style="text-align:center;margin:24px 0"><a href="${url}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">${txt}</a></p>`;
+
+function scMailATreso(a){
+  const S = state.sc;
+  const html = scMailCadre("Acte à signer ✍️", `<p>Bonjour,</p>
+    <p><b>${mailEsc(a.vp_nom || S.vp.nom || "Le vice-président")}</b> a introduit et signé un acte en signature conjointe (article 10.2 des statuts). Il attend votre signature.</p>
+    ${scMailTable(a)}<p>La facture et la preuve de paiement sont jointes à l'acte dans l'onglet « Signature conjointe ».</p>
+    ${scBouton(scLienApp(), "Ouvrir la Caisse")}`);
+  return avertirMail(envoyerMailObligatoire(S.tres.email || emailTreso(), "Acte à signer — " + scRef(a) + " · " + a.intitule, html, S.vp.email || undefined), "acte à signer");
+}
+async function scMailValide(a){
+  const S = state.sc;
+  let lien = "";
+  try{
+    const { blob, nom } = await scPdf(a);
+    const path = `${state.profile.id}/sc-acte-${Date.now()}-${nom}`;
+    const up = await sb.storage.from("justificatifs").upload(path, blob, { contentType:"application/pdf" });
+    if(!up.error){
+      const { data } = await sb.storage.from("justificatifs").createSignedUrl(path, 30 * 24 * 3600);
+      lien = (data && data.signedUrl) || "";
+    }
+  }catch(_){ }
+  const html = scMailCadre("Acte validé ✅", `<p>Bonjour,</p>
+    <p>L'acte ci-dessous est signé par les deux administrateurs (article 10.2 des statuts).</p>
+    ${scMailTable(a)}
+    ${lien ? scBouton(lien, "Télécharger l'acte signé (PDF)") + `<p style="font-size:12px;color:#777">Lien valable 30 jours. Le PDF reste disponible dans l'onglet « Signature conjointe ».</p>`
+      : `<p>Le PDF signé est disponible dans l'onglet « Signature conjointe ».</p>`}`);
+  const sujet = "Acte signé — " + scRef(a) + " · " + a.intitule;
+  const dest = [scEmailVp(a), S.tres.email || emailTreso()].filter(Boolean);
+  const res = await Promise.all([...new Set(dest)].map(d => envoyerMailObligatoire(d, sujet, html)));
+  return res.every(Boolean);
+}
+function scMailRefus(a){
+  const S = state.sc;
+  const html = scMailCadre("Acte refusé", `<p>Bonjour,</p>
+    <p>Le trésorier a refusé l'acte ci-dessous.</p>${scMailTable(a)}
+    <div style="background:#fbeaea;border:1px solid #e8c4c4;border-radius:8px;padding:12px"><b>Motif</b><p style="margin:6px 0 0;white-space:pre-wrap">${mailEsc(a.motif || "")}</p></div>`);
+  return avertirMail(envoyerMailObligatoire(scEmailVp(a), "Acte refusé — " + scRef(a) + " · " + a.intitule, html, S.tres.email || undefined), "acte refusé");
+}
+
+/* ---------- actions ---------- */
+document.addEventListener("click", async e => {
+  const el = e.target.closest && e.target.closest("[data-sc]"); if(!el || !state.sc) return;
+  const S = state.sc, a = el.dataset.sc, id = el.dataset.id, acte = id ? S.actes.find(x => x.id === id) : null;
+  try{
+    if(a === "filtre"){ S.filtre = el.dataset.k; renderSC(); return; }
+    if(a === "nouveau"){ S.form = { date: dateLocale() }; renderSC(); return; }
+    if(a === "annuler"){ S.form = null; renderSC(); return; }
+    if(a === "voir" && acte){
+      const p = acte[el.dataset.k]; if(!p || !p.path) return toast("Pièce introuvable.");
+      const { data, error } = await sb.storage.from("justificatifs").createSignedUrl(p.path, 3600);
+      if(error || !data) return toast("Ouverture impossible.");
+      window.open(data.signedUrl, "_blank", "noopener"); return;
+    }
+    if(a === "introduire"){
+      scLireForm(); const F = S.form, err = $("#sc_err");
+      const montant = parseFloat(String(F.montant || "").replace(",", "."));
+      const souci = !String(F.intitule || "").trim() ? "Indiquez un intitulé." : !F.date ? "Indiquez la date de la décision."
+        : F.date > dateLocale() ? "La date de la décision ne peut pas être dans le futur." : !(montant > 0) ? "Le montant doit être supérieur à zéro."
+        : !F.facture ? "Joignez la facture." : !F.preuve ? "Joignez la preuve de paiement." : "";
+      if(souci){ if(err){ err.textContent = souci; err.hidden = false; } return; }
+      const rep = await gjPopupSignature({ titre: "Introduire et signer l'acte", bouton: "Introduire et signer", mention: SC_MENTION,
+        acte: { ref: "Nouvel acte", intitule: F.intitule.trim(), type: "depense", montant, date: F.date } });
+      if(!rep) return;
+      const nouvelId = await gjAvecMotDePasse(rep.mdp, async cli => {
+        const facture = await scEnvoyerPiece(F.facture, "facture");
+        const preuve = await scEnvoyerPiece(F.preuve, "preuve");
+        const r = await cli.rpc("sc_creer", { p_intitule: F.intitule.trim(), p_description: (F.description || "").trim(),
+          p_montant: montant, p_date: F.date, p_facture: facture, p_preuve: preuve });
+        if(r.error) throw new Error(r.error.message); return r.data;
+      });
+      S.form = null; await scCharger(); renderSC();
+      const cree = S.actes.find(x => x.id === nouvelId);
+      const ok = cree ? await scMailATreso(cree) : false;
+      dire("Acte introduit et signé ✓", "Votre signature est enregistrée." + (ok ? " " + (S.tres.nom || "Le trésorier") + " vient d'être prévenu par mail pour la deuxième signature." : ""));
+      return;
+    }
+    if((a === "signer" || a === "refuser") && acte){
+      const rep = await gjPopupSignature({ titre: a === "signer" ? "Signer l'acte" : "Refuser l'acte", bouton: a === "signer" ? "Signer" : "Refuser",
+        motif: a === "refuser", motifTitre: "Motif du refus", danger: a === "refuser", mention: SC_MENTION,
+        acte: { ref: scRef(acte), intitule: acte.intitule, type: "depense", montant: acte.montant, date: acte.date_decision } });
+      if(!rep) return;
+      const res = await gjAvecMotDePasse(rep.mdp, cli => cli.rpc("sc_signer", { p_acte: acte.id, p_decision: a, p_motif: rep.motif })
+        .then(r => { if(r.error) throw new Error(r.error.message); return r.data; }));
+      await scCharger(); renderSC();
+      const maj = S.actes.find(x => x.id === acte.id) || acte;
+      if(res && res.statut === "valide"){
+        const ok = await scMailValide(maj);
+        dire("Acte validé ✓", "Les deux signatures sont réunies." + (ok ? " L'acte signé (PDF) vient d'être envoyé par mail à vous deux." : " Le mail n'est pas parti : " + (dernierEchecMail || "raison inconnue") + "."));
+      } else if(res && res.statut === "refuse"){
+        const ok = await scMailRefus(maj);
+        dire("Acte refusé", "Le refus est enregistré." + (ok ? " " + (S.vp.nom || "Le vice-président") + " est prévenu par mail, avec le motif." : ""));
+      }
+      return;
+    }
+    if(a === "pdf" && acte){
+      const { blob, nom } = await scPdf(acte);
+      const u = URL.createObjectURL(blob), l = document.createElement("a"); l.href = u; l.download = nom; document.body.appendChild(l); l.click(); l.remove();
+      setTimeout(() => URL.revokeObjectURL(u), 4000); return;
+    }
+  }catch(err){ dire("Signature conjointe", String(err && err.message || err)); }
+});
+document.addEventListener("change", e => {
+  const t = e.target; if(!t || !state.sc || !state.sc.form) return;
+  if(t.id === "sc_facture" || t.id === "sc_preuve"){
+    scLireForm(); const f = t.files && t.files[0];
+    state.sc.form[t.id === "sc_facture" ? "facture" : "preuve"] = f || null;
+    renderSC();
+  }
+});
+if($("#tabSC")) $("#tabSC").onclick = () => choisirVue("sc");
 
 
 /* =====================================================================
