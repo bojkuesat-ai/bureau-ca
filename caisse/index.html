@@ -11887,9 +11887,12 @@ $("#viewMembers").addEventListener("click", async e => {
     b.disabled = true;
     const r = await sb.rpc("sc_activer", { p_membre: id, p_actif: activer });
     b.disabled = false;
-    if(r.error) return toast("Impossible : " + r.error.message);
+    if(r.error) return dire(activer ? "Activation impossible" : "Désactivation impossible",
+      "La signature conjointe n'a pas été " + (activer ? "activée" : "désactivée") + " pour " + (m.name || m.email) + ". Erreur : " + r.error.message);
     await refresh(); try{ await scInit(); }catch(_){}
-    return toast(activer ? "Signature conjointe activée." : "Signature conjointe désactivée.");
+    return dire(activer ? "Signature conjointe activée ✓" : "Signature conjointe désactivée",
+      activer ? (m.name || m.email) + " peut maintenant introduire et signer des actes avec vous. L'onglet « Signature conjointe » apparaît chez lui et chez vous."
+              : (m.name || m.email) + " n'a plus accès à l'onglet « Signature conjointe ». Les actes déjà signés sont conservés.");
   }
   if(act==="reject"){
     if(!await demander("Rejeter cette inscription", `${m.name || m.email} n'aura pas accès à la caisse.`, { bouton:"Rejeter", danger:true })) return;
