@@ -14054,6 +14054,16 @@ sb.auth.onAuthStateChange(() => { setTimeout(verifierErrCaisse, 600); });
    ===================================================================== */
 const GJ_ART20 = "Article 20 : Délégués à la gestion journalière. L'Organe d'Administration peut déléguer la gestion journalière de l'association, ainsi que sa représentation dans ce cadre, à deux administrateur.trice.s agissant conjointement. L'un.e des deux délégué.e.s à la gestion journalière doit nécessairement assurer la fonction de Président.e de l'Organe d'Administration. La gestion journalière comprend aussi bien les actes et les décisions qui n'excèdent pas les besoins de la vie quotidienne de l'association que les actes et les décisions qui, soit en raison de l'intérêt mineur qu'ils représentent, soit en raison de leur caractère urgent, ne justifient pas l'intervention de l'Organe d'Administration.";
 const gjRef = a => "GJ-" + a.annee + "-" + String(a.numero).padStart(3, "0");
+/* Code de vérification d'une signature : recalculable à partir de l'acte (réf., rôle, nom, horodatage, date introduite). */
+async function codeSignature(parts){
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(parts)));
+  const x = [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 12).toUpperCase();
+  return x.slice(0, 4) + "-" + x.slice(4, 8) + "-" + x.slice(8, 12);
+}
+const fdateSig = d => d ? new Date(String(d).slice(0, 10) + "T00:00").toLocaleDateString("fr-BE") : "";
+/* Date affichée : la date introduite par le signataire ; à défaut (anciens actes), l'horodatage électronique. */
+const texteDateSig = (dateManuelle, at) => dateManuelle ? "Signé le " + fdateSig(dateManuelle) : at ? "Signé électroniquement le " + gjFmtHeure(at) : "Non signé";
+const GJ_URGENCE = "Dépense urgente : acte qui, en raison de son caractère urgent, ne justifie pas l'intervention de l'Organe d'Administration (article 20 des statuts).";
 const gjEstTreso = () => state.gj && state.gj.role === "tresorier";
 const gjFmtHeure = ts => ts ? new Date(ts).toLocaleString("fr-BE", { timeZone:"Europe/Brussels", day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }) : "";
 
@@ -14120,9 +14130,9 @@ function gjCarteHTML(a){
   const badge = a.statut === "valide" ? `<span class="pill" style="background:#1f4d36;color:#bfe8cf">Validé</span>`
     : a.statut === "refuse" ? `<span class="pill" style="background:#5a1f26;color:#f3c4c9">Refusé</span>`
     : `<span class="pill" style="background:#5a4718;color:#f2dc9b">En attente de la 2e signature</span>`;
-  const sig = (nomRole, nom, at) => `<div style="flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+  const sig = (nomRole, nom, at, ds) => `<div style="flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 11px">
       <div class="hint" style="margin:0">${nomRole}</div>
-      <div style="font-size:13.5px;margin-top:2px">${at ? `✓ <b>${esc(nom || "")}</b><div class="hint" style="margin:2px 0 0">signé le ${esc(gjFmtHeure(at))}</div>` : `<span style="color:var(--muted)">pas encore signé</span>`}</div></div>`;
+      <div style="font-size:13.5px;margin-top:2px">${at ? `✓ <b>${esc(nom || "")}</b><div class="hint" style="margin:2px 0 0">${esc(texteDateSig(ds, at))}</div>` : `<span style="color:var(--muted)">pas encore signé</span>`}</div></div>`;
   const liens = gjLiensDe(a.id);
   const budget = a.budget_id ? G.actes.find(x => x.id === a.budget_id) : null;
   let extra = "";
@@ -14152,14 +14162,15 @@ function gjCarteHTML(a){
   return `<div class="card" style="padding:14px 16px">
     <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
       <div style="flex:1;min-width:220px">
-        <div class="hint" style="margin:0">${esc(gjRef(a))} · ${a.type === "budget" ? "Budget" : "Dépense"} · décision du ${esc(fdate(a.date_decision))}</div>
+        <div class="hint" style="margin:0">${esc(gjRef(a))} · ${a.type === "budget" ? "Budget" : a.urgente ? `<b style="color:#e88">🔴 Dépense urgente</b>` : "Dépense"} · décision du ${esc(fdate(a.date_decision))}</div>
         <div style="font-size:16px;font-weight:600;margin-top:3px">${esc(a.intitule)}</div>
         ${a.description ? `<div class="hint" style="margin:3px 0 0;white-space:pre-wrap">${esc(a.description)}</div>` : ""}
       </div>
       <div style="text-align:right"><div style="font-size:18px;font-weight:700">${euro(a.montant)}</div>${badge}</div>
     </div>
+    ${a.urgente && a.motif_urgence ? `<div class="callout" style="margin-top:10px"><b>Motif de l'urgence</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(a.motif_urgence)}</p></div>` : ""}
     ${extra}
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">${sig("La présidente", a.sig_pres_nom, a.sig_pres_at)}${sig("Le trésorier", a.sig_treso_nom, a.sig_treso_at)}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">${sig("La présidente", a.sig_pres_nom, a.sig_pres_at, a.date_sig_pres)}${sig("Le trésorier", a.sig_treso_nom, a.sig_treso_at, a.date_sig_treso)}</div>
     ${a.reserve ? `<div class="callout" style="margin-top:10px"><b>Signé avec réserve par le trésorier</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(a.reserve)}</p></div>` : ""}
     ${a.statut === "refuse" ? `<div class="callout" style="margin-top:10px;border-color:#7a2531;background:#2a1216"><b style="color:#f3c4c9">Refusé par ${esc(a.refus_par || "")}${a.refus_at ? " le " + esc(gjFmtHeure(a.refus_at)) : ""}</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(a.refus_motif || "")}</p></div>` : ""}
     ${actions.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${actions.join("")}</div>` : ""}
@@ -14193,7 +14204,8 @@ function gjFormHTML(){
   return `<div class="card" style="padding:16px 18px;border-color:var(--gold-dim, #8a7341)">
     <div class="eyebrow" style="margin-bottom:10px">${edit ? "Modifier l'acte " + esc(F.ref) : "Nouvel acte de gestion journalière"}</div>
     <div class="stack" style="gap:12px">
-      ${edit ? "" : `<div style="display:flex;gap:8px"><button class="btn ${F.type === "budget" ? "" : "ghost"} sm" data-gj="type" data-k="budget">Budget</button><button class="btn ${F.type === "depense" ? "" : "ghost"} sm" data-gj="type" data-k="depense">Dépense</button></div>`}
+      ${edit ? "" : `<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ${F.type === "budget" ? "" : "ghost"} sm" data-gj="type" data-k="budget">Budget</button><button class="btn ${F.type === "depense" && !F.urgente ? "" : "ghost"} sm" data-gj="type" data-k="depense">Dépense</button><button class="btn ${F.type === "depense" && F.urgente ? "" : "ghost"} sm" data-gj="type" data-k="urgente">🔴 Dépense urgente</button></div>`}
+      ${!edit && F.type === "depense" && F.urgente ? `<div class="field"><label>Motif de l'urgence (obligatoire)</label><textarea id="gj_urgence" rows="2" placeholder="Pourquoi cette dépense ne pouvait pas attendre une réunion du CA">${esc(F.motifUrgence || "")}</textarea><p class="hint">${esc(GJ_URGENCE)}</p></div>` : ""}
       <div class="field"><label>Intitulé</label><input id="gj_intitule" value="${esc(F.intitule || "")}" placeholder="${F.type === "budget" ? "Ex. Fournitures du bureau, octobre" : "Ex. Paiements soirée TB"}"></div>
       <div class="field"><label>Date de la décision</label><input type="date" id="gj_date" value="${esc(F.date || dateLocale())}" max="${dateLocale()}"><p class="hint">Peut être antérieure : c'est la date de la décision qui figure sur l'acte, pas celle des signatures.</p></div>
       ${partDep}
@@ -14218,6 +14230,7 @@ function gjLireForm(){
   if(v("gj_budget") !== undefined) F.budget = v("gj_budget") || "";
   const m = $("#gj_montant"); if(m && !m.disabled) F.montant = m.value;
   if(v("gj_q") !== undefined) F.q = v("gj_q");
+  if(v("gj_urgence") !== undefined) F.motifUrgence = v("gj_urgence");
 }
 async function gjChargerDispo(acteId){
   const G = state.gj; G.dispo = null; renderGJ();
@@ -14228,7 +14241,7 @@ async function gjChargerDispo(acteId){
 }
 
 /* ---------- signature : popup + mot de passe ---------- */
-function gjPopupSignature({ titre, acte, motif, motifTitre, bouton, danger, mention }){
+function gjPopupSignature({ titre, acte, motif, motifTitre, bouton, danger, mention, dateSig }){
   return new Promise(resolve => {
     const ov = document.createElement("div");
     ov.className = "overlay open";
@@ -14236,6 +14249,7 @@ function gjPopupSignature({ titre, acte, motif, motifTitre, bouton, danger, ment
       <h2 style="font-size:20px;margin:0 0 8px">${esc(titre)}</h2>
       ${acte ? `<div style="background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 12px;font-size:13.5px"><b>${esc(acte.ref)}</b> · ${esc(acte.intitule)}<div class="hint" style="margin:3px 0 0">${esc(acte.type === "budget" ? "Budget" : "Dépense")} · ${euro(acte.montant)} · décision du ${esc(fdate(acte.date))}</div></div>` : ""}
       ${motif ? `<div class="field" style="margin-bottom:12px"><label>${esc(motifTitre || "Motif")}</label><textarea data-gj-motif rows="3"></textarea></div>` : ""}
+      ${dateSig ? `<div class="field" style="margin-bottom:12px"><label>Date de signature</label><input type="date" data-gj-datesig max="${dateLocale()}"><p class="hint" style="margin:4px 0 0">La date qui figurera sur l'acte. Votre mot de passe sert seulement à vérifier votre signature.</p></div>` : ""}
       <label class="check" style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:13px;font-weight:600;color:var(--text);margin:0 0 12px;cursor:pointer">
         <input type="checkbox" data-gj-ok style="margin-top:2px;width:17px;height:17px;flex:none;accent-color:var(--gold)">
         <span>Je ${danger ? "refuse" : "signe"} ${esc(mention || "en qualité de délégué(e) à la gestion journalière, conformément à l'article 20 des statuts du Bureau étudiant")}.</span></label>
@@ -14255,9 +14269,12 @@ function gjPopupSignature({ titre, acte, motif, motifTitre, bouton, danger, ment
     const valider = () => {
       const m = motif ? q("[data-gj-motif]").value.trim() : null;
       const mdp = q("[data-gj-mdp]").value;
-      const souci = motif && !m ? "Indiquez le motif." : !q("[data-gj-ok]").checked ? "Cochez la case de signature." : !mdp ? "Tapez votre mot de passe." : "";
+      const ds = dateSig ? q("[data-gj-datesig]").value : null;
+      const souci = motif && !m ? "Indiquez le motif." : dateSig && !ds ? "Indiquez la date de signature."
+        : dateSig && ds > dateLocale() ? "La date de signature ne peut pas être dans le futur."
+        : !q("[data-gj-ok]").checked ? "Cochez la case de signature." : !mdp ? "Tapez votre mot de passe." : "";
       if(souci){ err.textContent = souci; err.hidden = false; return; }
-      fin({ motif: m, mdp });
+      fin({ motif: m, mdp, date: ds });
     };
     q("[data-gj-oui]").onclick = valider;
     q("[data-gj-mdp]").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); valider(); } });
@@ -14288,7 +14305,9 @@ const gjEur = n => (Number(n) || 0).toFixed(2).replace(".", ",") + " EUR";
 async function gjEmpreinte(a, liens){
   const canon = JSON.stringify({ ref: gjRef(a), type: a.type, intitule: a.intitule, description: a.description, montant: Number(a.montant).toFixed(2),
     date: a.date_decision, budget: a.budget_id || null, pres: [a.sig_pres_nom, a.sig_pres_at], treso: [a.sig_treso_nom, a.sig_treso_at], reserve: a.reserve || null,
-    liens: liens.map(l => [l.source, l.ref_id, l.libelle, Number(l.montant).toFixed(2), l.date_depense]) });
+    liens: liens.map(l => [l.source, l.ref_id, l.libelle, Number(l.montant).toFixed(2), l.date_depense]),
+    ...(a.urgente ? { urgente: true, motif_urgence: a.motif_urgence || null } : {}),
+    ...(a.date_sig_pres || a.date_sig_treso ? { dates_sig: [a.date_sig_pres || null, a.date_sig_treso || null] } : {}) });
   const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canon));
   return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join("");
 }
@@ -14315,7 +14334,7 @@ async function gjPdf(a){
   para("Acte de gestion journalière", 18, "bold");
   para(gjRef(a) + "  -  Date de la décision : " + fdate(a.date_decision), 11, "normal", 70); y += 3;
   doc.setDrawColor(180); doc.setFillColor(246, 245, 251);
-  const ref = "Acte pris en application de l'article 20 des statuts : gestion journalière déléguée à deux administrateur.trice.s agissant conjointement, dont la présidence.";
+  const ref = "Acte pris en application de l'article 20 des statuts : gestion journalière déléguée à deux administrateur.trice.s agissant conjointement, dont la présidence." + (a.urgente ? " " + GJ_URGENCE : "");
   doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); const lr = doc.splitTextToSize(gjTxt(ref), W - 8);
   doc.setFont("helvetica", "italic"); doc.setFontSize(8.5); const la = doc.splitTextToSize(gjTxt(GJ_ART20), W - 8);
   const hBox = lr.length * 4.6 + la.length * 3.6 + 7; page(hBox);
@@ -14324,7 +14343,8 @@ async function gjPdf(a){
   doc.setFont("helvetica", "italic"); doc.setFontSize(8.5); doc.setTextColor(80); doc.text(la, X + 4, y + 2 + lr.length * 4.6);
   y += hBox + 4;
   para("Objet de l'acte", 12, "bold"); y += 1;
-  champ("Type", a.type === "budget" ? "Budget" : "Dépense");
+  champ("Type", a.type === "budget" ? "Budget" : a.urgente ? "Dépense urgente" : "Dépense");
+  if(a.urgente && a.motif_urgence) champ("Motif de l'urgence", a.motif_urgence);
   champ("Intitulé", a.intitule);
   if(a.description) champ("Description", a.description);
   champ(a.type === "budget" ? "Montant maximum" : "Montant", gjEur(a.montant));
@@ -14342,16 +14362,20 @@ async function gjPdf(a){
   }
   y += 6; page(48);
   para("Signatures", 12, "bold"); y += 1;
-  const bloc = (x, role, nom, at) => {
-    doc.setDrawColor(190); doc.rect(x, y, 84, 30);
+  const codePres = a.sig_pres_at ? await codeSignature([gjRef(a), "presidente", a.sig_pres_nom, a.sig_pres_at, a.date_sig_pres || null]) : "";
+  const codeTreso = a.sig_treso_at ? await codeSignature([gjRef(a), "tresorier", a.sig_treso_nom, a.sig_treso_at, a.date_sig_treso || null]) : "";
+  const bloc = (x, role, nom, at, ds, code) => {
+    doc.setDrawColor(190); doc.rect(x, y, 84, 34);
     doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(110); doc.text(gjTxt(role), x + 4, y + 6);
     doc.setFontSize(11); doc.setTextColor(0); doc.text(gjTxt(nom || "-"), x + 4, y + 13);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(60);
-    doc.text(doc.splitTextToSize(gjTxt(at ? "Signé électroniquement par mot de passe le " + gjFmtHeure(at) : "Non signé"), 76), x + 4, y + 19);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(40);
+    doc.text(gjTxt(texteDateSig(ds, at)), x + 4, y + 19.5);
+    if(code){ doc.setFontSize(8); doc.setTextColor(90); doc.text(gjTxt("Code de vérification : " + code), x + 4, y + 25.5);
+      doc.setFont("helvetica", "italic"); doc.setFontSize(7); doc.text("Signature vérifiée par mot de passe du compte", x + 4, y + 30.5); }
   };
-  bloc(X, "La présidente, déléguée à la gestion journalière", a.sig_pres_nom, a.sig_pres_at);
-  bloc(X + 90, "Le trésorier, délégué à la gestion journalière", a.sig_treso_nom, a.sig_treso_at);
-  y += 36;
+  bloc(X, "La présidente, déléguée à la gestion journalière", a.sig_pres_nom, a.sig_pres_at, a.date_sig_pres, codePres);
+  bloc(X + 90, "Le trésorier, délégué à la gestion journalière", a.sig_treso_nom, a.sig_treso_at, a.date_sig_treso, codeTreso);
+  y += 40;
   if(a.reserve){
     const lres = doc.splitTextToSize(gjTxt(a.reserve), W - 8); const h = lres.length * 4.6 + 11; page(h);
     doc.setFillColor(255, 247, 230); doc.setDrawColor(232, 217, 168); doc.rect(X, y - 4, W, h, "FD");
@@ -14388,7 +14412,7 @@ document.addEventListener("click", async e => {
     if(a === "filtre"){ G.filtre = el.dataset.k; renderGJ(); return; }
     if(a === "nouveau"){ G.form = { type:"depense", coches:{}, date: dateLocale() }; renderGJ(); await gjChargerDispo(null); return; }
     if(a === "annuler"){ G.form = null; renderGJ(); return; }
-    if(a === "type"){ gjLireForm(); G.form.type = el.dataset.k; renderGJ(); return; }
+    if(a === "type"){ gjLireForm(); const k = el.dataset.k; G.form.urgente = k === "urgente"; G.form.type = k === "urgente" ? "depense" : k; renderGJ(); return; }
     if(a === "modifier" && acte){
       const coches = {}; gjLiensDe(acte.id).forEach(l => { coches[l.source + ":" + l.ref_id] = Number(l.montant); });
       G.form = { id: acte.id, ref: gjRef(acte), type: acte.type, intitule: acte.intitule, description: acte.description, date: acte.date_decision,
@@ -14402,7 +14426,8 @@ document.addEventListener("click", async e => {
       const montantAuto = F.type === "depense" && Object.keys(F.coches).length;
       const montant = montantAuto ? gjTotalCoches() : parseFloat(String(F.montant || "").replace(",", "."));
       const souci = !String(F.intitule || "").trim() ? "Indiquez un intitulé." : !F.date ? "Indiquez la date de la décision."
-        : F.date > dateLocale() ? "La date de la décision ne peut pas être dans le futur." : !(montant > 0) ? "Le montant doit être supérieur à zéro." : "";
+        : F.date > dateLocale() ? "La date de la décision ne peut pas être dans le futur." : !(montant > 0) ? "Le montant doit être supérieur à zéro."
+        : (a === "introduire" && F.type === "depense" && F.urgente && !String(F.motifUrgence || "").trim()) ? "Indiquez le motif de l'urgence." : "";
       if(souci){ if(err){ err.textContent = souci; err.hidden = false; } return; }
       const liens = F.type === "depense" ? Object.keys(F.coches).map(k => { const i = k.indexOf(":"); return { source: k.slice(0, i), ref_id: k.slice(i + 1) }; }) : [];
       if(a === "enregistrer"){
@@ -14413,14 +14438,28 @@ document.addEventListener("click", async e => {
         G.form = null; await gjCharger(); renderGJ(); toast("Acte " + F.ref + " modifié."); return;
       }
       const autre = G.role === "tresorier" ? (G.pres.nom || "la présidente") : (G.tres.nom || "le trésorier");
-      const rep = await gjPopupSignature({ titre: "Introduire et signer l'acte", bouton: "Introduire et signer",
+      const rep = await gjPopupSignature({ titre: F.urgente && F.type === "depense" ? "Introduire et signer la dépense urgente" : "Introduire et signer l'acte", bouton: "Introduire et signer", dateSig: true,
         acte: { ref: "Nouvel acte", intitule: F.intitule.trim(), type: F.type, montant, date: F.date } });
       if(!rep) return;
-      await gjAvecMotDePasse(rep.mdp, cli => cli.rpc("gj_creer", { p_type: F.type, p_intitule: F.intitule.trim(), p_description: (F.description || "").trim(),
+      const urgente = F.type === "depense" && !!F.urgente, motifUrg = String(F.motifUrgence || "").trim(), intitule = F.intitule.trim();
+      const cree = await gjAvecMotDePasse(rep.mdp, cli => cli.rpc("gj_creer", { p_type: F.type, p_intitule: intitule, p_description: (F.description || "").trim(),
         p_montant: montant, p_date: F.date, p_budget: F.type === "depense" && F.budget ? F.budget : null, p_liens: liens })
         .then(r => { if(r.error) throw new Error(r.error.message); return r.data; }));
-      G.form = null; await gjCharger(); renderGJ();
-      dire("Acte introduit et signé ✓", "Votre signature est enregistrée. " + autre + " vient d'être prévenu(e) par mail pour la deuxième signature.");
+      G.form = null; await gjCharger();
+      /* l'acte créé : par l'identifiant renvoyé, sinon le plus récent que je viens de signer */
+      const idRenvoye = typeof cree === "string" ? cree : cree && (cree.id || (Array.isArray(cree) && cree[0] && cree[0].id));
+      const moi = G.role === "tresorier" ? "treso" : "pres";
+      const nouveau = G.actes.find(x => idRenvoye && String(x.id) === String(idRenvoye))
+        || G.actes.filter(x => x.statut === "attente" && x.intitule === intitule && x["sig_" + moi + "_at"] && !x["date_sig_" + moi])
+             .sort((x, y) => String(y["sig_" + moi + "_at"]).localeCompare(String(x["sig_" + moi + "_at"])))[0];
+      const soucis = [];
+      if(nouveau){
+        if(urgente){ const ru = await sb.rpc("gj_completer", { p_acte: String(nouveau.id), p_urgente: true, p_motif_urgence: motifUrg }); if(ru.error) soucis.push("urgence : " + ru.error.message); }
+        const rd = await sb.rpc("gj_date_signature", { p_acte: String(nouveau.id), p_date: rep.date }); if(rd.error) soucis.push("date de signature : " + rd.error.message);
+      } else soucis.push("acte introuvable après création");
+      await gjCharger(); renderGJ();
+      if(soucis.length) dire("Acte signé, mais incomplet", "L'acte est introduit et signé, mais ceci n'a pas été enregistré : " + soucis.join(" ; ") + ".");
+      else dire("Acte introduit et signé ✓", "Votre signature est enregistrée" + (urgente ? " (dépense urgente)" : "") + ". " + autre + " vient d'être prévenu(e) par mail pour la deuxième signature.");
       return;
     }
     if((a === "signer" || a === "reserve" || a === "refuser") && acte){
@@ -14428,10 +14467,14 @@ document.addEventListener("click", async e => {
       const rep = await gjPopupSignature({
         titre: a === "signer" ? "Signer l'acte" : a === "reserve" ? "Signer avec réserve" : "Refuser l'acte",
         bouton: a === "signer" ? "Signer" : a === "reserve" ? "Signer avec réserve" : "Refuser",
-        motif: a !== "signer", motifTitre: a === "reserve" ? "Votre réserve" : "Motif du refus", danger: a === "refuser", acte: info });
+        motif: a !== "signer", motifTitre: a === "reserve" ? "Votre réserve" : "Motif du refus", danger: a === "refuser", dateSig: a !== "refuser", acte: info });
       if(!rep) return;
       const res = await gjAvecMotDePasse(rep.mdp, cli => cli.rpc("gj_signer", { p_acte: acte.id, p_decision: a, p_motif: rep.motif })
         .then(r => { if(r.error) throw new Error(r.error.message); return r.data; }));
+      if(a !== "refuser" && rep.date){
+        const rd = await sb.rpc("gj_date_signature", { p_acte: String(acte.id), p_date: rep.date });
+        if(rd.error) dire("Date de signature non enregistrée", "Votre signature est enregistrée, mais pas la date : " + rd.error.message);
+      }
       await gjCharger(); renderGJ();
       if(res && res.statut === "valide"){
         const maj = state.gj.actes.find(x => x.id === acte.id) || acte;
@@ -14546,9 +14589,9 @@ function scCarteHTML(a){
   const badge = a.statut === "valide" ? `<span class="pill" style="background:#1f4d36;color:#bfe8cf">Validé</span>`
     : a.statut === "refuse" ? `<span class="pill" style="background:#5a1f26;color:#f3c4c9">Refusé</span>`
     : `<span class="pill" style="background:#5a4718;color:#f2dc9b">En attente de la signature du trésorier</span>`;
-  const sig = (nomRole, nom, at) => `<div style="flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+  const sig = (nomRole, nom, at, ds) => `<div style="flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 11px">
       <div class="hint" style="margin:0">${nomRole}</div>
-      <div style="font-size:13.5px;margin-top:2px">${at ? `✓ <b>${esc(nom || "")}</b><div class="hint" style="margin:2px 0 0">signé le ${esc(gjFmtHeure(at))}</div>` : `<span style="color:var(--muted)">pas encore signé</span>`}</div></div>`;
+      <div style="font-size:13.5px;margin-top:2px">${at ? `✓ <b>${esc(nom || "")}</b><div class="hint" style="margin:2px 0 0">${esc(texteDateSig(ds, at))}</div>` : `<span style="color:var(--muted)">pas encore signé</span>`}</div></div>`;
   const actions = [
     `<button class="btn ghost sm" data-sc="voir" data-k="facture" data-id="${a.id}">🧾 Facture</button>`,
     `<button class="btn ghost sm" data-sc="voir" data-k="preuve" data-id="${a.id}">💳 Preuve de paiement</button>`];
@@ -14566,7 +14609,7 @@ function scCarteHTML(a){
       </div>
       <div style="text-align:right"><div style="font-size:18px;font-weight:700">${euro(a.montant)}</div>${badge}</div>
     </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">${sig("Le vice-président, administrateur", a.vp_nom, a.sig_vp_at)}${sig("Le trésorier, administrateur", a.treso_nom, a.sig_treso_at)}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">${sig("Le vice-président, administrateur", a.vp_nom, a.sig_vp_at, a.date_sig_vp)}${sig("Le trésorier, administrateur", a.treso_nom, a.sig_treso_at, a.date_sig_treso)}</div>
     ${a.statut === "refuse" ? `<div class="callout" style="margin-top:10px;border-color:#7a2531;background:#2a1216"><b style="color:#f3c4c9">Refusé par ${esc(a.treso_nom || "le trésorier")}</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(a.motif || "")}</p></div>` : ""}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${actions.join("")}</div>
   </div>`;
@@ -14613,7 +14656,7 @@ async function scEnvoyerPiece(file, k){
 /* ---------- PDF de l'acte (article 10.2) ---------- */
 async function scEmpreinte(a){
   const canon = JSON.stringify({ ref: scRef(a), intitule: a.intitule, description: a.description, montant: Number(a.montant).toFixed(2), date: a.date_decision,
-    facture: a.facture && a.facture.hash, preuve: a.preuve && a.preuve.hash, vp: [a.vp_nom, a.sig_vp_at], treso: [a.treso_nom, a.sig_treso_at] });
+    facture: a.facture && a.facture.hash, preuve: a.preuve && a.preuve.hash, vp: [a.vp_nom, a.sig_vp_at, a.date_sig_vp || null], treso: [a.treso_nom, a.sig_treso_at, a.date_sig_treso || null] });
   const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canon));
   return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join("");
 }
@@ -14656,16 +14699,20 @@ async function scPdf(a){
   champ("Preuve de paiement", (a.preuve && a.preuve.name || "-") + (a.preuve && a.preuve.hash ? " - SHA-256 " + a.preuve.hash.slice(0, 16) : ""));
   y += 6; page(48);
   para("Signatures", 12, "bold"); y += 1;
-  const bloc = (x, role, nom, at) => {
-    doc.setDrawColor(190); doc.rect(x, y, 84, 30);
+  const codeVp = a.sig_vp_at ? await codeSignature([scRef(a), "vice", a.vp_nom, a.sig_vp_at, a.date_sig_vp || null]) : "";
+  const codeTreso = a.sig_treso_at ? await codeSignature([scRef(a), "tresorier", a.treso_nom, a.sig_treso_at, a.date_sig_treso || null]) : "";
+  const bloc = (x, role, nom, at, ds, code) => {
+    doc.setDrawColor(190); doc.rect(x, y, 84, 34);
     doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(110); doc.text(gjTxt(role), x + 4, y + 6);
     doc.setFontSize(11); doc.setTextColor(0); doc.text(gjTxt(nom || "-"), x + 4, y + 13);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(60);
-    doc.text(doc.splitTextToSize(gjTxt(at ? "Signé électroniquement par mot de passe le " + gjFmtHeure(at) : "Non signé"), 76), x + 4, y + 19);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(40);
+    doc.text(gjTxt(texteDateSig(ds, at)), x + 4, y + 19.5);
+    if(code){ doc.setFontSize(8); doc.setTextColor(90); doc.text(gjTxt("Code de vérification : " + code), x + 4, y + 25.5);
+      doc.setFont("helvetica", "italic"); doc.setFontSize(7); doc.text("Signature vérifiée par mot de passe du compte", x + 4, y + 30.5); }
   };
-  bloc(X, "Le vice-président, administrateur", a.vp_nom, a.sig_vp_at);
-  bloc(X + 90, "Le trésorier, administrateur", a.treso_nom, a.sig_treso_at);
-  y += 36;
+  bloc(X, "Le vice-président, administrateur", a.vp_nom, a.sig_vp_at, a.date_sig_vp, codeVp);
+  bloc(X + 90, "Le trésorier, administrateur", a.treso_nom, a.sig_treso_at, a.date_sig_treso, codeTreso);
+  y += 40;
   const n = doc.getNumberOfPages();
   for(let i = 1; i <= n; i++){
     doc.setPage(i); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(120);
@@ -14746,14 +14793,14 @@ document.addEventListener("click", async e => {
         : F.date > dateLocale() ? "La date de la décision ne peut pas être dans le futur." : !(montant > 0) ? "Le montant doit être supérieur à zéro."
         : !F.facture ? "Joignez la facture." : !F.preuve ? "Joignez la preuve de paiement." : "";
       if(souci){ if(err){ err.textContent = souci; err.hidden = false; } return; }
-      const rep = await gjPopupSignature({ titre: "Introduire et signer l'acte", bouton: "Introduire et signer", mention: SC_MENTION,
+      const rep = await gjPopupSignature({ titre: "Introduire et signer l'acte", bouton: "Introduire et signer", mention: SC_MENTION, dateSig: true,
         acte: { ref: "Nouvel acte", intitule: F.intitule.trim(), type: "depense", montant, date: F.date } });
       if(!rep) return;
       const nouvelId = await gjAvecMotDePasse(rep.mdp, async cli => {
         const facture = await scEnvoyerPiece(F.facture, "facture");
         const preuve = await scEnvoyerPiece(F.preuve, "preuve");
         const r = await cli.rpc("sc_creer", { p_intitule: F.intitule.trim(), p_description: (F.description || "").trim(),
-          p_montant: montant, p_date: F.date, p_facture: facture, p_preuve: preuve });
+          p_montant: montant, p_date: F.date, p_facture: facture, p_preuve: preuve, p_date_sig: rep.date });
         if(r.error) throw new Error(r.error.message); return r.data;
       });
       S.form = null; await scCharger(); renderSC();
@@ -14764,10 +14811,10 @@ document.addEventListener("click", async e => {
     }
     if((a === "signer" || a === "refuser") && acte){
       const rep = await gjPopupSignature({ titre: a === "signer" ? "Signer l'acte" : "Refuser l'acte", bouton: a === "signer" ? "Signer" : "Refuser",
-        motif: a === "refuser", motifTitre: "Motif du refus", danger: a === "refuser", mention: SC_MENTION,
+        motif: a === "refuser", motifTitre: "Motif du refus", danger: a === "refuser", mention: SC_MENTION, dateSig: a === "signer",
         acte: { ref: scRef(acte), intitule: acte.intitule, type: "depense", montant: acte.montant, date: acte.date_decision } });
       if(!rep) return;
-      const res = await gjAvecMotDePasse(rep.mdp, cli => cli.rpc("sc_signer", { p_acte: acte.id, p_decision: a, p_motif: rep.motif })
+      const res = await gjAvecMotDePasse(rep.mdp, cli => cli.rpc("sc_signer", { p_acte: acte.id, p_decision: a, p_motif: rep.motif, p_date_sig: rep.date || null })
         .then(r => { if(r.error) throw new Error(r.error.message); return r.data; }));
       await scCharger(); renderSC();
       const maj = S.actes.find(x => x.id === acte.id) || acte;
