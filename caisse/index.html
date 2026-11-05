@@ -10649,7 +10649,11 @@ function bSig(){
 }
 function bEstOwner(){ return !!(state.caMe && state.caMe.role === "owner"); }
 function bPeutDecider(){ return bEstOwner(); }   // seul le propriétaire approuve ou refuse
-function bEffectif(){ return (state.caMembres||[]).filter(a => a.email && a.statut==="actif" && a.role!=="coopte").length; }
+/* Membres du CA de plein droit : même règle que l'app CA (roleReel). Les coopté·es en sont exclus,
+   qu'ils soient marqués par leur rôle, par le code d'inscription ou par leur fonction déclarée. */
+const estCoopteCA = a => !!a && a.role !== "owner" && (a.role === "coopte" || String(a.via_code || "").trim() !== "" || /^coopt/i.test(String(a.fonction || "").trim()));
+function membresCAActifs(){ return (state.caMembres||[]).filter(a => a.email && a.statut === "actif" && !estCoopteCA(a)); }
+function bEffectif(){ return membresCAActifs().length; }
 function bSeuil(){ const n = bEffectif(); return n ? Math.floor(n/2)+1 : 0; }
 function bMonVote(b){ const me = state.profile && state.profile.id; return (b.votes||[]).find(v => v.membreId === me); }
 
@@ -10923,7 +10927,7 @@ function mailInfoRetourCA(bc){
 }
 async function informerCARetour(id){
   const bc = budgetParId(id); if(!bc) return;
-  const dest = [...new Set((state.caMembres||[]).filter(a => a.email && a.statut === "actif").map(a => String(a.email).trim().toLowerCase()))];
+  const dest = [...new Set(membresCAActifs().map(a => String(a.email).trim().toLowerCase()))];
   if(!dest.length) return dire("Erreur : mail non envoyé", "La liste des membres du CA n'est pas chargée, ou aucun membre actif n'a d'e-mail.");
   const mail = mailInfoRetourCA(bc);
   const ok0 = await demander("Informer le CA", "Envoyer ce mail aux " + dest.length + " membre(s) actif(s) du CA ?\n\nObjet : " + mail.sujet
@@ -10967,7 +10971,7 @@ function mailRetourCA(bc, motPerso){
 async function prevenirCARetour(id){
   const bc = budgetParId(id); if(!bc) return;
   const r = retourEtat(bc); if(!r || !(r.etat === "zero" || r.etat === "partiel")) return toast("Ce budget n'a pas de retour en retard.");
-  const dest = [...new Set((state.caMembres||[]).filter(a => a.email && a.statut === "actif").map(a => String(a.email).trim().toLowerCase()))];
+  const dest = [...new Set(membresCAActifs().map(a => String(a.email).trim().toLowerCase()))];
   if(!dest.length) return dire("Envoi impossible", "La liste des membres du CA n'est pas chargée (ou aucun membre actif n'a d'e-mail).");
   const apercu = mailRetourCA(bc, "");
   const v = await fenetreForm(apercu.zero ? "Prévenir le CA : aucune recette" : "Prévenir le CA : retour partiel", `
@@ -11100,7 +11104,7 @@ function mailsReserve(r, modif){
 }
 async function envoyerMailsReserve(r, modif){
   const m = mailsReserve(r, modif);
-  const destCA = [...new Set((state.caMembres||[]).filter(a => a.email && a.statut === "actif").map(a => String(a.email).trim().toLowerCase()))];
+  const destCA = [...new Set(membresCAActifs().map(a => String(a.email).trim().toLowerCase()))];
   const bc = budgetParId(r.budget_id);
   const titulaires = r.suspensive ? ((bc && bc.membres) || []).map(id => (state.members||[]).find(x => x.id === id)).filter(x => x && x.email) : [];
   if(!destCA.length && !titulaires.length) return dire("Aucun mail à envoyer", "Aucun membre actif du CA avec e-mail n'est chargé" + (r.suspensive ? ", et aucun titulaire n'a été trouvé pour ce budget." : "."));
