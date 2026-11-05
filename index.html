@@ -1337,7 +1337,7 @@ async function refreshSession(){
   const jobsCoopte=[loadConflits,loadEvenements,loadMeta,loadAvis,loadAvisVotes,loadMediation,loadSoutien];
   const jobs=(S.session.role==="coopte")?jobsCoopte:[loadDocs,loadMessages,loadConflits,loadTaches,loadContacts,loadAnnonces,loadReactions,loadPresence,
     loadEvenements,loadReunions,loadCreneaux,loadOrg,loadBudgets,loadVotes,loadMeta,loadBilans,loadJournal,
-    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes,loadSalle,loadBillets];
+    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes,loadSalle,loadBillets,loadPvSign];
   if(S.session.role==="coopte"){ ["docs","messages","taches","contacts","annonces","reunions","creneaux","budgets","votes","bilans","journal","mailing","procurations"].forEach(k=>{ S[k]=[]; }); }
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
 }
@@ -1956,10 +1956,314 @@ function viewAuth(){
 }
 function authErr(msg){ const e=document.getElementById("au_err"); if(e){ e.textContent=msg; e.style.display="block"; } }
 
+/* =====================================================================
+   PV À SIGNER
+   La secrétaire uploade le PV (PDF), choisit la réunion (ou sa date), le
+   signataire (présidente ou vice-président) et la date affichée, puis signe
+   avec son mot de passe. Le signataire reçoit un mail (rappel après 7 jours),
+   signe ou refuse avec motif. PV signé : page de signatures ajoutée au PDF
+   (articles 16.5 et 17), mail aux deux, rangement dans Documents.
+   ===================================================================== */
+const PVS_ART165 = "Article 16.5 : Chaque réunion de l'Organe d'Administration fait l'objet d'un procès-verbal rédigé par le.a Secrétaire ou en cas d'absence de celui-ci ou de celle-ci, par un.e administrateur.trice désigné par le.a Président.e de l'association.";
+const PVS_ART17 = "Article 17 : Les extraits qui doivent être produits, de même que tous les autres actes, doivent être signés valablement par deux administrateur.trice.s.";
+const PVS_RAPPEL_JOURS = 7;
+function pvsEtat(){ if(!S.pvs) S.pvs={liste:[], form:null, err:null}; return S.pvs; }
+function pvsFonctionDe(f){ const x=String(f||"").toLowerCase().trim(); if(x.indexOf("vice")===0) return "vice"; if(x.indexOf("président")===0||x.indexOf("president")===0) return "presidente"; return null; }
+function pvsMaFonction(){ return S.session ? pvsFonctionDe(S.session.fonction) : null; }
+function pvsOngletVisible(){ return !!S.session && !estCoopte() && (estSecretaire() || !!pvsMaFonction()); }
+function pvsSignataires(){ return membresActifs().filter(a=>pvsFonctionDe(a.fonction)).sort((a,b)=>(pvsFonctionDe(a.fonction)==="presidente"?0:1)-(pvsFonctionDe(b.fonction)==="presidente"?0:1)); }
+function pvsMembre(id){ return (S.admins||[]).find(a=>a.id===id)||null; }
+function pvsEmail(id){ const a=pvsMembre(id); return (a&&a.email)||""; }
+function pvsRoleLib(f){ return f==="vice" ? "Le vice-président" : "La présidente"; }
+function pvsRef(p){ return "PV-"+String(p.numero).padStart(3,"0")+(p.version>1?" (v"+p.version+")":""); }
+function pvsDateReunion(p){ const m=p.reunion_id?(S.reunions||[]).find(x=>String(x.id)===String(p.reunion_id)):null; return (m&&m.date)||p.date_reunion||""; }
+function pvsReunionLib(p){ const m=p.reunion_id?(S.reunions||[]).find(x=>String(x.id)===String(p.reunion_id)):null; const d=pvsDateReunion(p); return (m&&m.titre?m.titre+" — ":"")+(d?fmtDateLong(d):"date inconnue"); }
+function pvsDateAffichee(p, at){
+  if(p.date_mode==="manuelle" && p.date_manuelle) return "Signé le "+new Date(p.date_manuelle+"T00:00").toLocaleDateString("fr-BE");
+  return at ? "Signé électroniquement le "+fmtQuand(at) : "Non signé";
+}
+const pvsAMoi = p => p.statut==="attente" && S.session && p.signataire_id===S.session.id;
+function pvsBadge(){ return pvsEtat().liste.filter(pvsAMoi).length; }
+
+async function loadPvSign(){
+  const P=pvsEtat();
+  /* pas de filtre sur la fonction ici : ca_meta (secrétariat) se charge en parallèle ;
+     la base ne renvoie de toute façon que les PV autorisés. */
+  if(!S.session || estCoopte()){ P.liste=[]; return; }
+  try{
+    const r=await sb.from("ca_pv_signatures").select("*").order("numero",{ascending:false});
+    if(r.error){ P.err=r.error.message; P.liste=[]; return; }
+    P.err=null; P.liste=r.data||[];
+  }catch(e){ P.err=String(e&&e.message||e); P.liste=[]; return; }
+  if(!S.pvsRappelPrevu){ S.pvsRappelPrevu=true; setTimeout(()=>{ pvsRappels().catch(()=>{}); }, 4000); }
+}
+
+/* Rappel : 7 jours sans signature -> nouveau mail au signataire (le serveur ne laisse passer qu'un envoi). */
+async function pvsRappels(){
+  const lim=Date.now()-PVS_RAPPEL_JOURS*86400000;
+  for(const p of pvsEtat().liste){
+    if(p.statut!=="attente") continue;
+    const dep=new Date(p.rappel_le||p.envoye_le||p.created_at).getTime();
+    if(!(dep<lim)) continue;
+    let ok=false; try{ const r=await sb.rpc("pvs_rappel",{p_id:p.id}); ok=!!(r&&r.data===true); }catch(_){ ok=false; }
+    if(!ok) continue;
+    const corps=`<h2 style="margin:0 0 10px">Rappel — PV à signer</h2>
+      <p>Le PV <b>${caMailEsc(p.titre)}</b> (réunion : ${caMailEsc(pvsReunionLib(p))}) attend votre signature depuis plus de ${PVS_RAPPEL_JOURS} jours.</p>
+      <p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'onglet « PV à signer »</a></p>`;
+    await pvsMail(pvsEmail(p.signataire_id), "Rappel — PV à signer : "+p.titre, corps, null);
+    try{ logAct("PV à signer — rappel envoyé : "+p.titre); }catch(_){ }
+  }
+}
+async function pvsMail(to, sujet, corps, piece){
+  if(!to) return false;
+  try{ const r=await envoyerAvecPiece([to], sujet, corps, piece, {tous:true, sansInvitation:true, exp:EXP_DOCS}); return r.ok>0; }catch(_){ return false; }
+}
+
+/* ---------- affichage ---------- */
+function tabPvSign(){
+  const P=pvsEtat(), secr=estSecretaire();
+  const intro=`<div class="card2" style="border-left:4px solid #f5c542">
+    <h3 class="serif" style="margin-top:0">✍ PV à signer</h3>
+    <p class="du" style="margin:0">La secrétaire rédige le PV et le signe (article 16.5 des statuts) ; la présidente ou le vice-président le signe à son tour (article 17 : deux administrateur.trice.s). Le PV signé est rangé automatiquement dans <b>Documents</b>.</p>
+    ${secr&&!P.form?`<div class="row-btn" style="margin-top:12px"><button class="btn" data-action="pvs-nouveau">+ Faire signer un PV</button></div>`:""}</div>`;
+  const err=P.err?`<div class="card2"><p class="du" style="color:var(--red);margin:0">${esc(P.err)}</p></div>`:"";
+  const liste=P.liste.length?P.liste.map(pvsCarte).join(""):`<div class="empty">Aucun PV pour l'instant.</div>`;
+  return intro+(secr&&P.form?pvsFormHTML():"")+err+`<div class="grp-h" style="margin-top:22px"><h2 class="serif">PV</h2><span class="c">${P.liste.length}</span><span class="l"></span></div>`+liste;
+}
+function pvsCarte(p){
+  const me=S.session&&S.session.id, secr=estSecretaire();
+  const badge=p.statut==="valide"?`<span class="badge ok">Signé</span>`:p.statut==="refuse"?`<span class="badge no">Refusé</span>`:`<span class="badge open">En attente de ${esc(p.signataire_nom||"la signature")}</span>`;
+  const sig=(role,nom,at)=>`<div style="flex:1;min-width:200px;border:1px solid var(--line,#ddd);border-radius:10px;padding:9px 11px">
+    <div class="du" style="margin:0">${role}</div>
+    <div style="font-size:13.5px;margin-top:2px">${at?`✓ <b>${esc(nom||"")}</b><div class="du" style="margin:2px 0 0">${esc(pvsDateAffichee(p,at))}</div>`:`<span class="du">pas encore signé</span>`}</div></div>`;
+  const act=[`<button class="chip" data-action="pvs-voir" data-id="${p.id}">📄 PV d'origine</button>`];
+  if(pvsAMoi(p)){
+    act.unshift(`<button class="btn ghost sm" data-action="pvs-refuser" data-id="${p.id}" style="color:var(--red)">Refuser</button>`);
+    act.unshift(`<button class="btn sm" data-action="pvs-signer" data-id="${p.id}">✍ Signer</button>`);
+  }
+  if(p.statut==="valide" && p.pdf_path) act.push(`<button class="chip" data-action="pvs-final" data-id="${p.id}">✅ PV signé</button>`);
+  if(p.statut==="valide" && !p.pdf_path && (secr || p.signataire_id===me)) act.push(`<button class="btn sm" data-action="pvs-finaliser" data-id="${p.id}">Terminer le PV signé</button>`);
+  if(p.statut==="refuse" && secr) act.push(`<button class="btn sm" data-action="pvs-corriger" data-id="${p.id}">Corriger et renvoyer</button>`);
+  return `<div class="card2" style="margin-bottom:12px">
+    <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px"><div class="du" style="margin:0">${esc(pvsRef(p))} · réunion : ${esc(pvsReunionLib(p))}</div>
+        <div style="font-size:16px;font-weight:600;margin-top:3px">${esc(p.titre)}</div></div>
+      <div>${badge}</div></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">${sig("La secrétaire",p.secretaire_nom,p.sig_secr_at)}${sig(pvsRoleLib(p.signataire_fonction),p.signataire_nom,p.sig_sign_at)}</div>
+    ${p.statut==="refuse"?`<div style="margin-top:10px;border:1px solid var(--red);border-radius:10px;padding:10px 12px"><b style="color:var(--red)">Refusé par ${esc(p.signataire_nom||"")}${p.refus_at?" le "+esc(fmtQuand(p.refus_at)):""}</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(p.motif||"")}</p></div>`:""}
+    <div class="row-btn" style="margin-top:10px;flex-wrap:wrap">${act.join("")}</div></div>`;
+}
+function pvsFormHTML(){
+  const F=pvsEtat().form, sigs=pvsSignataires();
+  const reus=(S.reunions||[]).slice().sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
+  return `<div class="compose" style="border:2px solid #f5c542">
+    <h3 class="serif">${F.id?"Corriger et renvoyer le PV":"Faire signer un PV"}</h3>
+    <label class="du" style="display:block;margin:10px 0 4px">Titre du PV</label>
+    <input class="f" id="pvs_titre" value="${esc(F.titre||"")}" placeholder="Ex. PV de la réunion du CA du 12/03">
+    <label class="du" style="display:block;margin:10px 0 4px">Réunion</label>
+    <select class="f" id="pvs_reu"><option value="">— Indiquer la date de la réunion —</option>${reus.map(m=>`<option value="${esc(m.id)}" ${String(F.reu||"")===String(m.id)?"selected":""}>${esc((m.titre||"Réunion")+(m.date?" — "+fmtDateLong(m.date):""))}</option>`).join("")}</select>
+    ${F.reu?"":`<input class="f" id="pvs_dreu" type="date" value="${esc(F.dreu||"")}" title="Date de la réunion">`}
+    <label class="du" style="display:block;margin:10px 0 4px">PV en PDF</label>
+    <input class="f" id="pvs_file" type="file" accept="application/pdf">
+    ${F.file?`<p class="du" style="margin:2px 0 8px">✓ ${esc(F.file.name)}</p>`:""}
+    <label class="du" style="display:block;margin:10px 0 4px">À faire signer par</label>
+    ${sigs.length?sigs.map(a=>`<label style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13.5px"><input type="radio" name="pvs_sig" value="${esc(a.id)}" ${F.sig===a.id?"checked":""}> ${esc(pvsRoleLib(pvsFonctionDe(a.fonction)))} — <b>${esc(((a.prenom||"")+" "+(a.nom||"")).trim())}</b></label>`).join("")
+      :`<p class="du" style="color:var(--red)">Aucune présidente ni aucun vice-président actif n'est inscrit.</p>`}
+    <label class="du" style="margin-top:8px;display:block">Date de signature affichée sur le PV</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13.5px"><input type="radio" name="pvs_dm" value="electronique" ${F.dm!=="manuelle"?"checked":""}> Afficher la date de la signature électronique</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13.5px"><input type="radio" name="pvs_dm" value="manuelle" ${F.dm==="manuelle"?"checked":""}> Introduire une date</label>
+    ${F.dm==="manuelle"?`<input class="f" id="pvs_dman" type="date" value="${esc(F.dman||"")}">`:""}
+    <div class="row-btn" style="margin-top:12px"><button class="btn" data-action="pvs-envoyer">✍ Signer et envoyer</button><button class="btn ghost" data-action="pvs-annuler">Annuler</button></div>
+  </div>`;
+}
+
+/* garder ce qui est tapé dans le formulaire (l'app se redessine parfois toute seule) */
+function pvsLireForm(){
+  const F=pvsEtat().form; if(!F) return;
+  const v=id=>{ const el=document.getElementById(id); return el?el.value:undefined; };
+  if(v("pvs_titre")!==undefined) F.titre=v("pvs_titre");
+  if(v("pvs_reu")!==undefined) F.reu=v("pvs_reu");
+  if(v("pvs_dreu")!==undefined) F.dreu=v("pvs_dreu");
+  if(v("pvs_dman")!==undefined) F.dman=v("pvs_dman");
+  const s=document.querySelector("input[name=pvs_sig]:checked"); if(s) F.sig=s.value;
+  const d=document.querySelector("input[name=pvs_dm]:checked"); if(d) F.dm=d.value;
+}
+document.addEventListener("input", e=>{ const t=e.target; if(t && t.id && String(t.id).indexOf("pvs_")===0 && t.type!=="file") pvsLireForm(); });
+document.addEventListener("change", e=>{
+  const t=e.target; if(!t || !pvsEtat().form) return;
+  if(t.id==="pvs_file"){ pvsLireForm(); const f=t.files&&t.files[0];
+    if(f && !(f.type==="application/pdf" || /\.pdf$/i.test(f.name))){ modaleInfo("Le PV doit être un fichier PDF.","Fichier refusé"); return; }
+    pvsEtat().form.file=f||null; render(); return; }
+  if(t.id==="pvs_reu" || t.name==="pvs_dm"){ pvsLireForm(); render(); return; }
+  if(t.name==="pvs_sig" || (t.id && String(t.id).indexOf("pvs_")===0)) pvsLireForm();
+});
+
+/* ---------- signature par mot de passe ---------- */
+async function pvsAuthentifier(titre){
+  const email=S.session&&S.session.email;
+  if(!email){ modaleInfo("Votre compte n'a pas d'adresse e-mail : signature impossible."); return false; }
+  let err="";
+  for(let essai=0; essai<3; essai++){
+    const mdp=await modaleChamp("Pour signer, retapez le mot de passe de votre compte ("+email+").", titre, {type:"password",placeholder:"Mot de passe",bouton:"🔒 Signer",erreur:err});
+    if(mdp===null) return false;
+    if(!mdp){ err="Saisissez votre mot de passe."; essai--; continue; }
+    let r=null; try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }catch(e){ r={error:e}; }
+    if(!(r&&r.error)) return true;
+    err="Mot de passe incorrect.";
+  }
+  modaleInfo("Mot de passe incorrect (3 essais). Rien n'a été signé.","Signature refusée");
+  return false;
+}
+async function pvsHash(buf){ const h=await crypto.subtle.digest("SHA-256", buf); return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,"0")).join(""); }
+function pvsNomFichier(s){ return String(s||"pv").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9.]+/g,"-").replace(/^-+|-+$/g,"").slice(0,70)||"pv.pdf"; }
+
+/* ---------- PDF final : PV d'origine + page de signatures ---------- */
+function pvsTxt(s){ return String(s==null?"":s).replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/[–—]/g,"-").replace(/…/g,"...").replace(/[  ]/g," ").replace(/[^\x00-\xff€]/g,""); }
+async function pvsPdfFinal(p){
+  const { PDFDocument, StandardFonts, rgb } = await import("./caisse/lib/pdf-lib-1.17.1.js");
+  const su=await sb.storage.from("ca-documents").createSignedUrl(p.fichier.path, 600);
+  if(!su || su.error || !su.data) throw new Error("PV d'origine introuvable.");
+  const rep=await fetch(su.data.signedUrl); if(!rep.ok) throw new Error("Téléchargement du PV d'origine impossible.");
+  const orig=await rep.arrayBuffer();
+  const pdf=await PDFDocument.load(orig, {ignoreEncryption:true});
+  const F=await pdf.embedFont(StandardFonts.Helvetica), FB=await pdf.embedFont(StandardFonts.HelveticaBold), FI=await pdf.embedFont(StandardFonts.HelveticaOblique);
+  const W=595.28, H=841.89, X=50, LW=W-100;
+  const page=pdf.addPage([W,H]); let y=H-60;
+  const lignes=(t,font,size,max)=>{ const mots=pvsTxt(t).split(/\s+/); const out=[]; let l="";
+    for(const m of mots){ const e=l?l+" "+m:m; if(font.widthOfTextAtSize(e,size)>max && l){ out.push(l); l=m; } else l=e; } if(l) out.push(l); return out; };
+  const ecrire=(t,font,size,couleur,max,x)=>{ for(const l of lignes(t,font,size,max||LW)){ page.drawText(l,{x:x||X,y,size,font,color:couleur||rgb(0,0,0)}); y-=size*1.35; } };
+  ecrire(S.meta&&S.meta.nom?S.meta.nom:"Le Bureau étudiant",FB,10); ecrire("Organe d'Administration",F,9,rgb(.45,.45,.45)); y-=8;
+  page.drawLine({start:{x:X,y},end:{x:W-X,y},thickness:.6,color:rgb(.8,.8,.8)}); y-=26;
+  ecrire("Page de signatures du procès-verbal",FB,17); y-=4;
+  ecrire(pvsRef(p)+"  -  "+p.titre,F,11,rgb(.3,.3,.3));
+  ecrire("Réunion : "+pvsReunionLib(p),F,11,rgb(.3,.3,.3)); y-=10;
+  const ref="Procès-verbal rédigé par la secrétaire (article 16.5 des statuts) et signé par deux administrateur.trice.s (article 17 des statuts).";
+  const lr=lignes(ref,FB,10,LW-16), l1=lignes(PVS_ART165,FI,8.5,LW-16), l2=lignes(PVS_ART17,FI,8.5,LW-16);
+  const hb=lr.length*13.5+(l1.length+l2.length)*11.5+22;
+  page.drawRectangle({x:X,y:y-hb+12,width:LW,height:hb,color:rgb(.965,.96,.985),borderColor:rgb(.75,.75,.8),borderWidth:.6});
+  for(const l of lr){ page.drawText(l,{x:X+8,y,size:10,font:FB}); y-=13.5; } y-=4;
+  for(const l of l1.concat([""]).concat(l2)){ if(l) page.drawText(l,{x:X+8,y,size:8.5,font:FI,color:rgb(.3,.3,.3)}); y-=l?11.5:4; }
+  y-=24;
+  ecrire("Signatures",FB,13); y-=6;
+  const bloc=(x,role,nom,at)=>{ const h=78, bw=(LW-14)/2;
+    page.drawRectangle({x,y:y-h+12,width:bw,height:h,borderColor:rgb(.7,.7,.7),borderWidth:.6});
+    page.drawText(pvsTxt(role),{x:x+8,y:y-2,size:9,font:FB,color:rgb(.45,.45,.45)});
+    page.drawText(pvsTxt(nom||"-"),{x:x+8,y:y-20,size:12,font:FB});
+    let yy=y-38; for(const l of lignes(pvsDateAffichee(p,at),F,9,bw-16)){ page.drawText(l,{x:x+8,y:yy,size:9,font:F,color:rgb(.25,.25,.25)}); yy-=12; }
+    page.drawText("Signature par mot de passe du compte",{x:x+8,y:yy,size:7.5,font:FI,color:rgb(.45,.45,.45)}); };
+  bloc(X,"La secrétaire",p.secretaire_nom,p.sig_secr_at);
+  bloc(X+(LW-14)/2+14,pvsRoleLib(p.signataire_fonction),p.signataire_nom,p.sig_sign_at);
+  y-=100;
+  const canon=JSON.stringify({ref:pvsRef(p),titre:p.titre,reunion:pvsDateReunion(p),fichier:p.fichier.hash,secr:[p.secretaire_nom,p.sig_secr_at],sign:[p.signataire_nom,p.signataire_fonction,p.sig_sign_at],date:[p.date_mode,p.date_manuelle||null]});
+  const emp=await pvsHash(new TextEncoder().encode(canon));
+  ecrire("Empreinte SHA-256 du PV d'origine : "+String(p.fichier.hash||"-"),F,7.5,rgb(.45,.45,.45));
+  ecrire("Empreinte SHA-256 des signatures : "+emp,F,7.5,rgb(.45,.45,.45));
+  const out=await pdf.save();
+  return new Blob([out],{type:"application/pdf"});
+}
+async function pvsFinaliser(p){
+  const blob=await pvsPdfFinal(p);
+  const nom=pvsNomFichier("pv-signe-"+p.titre)+".pdf";
+  const chemin="pv-signe-"+uid()+"-"+nom;
+  const up=await sb.storage.from("ca-documents").upload(chemin, blob, {contentType:"application/pdf", upsert:false});
+  if(up && up.error) throw new Error("Dépôt du PV signé impossible : "+up.error.message);
+  const r=await sb.rpc("pvs_finaliser",{p_id:p.id, p_pdf_path:chemin, p_titre_doc:"PV signé — "+p.titre});
+  if(r.error) throw new Error("Rangement dans Documents impossible : "+r.error.message);
+  let lien=""; try{ const su=await sb.storage.from("ca-documents").createSignedUrl(chemin, CA_LIEN_DUREE, {download:nom}); if(su&&su.data&&su.data.signedUrl) lien=su.data.signedUrl; }catch(_){ }
+  let piece=null; try{ const b64=await blobEnBase64(blob); if(b64.length<4500000) piece={filename:nom, content:b64, contentType:"application/pdf"}; }catch(_){ }
+  const corps=`<h2 style="margin:0 0 10px">PV signé ✅</h2>
+    <p>Le PV <b>${caMailEsc(p.titre)}</b> (réunion : ${caMailEsc(pvsReunionLib(p))}) est signé par <b>${caMailEsc(p.secretaire_nom||"")}</b> (secrétaire) et <b>${caMailEsc(p.signataire_nom||"")}</b> (${caMailEsc(pvsRoleLib(p.signataire_fonction).replace(/^(La|Le) /,"").toLowerCase())}), conformément aux articles 16.5 et 17 des statuts.</p>
+    <p>Il est rangé dans l'onglet <b>Documents</b> (catégorie « PV &amp; CR »).</p>
+    ${lien?`<p><a href="${lien}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Télécharger le PV signé (PDF)</a></p>`:""}`;
+  const dest=[...new Set([pvsEmail(p.secretaire_id), pvsEmail(p.signataire_id)].filter(Boolean))];
+  const res=await envoyerAvecPiece(dest, "PV signé — "+p.titre, corps, piece, {tous:true, sansInvitation:true, exp:EXP_DOCS});
+  try{ logAct("PV signé et rangé dans Documents : "+p.titre); }catch(_){ }
+  return res;
+}
+
+/* ---------- actions ---------- */
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-action^='pvs-']"); if(!el || !sb || !S.session) return;
+  const P=pvsEtat(), a=el.dataset.action, p=el.dataset.id?P.liste.find(x=>x.id===el.dataset.id):null;
+  try{
+    switch(a){
+      case "pvs-nouveau": P.form={dm:"electronique"}; render(); break;
+      case "pvs-annuler": P.form=null; render(); break;
+      case "pvs-corriger": if(!p) break;
+        P.form={id:p.id, titre:p.titre, reu:p.reunion_id||"", dreu:p.date_reunion||"", sig:p.signataire_id, dm:p.date_mode, dman:p.date_manuelle||""};
+        render(); window.scrollTo({top:0,behavior:"smooth"});
+        modaleInfo("Motif du refus :\n"+(p.motif||"")+"\n\nJoignez le PV corrigé (PDF), puis signez-le à nouveau.","Corriger le PV"); break;
+      case "pvs-voir": case "pvs-final": { if(!p) break;
+        const ch=a==="pvs-voir"?p.fichier&&p.fichier.path:p.pdf_path; if(!ch){ modaleInfo("Fichier introuvable."); break; }
+        const su=await sb.storage.from("ca-documents").createSignedUrl(ch, 3600);
+        if(!su||su.error||!su.data){ modaleInfo("Ouverture impossible"+(su&&su.error?" : "+su.error.message:"")+".","PV"); break; }
+        window.open(su.data.signedUrl,"_blank","noopener"); break; }
+      case "pvs-envoyer": {
+        if(!estSecretaire()){ modaleInfo("Réservé au secrétariat."); break; }
+        pvsLireForm(); const F=P.form; if(!F) break;
+        const souci=!String(F.titre||"").trim()?"Indiquez le titre du PV.":(!F.reu&&!F.dreu)?"Choisissez la réunion ou indiquez sa date."
+          :!F.file?"Joignez le PV en PDF.":!F.sig?"Choisissez qui doit signer (présidente ou vice-président).":(F.dm==="manuelle"&&!F.dman)?"Indiquez la date de signature.":"";
+        if(souci){ modaleInfo(souci,"Il manque quelque chose"); break; }
+        const signataire=pvsMembre(F.sig), nomSig=signataire?((signataire.prenom||"")+" "+(signataire.nom||"")).trim():"";
+        const donnees={...F}; const file=F.file;
+        if(!(await pvsAuthentifier("Signer le PV et l'envoyer à "+(nomSig||"la signature")))) break;
+        const buf=await file.arrayBuffer(); const hash=await pvsHash(buf);
+        const chemin="pv-"+uid()+"-"+pvsNomFichier(file.name.replace(/\.pdf$/i,""))+".pdf";
+        const up=await sb.storage.from("ca-documents").upload(chemin, file, {contentType:"application/pdf", upsert:false});
+        if(up && up.error){ modaleInfo("Envoi du PDF impossible : "+up.error.message,"Erreur"); break; }
+        const r=await sb.rpc("pvs_envoyer",{p_id:donnees.id||null, p_titre:String(donnees.titre).trim(), p_reunion:donnees.reu||null, p_date_reunion:donnees.reu?null:(donnees.dreu||null),
+          p_fichier:{path:chemin, name:file.name, hash:hash}, p_signataire:donnees.sig, p_date_mode:donnees.dm==="manuelle"?"manuelle":"electronique", p_date_manuelle:donnees.dm==="manuelle"?donnees.dman:null});
+        if(r.error){ modaleInfo("Le PV n'a pas été envoyé. Erreur : "+r.error.message,"Erreur"); break; }
+        P.form=null; await loadPvSign();
+        const n=P.liste.find(x=>x.id===r.data)||{titre:donnees.titre, reunion_id:donnees.reu, date_reunion:donnees.dreu};
+        const corps=`<h2 style="margin:0 0 10px">PV à signer ✍</h2>
+          <p><b>${caMailEsc(S.session.nom||"La secrétaire")}</b> a signé le PV <b>${caMailEsc(donnees.titre)}</b> (réunion : ${caMailEsc(pvsReunionLib(n))}). Il attend maintenant votre signature.</p>
+          <p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'onglet « PV à signer »</a></p>`;
+        const ok=await pvsMail(pvsEmail(donnees.sig), (donnees.id?"PV corrigé à signer — ":"PV à signer — ")+donnees.titre, corps, null);
+        try{ logAct("PV envoyé à la signature ("+(nomSig||"?")+") : "+donnees.titre); }catch(_){ }
+        render();
+        modaleInfo("✓ Votre signature est enregistrée. "+(ok?(nomSig||"Le signataire")+" vient d'être prévenu(e) par e-mail.":"⚠ Le mail n'est pas parti : prévenez "+(nomSig||"le signataire")+" vous-même."),"PV envoyé");
+        break; }
+      case "pvs-signer": { if(!p || !pvsAMoi(p)) break;
+        if(!(await pvsAuthentifier("Signer le PV « "+p.titre+" »"))) break;
+        const r=await sb.rpc("pvs_signer",{p_id:p.id, p_decision:"signer", p_motif:null});
+        if(r.error){ modaleInfo("Signature impossible. Erreur : "+r.error.message,"Erreur"); break; }
+        await loadPvSign(); render();
+        const maj=P.liste.find(x=>x.id===p.id);
+        try{ const res=await pvsFinaliser(maj); await loadDocs(); await loadPvSign(); render();
+          modaleInfo("✓ PV signé. Il est rangé dans Documents"+(res&&res.ok?" et a été envoyé par e-mail à vous deux.":". ⚠ Le mail n'est pas parti."),"PV signé"); }
+        catch(err){ render(); modaleInfo("Votre signature est enregistrée, mais le PV signé n'a pas pu être terminé : "+(err&&err.message||err)+"\nCliquez sur « Terminer le PV signé » pour réessayer.","Attention"); }
+        break; }
+      case "pvs-finaliser": { if(!p) break;
+        try{ const res=await pvsFinaliser(p); await loadDocs(); await loadPvSign(); render();
+          modaleInfo("✓ PV signé rangé dans Documents"+(res&&res.ok?" et envoyé par e-mail.":". ⚠ Le mail n'est pas parti."),"PV signé"); }
+        catch(err){ modaleInfo("Impossible de terminer le PV signé : "+(err&&err.message||err),"Erreur"); }
+        break; }
+      case "pvs-refuser": { if(!p || !pvsAMoi(p)) break;
+        const motif=await modaleMotif("Expliquez à la secrétaire ce qu'il faut corriger.","Refuser le PV « "+p.titre+" »",{placeholder:"Motif du refus",bouton:"Continuer"});
+        if(motif===null) break;
+        if(!String(motif).trim()){ modaleInfo("Le motif du refus est obligatoire.","Refus"); break; }
+        if(!(await pvsAuthentifier("Confirmer le refus du PV"))) break;
+        const r=await sb.rpc("pvs_signer",{p_id:p.id, p_decision:"refuser", p_motif:String(motif).trim()});
+        if(r.error){ modaleInfo("Refus impossible. Erreur : "+r.error.message,"Erreur"); break; }
+        const corps=`<h2 style="margin:0 0 10px">PV refusé</h2>
+          <p><b>${caMailEsc(S.session.nom||"")}</b> a refusé le PV <b>${caMailEsc(p.titre)}</b> (réunion : ${caMailEsc(pvsReunionLib(p))}).</p>
+          <div style="background:#fbeaea;border:1px solid #e8c4c4;border-radius:8px;padding:12px"><b>Motif</b><p style="margin:6px 0 0;white-space:pre-wrap">${caMailEsc(String(motif).trim())}</p></div>
+          <p>Corrigez le PV et renvoyez-le depuis l'onglet « PV à signer ».</p>
+          <p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'app du CA</a></p>`;
+        const ok=await pvsMail(pvsEmail(p.secretaire_id), "PV refusé — "+p.titre, corps, null);
+        try{ logAct("PV refusé : "+p.titre); }catch(_){ }
+        await loadPvSign(); render();
+        modaleInfo("Le refus est enregistré. "+(ok?"La secrétaire est prévenue par e-mail, avec le motif.":"⚠ Le mail n'est pas parti : prévenez la secrétaire vous-même."),"PV refusé");
+        break; }
+    }
+  }catch(err){ modaleInfo("Erreur : "+(err&&err.message||err),"PV à signer"); }
+});
+
 /* ---- DASHBOARD ---- */
 const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
+  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
@@ -1982,6 +2286,9 @@ function viewDash(){
   if(estProprio && !estCoopte()) tabs.push(["registre","\ud83d\uddf3","Registre des votes"]);
   if((S.tab==="admin"||S.tab==="journal"||S.tab==="registre") && !estProprio) S.tab="accueil";
   if(bilanOnglet() && !estCoopte()) tabs.push(["bilan","13","Bilans moraux"]);
+  /* PV à signer : secrétariat, présidente et vice-président uniquement */
+  if(pvsOngletVisible()){ const ip=tabs.findIndex(x=>x[0]==="procuration"); tabs.splice(ip>=0?ip+1:tabs.length,0,["pvsign","\u270d","PV \u00e0 signer"]); }
+  if(S.tab==="pvsign" && !pvsOngletVisible()) S.tab="accueil";
   if(S.tab==="bilan" && !bilanOnglet()) S.tab="org";
   /* Onglets désactivés dans Admin : cachés pour tout le monde, propriétaire compris. */
   if(!estCoopte()){ const OFF=ongletsOff();
@@ -2022,7 +2329,7 @@ function viewDash(){
       <button class="logout" data-action="set-tab" data-tab="notifs" title="À traiter">🔔${notifTot?" "+notifTot:""}</button>
       <a class="logout" href="caisse/" title="Ouvrir la Caisse (même compte, sans se reconnecter)" style="text-decoration:none">💶 Caisse</a>`}
       <button class="logout" data-action="logout">Se déconnecter</button></div>
-    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():id==="soutien"?soutNonLus("ca"):id==="soutien_etu"?soutNonLus("etu"):id==="soutien_ces"?cesNonLus():id==="salle"?salleBadge():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:id==="soutien"?` style="border:2px solid #b48cf2;border-bottom:none;color:#d4bbff;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
+    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():id==="soutien"?soutNonLus("ca"):id==="soutien_etu"?soutNonLus("etu"):id==="soutien_ces"?cesNonLus():id==="salle"?salleBadge():id==="pvsign"?pvsBadge():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:id==="soutien"?` style="border:2px solid #b48cf2;border-bottom:none;color:#d4bbff;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
   </div></header>
   <main class="body">${bienvenue}${bandeauRappels()}${body}</main>`;
 }
@@ -8729,7 +9036,7 @@ function tabRegistre(){
   const L=regBudgets();
   const tete=`<div class="compose"><h3 class="serif">🗳 Registre des votes</h3>
     <p style="color:var(--ink-soft);font-size:13px;margin:0 0 10px">${esc(MENTION_163)} Ce registre est tenu automatiquement : il reprend chaque budget voté en ligne, avec le vote de chaque administrateur.</p>
-    <div class="two"><label class="du">Du <input class="f" type="date" id="reg_du" value="${esc(S.regDu||"")}"></label><label class="du">Au <input class="f" type="date" id="reg_au" value="${esc(S.regAu||"")}"></label></div>
+    <div class="two"><label class="du" style="display:block;margin:10px 0 4px">Du <input class="f" type="date" id="reg_du" value="${esc(S.regDu||"")}"></label><label class="du" style="display:block;margin:10px 0 4px">Au <input class="f" type="date" id="reg_au" value="${esc(S.regAu||"")}"></label></div>
     <div class="row-btn"><button class="btn sm" data-reg="filtrer">Filtrer</button>${(S.regDu||S.regAu)?`<button class="btn ghost sm" data-reg="tout">Tout afficher</button>`:""}<button class="btn ghost sm" data-reg="pdf">⬇ Export PDF</button></div>
     <p class="du" style="margin:8px 0 0">${L.length} budget(s) voté(s) en ligne. Effectif : ${effectifCA()} administrateurs actifs aujourd'hui.</p></div>`;
   if(!L.length) return tete+`<div class="empty">Aucun budget voté en ligne${(S.regDu||S.regAu)?" sur cette période":""}.</div>`;
