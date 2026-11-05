@@ -2145,15 +2145,18 @@ async function pvsPdfFinal(p){
   for(const l of l1.concat([""]).concat(l2)){ if(l) page.drawText(l,{x:X+8,y,size:8.5,font:FI,color:rgb(.3,.3,.3)}); y-=l?11.5:4; }
   y-=24;
   ecrire("Signatures",FB,13); y-=6;
-  const bloc=(x,role,nom,at)=>{ const h=78, bw=(LW-14)/2;
+  const code=async(role,nom,at)=>{ if(!at) return ""; const x=(await pvsHash(new TextEncoder().encode(JSON.stringify([pvsRef(p),role,nom,at,p.date_mode,p.date_manuelle||null,p.fichier.hash||null])))).slice(0,12).toUpperCase(); return x.slice(0,4)+"-"+x.slice(4,8)+"-"+x.slice(8,12); };
+  const cSecr=await code("secretaire",p.secretaire_nom,p.sig_secr_at), cSign=await code(p.signataire_fonction,p.signataire_nom,p.sig_sign_at);
+  const bloc=(x,role,nom,at,cd)=>{ const h=90, bw=(LW-14)/2;
     page.drawRectangle({x,y:y-h+12,width:bw,height:h,borderColor:rgb(.7,.7,.7),borderWidth:.6});
     page.drawText(pvsTxt(role),{x:x+8,y:y-2,size:9,font:FB,color:rgb(.45,.45,.45)});
     page.drawText(pvsTxt(nom||"-"),{x:x+8,y:y-20,size:12,font:FB});
     let yy=y-38; for(const l of lignes(pvsDateAffichee(p,at),F,9,bw-16)){ page.drawText(l,{x:x+8,y:yy,size:9,font:F,color:rgb(.25,.25,.25)}); yy-=12; }
-    page.drawText("Signature par mot de passe du compte",{x:x+8,y:yy,size:7.5,font:FI,color:rgb(.45,.45,.45)}); };
-  bloc(X,"La secrétaire",p.secretaire_nom,p.sig_secr_at);
-  bloc(X+(LW-14)/2+14,pvsRoleLib(p.signataire_fonction),p.signataire_nom,p.sig_sign_at);
-  y-=100;
+    if(cd){ page.drawText("Code de vérification : "+cd,{x:x+8,y:yy,size:8.5,font:F,color:rgb(.3,.3,.3)}); yy-=12; }
+    page.drawText("Signature vérifiée par mot de passe du compte",{x:x+8,y:yy,size:7.5,font:FI,color:rgb(.45,.45,.45)}); };
+  bloc(X,"La secrétaire",p.secretaire_nom,p.sig_secr_at,cSecr);
+  bloc(X+(LW-14)/2+14,pvsRoleLib(p.signataire_fonction),p.signataire_nom,p.sig_sign_at,cSign);
+  y-=112;
   const canon=JSON.stringify({ref:pvsRef(p),titre:p.titre,reunion:pvsDateReunion(p),fichier:p.fichier.hash,secr:[p.secretaire_nom,p.sig_secr_at],sign:[p.signataire_nom,p.signataire_fonction,p.sig_sign_at],date:[p.date_mode,p.date_manuelle||null]});
   const emp=await pvsHash(new TextEncoder().encode(canon));
   ecrire("Empreinte SHA-256 du PV d'origine : "+String(p.fichier.hash||"-"),F,7.5,rgb(.45,.45,.45));
