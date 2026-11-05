@@ -712,6 +712,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     <button id="tabPreuves" aria-pressed="false" hidden>Preuves à déposer<span class="pill" id="pillPreuves" hidden>0</span></button>
     <button id="tabMembers" aria-pressed="false" hidden>Membres<span class="pill" id="pillMem" hidden>0</span></button>
     <button id="tabMessages" aria-pressed="false" hidden>Messages<span class="pill" id="pillMsg" hidden>0</span></button>
+    <button id="tabMails" aria-pressed="false" hidden>Mails envoyés</button>
     <button id="tabBudget" aria-pressed="false" hidden>Budget</button>
     <button id="tabCompta" aria-pressed="false" hidden>Comptabilité</button>
     <button id="tabTva" aria-pressed="false" hidden>TVA</button>
@@ -1453,6 +1454,9 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 
     <p class="hint" style="margin-top:4px">Informations générales, pas un conseil fiscal. En cas de doute, le SPF Finances ou un comptable confirme ta situation.</p>
   </section>
+
+  <!-- mails envoyés (trésorier) -->
+  <section id="viewMails" class="stack" hidden><div id="mailsBox" class="stack"></div></section>
 
   <!-- messagerie -->
   <section id="viewMessages" class="stack" hidden>
@@ -2338,7 +2342,24 @@ const envoyerRemb = (to, subject, html, reply_to) => envoyerMail(to, subject, ht
    du CA (onglet Notifs), la liste des désabonnés ni le résumé de 18 h.
    Ne pas faire passer ces envois par un filtre, quel qu'il soit. */
 function envoyerMailObligatoire(to, subject, html, reply_to, from){ return envoyerMail(to, subject, html, reply_to, from); }
+/* Chaque mail parti de la Caisse est gardé dans caisse_mails (lisible par le trésorier seul),
+   pour l'onglet « Mails envoyés ». L'enregistrement ne bloque jamais l'envoi. */
+let mailLotCourant = null;
+function noterMail(to, subject, html, reply_to, from, ok, erreur){
+  try{
+    if(!sb || !state.profile) return;
+    const h = String(html || "");
+    sb.from("caisse_mails").insert({ destinataire: String(to || ""), sujet: String(subject || ""), html: h.length > 200000 ? h.slice(0, 200000) : h,
+      expediteur: from || EXP_TRESO, reply_to: reply_to || null, ok: !!ok, erreur: ok ? null : (erreur || null), lot: mailLotCourant,
+      auteur: state.profile.name || state.profile.email || "" }).then(() => {}, () => {});
+  }catch(_){ }
+}
 async function envoyerMail(to, subject, html, reply_to, from){
+  const ok = await envoyerMailBrut(to, subject, html, reply_to, from);
+  noterMail(to, subject, html, reply_to, from, ok, dernierEchecMail);
+  return ok;
+}
+async function envoyerMailBrut(to, subject, html, reply_to, from){
   if(!to){ dernierEchecMail = "adresse du destinataire introuvable"; return false; }
   try{
     const payload = { to, subject, html };
@@ -2721,6 +2742,8 @@ async function envoyerAnnonceMembres(){
   let ok = 0; const echecs = []; let n = 0;
   const garde = e => { e.preventDefault(); e.returnValue = ""; };
   window.addEventListener("beforeunload", garde);
+  mailLotCourant = "annonce-" + Date.now();
+  try{
   for(const m of dest){
     n++;
     if(btn) btn.textContent = `Envoi ${n}/${dest.length}…`;
@@ -2737,6 +2760,7 @@ async function envoyerAnnonceMembres(){
     if(envoye) ok++; else echecs.push((m.name || "") + " <" + m.email + ">");
     await new Promise(r => setTimeout(r, 120));
   }
+  }finally{ mailLotCourant = null; }
   window.removeEventListener("beforeunload", garde);
   if(btn){ btn.disabled = false; btn.textContent = "Envoyer l'annonce par e-mail aux membres"; }
   if(echecs.length){
@@ -3272,6 +3296,7 @@ async function loadProfile(user){
   $("#tabIncomes").hidden = !isTreso();
   $("#tabMembers").hidden = !isTreso();
   $("#tabMessages").hidden = !isTreso();
+  if($("#tabMails")) $("#tabMails").hidden = !isTreso();
   if($("#tabBudget")) $("#tabBudget").hidden = !isTreso();
   if($("#tabCompta")) $("#tabCompta").hidden = !isTreso();
   if($("#tabTva")) $("#tabTva").hidden = !isTreso();
@@ -8283,7 +8308,7 @@ function setView(v){
   if(v!=="tb" && state.tbForm){ try{ tbFermerForm(true); }catch(_){ } }
   if(v==="tb"){ try{ renderTB(); tbCharger().then(() => { if(state.view==="tb") renderTB(); }); }catch(_){ } }
   /* La gestion journalière n'est jamais notée dans le journal. */
-  if(v!=="gj" && v!=="sc") try{ auditNav(({mine:"Mes demandes",treso:"Trésorerie",reexam:"Réexamens",overview:"Vue d'ensemble",horaires:"Horaires",expenses:"Dépenses",incomes:"Recettes",members:"Membres",messages:"Messages",budget:"Budgets",compta:"Comptabilité",tva:"TVA",direct:"Paiement direct",factures:"Factures",novelles:"Novelles"})[v]||v); }catch(_){ }
+  if(v!=="gj" && v!=="sc") try{ auditNav(({mine:"Mes demandes",treso:"Trésorerie",reexam:"Réexamens",overview:"Vue d'ensemble",horaires:"Horaires",expenses:"Dépenses",incomes:"Recettes",members:"Membres",messages:"Messages",mails:"Mails envoyés",budget:"Budgets",compta:"Comptabilité",tva:"TVA",direct:"Paiement direct",factures:"Factures",novelles:"Novelles"})[v]||v); }catch(_){ }
   $("#tabMine").setAttribute("aria-pressed", v==="mine");
   $("#tabTreso").setAttribute("aria-pressed", v==="treso");
   $("#tabReexam").setAttribute("aria-pressed", v==="reexam");
@@ -8324,6 +8349,9 @@ function setView(v){
   if(v==="preuves") renderPreuves();
   $("#viewMembers").hidden = v!=="members";
   $("#viewMessages").hidden = v!=="messages";
+  if($("#tabMails")) $("#tabMails").setAttribute("aria-pressed", v==="mails");
+  if($("#viewMails")) $("#viewMails").hidden = v!=="mails";
+  if(v==="mails"){ try{ mailsCharger(); }catch(_){ } }
   if($("#viewBudget")) $("#viewBudget").hidden = v!=="budget";
   if(v==="budget") renderBudget();
   if($("#viewCompta")) $("#viewCompta").hidden = v!=="compta";
@@ -8363,6 +8391,7 @@ if($("#tabDocs")) $("#tabDocs").onclick = () => choisirVue("docs");
 if($("#tabPreuves")) $("#tabPreuves").onclick = () => choisirVue("preuves");
 $("#tabMembers").onclick = () => choisirVue("members");
 $("#tabMessages").onclick = () => choisirVue("messages");
+if($("#tabMails")) $("#tabMails").onclick = () => choisirVue("mails");
 if($("#tabBudget")) $("#tabBudget").onclick = () => choisirVue("budget");
 if($("#tabCompta")) $("#tabCompta").onclick = () => choisirVue("compta");
 if($("#tabTva")) $("#tabTva").onclick = () => choisirVue("tva");
@@ -14844,6 +14873,95 @@ document.addEventListener("change", e => {
 });
 if($("#tabSC")) $("#tabSC").onclick = () => choisirVue("sc");
 
+
+
+/* =====================================================================
+   MAILS ENVOYÉS (trésorier) : historique des mails partis de la Caisse.
+   Les annonces aux membres sont regroupées en une seule ligne.
+   ===================================================================== */
+async function mailsCharger(){
+  const M = state.mails = state.mails || { liste: [], q: "", filtre: "tout", err: null, charge: false };
+  renderMails();
+  const r = await sb.from("caisse_mails").select("id,created_at,auteur,destinataire,sujet,expediteur,ok,erreur,lot")
+    .order("created_at", { ascending:false }).limit(1000);
+  M.charge = true;
+  if(r.error){ M.err = r.error.message; M.liste = []; } else { M.err = null; M.liste = r.data || []; }
+  renderMails();
+}
+function mailsGroupes(){
+  const M = state.mails, q = (M.q || "").toLowerCase().trim(), out = [], lots = {};
+  for(const m of M.liste){
+    if(m.lot){ if(!lots[m.lot]){ lots[m.lot] = { lot: m.lot, created_at: m.created_at, sujet: m.sujet, auteur: m.auteur, expediteur: m.expediteur, items: [] }; out.push(lots[m.lot]); } lots[m.lot].items.push(m); }
+    else out.push({ created_at: m.created_at, sujet: m.sujet, auteur: m.auteur, expediteur: m.expediteur, items: [m] });
+  }
+  return out.filter(g => {
+    if(M.filtre === "annonces" && !g.lot) return false;
+    if(M.filtre === "echecs" && !g.items.some(x => !x.ok)) return false;
+    if(!q) return true;
+    return (g.sujet + " " + g.auteur + " " + g.items.map(x => x.destinataire).join(" ")).toLowerCase().includes(q);
+  });
+}
+function renderMails(){
+  const box = $("#mailsBox"), M = state.mails; if(!box || !M) return;
+  const groupes = M.charge ? mailsGroupes() : [];
+  const ligne = g => {
+    const n = g.items.length, rates = g.items.filter(x => !x.ok).length, premier = g.items[0];
+    const dest = n > 1 ? n + " destinataires" : esc(premier.destinataire);
+    return `<div class="row" data-mailid="${esc(premier.id)}" data-maillot="${esc(g.lot || "")}" style="cursor:pointer">
+      <div class="date mono" style="font-size:12.5px">${esc(new Date(g.created_at).toLocaleString("fr-BE", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }))}</div>
+      <div><div class="obj">${g.lot ? "📣 " : ""}${esc(g.sujet || "(sans objet)")}</div><div class="meta">À : ${dest}${g.auteur ? " · envoyé par " + esc(g.auteur) : ""}</div></div>
+      <div>${rates ? `<span class="tag t-refuse">${rates} échec${rates > 1 ? "s" : ""}</span>` : `<span class="tag t-valide">Envoyé</span>`}</div>
+      <div class="amt"></div><div class="chev">›</div></div>`;
+  };
+  box.innerHTML = `
+    <div class="section-title"><div class="eyebrow">Mails envoyés depuis la Caisse</div></div>
+    <div class="toolbar" style="display:flex;gap:8px;flex-wrap:wrap">
+      <input type="text" id="mailsQ" placeholder="Objet, destinataire, auteur…" value="${esc(M.q || "")}" style="flex:1;min-width:200px">
+      <select id="mailsFiltre" style="width:auto">${[["tout","Tous les mails"],["annonces","Annonces aux membres"],["echecs","Avec échec"]].map(([k, l]) => `<option value="${k}" ${M.filtre === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <button class="btn ghost sm" id="mailsRefresh">Actualiser</button>
+    </div>
+    ${M.err ? `<div class="card" style="padding:14px"><p class="hint" style="color:#e88;margin:0">Historique indisponible : ${esc(M.err)}</p></div>` : ""}
+    <div class="card" style="overflow:hidden">${!M.charge ? `<div class="empty"><strong>Chargement…</strong></div>`
+      : groupes.length ? groupes.map(ligne).join("") : `<div class="empty"><strong>Aucun mail</strong>Les mails envoyés depuis la Caisse apparaîtront ici.</div>`}</div>
+    <p class="hint">L'historique commence à la mise en place de cet onglet. Les ${M.liste.length >= 1000 ? "1000 derniers mails sont affichés." : "mails envoyés par le serveur (gestion journalière) n'y figurent pas."}</p>`;
+}
+async function mailsOuvrir(id, lot){
+  const M = state.mails;
+  const items = lot ? M.liste.filter(x => x.lot === lot) : M.liste.filter(x => x.id === id);
+  const r = await sb.from("caisse_mails").select("html").eq("id", id).maybeSingle();
+  const html = (r && r.data && r.data.html) || "<p>(contenu indisponible)</p>";
+  const m = items[0] || {};
+  const ov = document.createElement("div"); ov.className = "overlay open";
+  ov.innerHTML = `<div class="sheetd" style="max-width:720px"><div class="sb" style="padding:22px">
+    <h2 style="font-size:19px;margin:0 0 6px">${esc(m.sujet || "(sans objet)")}</h2>
+    <p class="hint" style="margin:0 0 4px">${esc(new Date(m.created_at).toLocaleString("fr-BE"))} · de ${esc(m.expediteur || "")}${m.auteur ? " · envoyé par " + esc(m.auteur) : ""}</p>
+    <div class="hint" style="margin:0 0 12px;max-height:140px;overflow:auto">À : ${items.map(x => esc(x.destinataire) + (x.ok ? "" : ` <b style="color:#e88">(échec${x.erreur ? " : " + esc(x.erreur) : ""})</b>`)).join(", ")}</div>
+    ${lot ? `<p class="hint" style="margin:0 0 8px">Aperçu du mail reçu par ${esc(m.destinataire)} (chaque membre reçoit le même texte avec son prénom).</p>` : ""}
+    <iframe sandbox="" style="width:100%;height:420px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn ghost" data-mails-fermer>Fermer</button></div>
+  </div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector("iframe").srcdoc = html;
+  const fin = () => { ov.remove(); document.removeEventListener("keydown", clav, true); };
+  const clav = e => { if(e.key === "Escape"){ e.preventDefault(); fin(); } };
+  document.addEventListener("keydown", clav, true);
+  ov.onclick = e => { if(e.target === ov || e.target.closest("[data-mails-fermer]")) fin(); };
+}
+document.addEventListener("click", e => {
+  if(!state.mails) return;
+  if(e.target.closest && e.target.closest("#mailsRefresh")){ mailsCharger(); return; }
+  const r = e.target.closest && e.target.closest("[data-mailid]"); if(!r || !$("#mailsBox") || !$("#mailsBox").contains(r)) return;
+  mailsOuvrir(r.dataset.mailid, r.dataset.maillot || null).catch(err => dire("Mail", String(err && err.message || err)));
+});
+document.addEventListener("input", e => {
+  if(!state.mails || !e.target || e.target.id !== "mailsQ") return;
+  state.mails.q = e.target.value; const pos = e.target.selectionStart; renderMails();
+  const n = $("#mailsQ"); if(n){ n.focus(); try{ n.setSelectionRange(pos, pos); }catch(_){} }
+});
+document.addEventListener("change", e => {
+  if(!state.mails || !e.target || e.target.id !== "mailsFiltre") return;
+  state.mails.filtre = e.target.value; renderMails();
+});
 
 /* =====================================================================
    TB (15 € par présent, 2 TB par commission et par période)
