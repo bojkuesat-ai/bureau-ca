@@ -1043,6 +1043,9 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:11px 13px">
             <input type="checkbox" id="fe_f_comm" class="tgl" data-fe-comm checked>
             <span><b>Commission codes &amp; syllabus</b><br><small class="hint" style="margin:0" data-fe-commnoms></small></span></label>
+          <label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:11px 13px">
+            <input type="checkbox" id="fe_f_estim" class="tgl">
+            <span><b>Estimation</b><br><small class="hint" style="margin:0">Facture pas encore reçue : montant et date estimés. Comptée dans « Reste à payer », non payable tant qu'elle n'est pas transformée en facture.</small></span></label>
           <div class="grid2">
             <div class="field"><label for="fe_f_fourn">Fournisseur</label>
               <input type="text" id="fe_f_fourn" maxlength="80" placeholder="Ex. Kluwer" required></div>
@@ -8505,7 +8508,8 @@ function feCarte(f){
   const plan = f.type === "plan";
   const ech = feEchs(f);
   const etat = feEtat(f);
-  const [lbl, cls] = feLabel(etat, plan);
+  let [lbl, cls] = feLabel(etat, plan);
+  if(f.estimation && etat !== "payee"){ lbl = "Estimation"; cls = "t-attente"; }
   const pro = feProchaine(f);
   const total = feTotal(f), paye = fePaye(f), reste = feRond(total - paye);
   const ouvert = state.feOuvert.has(f.id);
@@ -8536,7 +8540,7 @@ function feCarte(f){
   return `<div class="fe-card ${etat}${ouvert ? " open" : ""}" data-fe-id="${esc(f.id)}">
     <div class="fe-top" data-fe-toggle="${esc(f.id)}" tabindex="0" role="button" aria-expanded="${ouvert}">
       <div class="fe-jour ${jourCls}"><div class="d">${jourD}</div><div class="c">${esc(jourC)}</div></div>
-      <div><div class="obj">${esc(feLibelle(f) || "Facture")}</div><div class="meta">${meta}</div></div>
+      <div><div class="obj">${f.estimation ? "≈ " : ""}${esc(feLibelle(f) || "Facture")}</div><div class="meta">${f.estimation ? "<b>Estimation</b> · " : ""}${meta}</div></div>
       <div class="tagc"><span class="tag ${cls}">${lbl}</span></div>
       <div class="amt">${montant}</div>
       <div class="chev">›</div>
@@ -8572,7 +8576,8 @@ function feCorps(f){
       modifiable = true;
       dateCell = `<input type="date" data-fe-edate="${n}" value="${esc(e.date)}" aria-label="Date de l'échéance ${n+1}">`;
       mtCell = `<input type="number" step="0.01" min="0.01" data-fe-emt="${n}" value="${esc(feRond(e.montant).toFixed(2))}" aria-label="Montant de l'échéance ${n+1}">`;
-      pay = `<span class="quand">payée le</span><input type="date" data-fe-pdate="${n}" value="${auj}" max="${auj}" aria-label="Date du paiement" title="Date du paiement">
+      pay = f.estimation ? `<span class="quand">estimation — à transformer en facture avant paiement</span>`
+        : `<span class="quand">payée le</span><input type="date" data-fe-pdate="${n}" value="${auj}" max="${auj}" aria-label="Date du paiement" title="Date du paiement">
         <button type="button" class="btn ok sm" data-fe-payer="${n}">${plan ? "Échéance payée" : "Facture payée"}</button>`;
     }
     return `<div class="fe-ech">
@@ -8598,7 +8603,9 @@ function feCorps(f){
   const actions = [];
   if(aPdf) actions.push(`<button type="button" class="btn ghost sm" data-fe-pdf="0">Ouvrir le PDF</button>`);
   if(T){
+    if(f.estimation) actions.push(`<button type="button" class="btn ok sm" data-fe-reel>Transformer en facture</button>`);
     if(modifiable) actions.push(`<button type="button" class="btn ghost sm" data-fe-save>Enregistrer les dates et montants</button>`);
+    if(aucunPaye) actions.push(`<button type="button" class="btn ghost sm" data-fe-modif>Modifier</button>`);
     if(restent) actions.push(`<button type="button" class="btn sm" data-fe-send>${f.sent_at ? "Renvoyer l'e-mail" : "Envoyer au membre"}</button>`);
     if(restent && f.sent_at) actions.push(`<button type="button" class="btn ghost sm" data-fe-rappel>Envoyer un rappel</button>`);
     actions.push(`<label class="btn ghost sm" style="text-transform:none;letter-spacing:0;color:var(--text)">${aPdf ? "Remplacer le PDF" : "Joindre le PDF"}<input type="file" data-fe-joindre accept="application/pdf,.pdf,image/*" hidden></label>`);
@@ -8723,6 +8730,16 @@ function feMailHtml(f, rappel){
         <tr style="background:#f4f6f8"><th style="padding:6px 8px;text-align:left">N°</th><th style="padding:6px 8px;text-align:left">Échéance</th><th style="padding:6px 8px;text-align:right">Montant</th><th style="padding:6px 8px;text-align:left">État</th></tr>
         ${lignes}
       </table>`;
+  } else if(f.estimation){
+    corps = `<p>${rappel
+        ? `Petit rappel : une facture de <b>${mailEsc(f.fournisseur)}</b> est attendue${pro ? ` vers le <b>${fdate(pro.date)}</b>` : ""}.`
+        : `Une facture de <b>${mailEsc(f.fournisseur)}</b> est attendue. Ce n'est encore qu'une <b>estimation</b> : le montant et la date seront confirmés à la réception de la facture.`}</p>
+      <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:14px">
+        ${ligne("Fournisseur", mailEsc(f.fournisseur))}
+        ${f.objet ? ligne("Objet", mailEsc(f.objet)) : ""}
+        ${ligne("Montant estimé", euro(feTotal(f)))}
+        ${pro ? ligne("Date prévue", fdate(pro.date)) : ""}
+      </table>`;
   } else {
     corps = `<p>${rappel
         ? `Petit rappel : la facture <b>${mailEsc(f.fournisseur)}</b> doit être payée <b>avant le ${pro ? fdate(pro.date) : "—"}</b>.`
@@ -8736,7 +8753,7 @@ function feMailHtml(f, rappel){
       </table>`;
   }
   return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
-    <h2 style="margin:0 0 10px">${rappel ? "Rappel d'échéance" : (plan ? "Plan de paiement disponible" : "Facture disponible")}</h2>
+    <h2 style="margin:0 0 10px">${f.estimation ? (rappel ? "Rappel — facture attendue" : "Facture attendue (estimation)") : rappel ? "Rappel d'échéance" : (plan ? "Plan de paiement disponible" : "Facture disponible")}</h2>
     <p>Bonjour ${mailEsc(fePrenom(f))},</p>
     ${corps}
     ${blocNote(f.note)}
@@ -8750,6 +8767,7 @@ function feMailSujet(f, rappel){
   const av = pro ? " avant le " + fdate(pro.date) : "";
   if(f.type === "plan") return rappel ? "Rappel — échéance " + f.fournisseur + (pro ? " du " + fdate(pro.date) : "")
                                       : "Plan de paiement " + f.fournisseur + " — " + feEchs(f).length + " échéances";
+  if(f.estimation) return (rappel ? "Rappel — facture attendue " : "Facture attendue (estimation) — ") + f.fournisseur + (pro ? " vers le " + fdate(pro.date) : "");
   return (rappel ? "Rappel — facture " : "Facture ") + f.fournisseur + " à payer" + av;
 }
 async function feEnvoyer(f, rappel){
@@ -8797,6 +8815,31 @@ async function feTeleverser(file, kind){
   const up = await sb.storage.from("justificatifs").upload(path, prep.blob, { contentType: prep.type });
   if(up.error) throw up.error;
   return [{ path, type: prep.type, kind, name: file.name, hash }];
+}
+
+/* ---------- modifier fournisseur / objet / référence / message ---------- */
+function feModifierInfos(f){
+  return new Promise(ok => {
+    const ov = document.createElement("div"); ov.className = "overlay open";
+    const champ = (k, l, v, max) => `<div class="field" style="margin-bottom:10px"><label>${l}</label><input type="text" data-fm="${k}" maxlength="${max}" value="${esc(v || "")}"></div>`;
+    ov.innerHTML = `<div class="sheetd" style="max-width:480px"><div class="sb" style="padding:24px">
+      <h2 style="font-size:20px;margin:0 0 12px">Modifier ${f.estimation ? "l'estimation" : "la facture"}</h2>
+      ${champ("fournisseur", "Fournisseur", f.fournisseur, 80)}${champ("objet", "Objet", f.objet, 80)}${champ("reference", "N° / référence", f.reference, 60)}
+      <div class="field" style="margin-bottom:10px"><label>Message au membre</label><textarea data-fm="note" maxlength="400" rows="3">${esc(f.note || "")}</textarea></div>
+      <p class="hint" style="margin:0 0 10px">Dates et montants : directement dans les lignes de la facture.</p>
+      <div class="err" data-fm-err hidden></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px"><button class="btn ghost" data-fm-non>Annuler</button><button class="btn" data-fm-oui>Enregistrer</button></div>
+    </div></div>`;
+    document.body.appendChild(ov);
+    const fin = v => { ov.remove(); ok(v); };
+    ov.onclick = e => {
+      if(e.target === ov || e.target.closest("[data-fm-non]")) return fin(null);
+      if(!e.target.closest("[data-fm-oui]")) return;
+      const v = k => ov.querySelector(`[data-fm="${k}"]`).value.trim();
+      if(!v("fournisseur")){ const er = ov.querySelector("[data-fm-err]"); er.textContent = "Indiquez le fournisseur."; er.hidden = false; return; }
+      fin({ fournisseur: v("fournisseur"), objet: v("objet") || null, reference: v("reference") || null, note: v("note") || null });
+    };
+  });
 }
 
 /* ---------- commission codes & syllabus ---------- */
@@ -8861,7 +8904,7 @@ $("#fe_factForm").addEventListener("submit", async e => {
   const qui = await feResoudreMembres("f"); if(!qui) return;
   if(qui.err) return erreurForm("#fe_f_err", qui.err);
   await feCreer({
-    type: "facture", membre: qui.membre, co: qui.co, fournisseur: fourn,
+    type: "facture", membre: qui.membre, co: qui.co, fournisseur: fourn, estimation: !!($("#fe_f_estim") && $("#fe_f_estim").checked),
     objet: $("#fe_f_objet").value.trim(), reference: $("#fe_f_ref").value.trim(),
     note: $("#fe_f_note").value.trim(), echeances: [{ date, montant }],
     fichier: $("#fe_f_pdf").files[0], envoyer: $("#fe_f_envoyer").checked,
@@ -8971,6 +9014,7 @@ async function feCreer(o){
       attachments: pieces, note: o.note || null, created_by: state.profile.id
     };
     if(o.co && o.co.length) ligne.co_membres = o.co;
+    if(o.estimation) ligne.estimation = true;
     const { data, error } = await sb.from(FE_TABLE).insert(ligne).select().single();
     if(error) throw error;
     let envoye = false;
@@ -9277,6 +9321,27 @@ $("#fe_lists").addEventListener("click", async e => {
   if(!isTreso()) return;
   const carte = b.closest("[data-fe-id]");
 
+  if(b.hasAttribute("data-fe-reel")){
+    const c = await confirmerAvecMail("Transformer en facture",
+      "La facture « " + (feLibelle(f) || "Facture") + " » est arrivée ?\n\nVérifiez d'abord le montant et la date (champs de la facture, puis « Enregistrer les dates et montants »), et joignez le PDF si besoin.\n\nElle devient une facture normale, payable.",
+      "Transformer", { basculeTexte: "Prévenir " + feConcernes(f).map(feNomDe).join(" et ") + " par e-mail", basculeDefaut: true });
+    if(!c.ok) return;
+    b.disabled = true;
+    const { error } = await sb.from(FE_TABLE).update({ estimation: false }).eq("id", f.id);
+    b.disabled = false;
+    if(error) return dire("Transformation impossible", "Erreur : " + error.message);
+    f.estimation = false;
+    let mail = true; if(c.mail) mail = await feEnvoyer(f, false);
+    await refresh();
+    return dire("Facture enregistrée ✓", "L'estimation est devenue une facture payable." + (c.mail ? (mail ? " " + feConcernes(f).map(feNomDe).join(" et ") + " ont été prévenues par e-mail." : " ⚠ L'e-mail n'est pas parti.") : ""));
+  }
+  if(b.hasAttribute("data-fe-modif")){
+    const rep = await feModifierInfos(f); if(!rep) return;
+    const { error } = await sb.from(FE_TABLE).update(rep).eq("id", f.id);
+    if(error) return dire("Modification impossible", "Erreur : " + error.message);
+    Object.assign(f, rep); renderFactures();
+    return dire("Modifications enregistrées ✓", "Fournisseur, objet, référence et message mis à jour. Les dates et montants se modifient directement dans les lignes de la facture.");
+  }
   if(b.hasAttribute("data-fe-coadd") || b.hasAttribute("data-fe-codel")){
     const ajout = b.hasAttribute("data-fe-coadd");
     const id = ajout ? ((carte && carte.querySelector("[data-fe-cosel]")) || {}).value : b.dataset.feCodel;
