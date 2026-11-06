@@ -1044,7 +1044,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
             <input type="checkbox" id="fe_f_comm" class="tgl" data-fe-comm checked>
             <span><b>Commission codes &amp; syllabus</b><br><small class="hint" style="margin:0" data-fe-commnoms></small></span></label>
           <div class="grid2">
-            <div class="field"><label for="fe_f_membre">Membre concerné</label>
+            <div class="field" data-fe-membrefld style="display:none"><label for="fe_f_membre">Membre concerné (facture hors commission)</label>
               <select id="fe_f_membre"><option value="">— Choisir le membre —</option></select></div>
             <div class="field"><label for="fe_f_fourn">Fournisseur</label>
               <input type="text" id="fe_f_fourn" maxlength="80" placeholder="Ex. Kluwer" required></div>
@@ -1083,7 +1083,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
             <input type="checkbox" id="fe_p_comm" class="tgl" data-fe-comm checked>
             <span><b>Commission codes &amp; syllabus</b><br><small class="hint" style="margin:0" data-fe-commnoms></small></span></label>
           <div class="grid2">
-            <div class="field"><label for="fe_p_membre">Membre concerné</label>
+            <div class="field" data-fe-membrefld style="display:none"><label for="fe_p_membre">Membre concerné (facture hors commission)</label>
               <select id="fe_p_membre"><option value="">— Choisir le membre —</option></select></div>
             <div class="field"><label for="fe_p_fourn">Fournisseur</label>
               <input type="text" id="fe_p_fourn" maxlength="80" placeholder="Ex. Larcier" required></div>
@@ -8852,6 +8852,8 @@ async function feResoudreMembres(pre){
   }
   return { membre, co: [] };
 }
+// à l'ouverture des formulaires : liste des membres masquée (commission par défaut)
+for(const id of ["#fe_factBox", "#fe_planBox"]){ const d = $(id); if(d) d.addEventListener("toggle", () => { if(d.open){ state.feChoixLibre = null; feMajCommission(); } }); }
 document.addEventListener("change", e => { if(e.target && e.target.hasAttribute && e.target.hasAttribute("data-fe-comm")){ if(e.target.checked) state.feChoixLibre = null; feMajCommission(); } });
 document.addEventListener("click", async e => {
   const b = e.target.closest && e.target.closest("#fe_commAjoutBtn, [data-fe-commdel]"); if(!b || !isTreso()) return;
