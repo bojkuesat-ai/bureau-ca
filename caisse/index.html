@@ -8831,10 +8831,12 @@ async function feEnregistrerCommission(liste){
 async function feResoudreMembres(pre){
   const comm = feCommMembres(), tg = $("#fe_" + pre + "_comm");
   let commission = !!(tg && tg.checked);
-  if(!commission && comm.length && state.feChoixLibre !== pre){
+  // rappel à chaque enregistrement, interrupteur activé ou non (sauf si l'on vient de répondre « Non »)
+  if(comm.length && state.feChoixLibre !== pre){
     commission = await demander("Commission codes & syllabus ?",
       "Cette facture concerne-t-elle la commission codes & syllabus ?\n\nSi oui, elle sera attribuée automatiquement à " + feCommNoms() + ".",
       { bouton: "Oui, l'attribuer à " + feCommNoms(), boutonNon: "Non" });
+    if(!commission && tg) tg.checked = false;
   }
   if(commission){
     if(!comm.length) return { err: "Aucun membre n'est réglé pour la commission codes & syllabus (bloc « Commission codes & syllabus » en haut de l'onglet)." };
