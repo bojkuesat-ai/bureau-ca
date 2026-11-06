@@ -1016,6 +1016,10 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
       <div class="kpi wait"><div class="eyebrow">Dues dans les 7 jours</div><div class="n" id="fe_k_bientot">0</div></div>
       <div class="kpi done"><div class="eyebrow">Déjà payé</div><div class="n" id="fe_k_paye">0 €</div></div>
     </div>
+    <div class="kpis" id="fe_k_estimBox">
+      <div class="kpi" style="border-style:dashed"><div class="eyebrow">≈ Estimations (factures attendues)</div><div class="n" id="fe_k_estim">0 €</div></div>
+      <div class="kpi wait"><div class="eyebrow">Total à prévoir (reste + estimations)</div><div class="n" id="fe_k_prevoir">0 €</div></div>
+    </div>
 
     <div class="callout" id="fe_sqlErr" hidden style="border-left:4px solid var(--red)">
       <b>La table des factures n'existe pas encore</b>
@@ -1142,6 +1146,11 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
       <div>
         <div class="section-title"><h2 style="font-size:19px">Plans de paiement</h2><span class="hint" id="fe_nbPlans"></span></div>
         <div id="fe_listPlans" class="stack" style="gap:10px"></div>
+      </div>
+      <div>
+        <div class="section-title"><h2 style="font-size:19px">≈ Estimations</h2><span class="hint" id="fe_nbEstim"></span></div>
+        <p class="hint" style="margin:-4px 0 10px">Factures pas encore reçues : montants estimés, date à confirmer. Elles passent dans « Factures » une fois transformées.</p>
+        <div id="fe_listEstim" class="stack" style="gap:10px"></div>
       </div>
     </div>
   </section>
@@ -8648,17 +8657,19 @@ function renderFactures(){
   if(isTreso()){ feMajMembres(); feMajCommission(); }
 
   // chiffres clés
-  let reste = 0, paye = 0, retard = 0, bientot = 0;
+  let reste = 0, paye = 0, retard = 0, bientot = 0, estime = 0;
   for(const f of liste){
     for(const e of feEchs(f)){
       if(e.paid_at){ paye += Number(e.montant || 0); continue; }
+      if(f.estimation){ estime += Number(e.montant || 0); continue; }
       reste += Number(e.montant || 0);
-      if(f.estimation) continue;
       const et = feEtatEch(e);
       if(et === "retard") retard++; else if(et === "bientot") bientot++;
     }
   }
   $("#fe_k_reste").textContent = euro(reste);
+  if($("#fe_k_estim")) $("#fe_k_estim").textContent = euro(estime);
+  if($("#fe_k_prevoir")) $("#fe_k_prevoir").textContent = euro(feRond(reste + estime));
   $("#fe_k_paye").textContent = euro(paye);
   $("#fe_k_retard").textContent = retard;
   $("#fe_k_bientot").textContent = bientot;
@@ -8684,7 +8695,13 @@ function renderFactures(){
   const cle = f => { const p = feProchaine(f); return p ? "0" + p.date : "1" + (9999 - Number(String(f.created_at || "").slice(0,4) || 0)); };
   garde.sort((a,b) => cle(a).localeCompare(cle(b)));
 
-  const fact = garde.filter(f => f.type !== "plan"), plans = garde.filter(f => f.type === "plan");
+  const fact = garde.filter(f => f.type !== "plan" && !f.estimation), plans = garde.filter(f => f.type === "plan" && !f.estimation),
+        estims = garde.filter(f => f.estimation && feEtat(f) !== "payee");
+  if($("#fe_listEstim")){
+    $("#fe_listEstim").innerHTML = estims.length ? estims.map(feCarte).join("")
+      : `<div class="card">${emptyHTML("Aucune estimation", isTreso() ? "Activez « Estimation » dans « Nouvelle facture » pour une facture pas encore reçue." : "Aucune facture attendue pour le moment.")}</div>`;
+    $("#fe_nbEstim").textContent = estims.length ? estims.length + " · " + euro(feRond(estims.reduce((s, f) => s + feTotal(f) - fePaye(f), 0))) : "";
+  }
   const vide = (t, m) => `<div class="card">${emptyHTML(t, m)}</div>`;
   $("#fe_listFact").innerHTML = fact.length ? fact.map(feCarte).join("")
     : vide("Aucune facture ici", isTreso() ? "Encodez une facture avec le formulaire ci-dessus." : "Aucune facture à payer ne vous a été envoyée.");
