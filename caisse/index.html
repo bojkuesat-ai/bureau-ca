@@ -1059,7 +1059,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
           <div class="grid2">
             <div class="field"><label for="fe_f_montant">Montant (€)</label>
               <input type="number" id="fe_f_montant" step="0.01" min="0.01" placeholder="0,00" required></div>
-            <div class="field"><label for="fe_f_date">À payer avant le</label>
+            <div class="field" id="fe_f_dateFld"><label for="fe_f_date">À payer avant le</label>
               <input type="date" id="fe_f_date" required></div>
           </div>
           <div class="field"><label for="fe_f_note">Message au membre (facultatif)</label>
@@ -8440,6 +8440,7 @@ const fePaye  = f => feRond(feEchs(f).filter(e => e.paid_at).reduce((s,e) => s +
 function feEtat(f){
   const ech = feEchs(f);
   if(ech.length && ech.every(e => e.paid_at)) return "payee";
+  if(f.estimation) return f.sent_at ? "envoyee" : "aenvoyer";
   const imp = feImpayees(f);
   if(imp.some(e => feEtatEch(e) === "retard")) return "retard";
   if(!f.sent_at) return "aenvoyer";
@@ -8517,7 +8518,9 @@ function feCarte(f){
 
   // pastille de date : prochaine échéance, ou date du dernier paiement si tout est réglé
   let jourCls = "", jourD = "—", jourC = "";
-  if(pro){
+  if(pro && f.estimation){
+    jourD = "≈"; jourC = "date à confirmer";
+  } else if(pro){
     const j = feJours(pro.date);
     jourCls = j < 0 ? "retard" : j <= 7 ? "bientot" : "";
     jourD = fdate(pro.date).slice(0,5);
@@ -8529,7 +8532,7 @@ function feCarte(f){
   const meta = [
     isTreso() ? esc(feNomMembre(f)) : "",
     f.reference ? "N° " + esc(f.reference) : "",
-    plan ? `${nbPayees}/${ech.length} échéances payées` : (pro ? "À payer avant le " + fdate(pro.date) : ""),
+    plan ? `${nbPayees}/${ech.length} échéances payées` : f.estimation ? "date à confirmer" : (pro ? "À payer avant le " + fdate(pro.date) : ""),
     isTreso() && f.sent_at ? "envoyée le " + fdate(String(f.sent_at).slice(0,10)) : ""
   ].filter(Boolean).join(" · ");
 
@@ -8565,7 +8568,7 @@ function feCorps(f){
       : et === "retard" ? `<span class="tag t-refuse">En retard</span>`
       : et === "bientot" ? `<span class="tag t-attente">${esc(feCompte(feJours(e.date)))}</span>`
       : `<span class="tag t-neutre">${esc(feCompte(feJours(e.date)))}</span>`;
-    let dateCell = `<span class="mono">${fdate(e.date)}</span>`;
+    let dateCell = f.estimation && !e.paid_at ? `<span class="hint" style="margin:0">date à confirmer</span>` : `<span class="mono">${fdate(e.date)}</span>`;
     let mtCell = `<span class="mt">${euro(e.montant)}</span>`;
     let pay = "";
     if(e.paid_at){
@@ -8574,7 +8577,8 @@ function feCorps(f){
         + (T && !clos(e.paid_at) ? ` <button type="button" class="btn ghost sm" data-fe-annul="${n}">Annuler le paiement</button>` : "");
     } else if(T){
       modifiable = true;
-      dateCell = `<input type="date" data-fe-edate="${n}" value="${esc(e.date)}" aria-label="Date de l'échéance ${n+1}">`;
+      dateCell = f.estimation ? `<span class="hint" style="margin:0">date à confirmer</span><input type="hidden" data-fe-edate="${n}" value="${esc(e.date)}">`
+        : `<input type="date" data-fe-edate="${n}" value="${esc(e.date)}" aria-label="Date de l'échéance ${n+1}">`;
       mtCell = `<input type="number" step="0.01" min="0.01" data-fe-emt="${n}" value="${esc(feRond(e.montant).toFixed(2))}" aria-label="Montant de l'échéance ${n+1}">`;
       pay = f.estimation ? `<span class="quand">estimation — à transformer en facture avant paiement</span>`
         : `<span class="quand">payée le</span><input type="date" data-fe-pdate="${n}" value="${auj}" max="${auj}" aria-label="Date du paiement" title="Date du paiement">
@@ -8604,7 +8608,7 @@ function feCorps(f){
   if(aPdf) actions.push(`<button type="button" class="btn ghost sm" data-fe-pdf="0">Ouvrir le PDF</button>`);
   if(T){
     if(f.estimation) actions.push(`<button type="button" class="btn ok sm" data-fe-reel>Transformer en facture</button>`);
-    if(modifiable) actions.push(`<button type="button" class="btn ghost sm" data-fe-save>Enregistrer les dates et montants</button>`);
+    if(modifiable) actions.push(`<button type="button" class="btn ghost sm" data-fe-save>${f.estimation ? "Enregistrer le montant estimé" : "Enregistrer les dates et montants"}</button>`);
     if(aucunPaye) actions.push(`<button type="button" class="btn ghost sm" data-fe-modif>Modifier</button>`);
     if(restent) actions.push(`<button type="button" class="btn sm" data-fe-send>${f.sent_at ? "Renvoyer l'e-mail" : "Envoyer au membre"}</button>`);
     if(restent && f.sent_at) actions.push(`<button type="button" class="btn ghost sm" data-fe-rappel>Envoyer un rappel</button>`);
@@ -8631,7 +8635,7 @@ function renderFactures(){
 
   // pastille : échéances en retard ou dues sous 7 jours
   let urgent = 0;
-  for(const f of liste) for(const e of feImpayees(f)) if(feEtatEch(e) !== "avenir") urgent++;
+  for(const f of liste) if(!f.estimation) for(const e of feImpayees(f)) if(feEtatEch(e) !== "avenir") urgent++;
   const pill = $("#pillFact");
   if(pill){ pill.textContent = urgent; pill.hidden = !urgent; }
 
@@ -8649,6 +8653,7 @@ function renderFactures(){
     for(const e of feEchs(f)){
       if(e.paid_at){ paye += Number(e.montant || 0); continue; }
       reste += Number(e.montant || 0);
+      if(f.estimation) continue;
       const et = feEtatEch(e);
       if(et === "retard") retard++; else if(et === "bientot") bientot++;
     }
@@ -8671,7 +8676,7 @@ function renderFactures(){
     const et = feEtat(f);
     if(filtre === "encours" && et === "payee") return false;
     if(filtre === "payees" && et !== "payee") return false;
-    if(filtre === "retard" && !feImpayees(f).some(e => feEtatEch(e) !== "avenir")) return false;
+    if(filtre === "retard" && (f.estimation || !feImpayees(f).some(e => feEtatEch(e) !== "avenir"))) return false;
     if(q && !slug([f.fournisseur, f.objet, f.reference, feNomMembre(f), f.member_name].filter(Boolean).join(" ")).includes(q)) return false;
     return true;
   });
@@ -8732,13 +8737,12 @@ function feMailHtml(f, rappel){
       </table>`;
   } else if(f.estimation){
     corps = `<p>${rappel
-        ? `Petit rappel : une facture de <b>${mailEsc(f.fournisseur)}</b> est attendue${pro ? ` vers le <b>${fdate(pro.date)}</b>` : ""}.`
-        : `Une facture de <b>${mailEsc(f.fournisseur)}</b> est attendue. Ce n'est encore qu'une <b>estimation</b> : le montant et la date seront confirmés à la réception de la facture.`}</p>
+        ? `Petit rappel : une facture de <b>${mailEsc(f.fournisseur)}</b> est attendue.`
+        : `Une facture de <b>${mailEsc(f.fournisseur)}</b> est attendue. Ce n'est encore qu'une <b>estimation</b> : le montant et la date d'échéance seront confirmés à la réception de la facture.`}</p>
       <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:14px">
         ${ligne("Fournisseur", mailEsc(f.fournisseur))}
         ${f.objet ? ligne("Objet", mailEsc(f.objet)) : ""}
         ${ligne("Montant estimé", euro(feTotal(f)))}
-        ${pro ? ligne("Date prévue", fdate(pro.date)) : ""}
       </table>`;
   } else {
     corps = `<p>${rappel
@@ -8767,7 +8771,7 @@ function feMailSujet(f, rappel){
   const av = pro ? " avant le " + fdate(pro.date) : "";
   if(f.type === "plan") return rappel ? "Rappel — échéance " + f.fournisseur + (pro ? " du " + fdate(pro.date) : "")
                                       : "Plan de paiement " + f.fournisseur + " — " + feEchs(f).length + " échéances";
-  if(f.estimation) return (rappel ? "Rappel — facture attendue " : "Facture attendue (estimation) — ") + f.fournisseur + (pro ? " vers le " + fdate(pro.date) : "");
+  if(f.estimation) return (rappel ? "Rappel — facture attendue " : "Facture attendue (estimation) — ") + f.fournisseur;
   return (rappel ? "Rappel — facture " : "Facture ") + f.fournisseur + " à payer" + av;
 }
 async function feEnvoyer(f, rappel){
@@ -8815,6 +8819,36 @@ async function feTeleverser(file, kind){
   const up = await sb.storage.from("justificatifs").upload(path, prep.blob, { contentType: prep.type });
   if(up.error) throw up.error;
   return [{ path, type: prep.type, kind, name: file.name, hash }];
+}
+
+/* ---------- estimation -> facture : vraie date d'échéance et vrai montant ---------- */
+function feTransformer(f){
+  return new Promise(ok => {
+    const pro = feProchaine(f) || {};
+    const ov = document.createElement("div"); ov.className = "overlay open";
+    ov.innerHTML = `<div class="sheetd" style="max-width:460px"><div class="sb" style="padding:24px">
+      <h2 style="font-size:20px;margin:0 0 6px">Transformer en facture</h2>
+      <p class="hint" style="margin:0 0 14px">« ${esc(feLibelle(f) || "Facture")} » est arrivée : indiquez le montant et la date d'échéance de la vraie facture.</p>
+      <div class="field" style="margin-bottom:10px"><label>Montant (€)</label><input type="number" step="0.01" min="0.01" data-ft="montant" value="${esc(feRond(pro.montant || 0).toFixed(2))}"></div>
+      <div class="field" style="margin-bottom:10px"><label>À payer avant le</label><input type="date" data-ft="date"></div>
+      <label class="check" style="display:flex;align-items:center;gap:10px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);margin:6px 0 4px">
+        <input type="checkbox" class="tgl" data-ft="mail" checked><span>Prévenir ${esc(feConcernes(f).map(feNomDe).join(" et "))} par e-mail</span></label>
+      <div class="err" data-ft-err hidden></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px"><button class="btn ghost" data-ft-non>Annuler</button><button class="btn ok" data-ft-oui>Transformer</button></div>
+    </div></div>`;
+    document.body.appendChild(ov);
+    const fin = v => { ov.remove(); ok(v); };
+    ov.onclick = e => {
+      if(e.target === ov || e.target.closest("[data-ft-non]")) return fin(null);
+      if(!e.target.closest("[data-ft-oui]")) return;
+      const q = k => ov.querySelector(`[data-ft="${k}"]`);
+      const montant = feRond(String(q("montant").value).replace(",", ".")), date = q("date").value;
+      const er = ov.querySelector("[data-ft-err]");
+      if(!(montant > 0)){ er.textContent = "Indiquez un montant supérieur à 0."; er.hidden = false; return; }
+      if(!date){ er.textContent = "Indiquez la date d'échéance de la facture."; er.hidden = false; return; }
+      fin({ montant, date, mail: q("mail").checked });
+    };
+  });
 }
 
 /* ---------- modifier fournisseur / objet / référence / message ---------- */
@@ -8876,6 +8910,15 @@ async function feResoudreMembres(pre){
 }
 // à l'ouverture des formulaires : liste des membres masquée (commission par défaut)
 for(const id of ["#fe_factBox", "#fe_planBox"]){ const d = $(id); if(d) d.addEventListener("toggle", () => { if(d.open){ state.feChoixLibre = null; feMajCommission(); } }); }
+function feMajEstimForm(){
+  const tg = $("#fe_f_estim"), fld = $("#fe_f_dateFld"), d = $("#fe_f_date"), mt = document.querySelector('label[for="fe_f_montant"]');
+  const on = !!(tg && tg.checked);
+  if(fld) fld.style.display = on ? "none" : "";
+  if(d) d.required = !on;
+  if(mt) mt.textContent = on ? "Montant estimé (€)" : "Montant (€)";
+}
+document.addEventListener("change", e => { if(e.target && e.target.id === "fe_f_estim") feMajEstimForm(); });
+document.addEventListener("reset", e => { if(e.target && e.target.id === "fe_factForm") setTimeout(feMajEstimForm, 0); });
 document.addEventListener("change", e => { if(e.target && e.target.hasAttribute && e.target.hasAttribute("data-fe-comm")){ if(e.target.checked) state.feChoixLibre = null; feMajCommission(); } });
 document.addEventListener("click", async e => {
   const b = e.target.closest && e.target.closest("#fe_commAjoutBtn, [data-fe-commdel]"); if(!b || !isTreso()) return;
@@ -8897,9 +8940,11 @@ $("#fe_factForm").addEventListener("submit", async e => {
   erreurForm("#fe_f_err", "");
   const fourn = $("#fe_f_fourn").value.trim();
   const montant = feRond(String($("#fe_f_montant").value).replace(",", "."));
-  const date = $("#fe_f_date").value;
+  const estim = !!($("#fe_f_estim") && $("#fe_f_estim").checked);
+  // estimation : pas de date d'échéance (fixée quand la vraie facture arrive) ; date technique = aujourd'hui
+  const date = estim ? dateLocale() : $("#fe_f_date").value;
   if(!fourn) return erreurForm("#fe_f_err", "Indiquez le fournisseur.");
-  if(!(montant > 0)) return erreurForm("#fe_f_err", "Indiquez un montant supérieur à 0.");
+  if(!(montant > 0)) return erreurForm("#fe_f_err", "Indiquez un montant" + (estim ? " estimé" : "") + " supérieur à 0.");
   if(!date) return erreurForm("#fe_f_err", "Indiquez la date limite de paiement.");
   const qui = await feResoudreMembres("f"); if(!qui) return;
   if(qui.err) return erreurForm("#fe_f_err", qui.err);
@@ -9322,18 +9367,19 @@ $("#fe_lists").addEventListener("click", async e => {
   const carte = b.closest("[data-fe-id]");
 
   if(b.hasAttribute("data-fe-reel")){
-    const c = await confirmerAvecMail("Transformer en facture",
-      "La facture « " + (feLibelle(f) || "Facture") + " » est arrivée ?\n\nVérifiez d'abord le montant et la date (champs de la facture, puis « Enregistrer les dates et montants »), et joignez le PDF si besoin.\n\nElle devient une facture normale, payable.",
-      "Transformer", { basculeTexte: "Prévenir " + feConcernes(f).map(feNomDe).join(" et ") + " par e-mail", basculeDefaut: true });
-    if(!c.ok) return;
+    const rep = await feTransformer(f); if(!rep) return;
+    const ech = feEchs(f).map(x => ({ ...x }));
+    const n = ech.findIndex(x => !x.paid_at); if(n < 0) return toast("Rien à transformer.");
+    ech[n].date = rep.date; ech[n].montant = rep.montant;
     b.disabled = true;
-    const { error } = await sb.from(FE_TABLE).update({ estimation: false }).eq("id", f.id);
+    const { error } = await sb.from(FE_TABLE).update({ estimation: false, echeances: ech, montant: feRond(ech.reduce((s,x) => s + Number(x.montant||0), 0)) }).eq("id", f.id);
     b.disabled = false;
     if(error) return dire("Transformation impossible", "Erreur : " + error.message);
-    f.estimation = false;
-    let mail = true; if(c.mail) mail = await feEnvoyer(f, false);
+    Object.assign(f, { estimation: false, echeances: ech });
+    let mail = true; if(rep.mail) mail = await feEnvoyer(f, false);
     await refresh();
-    return dire("Facture enregistrée ✓", "L'estimation est devenue une facture payable." + (c.mail ? (mail ? " " + feConcernes(f).map(feNomDe).join(" et ") + " ont été prévenues par e-mail." : " ⚠ L'e-mail n'est pas parti.") : ""));
+    return dire("Facture enregistrée ✓", "L'estimation est devenue une facture de " + euro(rep.montant) + ", à payer avant le " + fdate(rep.date) + "."
+      + (rep.mail ? (mail ? " " + feConcernes(f).map(feNomDe).join(" et ") + " ont été prévenues par e-mail." : " ⚠ L'e-mail n'est pas parti.") : "") + "\nPense à joindre le PDF de la facture.");
   }
   if(b.hasAttribute("data-fe-modif")){
     const rep = await feModifierInfos(f); if(!rep) return;
