@@ -1044,8 +1044,6 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
             <input type="checkbox" id="fe_f_comm" class="tgl" data-fe-comm checked>
             <span><b>Commission codes &amp; syllabus</b><br><small class="hint" style="margin:0" data-fe-commnoms></small></span></label>
           <div class="grid2">
-            <div class="field" data-fe-membrefld style="display:none"><label for="fe_f_membre">Membre concerné (facture hors commission)</label>
-              <select id="fe_f_membre"><option value="">— Choisir le membre —</option></select></div>
             <div class="field"><label for="fe_f_fourn">Fournisseur</label>
               <input type="text" id="fe_f_fourn" maxlength="80" placeholder="Ex. Kluwer" required></div>
           </div>
@@ -1083,8 +1081,6 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
             <input type="checkbox" id="fe_p_comm" class="tgl" data-fe-comm checked>
             <span><b>Commission codes &amp; syllabus</b><br><small class="hint" style="margin:0" data-fe-commnoms></small></span></label>
           <div class="grid2">
-            <div class="field" data-fe-membrefld style="display:none"><label for="fe_p_membre">Membre concerné (facture hors commission)</label>
-              <select id="fe_p_membre"><option value="">— Choisir le membre —</option></select></div>
             <div class="field"><label for="fe_p_fourn">Fournisseur</label>
               <input type="text" id="fe_p_fourn" maxlength="80" placeholder="Ex. Larcier" required></div>
           </div>
@@ -8815,11 +8811,7 @@ function feMajCommission(){
   const sel = $("#fe_commAjout");
   if(sel) sel.innerHTML = `<option value="">+ Choisir un membre</option>` + (state.members || []).filter(m => m.approved !== false && !feCommMembres().includes(m.id))
     .sort((a,b) => String(a.name||"").localeCompare(String(b.name||""), "fr")).map(m => `<option value="${esc(m.id)}">${esc(m.name || m.email || "Membre")}</option>`).join("");
-  for(const pre of ["f", "p"]){
-    const tg = $("#fe_" + pre + "_comm"), s = $("#fe_" + pre + "_membre");
-    if(tg && s){ const fld = s.closest(".field"); fld.style.opacity = ""; s.disabled = false;
-      fld.style.display = tg.checked || !state.feChoixLibre || state.feChoixLibre !== pre ? "none" : ""; }
-  }
+  /* plus de liste « Membre concerné » : toutes les factures vont à la commission */
 }
 async function feEnregistrerCommission(liste){
   const { error } = await sb.from("caisse_config").update({ commission_membres: liste }).eq("id", 1);
@@ -8830,27 +8822,14 @@ async function feEnregistrerCommission(liste){
 // Renvoie null si la saisie est abandonnée, { err } si quelque chose manque.
 async function feResoudreMembres(pre){
   const comm = feCommMembres(), tg = $("#fe_" + pre + "_comm");
-  let commission = !!(tg && tg.checked);
-  // rappel à chaque enregistrement, interrupteur activé ou non (sauf si l'on vient de répondre « Non »)
-  if(comm.length && state.feChoixLibre !== pre){
-    commission = await demander("Commission codes & syllabus ?",
-      "Cette facture concerne-t-elle la commission codes & syllabus ?\n\nSi oui, elle sera attribuée automatiquement à " + feCommNoms() + ".",
-      { bouton: "Oui, l'attribuer à " + feCommNoms(), boutonNon: "Non" });
-    if(!commission && tg) tg.checked = false;
-  }
-  if(commission){
-    if(!comm.length) return { err: "Aucun membre n'est réglé pour la commission codes & syllabus (bloc « Commission codes & syllabus » en haut de l'onglet)." };
-    const membre = (state.members || []).find(x => x.id === comm[0]);
-    return { membre, co: comm.slice(1) };
-  }
-  // hors commission (cas rare) : la liste des membres n'apparaît qu'à ce moment-là
-  const membre = (state.members || []).find(x => x.id === $("#fe_" + pre + "_membre").value);
-  if(!membre){
-    state.feChoixLibre = pre; feMajCommission();
-    const s = $("#fe_" + pre + "_membre"); if(s) s.focus();
-    return { err: "Facture hors commission : choisissez le membre concerné dans la liste, puis enregistrez." };
-  }
-  return { membre, co: [] };
+  if(!comm.length) return { err: "Aucun membre n'est réglé pour la commission codes & syllabus (bloc « Commission codes & syllabus » en haut de l'onglet)." };
+  const oui = await demander("Commission codes & syllabus ?",
+    "Cette facture concerne-t-elle la commission codes & syllabus ?\n\nSi oui, elle sera attribuée automatiquement à " + feCommNoms() + ".",
+    { bouton: "Oui, l'attribuer à " + feCommNoms(), boutonNon: "Non" });
+  if(!oui){ toast("Enregistrement annulé : rien n'a été créé."); return null; }
+  if(tg) tg.checked = true;
+  const membre = (state.members || []).find(x => x.id === comm[0]);
+  return { membre, co: comm.slice(1) };
 }
 // à l'ouverture des formulaires : liste des membres masquée (commission par défaut)
 for(const id of ["#fe_factBox", "#fe_planBox"]){ const d = $(id); if(d) d.addEventListener("toggle", () => { if(d.open){ state.feChoixLibre = null; feMajCommission(); } }); }
