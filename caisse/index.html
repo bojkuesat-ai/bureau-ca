@@ -1041,7 +1041,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
             <span class="hint">Joins-le en premier : le fournisseur, le montant, l'échéance et le n° de facture se remplissent seuls. Vérifie toujours avant d'enregistrer. 5 Mo maximum.</span>
             <div class="fe-lu" id="fe_f_lu" hidden></div></div>
 <label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:11px 13px">
-            <input type="checkbox" id="fe_f_comm" class="tgl" data-fe-comm>
+            <input type="checkbox" id="fe_f_comm" class="tgl" data-fe-comm checked>
             <span><b>Commission codes &amp; syllabus</b><br><small class="hint" style="margin:0" data-fe-commnoms></small></span></label>
           <div class="grid2">
             <div class="field"><label for="fe_f_membre">Membre concerné</label>
@@ -1080,7 +1080,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
             <span class="hint">Joins-le en premier : le fournisseur, la référence, le total et l'échéancier se remplissent seuls. Vérifie toujours avant d'enregistrer. 5 Mo maximum.</span>
             <div class="fe-lu" id="fe_p_lu" hidden></div></div>
 <label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:11px 13px">
-            <input type="checkbox" id="fe_p_comm" class="tgl" data-fe-comm>
+            <input type="checkbox" id="fe_p_comm" class="tgl" data-fe-comm checked>
             <span><b>Commission codes &amp; syllabus</b><br><small class="hint" style="margin:0" data-fe-commnoms></small></span></label>
           <div class="grid2">
             <div class="field"><label for="fe_p_membre">Membre concerné</label>
@@ -8817,7 +8817,8 @@ function feMajCommission(){
     .sort((a,b) => String(a.name||"").localeCompare(String(b.name||""), "fr")).map(m => `<option value="${esc(m.id)}">${esc(m.name || m.email || "Membre")}</option>`).join("");
   for(const pre of ["f", "p"]){
     const tg = $("#fe_" + pre + "_comm"), s = $("#fe_" + pre + "_membre");
-    if(tg && s){ s.disabled = tg.checked; s.closest(".field").style.opacity = tg.checked ? ".45" : ""; }
+    if(tg && s){ const fld = s.closest(".field"); fld.style.opacity = ""; s.disabled = false;
+      fld.style.display = tg.checked || !state.feChoixLibre || state.feChoixLibre !== pre ? "none" : ""; }
   }
 }
 async function feEnregistrerCommission(liste){
@@ -8830,21 +8831,26 @@ async function feEnregistrerCommission(liste){
 async function feResoudreMembres(pre){
   const comm = feCommMembres(), tg = $("#fe_" + pre + "_comm");
   let commission = !!(tg && tg.checked);
-  if(!commission && comm.length){
+  if(!commission && comm.length && state.feChoixLibre !== pre){
     commission = await demander("Commission codes & syllabus ?",
       "Cette facture concerne-t-elle la commission codes & syllabus ?\n\nSi oui, elle sera attribuée automatiquement à " + feCommNoms() + ".",
       { bouton: "Oui, l'attribuer à " + feCommNoms(), boutonNon: "Non" });
   }
   if(commission){
-    if(!comm.length) return { err: "Aucun membre n'est réglé pour la commission codes & syllabus." };
+    if(!comm.length) return { err: "Aucun membre n'est réglé pour la commission codes & syllabus (bloc « Commission codes & syllabus » en haut de l'onglet)." };
     const membre = (state.members || []).find(x => x.id === comm[0]);
     return { membre, co: comm.slice(1) };
   }
+  // hors commission (cas rare) : la liste des membres n'apparaît qu'à ce moment-là
   const membre = (state.members || []).find(x => x.id === $("#fe_" + pre + "_membre").value);
-  if(!membre) return { err: "Choisissez le membre concerné." };
+  if(!membre){
+    state.feChoixLibre = pre; feMajCommission();
+    const s = $("#fe_" + pre + "_membre"); if(s) s.focus();
+    return { err: "Facture hors commission : choisissez le membre concerné dans la liste, puis enregistrez." };
+  }
   return { membre, co: [] };
 }
-document.addEventListener("change", e => { if(e.target && e.target.hasAttribute && e.target.hasAttribute("data-fe-comm")) feMajCommission(); });
+document.addEventListener("change", e => { if(e.target && e.target.hasAttribute && e.target.hasAttribute("data-fe-comm")){ if(e.target.checked) state.feChoixLibre = null; feMajCommission(); } });
 document.addEventListener("click", async e => {
   const b = e.target.closest && e.target.closest("#fe_commAjoutBtn, [data-fe-commdel]"); if(!b || !isTreso()) return;
   if(b.id === "fe_commAjoutBtn"){
@@ -8991,7 +8997,7 @@ async function feCreer(o){
     if(o.type === "plan") $("#fe_p_nb").value = 3;
     else $("#fe_f_envoyer").checked = true;
     if(o.type === "plan") $("#fe_p_envoyer").checked = true;
-    feMajCommission();
+    state.feChoixLibre = null; feMajCommission();
     if(o.boite) o.boite.open = false;
     state.feOuvert.add(data.id);
     await refresh();
