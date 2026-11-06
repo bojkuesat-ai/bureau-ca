@@ -1023,6 +1023,15 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     </div>
 
     <div id="fe_tresoZone" class="stack" hidden>
+      <details class="pliable" id="fe_commBox">
+        <summary><div><b style="font-family:'Fraunces',serif;font-size:17px">Commission codes &amp; syllabus</b>
+          <div class="resume" data-fe-commnoms></div></div></summary>
+        <div class="stack" style="gap:10px;margin-top:14px">
+          <p class="hint" style="margin:0">Les factures introduites avec l'interrupteur « Commission codes &amp; syllabus » sont attribuées automatiquement à ces membres : le premier comme membre concerné, les autres en partage. Seul le trésorier paie.</p>
+          <div id="fe_commListe"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><select id="fe_commAjout" style="width:auto"></select><button type="button" class="btn ghost sm" id="fe_commAjoutBtn">Ajouter</button></div>
+        </div>
+      </details>
       <details class="pliable" id="fe_factBox">
         <summary><div><b style="font-family:'Fraunces',serif;font-size:17px">Nouvelle facture à échéance</b>
           <div class="resume">Une facture à payer en une fois avant une date (ex. Kluwer, pour le 23 octobre)</div></div></summary>
@@ -1031,9 +1040,12 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
             <input type="file" id="fe_f_pdf" accept="application/pdf,.pdf,image/*">
             <span class="hint">Joins-le en premier : le fournisseur, le montant, l'échéance et le n° de facture se remplissent seuls. Vérifie toujours avant d'enregistrer. 5 Mo maximum.</span>
             <div class="fe-lu" id="fe_f_lu" hidden></div></div>
+<label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:11px 13px">
+            <input type="checkbox" id="fe_f_comm" class="tgl" data-fe-comm>
+            <span><b>Commission codes &amp; syllabus</b><br><small class="hint" style="margin:0" data-fe-commnoms></small></span></label>
           <div class="grid2">
             <div class="field"><label for="fe_f_membre">Membre concerné</label>
-              <select id="fe_f_membre" required><option value="">— Choisir le membre —</option></select></div>
+              <select id="fe_f_membre"><option value="">— Choisir le membre —</option></select></div>
             <div class="field"><label for="fe_f_fourn">Fournisseur</label>
               <input type="text" id="fe_f_fourn" maxlength="80" placeholder="Ex. Kluwer" required></div>
           </div>
@@ -1067,9 +1079,12 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
             <input type="file" id="fe_p_pdf" accept="application/pdf,.pdf,image/*">
             <span class="hint">Joins-le en premier : le fournisseur, la référence, le total et l'échéancier se remplissent seuls. Vérifie toujours avant d'enregistrer. 5 Mo maximum.</span>
             <div class="fe-lu" id="fe_p_lu" hidden></div></div>
+<label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:11px 13px">
+            <input type="checkbox" id="fe_p_comm" class="tgl" data-fe-comm>
+            <span><b>Commission codes &amp; syllabus</b><br><small class="hint" style="margin:0" data-fe-commnoms></small></span></label>
           <div class="grid2">
             <div class="field"><label for="fe_p_membre">Membre concerné</label>
-              <select id="fe_p_membre" required><option value="">— Choisir le membre —</option></select></div>
+              <select id="fe_p_membre"><option value="">— Choisir le membre —</option></select></div>
             <div class="field"><label for="fe_p_fourn">Fournisseur</label>
               <input type="text" id="fe_p_fourn" maxlength="80" placeholder="Ex. Larcier" required></div>
           </div>
@@ -3345,6 +3360,8 @@ async function refresh(){
   state.items = r.data || [];
   if(r.tronque) state.tronque = "demandes";
   try{ const _hc = await sb.from("caisse_config").select("horaires").eq("id",1).maybeSingle(); if(_hc.data && _hc.data.horaires) state.horaires = normHoraires(_hc.data.horaires); }catch(_){}
+  try{ const _cm = await sb.from("caisse_config").select("commission_membres").eq("id",1).maybeSingle();
+       if(_cm.data && Array.isArray(_cm.data.commission_membres)) state.feCommission = _cm.data.commission_membres; }catch(_){}
   try{ const _tc = await sb.from("caisse_config").select("treso_email").eq("id",1).maybeSingle();
        if(_tc.data && _tc.data.treso_email) state.tresoEmail = String(_tc.data.treso_email).trim() || null; }catch(_){}
   try{ const _cc = await sb.from("caisse_config").select("compta").eq("id",1).maybeSingle();
@@ -8621,7 +8638,7 @@ function renderFactures(){
   if(state.feErr) $("#fe_sqlErrTxt").textContent = isTreso()
     ? "Passez d'abord le script SQL « factures à échéance » dans Supabase (SQL Editor), puis rechargez la page. Détail : " + state.feErr
     : "Les factures ne sont pas disponibles pour le moment.";
-  if(isTreso()) feMajMembres();
+  if(isTreso()){ feMajMembres(); feMajCommission(); }
 
   // chiffres clés
   let reste = 0, paye = 0, retard = 0, bientot = 0;
@@ -8786,22 +8803,76 @@ async function feTeleverser(file, kind){
   return [{ path, type: prep.type, kind, name: file.name, hash }];
 }
 
+/* ---------- commission codes & syllabus ---------- */
+// membres de la commission (réglables par le trésorier, enregistrés dans caisse_config.commission_membres)
+function feCommMembres(){ return (state.feCommission || []).filter(id => (state.members || []).some(m => m.id === id)); }
+function feCommNoms(){ return feCommMembres().map(feNomDe).join(" et ") || "aucun membre"; }
+function feMajCommission(){
+  document.querySelectorAll("[data-fe-commnoms]").forEach(el => { el.textContent = feCommMembres().length ? "Attribuée automatiquement à " + feCommNoms() : "Aucun membre de commission réglé"; });
+  const liste = $("#fe_commListe");
+  if(liste) liste.innerHTML = feCommMembres().map((id, n) => `<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span class="tag ${n ? "t-neutre" : "t-valide"}">${n ? "En partage" : "Membre concerné"}</span> <b>${esc(feNomDe(id))}</b> <button type="button" class="btn ghost sm" data-fe-commdel="${esc(id)}">Retirer</button></div>`).join("")
+    || `<p class="hint" style="margin:0">Aucun membre : ajoutez-en ci-dessous.</p>`;
+  const sel = $("#fe_commAjout");
+  if(sel) sel.innerHTML = `<option value="">+ Choisir un membre</option>` + (state.members || []).filter(m => m.approved !== false && !feCommMembres().includes(m.id))
+    .sort((a,b) => String(a.name||"").localeCompare(String(b.name||""), "fr")).map(m => `<option value="${esc(m.id)}">${esc(m.name || m.email || "Membre")}</option>`).join("");
+  for(const pre of ["f", "p"]){
+    const tg = $("#fe_" + pre + "_comm"), s = $("#fe_" + pre + "_membre");
+    if(tg && s){ s.disabled = tg.checked; s.closest(".field").style.opacity = tg.checked ? ".45" : ""; }
+  }
+}
+async function feEnregistrerCommission(liste){
+  const { error } = await sb.from("caisse_config").update({ commission_membres: liste }).eq("id", 1);
+  if(error){ dire("Réglage non enregistré", "Erreur : " + error.message); return false; }
+  state.feCommission = liste; feMajCommission(); return true;
+}
+// Qui est concerné : la commission (interrupteur, ou « Oui » dans le rappel), sinon le membre choisi.
+// Renvoie null si la saisie est abandonnée, { err } si quelque chose manque.
+async function feResoudreMembres(pre){
+  const comm = feCommMembres(), tg = $("#fe_" + pre + "_comm");
+  let commission = !!(tg && tg.checked);
+  if(!commission && comm.length){
+    commission = await demander("Commission codes & syllabus ?",
+      "Cette facture concerne-t-elle la commission codes & syllabus ?\n\nSi oui, elle sera attribuée automatiquement à " + feCommNoms() + ".",
+      { bouton: "Oui, l'attribuer à " + feCommNoms(), boutonNon: "Non" });
+  }
+  if(commission){
+    if(!comm.length) return { err: "Aucun membre n'est réglé pour la commission codes & syllabus." };
+    const membre = (state.members || []).find(x => x.id === comm[0]);
+    return { membre, co: comm.slice(1) };
+  }
+  const membre = (state.members || []).find(x => x.id === $("#fe_" + pre + "_membre").value);
+  if(!membre) return { err: "Choisissez le membre concerné." };
+  return { membre, co: [] };
+}
+document.addEventListener("change", e => { if(e.target && e.target.hasAttribute && e.target.hasAttribute("data-fe-comm")) feMajCommission(); });
+document.addEventListener("click", async e => {
+  const b = e.target.closest && e.target.closest("#fe_commAjoutBtn, [data-fe-commdel]"); if(!b || !isTreso()) return;
+  if(b.id === "fe_commAjoutBtn"){
+    const id = $("#fe_commAjout").value; if(!id) return toast("Choisissez d'abord un membre.");
+    if(await feEnregistrerCommission([...feCommMembres(), id])) dire("Membre ajouté ✓", feNomDe(id) + " fait maintenant partie de la commission codes & syllabus. Les prochaines factures de la commission lui seront attribuées.");
+  } else {
+    const id = b.dataset.feCommdel;
+    if(!await demander("Retirer de la commission", feNomDe(id) + " ne recevra plus les prochaines factures de la commission. Les factures déjà créées ne changent pas.", { bouton: "Retirer", danger: true })) return;
+    if(await feEnregistrerCommission(feCommMembres().filter(x => x !== id))) dire("Membre retiré", feNomDe(id) + " ne fait plus partie de la commission codes & syllabus.");
+  }
+});
+
 /* ---------- saisie : facture simple ---------- */
 $("#fe_factForm").addEventListener("submit", async e => {
   e.preventDefault();
   if(!isTreso()) return;
   const btn = $("#fe_f_btn");
   erreurForm("#fe_f_err", "");
-  const m = (state.members || []).find(x => x.id === $("#fe_f_membre").value);
   const fourn = $("#fe_f_fourn").value.trim();
   const montant = feRond(String($("#fe_f_montant").value).replace(",", "."));
   const date = $("#fe_f_date").value;
-  if(!m) return erreurForm("#fe_f_err", "Choisissez le membre concerné.");
   if(!fourn) return erreurForm("#fe_f_err", "Indiquez le fournisseur.");
   if(!(montant > 0)) return erreurForm("#fe_f_err", "Indiquez un montant supérieur à 0.");
   if(!date) return erreurForm("#fe_f_err", "Indiquez la date limite de paiement.");
+  const qui = await feResoudreMembres("f"); if(!qui) return;
+  if(qui.err) return erreurForm("#fe_f_err", qui.err);
   await feCreer({
-    type: "facture", membre: m, fournisseur: fourn,
+    type: "facture", membre: qui.membre, co: qui.co, fournisseur: fourn,
     objet: $("#fe_f_objet").value.trim(), reference: $("#fe_f_ref").value.trim(),
     note: $("#fe_f_note").value.trim(), echeances: [{ date, montant }],
     fichier: $("#fe_f_pdf").files[0], envoyer: $("#fe_f_envoyer").checked,
@@ -8877,17 +8948,17 @@ $("#fe_planForm").addEventListener("submit", async e => {
   if(!isTreso()) return;
   const btn = $("#fe_p_btn");
   erreurForm("#fe_p_err", "");
-  const m = (state.members || []).find(x => x.id === $("#fe_p_membre").value);
   const fourn = $("#fe_p_fourn").value.trim();
-  if(!m) return erreurForm("#fe_p_err", "Choisissez le membre concerné.");
   if(!fourn) return erreurForm("#fe_p_err", "Indiquez le fournisseur.");
   const ech = state.feLignes.map(l => ({ date: l.date, montant: feRond(String(l.montant).replace(",", ".")) }));
   if(ech.length < 2) return erreurForm("#fe_p_err", "Un plan de paiement compte au moins deux échéances.");
   const n = ech.findIndex(l => !l.date || !(l.montant > 0));
   if(n >= 0) return erreurForm("#fe_p_err", `Échéance ${n+1} : indiquez une date et un montant supérieur à 0.`);
   ech.sort((a,b) => a.date.localeCompare(b.date));
+  const qui = await feResoudreMembres("p"); if(!qui) return;
+  if(qui.err) return erreurForm("#fe_p_err", qui.err);
   const ok = await feCreer({
-    type: "plan", membre: m, fournisseur: fourn,
+    type: "plan", membre: qui.membre, co: qui.co, fournisseur: fourn,
     objet: $("#fe_p_objet").value.trim(), reference: $("#fe_p_ref").value.trim(),
     note: $("#fe_p_note").value.trim(), echeances: ech,
     fichier: $("#fe_p_pdf").files[0], envoyer: $("#fe_p_envoyer").checked,
@@ -8910,6 +8981,7 @@ async function feCreer(o){
       echeances: o.echeances.map(x => ({ date: x.date, montant: feRond(x.montant), paid_at: null, request_id: null })),
       attachments: pieces, note: o.note || null, created_by: state.profile.id
     };
+    if(o.co && o.co.length) ligne.co_membres = o.co;
     const { data, error } = await sb.from(FE_TABLE).insert(ligne).select().single();
     if(error) throw error;
     let envoye = false;
@@ -8919,6 +8991,7 @@ async function feCreer(o){
     if(o.type === "plan") $("#fe_p_nb").value = 3;
     else $("#fe_f_envoyer").checked = true;
     if(o.type === "plan") $("#fe_p_envoyer").checked = true;
+    feMajCommission();
     if(o.boite) o.boite.open = false;
     state.feOuvert.add(data.id);
     await refresh();
