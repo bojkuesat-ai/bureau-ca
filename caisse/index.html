@@ -8445,17 +8445,20 @@ function feCompte(j){
   if(j > 0)  return "dans " + j + " j";
   return (-j) + " j de retard";
 }
-// factures visibles : tout pour le trésorier, seulement les siennes (déjà envoyées) pour un membre
+// factures visibles : tout pour le trésorier ; pour un membre, les siennes et celles qu'il partage (commission), déjà envoyées
+const feCoMembres = f => Array.isArray(f.co_membres) ? f.co_membres.filter(Boolean) : [];
+const feConcernes = f => [f.member_id, ...feCoMembres(f).filter(id => id !== f.member_id)];
 function feVisibles(){
   const me = state.profile && state.profile.id;
-  return (state.factures || []).filter(f => isTreso() || (f.member_id === me && f.sent_at));
+  return (state.factures || []).filter(f => isTreso() || (f.sent_at && feConcernes(f).includes(me)));
 }
+const feNomDe = id => { const m = (state.members || []).find(x => x.id === id); return (m && (m.name || m.email)) || "Membre"; };
 const feNomMembre = f => {
   const m = (state.members || []).find(x => x.id === f.member_id);
   return (m && m.name) || f.member_name || "Membre";
 };
 const fePrenom = f => {
-  const m = (state.members || []).find(x => x.id === f.member_id);
+  const m = (state.members || []).find(x => x.id === (f.__dest || f.member_id));
   return (m && m.first_name) || String((m && m.name) || f.member_name || "").split(" ")[0] || "";
 };
 const feLibelle = f => [f.fournisseur, f.objet].filter(Boolean).join(" — ");
@@ -8565,6 +8568,9 @@ function feCorps(f){
 
   const infos = `<div class="fe-info">
     ${T ? `<div><span>Membre</span>${esc(feNomMembre(f))}</div>` : ""}
+    ${T ? `<div><span>Partagée avec</span>${feCoMembres(f).length ? feCoMembres(f).map(id => `${esc(feNomDe(id))} <button type="button" class="btn ghost sm" data-fe-codel="${esc(id)}" title="Retirer" style="padding:2px 8px">✕</button>`).join(" ") : "personne"}
+      <span style="display:inline-flex;gap:6px;margin-left:6px"><select data-fe-cosel style="width:auto;padding:4px 8px"><option value="">+ Ajouter un membre</option>${(state.members || []).filter(m => m.approved !== false && !feConcernes(f).includes(m.id)).sort((a,b) => String(a.name||"").localeCompare(String(b.name||""), "fr")).map(m => `<option value="${esc(m.id)}">${esc(m.name || m.email || "Membre")}</option>`).join("")}</select><button type="button" class="btn ghost sm" data-fe-coadd>Ajouter</button></span></div>`
+      : (feConcernes(f).length > 1 ? `<div><span>Commission partagée</span>${feConcernes(f).map(id => esc(feNomDe(id))).join(", ")}</div>` : "")}
     <div><span>Fournisseur</span>${esc(f.fournisseur || "—")}</div>
     ${f.reference ? `<div><span>N° / référence</span>${esc(f.reference)}</div>` : ""}
     <div><span>Montant total</span>${euro(total)}</div>
@@ -8734,10 +8740,15 @@ function feMailSujet(f, rappel){
   return (rappel ? "Rappel — facture " : "Facture ") + f.fournisseur + " à payer" + av;
 }
 async function feEnvoyer(f, rappel){
-  const to = await emailDuDemandeur({ user_id: f.member_id });
-  if(!to){ toast("Adresse e-mail du membre introuvable : rien n'est parti."); return false; }
-  const ok = await envoyerMail(to, feMailSujet(f, rappel), feMailHtml(f, rappel), emailTreso());
-  if(!ok){ toast("L'e-mail n'est pas parti : " + (dernierEchecMail || "raison inconnue")); return false; }
+  let nbOk = 0; const rates = [];
+  for(const id of feConcernes(f)){
+    const to = await emailDuDemandeur({ user_id: id });
+    if(!to){ rates.push(feNomDe(id) + " (adresse introuvable)"); continue; }
+    const bon = await envoyerMail(to, feMailSujet(f, rappel), feMailHtml({ ...f, __dest: id }, rappel), emailTreso());
+    if(bon) nbOk++; else rates.push(feNomDe(id) + " (" + (dernierEchecMail || "raison inconnue") + ")");
+  }
+  if(!nbOk){ toast("L'e-mail n'est pas parti : " + (rates.join(", ") || "raison inconnue")); return false; }
+  if(rates.length) toast("E-mail non envoyé à : " + rates.join(", "));
   const maj = rappel ? { reminded_at: new Date().toISOString() } : { sent_at: new Date().toISOString() };
   if(rappel && !f.sent_at) maj.sent_at = maj.reminded_at;
   const { error } = await sb.from(FE_TABLE).update(maj).eq("id", f.id);
@@ -8745,7 +8756,12 @@ async function feEnvoyer(f, rappel){
   return true;
 }
 async function feMailPaye(f, e){
-  const to = await emailDuDemandeur({ user_id: f.member_id }); if(!to) return false;
+  const ids = feConcernes(f); let tous = true;
+  for(const id of ids){ const ok = await feMailPayeA({ ...f, __dest: id }, e, id); if(!ok) tous = false; }
+  return tous;
+}
+async function feMailPayeA(f, e, id){
+  const to = await emailDuDemandeur({ user_id: id }); if(!to) return false;
   const plan = f.type === "plan";
   const restent = feImpayees(f);
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
@@ -9198,6 +9214,21 @@ $("#fe_lists").addEventListener("click", async e => {
   }
   if(!isTreso()) return;
   const carte = b.closest("[data-fe-id]");
+
+  if(b.hasAttribute("data-fe-coadd") || b.hasAttribute("data-fe-codel")){
+    const ajout = b.hasAttribute("data-fe-coadd");
+    const id = ajout ? ((carte && carte.querySelector("[data-fe-cosel]")) || {}).value : b.dataset.feCodel;
+    if(!id) return toast("Choisissez d'abord le membre à ajouter.");
+    const liste = ajout ? [...new Set([...feCoMembres(f), id])] : feCoMembres(f).filter(x => x !== id);
+    b.disabled = true;
+    const { error } = await sb.from(FE_TABLE).update({ co_membres: liste }).eq("id", f.id);
+    b.disabled = false;
+    if(error) return dire(ajout ? "Ajout impossible" : "Retrait impossible", "Erreur : " + error.message);
+    f.co_membres = liste; renderFactures();
+    return dire(ajout ? "Membre ajouté ✓" : "Membre retiré",
+      ajout ? feNomDe(id) + " voit maintenant cette facture" + (f.sent_at ? "" : " (dès qu'elle sera envoyée)") + ", avec son échéance et son statut de paiement. Les prochains e-mails lui seront aussi envoyés."
+            : feNomDe(id) + " ne voit plus cette facture.");
+  }
 
   if(b.hasAttribute("data-fe-send") || b.hasAttribute("data-fe-rappel")){
     const rappel = b.hasAttribute("data-fe-rappel");
