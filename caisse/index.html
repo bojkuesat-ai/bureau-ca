@@ -1949,6 +1949,10 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
           <input type="text" id="ann_subject" maxlength="120" placeholder="Ex. Fermeture de la caisse pendant les examens"></div>
         <div class="field" style="margin-top:10px"><label for="ann_body">Message</label>
           <textarea id="ann_body" placeholder="Votre annonce à tous les membres…"></textarea></div>
+        <div class="field" style="margin-top:10px"><label for="ann_files">Pièces jointes (facultatif)</label>
+          <input type="file" id="ann_files" multiple accept=".pdf,.doc,.docx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation">
+          <p class="hint" style="margin:4px 0 0">📎 PDF, Word ou PowerPoint · 10 Mo au total maximum.</p>
+          <div id="ann_filesList" class="stack" style="gap:6px;margin-top:8px"></div></div>
         <div class="actions" style="margin-top:12px"><button class="btn" id="ann_send">Envoyer l'annonce par e-mail aux membres</button></div>
         <p class="hint" style="margin-top:8px">Un e-mail est envoyé individuellement à chaque membre actif — les adresses ne sont jamais partagées entre eux.</p>
       </div>
@@ -2367,25 +2371,29 @@ const envoyerRemb = (to, subject, html, reply_to) => envoyerMail(to, subject, ht
 function envoyerMailObligatoire(to, subject, html, reply_to, from){ return envoyerMail(to, subject, html, reply_to, from); }
 /* Chaque mail parti de la Caisse est gardé dans caisse_mails (lisible par le trésorier seul),
    pour l'onglet « Mails envoyés ». L'enregistrement ne bloque jamais l'envoi. */
-let mailLotCourant = null;
+let mailLotCourant = null, mailPiecesCourantes = null;
 function noterMail(to, subject, html, reply_to, from, ok, erreur){
   try{
     if(!sb || !state.profile) return;
     const h = String(html || "");
-    sb.from("caisse_mails").insert({ destinataire: String(to || ""), sujet: String(subject || ""), html: h.length > 200000 ? h.slice(0, 200000) : h,
+    const ligne = { destinataire: String(to || ""), sujet: String(subject || ""), html: h.length > 200000 ? h.slice(0, 200000) : h,
       expediteur: from || EXP_TRESO, reply_to: reply_to || null, ok: !!ok, erreur: ok ? null : (erreur || null), lot: mailLotCourant,
-      auteur: state.profile.name || state.profile.email || "" }).then(() => {}, () => {});
+      auteur: state.profile.name || state.profile.email || "" };
+    if(mailPiecesCourantes && mailPiecesCourantes.length) ligne.pieces = mailPiecesCourantes;
+    // si la colonne « pieces » n'existe pas encore, on réessaie sans
+    sb.from("caisse_mails").insert(ligne).then(r => { if(r && r.error && ligne.pieces){ delete ligne.pieces; return sb.from("caisse_mails").insert(ligne); } }).then(() => {}, () => {});
   }catch(_){ }
 }
-async function envoyerMail(to, subject, html, reply_to, from){
-  const ok = await envoyerMailBrut(to, subject, html, reply_to, from);
+async function envoyerMail(to, subject, html, reply_to, from, attachments){
+  const ok = await envoyerMailBrut(to, subject, html, reply_to, from, attachments);
   noterMail(to, subject, html, reply_to, from, ok, dernierEchecMail);
   return ok;
 }
-async function envoyerMailBrut(to, subject, html, reply_to, from){
+async function envoyerMailBrut(to, subject, html, reply_to, from, attachments){
   if(!to){ dernierEchecMail = "adresse du destinataire introuvable"; return false; }
   try{
     const payload = { to, subject, html };
+    if(attachments && attachments.length) payload.attachments = attachments;
     if(reply_to) payload.reply_to = reply_to;
     payload.from = from || EXP_TRESO;
     // On présente le jeton de session de l'utilisateur connecté plutôt que la clé publique :
@@ -2747,6 +2755,38 @@ async function mailInscriptionValidee(m){
   return envoyerMail(m.email, "Votre inscription est validée — Caisse du bureau étudiant", html);
 }
 
+/* ---------- pièces jointes de l'annonce aux membres ---------- */
+const ANN_MAX_OCTETS = 10 * 1024 * 1024;
+const ANN_EXT = /\.(pdf|docx?|pptx?)$/i;
+const annTaille = n => n >= 1048576 ? (n / 1048576).toFixed(1).replace(".", ",") + " Mo" : Math.max(1, Math.round(n / 1024)) + " Ko";
+function annBase64(f){
+  return new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = () => ko(r.error || new Error("lecture impossible")); r.readAsDataURL(f); });
+}
+function annMajPieces(){
+  const box = $("#ann_filesList"); if(!box) return;
+  const l = state.annPieces || [], tot = l.reduce((s, f) => s + f.size, 0);
+  box.innerHTML = l.map((f, i) => `<div style="display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:7px 10px">
+      <span>📎</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span><span class="hint" style="margin:0">${annTaille(f.size)}</span>
+      <button type="button" class="btn ghost sm" data-ann-retirer="${i}" title="Retirer">✕</button></div>`).join("")
+    + (l.length ? `<p class="hint" style="margin:0;${tot > ANN_MAX_OCTETS ? "color:#e88" : ""}">Total : ${annTaille(tot)} / 10 Mo</p>` : "");
+}
+document.addEventListener("change", e => {
+  if(!e.target || e.target.id !== "ann_files") return;
+  const refus = [];
+  state.annPieces = state.annPieces || [];
+  for(const f of e.target.files || []){
+    if(!ANN_EXT.test(f.name)){ refus.push(f.name); continue; }
+    if(!state.annPieces.some(x => x.name === f.name && x.size === f.size)) state.annPieces.push(f);
+  }
+  e.target.value = "";
+  annMajPieces();
+  if(refus.length) dire("Fichier refusé", "Seuls les PDF, Word (.doc, .docx) et PowerPoint (.ppt, .pptx) sont acceptés :\n" + refus.join("\n"));
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest && e.target.closest("[data-ann-retirer]"); if(!b) return;
+  (state.annPieces || []).splice(Number(b.dataset.annRetirer), 1); annMajPieces();
+});
+
 async function envoyerAnnonceMembres(){
   const subj = ($("#ann_subject") ? $("#ann_subject").value : "").trim();
   const body = ($("#ann_body") ? $("#ann_body").value : "").trim();
@@ -2759,13 +2799,27 @@ async function envoyerAnnonceMembres(){
     vus.add(k); return true;
   });
   if(!dest.length){ toast("Aucun membre actif avec e-mail."); return; }
-  if(!await demander("Envoyer l'annonce", `Elle partira par e-mail à ${dest.length} membre(s).`, { bouton:"Envoyer" })) return;
+  const fichiers = state.annPieces || [];
+  const totalOctets = fichiers.reduce((s, f) => s + f.size, 0);
+  if(totalOctets > ANN_MAX_OCTETS) return dire("Pièces jointes trop lourdes", "Les pièces jointes font " + annTaille(totalOctets) + " au total : la limite est de 10 Mo. Retirez un fichier ou compressez-le.");
+  if(!await demander("Envoyer l'annonce", `Elle partira par e-mail à ${dest.length} membre(s)` + (fichiers.length ? `, avec ${fichiers.length} pièce(s) jointe(s) :\n` + fichiers.map(f => "📎 " + f.name).join("\n") : ".") , { bouton:"Envoyer" })) return;
+  let pj = [], piecesHisto = [];
+  if(fichiers.length){
+    try{
+      for(const f of fichiers){
+        pj.push({ filename: f.name, content: await annBase64(f), contentType: f.type || "application/octet-stream" });
+        const chemin = `${state.profile.id}/annonces/${Date.now()}-${String(f.name).replace(/[^A-Za-z0-9._-]+/g, "_").slice(-80)}`;
+        const up = await sb.storage.from("justificatifs").upload(chemin, f, { contentType: f.type || "application/octet-stream" });
+        piecesHisto.push({ name: f.name, path: up && !up.error ? chemin : null, size: f.size });
+      }
+    }catch(e){ return dire("Pièces jointes illisibles", "Impossible de préparer les pièces jointes : " + (e.message || e)); }
+  }
   const btn = $("#ann_send"); if(btn){ btn.disabled = true; btn.textContent = "Envoi…"; }
   const sujet = subj || "Annonce du bureau étudiant";
   let ok = 0; const echecs = []; let n = 0;
   const garde = e => { e.preventDefault(); e.returnValue = ""; };
   window.addEventListener("beforeunload", garde);
-  mailLotCourant = "annonce-" + Date.now();
+  mailLotCourant = "annonce-" + Date.now(); mailPiecesCourantes = piecesHisto.length ? piecesHisto : null;
   try{
   for(const m of dest){
     n++;
@@ -2779,11 +2833,11 @@ async function envoyerAnnonceMembres(){
       <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
       <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
     let envoye = false;
-    try{ envoye = await envoyerMail(m.email, sujet, html); }catch(_){ envoye = false; }
+    try{ envoye = await envoyerMail(m.email, sujet, html, null, null, pj); }catch(_){ envoye = false; }
     if(envoye) ok++; else echecs.push((m.name || "") + " <" + m.email + ">");
     await new Promise(r => setTimeout(r, 120));
   }
-  }finally{ mailLotCourant = null; }
+  }finally{ mailLotCourant = null; mailPiecesCourantes = null; }
   window.removeEventListener("beforeunload", garde);
   if(btn){ btn.disabled = false; btn.textContent = "Envoyer l'annonce par e-mail aux membres"; }
   if(echecs.length){
@@ -2796,6 +2850,8 @@ async function envoyerAnnonceMembres(){
   }else{
     toast(ok + " membre(s) prévenu(s) par e-mail.");
     if($("#ann_subject")) $("#ann_subject").value = ""; if($("#ann_body")) $("#ann_body").value = "";
+    state.annPieces = []; annMajPieces();
+    dire("Annonce envoyée ✓", ok + " membre(s) l'ont reçue" + (pj.length ? ", avec " + pj.length + " pièce(s) jointe(s)" : "") + ". Elle est visible dans « Mails envoyés ».");
   }
 }
 function statsTreso(){
@@ -15107,7 +15163,9 @@ if($("#tabSC")) $("#tabSC").onclick = () => choisirVue("sc");
 async function mailsCharger(){
   const M = state.mails = state.mails || { liste: [], q: "", filtre: "tout", err: null, charge: false };
   renderMails();
-  const r = await sb.from("caisse_mails").select("id,created_at,auteur,destinataire,sujet,expediteur,ok,erreur,lot")
+  let r = await sb.from("caisse_mails").select("id,created_at,auteur,destinataire,sujet,expediteur,ok,erreur,lot,pieces")
+    .order("created_at", { ascending:false }).limit(1000);
+  if(r.error) r = await sb.from("caisse_mails").select("id,created_at,auteur,destinataire,sujet,expediteur,ok,erreur,lot")
     .order("created_at", { ascending:false }).limit(1000);
   M.charge = true;
   if(r.error){ M.err = r.error.message; M.liste = []; } else { M.err = null; M.liste = r.data || []; }
@@ -15134,7 +15192,7 @@ function renderMails(){
     const dest = n > 1 ? n + " destinataires" : esc(premier.destinataire);
     return `<div class="row" data-mailid="${esc(premier.id)}" data-maillot="${esc(g.lot || "")}" style="cursor:pointer">
       <div class="date mono" style="font-size:12.5px">${esc(new Date(g.created_at).toLocaleString("fr-BE", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }))}</div>
-      <div><div class="obj">${g.lot ? "📣 " : ""}${esc(g.sujet || "(sans objet)")}</div><div class="meta">À : ${dest}${g.auteur ? " · envoyé par " + esc(g.auteur) : ""}</div></div>
+      <div><div class="obj">${g.lot ? "📣 " : ""}${esc(g.sujet || "(sans objet)")}${(premier.pieces || []).length ? " 📎" : ""}</div><div class="meta">À : ${dest}${g.auteur ? " · envoyé par " + esc(g.auteur) : ""}</div></div>
       <div>${rates ? `<span class="tag t-refuse">${rates} échec${rates > 1 ? "s" : ""}</span>` : `<span class="tag t-valide">Envoyé</span>`}</div>
       <div class="amt"></div><div class="chev">›</div></div>`;
   };
@@ -15161,6 +15219,7 @@ async function mailsOuvrir(id, lot){
     <h2 style="font-size:19px;margin:0 0 6px">${esc(m.sujet || "(sans objet)")}</h2>
     <p class="hint" style="margin:0 0 4px">${esc(new Date(m.created_at).toLocaleString("fr-BE"))} · de ${esc(m.expediteur || "")}${m.auteur ? " · envoyé par " + esc(m.auteur) : ""}</p>
     <div class="hint" style="margin:0 0 12px;max-height:140px;overflow:auto">À : ${items.map(x => esc(x.destinataire) + (x.ok ? "" : ` <b style="color:#e88">(échec${x.erreur ? " : " + esc(x.erreur) : ""})</b>`)).join(", ")}</div>
+    ${(m.pieces || []).length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px">${m.pieces.map((p, i) => `<button type="button" class="btn ghost sm" data-mails-piece="${i}" ${p.path ? "" : "disabled"}>📎 ${esc(p.name)}</button>`).join("")}</div>` : ""}
     ${lot ? `<p class="hint" style="margin:0 0 8px">Aperçu du mail reçu par ${esc(m.destinataire)} (chaque membre reçoit le même texte avec son prénom).</p>` : ""}
     <iframe sandbox="" style="width:100%;height:420px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
     <div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn ghost" data-mails-fermer>Fermer</button></div>
@@ -15170,7 +15229,13 @@ async function mailsOuvrir(id, lot){
   const fin = () => { ov.remove(); document.removeEventListener("keydown", clav, true); };
   const clav = e => { if(e.key === "Escape"){ e.preventDefault(); fin(); } };
   document.addEventListener("keydown", clav, true);
-  ov.onclick = e => { if(e.target === ov || e.target.closest("[data-mails-fermer]")) fin(); };
+  ov.onclick = async e => {
+    const pb = e.target.closest("[data-mails-piece]");
+    if(pb){ const p = (m.pieces || [])[Number(pb.dataset.mailsPiece)]; if(!p || !p.path) return;
+      const su = await sb.storage.from("justificatifs").createSignedUrl(p.path, 3600, { download: p.name });
+      if(su.error || !su.data) return toast("Ouverture impossible."); window.open(su.data.signedUrl, "_blank", "noopener"); return; }
+    if(e.target === ov || e.target.closest("[data-mails-fermer]")) fin();
+  };
 }
 document.addEventListener("click", e => {
   if(!state.mails) return;
