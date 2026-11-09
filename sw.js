@@ -3,7 +3,7 @@
    - librairies à version figée (jsDelivr) et polices : gardées sur l'appareil ;
    - Supabase et tout le reste : jamais touchés (toujours en direct) ;
    - notifications sur le téléphone. */
-const CACHE = "ca-v2-2026-10-23";
+const CACHE = "ca-v2-2026-11-09";
 self.addEventListener("install", e => { self.skipWaiting(); });
 self.addEventListener("activate", e => {
   e.waitUntil((async () => {
