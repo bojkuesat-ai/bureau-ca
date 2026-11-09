@@ -723,7 +723,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-10-24 \u00b7 r\u00e8gle 16.2";
+const CA_VERSION="2026-11-09 \u00b7 exp\u00e9diteurs billetterie";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -8335,15 +8335,19 @@ function blocBilletterieEvt(ev){
 function billetsCarteAdmin(){
   if(!(S.session&&S.session.role==="owner")) return "";
   const A=S.billetsAdmin;
-  if(!A){ if(!S.billetsAdminCharge){ S.billetsAdminCharge=true; sb.rpc("bil_admin_etat").then(r=>{ S.billetsAdmin=(r&&!r.error&&r.data)||{err:(r&&r.error&&r.error.message)||"?"}; rendreEnPreservant(); }).catch(()=>{ S.billetsAdminCharge=false; }); }
+  if(!A){ if(!S.billetsAdminCharge){ S.billetsAdminCharge=true; Promise.all([sb.rpc("bil_admin_etat"), sb.rpc("bil_admin_expediteurs")]).then(([r,x])=>{ S.billetsAdmin=(r&&!r.error&&r.data)||{err:(r&&r.error&&r.error.message)||"?"};
+        const E={}; ((x&&!x.error&&x.data)||[]).forEach(c=>{ E[c.id]=c.expediteur||""; }); S.billetsAdmin.expediteurs=E; S.billetsAdmin.expOk=!(x&&x.error); rendreEnPreservant(); }).catch(()=>{ S.billetsAdminCharge=false; }); }
     return `<div class="card2"><h3 class="serif">🎟 Billetterie</h3><p class="du">Chargement…</p></div>`; }
   if(A.err) return `<div class="card2"><h3 class="serif">🎟 Billetterie</h3><p class="du" style="color:var(--red)">${/bil_|does not exist|Could not find/i.test(A.err)?"Le script SQL « billetterie.sql » n'a pas encore été exécuté dans Supabase.":esc(A.err)}</p></div>`;
   return `<div class="card2"><h3 class="serif">🎟 Billetterie</h3>
     <p class="du">Page à part : <a href="${esc(billetsUrl())}" target="_blank" rel="noopener">${esc(billetsUrl())}</a>. La page d'erreur de la Billetterie se règle dans la carte « Page d'erreur » ci-dessus.</p>
     <p class="fld" style="margin:12px 0 6px;font-weight:600">Commissions actives</p>
     <p class="du">Une commission retirée disparaît de la Billetterie pour ses responsables (vous la voyez toujours). Les billets déjà émis, les inscriptions en ligne et le scanner continuent de fonctionner.</p>
-    ${(A.commissions||[]).map(c=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
-      <input type="checkbox" class="sw" role="switch" ${c.actif?"checked":""} data-action="bil-comm" data-id="${esc(c.id)}"> ${esc(c.nom)} <span class="du">${esc(c.responsables||"aucun compte responsable")}${c.evenements?" · "+c.evenements+" événement(s)":""}</span></label>`).join("")}
+    <p class="du">« Expéditeur » : nom affiché devant noreply@bureauetuidant.xyz dans les mails de la Billetterie de cette commission (ex. ACA-BE, Festif-BE). Vide = Billetterie-BE. Enregistré dès que vous quittez le champ.</p>
+    ${(A.commissions||[]).map(c=>`<div style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:9px;cursor:pointer;flex:1 1 220px"><input type="checkbox" class="sw" role="switch" ${c.actif?"checked":""} data-action="bil-comm" data-id="${esc(c.id)}"> ${esc(c.nom)} <span class="du">${esc(c.responsables||"aucun compte responsable")}${c.evenements?" · "+c.evenements+" événement(s)":""}</span></label>
+      ${A.expOk===false?"":`<input type="text" maxlength="40" placeholder="Billetterie-BE" title="Expéditeur des mails" style="width:150px;padding:6px 9px;font-size:13px;margin:0" value="${esc((A.expediteurs||{})[c.id]||"")}" data-action="bil-exp" data-id="${esc(c.id)}">`}</div>`).join("")}
+    ${A.expOk===false?`<p class="du" style="color:var(--red)">Expéditeurs non disponibles : le script SQL « billetterie_expediteur.sql » n'a pas encore été exécuté dans Supabase.</p>`:""}
     <p class="fld" style="margin:16px 0 6px;font-weight:600">🛠️ Mode maintenance</p>
     <label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:15px;font-weight:700;cursor:pointer">
       <input type="checkbox" class="sw" role="switch" ${A.maintenance?"checked":""} data-action="bil-maint"> ${A.maintenance?"Maintenance ACTIVÉE":"Maintenance désactivée"}</label>
@@ -8352,6 +8356,20 @@ function billetsCarteAdmin(){
     <p class="du">Tous les appareils ouverts sur la Billetterie (responsables et bénévoles) devront se reconnecter (dans les 30 secondes s'ils sont ouverts). L'espace CA n'est pas touché.${A.deco_le?" Dernière fois : "+esc(fmtQuand(A.deco_le))+".":""}</p>
     <div class="row-btn"><button class="btn ghost sm" style="border-color:var(--red);color:var(--red)" data-action="bil-deco">🔒 Déconnecter partout</button></div></div>`;
 }
+document.addEventListener("change", async e=>{
+  const el=e.target.closest("input[data-action='bil-exp']"); if(!el||!sb) return;
+  if(!(S.session&&S.session.role==="owner")) return;
+  const v=el.value.trim(), A=S.billetsAdmin||{}, c=(A.commissions||[]).find(x=>x.id===el.dataset.id), avant=(A.expediteurs||{})[el.dataset.id]||"";
+  if(v===avant) return;
+  if(v&&(v.length<2||/[<>"@\r\n]/.test(v))){ el.value=avant; modaleInfo("Nom d'expéditeur invalide : 2 à 40 caractères, sans < > \" ni @.","Billetterie"); return; }
+  try{
+    const r=await sb.rpc("bil_admin_expediteur",{p_cid:el.dataset.id,p_exp:v});
+    if(r.error) throw r.error;
+    A.expediteurs=A.expediteurs||{}; A.expediteurs[el.dataset.id]=v;
+    logAct("Billetterie — expéditeur "+(c?c.nom:el.dataset.id)+" → "+(v||"Billetterie-BE"));
+    modaleInfo("✓ Les mails de la commission « "+(c?c.nom:"")+" » partiront de « "+(v||"Billetterie-BE")+" <noreply@bureauetuidant.xyz> ».","Enregistré");
+  }catch(err){ el.value=avant; modaleInfo("❌ Non enregistré : "+((err&&err.message)||"le serveur a refusé")+".","Billetterie"); }
+});
 document.addEventListener("click", async e=>{
   const el=e.target.closest("[data-action^='bil-']"); if(!el||!sb) return;
   const a=el.dataset.action;
