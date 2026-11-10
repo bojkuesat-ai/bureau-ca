@@ -24,10 +24,10 @@ const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SRK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const sbAdmin = createClient(SB_URL, SRK, { auth: { persistSession: false, autoRefreshToken: false } });
 const LIMITE_MEMBRE_H = 500, LIMITE_ANON_IP_H = 30, LIMITE_ANON_DEST_H = 3, LIMITE_MODELES_TOTAL_H = 2000, LIMITE_ANON_HTML_TOTAL_H = 300;
-/* TRANSITION : tant que l'app QR n'envoie pas le jeton Firebase de ses responsables,
-   le HTML libre anonyme reste toléré (anciennes règles : adresses connues seulement).
-   Passer à false une fois la mise à jour de l'app QR en ligne. */
-const ANON_HTML_TOLERE = true;
+/* TRANSITION terminée le 10/11/2026 (app QR v201 en ligne : elle envoie le jeton
+   Firebase de ses responsables). Plus de HTML libre avec la seule clé publique.
+   Remettre à true uniquement en cas d'urgence (anciennes règles : adresses connues). */
+const ANON_HTML_TOLERE = false;
 /* Gabarits adressés à l'équipe elle-même : 30 par heure vers une même adresse. */
 const LIMITE_ALERTE_DEST_H = 30;
 const MODELES_EQUIPE = new Set(["inscription_alerte_equipe"]);
