@@ -26,10 +26,10 @@ Supabase › Edge Functions › Secrets et dans la table `bil_config`.
 
 `send-email/ancienne-version-v21.ts.txt` = version d'avant le durcissement (retour arrière possible).
 
-### Transition anti-spam (send-email)
-`ANON_HTML_TOLERE = true` tant que l'app QR (dépôt `qr-verification`) n'envoie pas le jeton
-Firebase de ses responsables. Une fois sa mise à jour en ligne, passer à `false` et redéployer :
-plus aucun mail à contenu libre ne pourra partir avec la seule clé publique.
+### Anti-spam (send-email)
+Depuis le 10/11/2026 (v23), `ANON_HTML_TOLERE = false` : avec la seule clé publique,
+seuls les gabarits serveur partent. L'app QR (dépôt `qr-verification`, v201) envoie le
+jeton Firebase de ses responsables. Remettre à `true` uniquement en cas d'urgence.
 
 ## sql/
 Scripts exécutés dans l'éditeur SQL, par date. Les scripts plus anciens
