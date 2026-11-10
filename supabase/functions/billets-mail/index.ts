@@ -5,7 +5,8 @@
 //  jamais faire partir un mail au contenu libre.
 //  À déployer avec « Verify JWT » DÉSACTIVÉ (la fonction vérifie elle-même
 //  qui l'appelle : public, responsable connecté ou tâche planifiée).
-//  Version du 09/11/2026 — nom d'expéditeur par commission (bil_commissions.expediteur).
+//  Version du 10/11/2026 — nom d'expéditeur par commission (bil_commissions.expediteur)
+//  et signature au prénom du ou des responsables de la commission (ca_membres.fonction).
 // =====================================================================
 import { createClient } from "npm:@supabase/supabase-js@2.115.0";
 import qrcode from "npm:qrcode-generator@1.4.4";
@@ -102,6 +103,37 @@ const nomDe = (u: Membre) => `${u.prenom} ${u.nom}`.trim();
 
 // ------------------------------------------------------------------ Données
 type Evt = Record<string, any>;
+
+/* Signature des mails : prénom du ou des responsables actifs de la commission,
+   retrouvés par leur fonction dans le CA. Le poste change de titulaire ? La
+   signature suit. Poste vide ? On garde la signature générique du Bureau. */
+const POSTES_COMMISSION: Record<string, { fonctions: string[]; titre: string; titres?: string }> = {
+  academique: { fonctions: ["Responsable événements académiques"], titre: "Responsable événements académiques" },
+  festif: { fonctions: ["Responsable événements festifs"], titre: "Responsable événements festifs" },
+  culturel: { fonctions: ["Responsable événements culturels"], titre: "Responsable événements culturels" },
+  jobdays: { fonctions: ["Responsable jobdays"], titre: "Responsable Jobdays" },
+  sponsors: { fonctions: ["Responsable sponsors"], titre: "Responsable sponsors" },
+  salle: { fonctions: ["Responsable salle facultaire"], titre: "Responsable salle facultaire" },
+  com: { fonctions: ["Responsable communication"], titre: "Responsable communication" },
+  entraide: { fonctions: ["Responsable Commission Entraide Sociale"], titre: "Responsable Commission Entraide Sociale" },
+  crimino: { fonctions: ["Représentation criminologie"], titre: "Représentation criminologie", titres: "Représentation criminologie" },
+  syllabus_codes: { fonctions: ["Responsable syllabus", "Responsable codes"], titre: "Responsable syllabus et codes" },
+};
+/* « FARAH » → « Farah », « acacia-laure » → « Acacia-Laure ». */
+const prenomPropre = (p: unknown) => String(p ?? "").trim().toLowerCase()
+  .replace(/(^|[\s'-])(\p{L})/gu, (_m, a, b) => a + b.toUpperCase());
+async function signatureDe(cid: string | null | undefined): Promise<{ noms: string; titre: string } | null> {
+  const poste = POSTES_COMMISSION[String(cid ?? "")];
+  if (!poste) return null;
+  try {
+    const { data } = await db.from("ca_membres").select("prenom,fonction,statut").in("fonction", poste.fonctions).eq("statut", "actif");
+    const prenoms = [...new Set(((data ?? []) as any[]).map((m) => prenomPropre(m.prenom)).filter(Boolean))];
+    if (!prenoms.length) return null;
+    const noms = prenoms.length === 1 ? prenoms[0] : prenoms.slice(0, -1).join(", ") + " et " + prenoms[prenoms.length - 1];
+    const titre = prenoms.length === 1 ? poste.titre : (poste.titres ?? poste.titre.replace(/^Responsable\b/, "Responsables"));
+    return { noms, titre };
+  } catch (_) { return null; }
+}
 type Insc = Record<string, any>;
 async function lireEvt(eid: string): Promise<Evt> {
   const { data, error } = await db.from("bil_evenements").select("*").eq("id", eid).maybeSingle();
@@ -110,6 +142,7 @@ async function lireEvt(eid: string): Promise<Evt> {
   data.commission = c?.nom ?? "";
   data.pdf_joint = !!c?.pdf_joint;
   data.expediteur = expediteurDe(c?.expediteur);
+  data.signature = await signatureDe(data.commission_id);
   return data;
 }
 async function lireInsc(id: string): Promise<Insc> {
@@ -159,15 +192,18 @@ function bxlVersUtc(iso: string, t: string) {
 const prenomOu = (i: Insc) => (i.prenom || i.nom || "").trim();
 
 // ------------------------------------------------------------------ Mise en page des mails
-function cadre(e: Evt, titre: string, corps: string) {
+function cadre(e: Evt, titre: string, corps: string, signer = true) {
+  const sig = signer && e.signature
+    ? `<p style="margin:20px 0 0;line-height:1.45"><b>${esc(e.signature.noms)}</b><br><span style="color:#555">${esc(e.signature.titre)}</span><br><span style="color:#555">Bureau étudiant de la Faculté de Droit et de Criminologie</span></p>`
+    : "";
   return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e;font-size:14.5px;line-height:1.6">
 <div style="background:#241c46;color:#fff;border-radius:12px 12px 0 0;padding:18px 20px">
 <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#e8b04b">🎟 Billetterie du Bureau étudiant</div>
 <div style="font-size:20px;font-weight:bold;margin-top:4px">${esc(e.titre)}</div>
 <div style="font-size:12.5px;color:#c9c3e4;margin-top:2px">Organisé par la commission ${esc(e.commission)}</div></div>
 <div style="border:1px solid #e2e0ef;border-top:none;border-radius:0 0 12px 12px;padding:20px">
-${titre ? `<h2 style="margin:0 0 12px;font-size:18px">${esc(titre)}</h2>` : ""}${corps}
-<p style="color:#999;font-size:12px;margin-top:22px;border-top:1px solid #eee;padding-top:12px">Le Bureau étudiant de la Faculté de Droit et de Criminologie — envoi automatique, merci de ne pas répondre à ce message.</p>
+${titre ? `<h2 style="margin:0 0 12px;font-size:18px">${esc(titre)}</h2>` : ""}${corps}${sig}
+<p style="color:#999;font-size:12px;margin-top:22px;border-top:1px solid #eee;padding-top:12px">${sig ? "Envoi automatique" : "Le Bureau étudiant de la Faculté de Droit et de Criminologie — envoi automatique"}, merci de ne pas répondre à ce message.</p>
 </div></div>`;
 }
 function bouton(href: string, texte: string, fond = "#241c46") {
@@ -450,7 +486,7 @@ async function responsables(e: Evt): Promise<string[]> {
 const lienGestion = (e: Evt) => APP + "?ev=" + e.id;
 async function alerteResponsables(e: Evt, sujet: string, corps: string) {
   let ok = 0;
-  for (const to of await responsables(e)) { if ((await envoyer(to, sujet, cadre(e, "", corps), [], undefined, e.expediteur)).ok) ok++; await pause(); }
+  for (const to of await responsables(e)) { if ((await envoyer(to, sujet, cadre(e, "", corps, false), [], undefined, e.expediteur)).ok) ok++; await pause(); }
   return ok;
 }
 async function alertePreuves(e: Evt, forcer = false) {
@@ -719,7 +755,7 @@ async function bilanAction(u: Membre, eid: string) {
   const corps = await bilanHtml(e);
   const dest = new Set([...(await responsables(e)), (u.email ?? "").toLowerCase()].filter(Boolean));
   let ok = 0;
-  for (const to of dest) { if ((await envoyer(to, "Bilan — " + e.titre, cadre(e, "Bilan de fin", corps), [], u.jwt, e.expediteur)).ok) ok++; await pause(); }
+  for (const to of dest) { if ((await envoyer(to, "Bilan — " + e.titre, cadre(e, "Bilan de fin", corps, false), [], u.jwt, e.expediteur)).ok) ok++; await pause(); }
   await db.from("bil_evenements").update({ bilan_envoye_le: new Date().toISOString() }).eq("id", eid);
   return { ok: true, envoyes: ok };
 }
@@ -776,7 +812,7 @@ async function cron(req: Request) {
         }
         if (!e.bilan_envoye_le && (await cleUnique(`bil:bilan:${eid}`))) {
           const corps = await bilanHtml(e);
-          for (const to of await responsables(e)) { await envoyer(to, "Bilan — " + e.titre, cadre(e, "Bilan de fin", corps), [], undefined, e.expediteur); await pause(); }
+          for (const to of await responsables(e)) { await envoyer(to, "Bilan — " + e.titre, cadre(e, "Bilan de fin", corps, false), [], undefined, e.expediteur); await pause(); }
           await db.from("bil_evenements").update({ bilan_envoye_le: new Date().toISOString() }).eq("id", eid);
           bilan.bilans++;
         }
