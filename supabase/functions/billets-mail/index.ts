@@ -7,6 +7,8 @@
 //  qui l'appelle : public, responsable connecté ou tâche planifiée).
 //  Version du 10/11/2026 — nom d'expéditeur par commission (bil_commissions.expediteur)
 //  et signature au prénom du ou des responsables de la commission (ca_membres.fonction).
+//  13/11/2026 — envoi via send-email en tant que serveur (x-cron-secret) ; vérification
+//  de l'adresse e-mail au choix par événement (bil_evenements.verif_email, désactivée par défaut).
 // =====================================================================
 import { createClient } from "npm:@supabase/supabase-js@2.115.0";
 import qrcode from "npm:qrcode-generator@1.4.4";
@@ -515,12 +517,14 @@ async function alerteJauge(e: Evt) {
     + (complet ? "<p>Les nouvelles inscriptions vont en liste d'attente automatiquement.</p>" : "") + bouton(lienGestion(e), "Ouvrir la billetterie"));
 }
 // Après un changement d'état : le bon mail, et les alertes.
-async function apresPassage(e: Evt, id: string, statut: string, contexte: "confirmation" | "liberee" | "validation", jwt?: string) {
+async function apresPassage(e: Evt, id: string, statut: string, contexte: "confirmation" | "liberee" | "validation", jwt?: string): Promise<Envoi | null> {
   const i = await lireInsc(id);
-  if (statut === "inscrit") await mailBillet(e, i, contexte === "liberee" ? "Bonne nouvelle : une place s'est libérée pour vous !" : "", jwt);
-  else if (statut === "a_valider") { await mailPaiementEnVerification(e, i, contexte === "liberee"); await alertePreuves(e); }
-  else if (statut === "attente") await mailAttente(e, i);
+  let m: Envoi | null = null;
+  if (statut === "inscrit") m = await mailBillet(e, i, contexte === "liberee" ? "Bonne nouvelle : une place s'est libérée pour vous !" : "", jwt);
+  else if (statut === "a_valider") { m = await mailPaiementEnVerification(e, i, contexte === "liberee"); await alertePreuves(e); }
+  else if (statut === "attente") m = await mailAttente(e, i);
   if (statut === "inscrit" || statut === "a_valider") await alerteJauge(e);
+  return m;
 }
 async function liberer(e: Evt, jwt?: string) {
   const promus = await rpc("bil_srv_liberer", { p_eid: e.id }) as any[] ?? [];
@@ -636,6 +640,19 @@ async function inscrire(req: Request) {
     throw new Refus("L'envoi des fichiers a échoué. Vérifiez votre connexion et réessayez. (" + String((x as Error).message ?? x).slice(0, 80) + ")", 502);
   }
   if (r.etat === "maj") await effacerFichiers(((r.anciens ?? []) as any[]).map((x) => x.path));
+  /* 13/11/2026 : vérification de l'adresse au choix du responsable (bil_evenements.verif_email,
+     désactivée par défaut). Sans vérification, l'inscription est confirmée tout de suite et le
+     bon mail part directement (billet, paiement en vérification ou liste d'attente). */
+  if (!e.verif_email) {
+    const c = await rpc("bil_srv_confirmer", { p_token: r.token }) as any;
+    if (c.etat === "ok") {
+      const m = await apresPassage(e, r.id, c.statut, "confirmation");
+      const i2 = await lireInsc(r.id);
+      return { ok: true, etat: "direct", statut: c.statut, mail: m ? m.ok : true, email, secret: i2.secret, payant: !!e.payant };
+    }
+    if (c.etat === "ferme") throw new Refus("Les inscriptions sont fermées.");
+    // autre cas improbable : on retombe sur la vérification par mail
+  }
   const i = await lireInsc(r.id);
   const m = await mailConfirmationAdresse(e, i, r.token);
   return { ok: true, etat: "confirmation", mail: m.ok, email };

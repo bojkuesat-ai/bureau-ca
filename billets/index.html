@@ -640,7 +640,7 @@ function vueFormPublic() {
     <div id="pubForm">${formulaireHtml(e)}</div>
     <div id="pubErr"></div>
     <button class="btn block" style="margin-top:20px;padding:15px;font-size:16px" data-a="pubEnvoyer" id="pubBtn">${e.complet ? "M'inscrire en liste d'attente" : "Je m'inscris"}</button>
-    <p class="du centre" style="margin-top:12px">Un e-mail de confirmation vous sera envoyé : pensez à vérifier vos <b>spams</b>.</p></div>`;
+    <p class="du centre" style="margin-top:12px">${e.verif_email ? "Un e-mail de confirmation vous sera envoyé" : "Vous recevrez " + (e.payant ? "un e-mail de suivi" : "votre billet par e-mail")} : vérifiez bien votre adresse et pensez à regarder vos <b>spams</b>.</p></div>`;
 }
 RES.recharger = () => location.reload();
 RES.pubFichier = (el) => { const i = $(el.dataset.cible); if (i) i.click(); };
@@ -705,6 +705,18 @@ RES.pubEnvoyer = async (btn) => {
   btn.disabled = false; btn.textContent = lab;
   if (!r.ok) return montre(r.erreur || "Inscription impossible. Réessayez.");
   store.set("comm:" + e.code, null);
+  if (r.etat === "direct") {
+    /* Sans vérification de l'adresse : l'inscription compte tout de suite. */
+    const lien = r.secret ? APP_URL + "?t=" + encodeURIComponent(r.secret) : "";
+    const t = { inscrit: ["✅", "Inscription confirmée", `Votre billet vient d'être envoyé à <b>${esc(r.email || mail)}</b>.`],
+      a_valider: ["🔎", "Inscription enregistrée", `Votre preuve de paiement va être vérifiée par un·e responsable. Vous recevrez votre billet à <b>${esc(r.email || mail)}</b> dès la validation.`],
+      attente: ["⏳", "Liste d'attente", `L'événement est complet : vous êtes sur la liste d'attente. Si une place se libère, vous recevrez votre billet à <b>${esc(r.email || mail)}</b>.`] }[r.statut] || ["✅", "Inscription enregistrée", ""];
+    S.pub.resultat = `<div class="card centre"><p class="big">${t[0]}</p><h2 class="serif" style="margin:0 0 8px">${t[1]}</h2><p>${t[2]}</p>
+      ${lien ? `<p><a class="btn" href="${esc(lien)}">${r.statut === "inscrit" ? "📱 Afficher mon billet" : "Voir mon inscription"}</a></p><p class="du">Gardez ce lien : il ouvre votre ${r.statut === "inscrit" ? "billet" : "inscription"} à tout moment.</p>` : ""}
+      ${r.mail === false ? `<div class="warn">Le mail n'a pas pu partir tout de suite.${lien ? " Votre inscription est bien enregistrée : utilisez le bouton ci-dessus." : ""}</div>` : `<p class="du">Pas reçu ? Regardez dans les <b>spams / courriers indésirables</b>.</p>`}</div>`;
+    rendre(); window.scrollTo(0, 0);
+    return;
+  }
   S.pub.resultat = `<div class="card centre"><p class="big">📬</p><h2 class="serif" style="margin:0 0 8px">Vérifiez votre boîte mail</h2>
     <p>Un e-mail vient d'être envoyé à <b>${esc(r.email || mail)}</b>.<br>Cliquez sur le lien qu'il contient pour <b>confirmer votre inscription</b>.</p>
     ${r.mail === false ? `<div class="warn">Le mail n'a pas pu partir tout de suite. S'il n'arrive pas d'ici quelques minutes, réinscrivez-vous avec la même adresse : un nouveau lien vous sera envoyé.</div>` : ""}
@@ -1461,6 +1473,7 @@ function vueReglages(e) {
       <label class="swl" style="margin-top:12px"><input type="checkbox" class="sw" id="rgPayant" data-ch="basculePayant" ${e.payant ? "checked" : ""}><span><b>Payant</b><small>Activé : le formulaire demande une preuve de paiement (obligatoire) et affiche le QR de virement. Le billet part après validation de la preuve.</small></span></label></div>
     <div class="card"><h3>Inscriptions</h3><p class="du">Actuellement : <b>${esc(raison)}</b>.</p>
       <label class="swl"><input type="checkbox" class="sw" data-ch="basculeOuvert" ${e.inscriptions_ouvertes ? "checked" : ""}><span>Inscriptions ouvertes pour cet événement</span></label>
+      <label class="swl"><input type="checkbox" class="sw" data-ch="basculeAuto" data-k="verif_email" ${e.verif_email ? "checked" : ""}><span>Vérification de l'adresse e-mail<small>Activé : la personne reçoit d'abord un mail « Confirmez votre adresse » et doit cliquer sur le lien avant que son inscription compte. Désactivé (par défaut) : l'inscription est enregistrée tout de suite et le billet (ou le mail de paiement / de liste d'attente) part directement — plus simple, mais une adresse mal tapée ne sera pas détectée.</small></span></label>
       <div class="two"><div><label class="l">Ouverture programmée (facultatif)</label><input class="f" id="rgO" type="datetime-local" value="${esc(versLocalInput(e.ouverture))}"></div>
         <div><label class="l">Fermeture programmée (facultatif)</label><input class="f" id="rgF" type="datetime-local" value="${esc(versLocalInput(e.fermeture))}"></div></div>
       <p class="du">Sans fermeture programmée, les inscriptions se ferment à la fin du jour de l'événement.</p>
@@ -1818,7 +1831,7 @@ RES.details = async (el) => {
   boutons.unshift({ t: "Supprimer", v: "suppr", cls: "danger" });
   const v = await modale({ titre: nomI(i), large: true, html: `<div class="row" style="margin-bottom:8px">${badgeStatut(i.statut)}${i.coopte ? ` <span class="badge info">cooptation</span>` : ""}</div>
     <div class="pay" style="margin:0">${lg("E-mail", i.email || "—")}${lg("Code du billet", i.code)}${lg("Source", i.source === "manuel" ? "Ajout manuel" : "Formulaire en ligne")}
-      ${lg("Inscrit·e le", quand(i.created_at))}${lg("Adresse confirmée le", quand(i.email_confirme_le))}${e.payant ? lg("Paiement", i.paye ? "validé (" + eur(i.montant) + ")" : "non validé") + lg("Communication", i.communication) : ""}
+      ${lg("Inscrit·e le", quand(i.created_at))}${lg(e.verif_email ? "Adresse confirmée le" : "Inscription validée le", quand(i.email_confirme_le))}${e.payant ? lg("Paiement", i.paye ? "validé (" + eur(i.montant) + ")" : "non validé") + lg("Communication", i.communication) : ""}
       ${lg("Validé par", i.valide_par ? i.valide_par + " le " + quand(i.valide_le) : "")}${lg("Motif du refus", i.refus_motif)}${lg("Billet envoyé le", quand(i.billet_envoye_le))}
       ${lg("Présence", i.presence ? (i.presence === "oui" ? "confirmée" : "ne viendra pas") : "")}${lg("Entrée", i.entre_le ? quand(i.entre_le) + (i.entre_par ? " par " + i.entre_par : "") : "")}
       ${i.preuve_path ? `<div class="lg"><span>Preuve de paiement</span><a target="_blank" rel="noopener" data-fichier="${esc(i.preuve_path)}">ouvrir</a></div>` : ""}${rep}</div>`,
