@@ -722,7 +722,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 13.11.2026 · décisions serveur</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 13.11.2026 · propriétaire</div></div>
   <div class="spacer"></div>
   <div class="grpbar" id="grpBar" role="group" aria-label="Rubriques" hidden></div>
   <div class="roleswitch" role="group" aria-label="Sections">
@@ -3437,6 +3437,44 @@ async function start(){
   await refresh();
 }
 
+/* =====================================================================
+   ÉTAT DE LA CAISSE (13/11/2026) — décidé par le propriétaire ou par la licence.
+   Lecture seule : bandeau ; fermée : écran de fermeture. Le serveur refuse de
+   toute façon les modifications : ceci ne fait qu'expliquer pourquoi.
+   Le trésorier est désormais nommé par le propriétaire (Espace CA › Propriétaire).
+   ===================================================================== */
+async function verifierEtatCaisse(){
+  try{
+    const r = await sb.rpc("app_etat", { p_app: "caisse" });
+    if(r.error) return;
+    const E = state.appEtat = r.data || {};
+    const app = $("#app"); if(!app) return;
+    let ban = document.getElementById("etatBan");
+    if(!ban){ ban = document.createElement("div"); ban.id = "etatBan"; app.insertBefore(ban, app.firstChild); }
+    let html = "";
+    if(E.proprio && E.etat && E.etat !== "ouverte"){
+      html = `🔑 Pour les autres comptes, la Caisse est <b>${E.etat === "fermee" ? "fermée" : "en lecture seule"}</b>${E.raison === "licence" ? " (licence absente ou expirée)" : ""}. Vous gardez tous les accès.`;
+    } else if(E.pour_moi === "lecture"){
+      html = E.raison === "licence"
+        ? `🔒 <b>Licence absente ou expirée</b> : la Caisse est en lecture seule. L'Admin peut demander une licence dans <a href="../" style="color:inherit">l'Espace CA</a>.`
+        : `🔒 <b>Lecture seule</b>${E.message ? " — " + esc(E.message) : " : décision du propriétaire."}`;
+    }
+    ban.hidden = !html;
+    ban.innerHTML = html;
+    ban.style.cssText = html ? "margin:10px auto;max-width:1100px;padding:11px 15px;border-radius:12px;border:1px solid #c47f17;background:var(--surface2);font-size:13.5px" : "";
+    let ov = document.getElementById("etatFerme");
+    if(E.pour_moi === "fermee"){
+      if(!ov){ ov = document.createElement("div"); ov.id = "etatFerme"; document.body.appendChild(ov); }
+      ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px";
+      ov.innerHTML = `<div style="max-width:440px;text-align:center"><h2 style="margin:0 0 10px">🔒 Caisse fermée</h2>
+        <p style="color:var(--muted)">${esc(E.message || "L'application est temporairement fermée par son propriétaire.")}</p>
+        <button class="btn ghost" id="etatFermeOut" style="margin-top:14px">Se déconnecter</button></div>`;
+      ov.querySelector("#etatFermeOut").onclick = async () => { try{ await sb.auth.signOut(); }catch(_){ __errSilence(_); } location.reload(); };
+    } else if(ov){ ov.remove(); }
+  }catch(e){ __errSilence(e); }
+}
+setInterval(() => { if(state.profile && state.profile.approved) verifierEtatCaisse(); }, 300000);
+
 async function loadProfile(user){
   const { data:prof } = await sb.from("profiles").select("*").eq("id", user.id).maybeSingle();
   state.profile = prof;
@@ -3447,6 +3485,7 @@ async function loadProfile(user){
   $("#closedScreen").hidden = !supprime;
   $("#app").hidden = !ok;
   if(!ok) return;
+  verifierEtatCaisse();
   $("#whoName").textContent = prof.name || user.email;
   $("#whoRole").textContent = (prof.position ? prof.position + " · " : "") + (isTreso() ? "Trésorier" : "Demandeur");
   $("#tabTreso").hidden = !isTreso();
@@ -12472,7 +12511,7 @@ function memberHTML(m, pending){
     : `<button class="btn ghost sm" data-m="rename" data-id="${m.id}">Corriger le nom</button>
        <button class="btn ghost sm" data-m="poste" data-id="${m.id}">Changer le poste</button>
        <button class="btn ghost sm" data-m="iban" data-id="${m.id}">Corriger l'IBAN</button>
-       ${me ? "" : `<button class="btn ghost sm" data-m="role" data-id="${m.id}">${m.role==="tresorier"?"Retirer le rôle de trésorier":"Nommer trésorier"}</button>
+       ${me ? "" : `
      <button class="btn ${m.sc_actif ? "" : "ghost"} sm" data-m="sc" data-id="${m.id}">${m.sc_actif ? "✍️ Désactiver la signature conjointe" : "✍️ Activer la signature conjointe"}</button>
        <button class="btn no sm" data-m="revoke" data-id="${m.id}">Retirer l'accès</button>`}`;
   const role = (m.role==="tresorier" ? `<span class="tag t-valide" style="margin-left:8px">Trésorier</span>` : "")

@@ -648,8 +648,8 @@ function modaleValidation(a, type){
     d.addEventListener("click",e=>{ if(e.target===d) rep(false); });
   });
 }
-function sess2session(user,prof){ return {id:user.id,email:user.email,prenom:prof.prenom,nom:((prof.prenom||"")+" "+(prof.nom||"")).trim(),fonction:prof.fonction,sig:((prof.prenom||prof.nom||"")+(prof.fonction?" \u00b7 "+prof.fonction:"")),statut:prof.statut||"attente",role:roleReel(prof)}; }
-async function loadAccounts(){ try{ const {data}=await sb.from("ca_membres").select("*"); S.admins=(data||[]).map(a=>({id:a.id,email:a.email,emailAlt:a.email_alt||"",prenom:a.prenom,nom:a.nom,fonction:a.fonction,statut:a.statut,role:roleReel(a),ts:a.created_at,viaCode:a.via_code||""})); }catch(e){} }
+function sess2session(user,prof){ return {id:user.id,email:user.email,prenom:prof.prenom,nom:((prof.prenom||"")+" "+(prof.nom||"")).trim(),fonction:prof.fonction,sig:((prof.prenom||prof.nom||"")+(prof.fonction?" \u00b7 "+prof.fonction:"")),statut:prof.statut||"attente",role:roleReel(prof),admin:!!prof.admin,horsCa:!!prof.hors_ca}; }
+async function loadAccounts(){ try{ const {data}=await sb.from("ca_membres").select("*"); S.admins=(data||[]).map(a=>({id:a.id,email:a.email,emailAlt:a.email_alt||"",prenom:a.prenom,nom:a.nom,fonction:a.fonction,statut:a.statut,role:roleReel(a),ts:a.created_at,viaCode:a.via_code||"",admin:!!a.admin,horsCa:!!a.hors_ca})); }catch(e){} }
 async function loadAvis(){ try{ const {data}=await sb.from("ca_avis").select("*").order("created_at",{ascending:false}); S.avis=(data||[]).map(x=>({id:x.id,membreId:x.membre_id,auteur:x.auteur,sujet:x.sujet,texte:x.texte,ts:x.created_at,statut:x.statut||"nouveau",reponse:x.reponse||"",reponduPar:x.repondu_par||"",reponduLe:x.repondu_le||null,odjReunion:x.odj_reunion||null})); }catch(e){ S.avis=[]; } }
 async function loadAvisVotes(){ try{ const {data}=await sb.from("ca_avis_votes").select("*"); S.avisVotes=(data||[]).map(v=>({avisId:v.avis_id,membreId:v.membre_id,valeur:v.valeur})); }catch(e){ S.avisVotes=[]; } }
 async function loadMailing(){ try{ const {data}=await sb.from("ca_mailing").select("*").order("created_at",{ascending:true}); S.mailing=(data||[]).map(m=>({id:m.id,email:m.email})); }catch(e){ S.mailing=[]; } }
@@ -724,7 +724,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-09 \u00b7 exp\u00e9diteurs billetterie";
+const CA_VERSION="2026-11-13 · propriétaire et licences";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -932,7 +932,14 @@ function unreadAnnoncesCA(){ const me=S.session&&S.session.id; const t=seenTs("a
 function caMailEsc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 /* Membres du CA de plein droit. Les cooptés en sont exclus partout :
    effectif de vote, présences, bilans moraux, convocations. */
-function membresActifs(){ return (S.admins||[]).filter(a=>a.email && a.statut==="actif" && a.role!=="coopte"); }
+function membresActifs(){ return (S.admins||[]).filter(a=>a.email && a.statut==="actif" && a.role!=="coopte" && !a.horsCa); }
+/* Niveaux (13/11/2026) : propriétaire (vous) > Admin délégué > membres.
+   Le propriétaire peut être « hors CA » : il garde tous ses droits mais ne compte plus dans l'effectif. */
+function estProprioCA(){ return !!(S.session && S.session.role==="owner"); }
+function estAdminCA(){ return estProprioCA() || !!(S.session && S.session.admin && S.session.statut==="actif" && S.session.role!=="coopte"); }
+function proprioOuvert(){ try{ return estProprioCA() && sessionStorage.getItem("ca:proprio")==="1"; }catch(e){ return false; } }
+/* Trésorier (rôle de la Caisse) : décide des budgets dans le CA. Le propriétaire garde ce droit. */
+function estTresoCA(){ return estProprioCA() || !!(S.appEtat && S.appEtat.tresorier); }
 /* Le lien d'invitation des cooptes : secretariat et proprietaire. */
 function peutGererCooptes(){ return estSecretaire() || (S.session && S.session.role==="owner"); }
 function estCoopte(){ return !!(S.session && S.session.role==="coopte"); }
@@ -1333,6 +1340,7 @@ async function refreshSession(){
   if(!prof){ S.session=null; S.needProfile={id:user.id,email:user.email}; return; }
   S.needProfile=null; S.session=sess2session(user,prof);
   await loadAccounts();
+  await chargerEtatApp();
   /* Coopté·e : on ne télécharge sur son appareil que ce qui le ou la concerne.
      Aucune donnée du CA (documents, votes, réunions, tâches, budgets, messages…) n'est chargée. */
   const jobsCoopte=[loadConflits,loadEvenements,loadMeta,loadAvis,loadAvisVotes,loadMediation,loadSoutien];
@@ -1341,6 +1349,38 @@ async function refreshSession(){
     loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes,loadSalle,loadBillets,loadPvSign];
   if(S.session.role==="coopte"){ ["docs","messages","taches","contacts","annonces","reunions","creneaux","budgets","votes","bilans","journal","mailing","procurations"].forEach(k=>{ S[k]=[]; }); }
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
+  await traiterLiensSpeciaux();
+}
+/* État de l'app vu par le serveur : ouverte / lecture seule / fermée, licence, modules, rôle. */
+async function chargerEtatApp(){
+  if(!sb) return;
+  try{ const r=await sb.rpc("app_etat",{p_app:"ca"}); if(!r.error) S.appEtat=r.data||null; }catch(e){}
+  try{ const t=await sb.rpc("ca_tresorier"); if(!t.error) S.tresoCA=t.data||null; }catch(e){}
+}
+setInterval(()=>{ if(S.session) chargerEtatApp().then(()=>{ if(S.view==="ca") rendreEnPreservant(); }).catch(()=>{}); }, 300000);
+/* Lien secret de l'espace Propriétaire (#proprietaire=…) et lien d'activation de licence (#licence=…).
+   Ils sont lus au démarrage, retirés de la barre d'adresse et traités une fois connecté. */
+async function traiterLiensSpeciaux(){
+  if(!sb || !S.session) return;
+  let code="", jeton="";
+  try{ code=sessionStorage.getItem("ca:proprio-code")||""; jeton=sessionStorage.getItem("ca:licence-jeton")||""; }catch(e){}
+  if(code && estProprioCA()){
+    const r=await sb.rpc("proprio_ouvrir",{p_code:code});
+    if(r && r.data===true){
+      try{ sessionStorage.removeItem("ca:proprio-code"); sessionStorage.setItem("ca:proprio","1"); }catch(e){}
+      S.tab="proprio"; await chargerProprio();
+    }
+  } else if(code){ try{ sessionStorage.removeItem("ca:proprio-code"); }catch(e){} }
+  if(jeton){
+    try{ sessionStorage.removeItem("ca:licence-jeton"); }catch(e){}
+    const r=await sb.rpc("licence_activer",{p_jeton:jeton});
+    if(r.error){ setTimeout(()=>modaleInfo("Activation impossible : "+r.error.message,"Licence"),400); }
+    else{
+      await chargerEtatApp(); await loadAccounts();
+      const moi=(S.admins||[]).find(a=>a.id===S.session.id); if(moi){ S.session.admin=!!moi.admin; S.session.statut=moi.statut; }
+      setTimeout(()=>modaleInfo("✅ Licence activée jusqu'au "+new Date(r.data.fin+"T12:00:00").toLocaleDateString("fr-BE")+". Vous êtes maintenant Admin de l'Espace CA.","Licence activée"),400);
+    }
+  }
 }
 const ONGLETS_OPTIONNELS=[["taches","Tâches"],["planning","Planning"],["evenements","Événements"],["salle","Réservation salle fac"],["billetterie","Billetterie"],["contacts","Contacts"]];
 function ongletActif(k){ return ongletsOff().indexOf(k)<0; }
@@ -1740,10 +1780,229 @@ function viewCompleteProfile(){
     </div>
   </div></div>`;
 }
+/* ===================================================================
+   ESPACE PROPRIÉTAIRE (13/11/2026) — ouvert par le lien secret, réservé au
+   compte propriétaire (+ double authentification). Tout est vérifié par le
+   serveur (fonctions proprio_*). Les réglages techniques de l'ancien Admin
+   (double authentification, sauvegardes, page d'erreur, onglets, CES, zone
+   dangereuse, export) sont ici.
+   =================================================================== */
+const MODULES_LIB={salle:"Salle fac",billetterie:"Billetterie",ces:"CES (soutien social)",soutien:"Soutien psychologique",mediation:"Médiation"};
+const ETAT_LIB={ouverte:"Ouverte",lecture:"Lecture seule",fermee:"Fermée"};
+async function chargerProprio(){
+  if(!sb||!estProprioCA()) return;
+  const r=await sb.rpc("proprio_tableau");
+  S.proprio = r.error ? { err: r.error.message } : r.data;
+}
+function bandeauEtat(){
+  const E=S.appEtat; if(!E) return "";
+  if(estProprioCA()){
+    if(E.etat==="ouverte") return "";
+    return `<div class="adminbar"><span class="ab-ic">🔑</span><span class="ab-txt">Pour les autres comptes, l'Espace CA est <b>${E.etat==="fermee"?"fermé":"en lecture seule"}</b>${E.raison==="licence"?" (licence absente ou expirée)":""}. Vous gardez tous les accès.</span></div>`;
+  }
+  if(E.etat!=="lecture") return "";
+  const txt = E.raison==="licence" ? "<b>Licence absente ou expirée</b> : l'Espace CA est en lecture seule." : "<b>Lecture seule</b>"+(E.message?" — "+esc(E.message):" : décision du propriétaire.");
+  return `<div class="adminbar" style="border-color:#c47f17"><span class="ab-ic">🔒</span><span class="ab-txt">${txt}</span>${E.peut_demander&&E.raison==="licence"?`<button class="btn sm" data-action="set-tab" data-tab="licence" style="margin-left:auto">Demander une licence</button>`:""}</div>`;
+}
+function ecranFerme(){
+  return `<div class="empty" style="padding:44px 20px"><h2 class="serif" style="margin:0 0 10px">🔒 Espace CA fermé</h2><p>${esc((S.appEtat&&S.appEtat.message)||"L'application est temporairement fermée par son propriétaire.")}</p></div>`;
+}
+function dateCourte(d){ return d ? new Date(String(d).slice(0,10)+"T12:00:00").toLocaleDateString("fr-BE") : "—"; }
+function finSuggeree(mois){ const d=new Date(); d.setMonth(d.getMonth()+(Number(mois)||12)); return d.toISOString().slice(0,10); }
+
+function tabLicence(){
+  const E=S.appEtat||{}; const L=E.licence, D=E.demande;
+  let h=`<h1 class="serif" style="font-size:26px;margin:0 0 6px">Licence</h1>`;
+  h += L ? `<div class="card2" style="border-left:4px solid var(--green,#2e7d32)"><h3 class="serif">✅ Licence active</h3><p>Valable jusqu'au <b>${esc(dateCourte(L.fin))}</b>${L.titulaire?" — titulaire : "+esc(L.titulaire):""}.<br>Options : <b>${esc((L.options||[]).map(o=>MODULES_LIB[o]||o).join(", ")||"aucune")}</b>.</p></div>`
+         : `<div class="card2" style="border-left:4px solid #c47f17"><h3 class="serif">Aucune licence active</h3><p>Les applications sont en lecture seule tant qu'une licence n'est pas activée.</p></div>`;
+  if(D){
+    h += `<div class="card2"><h3 class="serif">Demande en cours</h3><p>${D.statut==="approuvee"?"<b>Approuvée</b> : le lien d'activation a été envoyé par mail à "+esc(D.par||"")+". Il suffit de cliquer dessus, connecté·e avec ce compte.":"Envoyée le "+esc(dateCourte(D.le))+" par "+esc(D.par||"")+" — en attente d'approbation par le propriétaire."}</p>
+      <p class="du">${esc(D.duree_mois||"?")} mois · options : ${esc((D.options||[]).map(o=>MODULES_LIB[o]||o).join(", ")||"aucune")}</p></div>`;
+  } else if(E.peut_demander){
+    h += `<div class="card2"><h3 class="serif">${L?"Renouveler la licence":"Demander une licence"}</h3>
+      <p class="du">Une licence couvre toutes les applications (Espace CA, Caisse). Les modules ci-dessous sont en option. Le propriétaire reçoit votre demande ; après son approbation, vous recevez par mail un lien d'activation : en cliquant dessus, la licence s'active et vous devenez Admin.</p>
+      <label class="fld">Durée</label>
+      <select class="f" id="lic_duree"><option value="1">1 mois</option><option value="3">3 mois</option><option value="6">6 mois</option><option value="12" selected>12 mois</option><option value="24">24 mois</option></select>
+      <label class="fld" style="margin-top:10px">Options</label>
+      ${Object.keys(MODULES_LIB).map(m=>`<label style="display:flex;align-items:center;gap:9px;margin:6px 0;font-size:14px;cursor:pointer"><input type="checkbox" class="lic-opt" value="${m}"> ${esc(MODULES_LIB[m])}</label>`).join("")}
+      <label class="fld" style="margin-top:10px">Message (facultatif)</label>
+      <textarea id="lic_msg" placeholder="Ex. coordonnées de facturation"></textarea>
+      <div class="row-btn"><button class="btn" data-pa="licence-demander">Envoyer la demande</button></div></div>`;
+  } else {
+    h += `<p class="du">Seul l'Admin peut demander la licence.</p>`;
+  }
+  return h;
+}
+
+function viewProprio(){
+  if(!proprioOuvert()) return `<div class="empty">Espace réservé au propriétaire.</div>`;
+  const P=S.proprio;
+  if(!P){ chargerProprio().then(()=>{ if(S.tab==="proprio") rendreEnPreservant(); }); return `<div class="empty">Chargement…</div>`; }
+  if(P.err) return `<div class="empty" style="color:var(--red)">${esc(P.err)}</div>`;
+  const C=P.config||{}, mods=C.modules||{}, etat=C.etat||{}, msgs=C.messages||{};
+  const sw=(attr,on,lab,extra)=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer"><input type="checkbox" class="sw" role="switch" ${on?"checked":""} ${attr}> ${lab}${extra||""}</label>`;
+  const dem=(P.licences||[]).filter(l=>l.statut==="demandee"||l.statut==="approuvee");
+  const histo=(P.licences||[]).filter(l=>!(l.statut==="demandee"||l.statut==="approuvee")).slice(0,10);
+  const L=P.licence;
+  const membres=(P.membres||[]).filter(m=>m.statut==="actif"&&m.role!=="owner"&&m.role!=="coopte"&&!m.coopte);
+  const moi=(P.membres||[]).find(m=>m.role==="owner")||{};
+  const STAT={demandee:"En attente",approuvee:"Approuvée — lien envoyé",active:"Active",refusee:"Refusée",annulee:"Retirée",remplacee:"Remplacée"};
+  return `<div>
+    <h1 class="serif" style="font-size:26px;margin:0 0 6px">🔑 Espace Propriétaire</h1>
+    <p class="du" style="margin:0 0 16px">Réservé à vous. Ces réglages sont appliqués par le serveur : personne d'autre ne peut les modifier, même l'Admin.</p>
+
+    <div class="grp-h" style="margin:18px 0 12px"><h2 class="serif">Licence</h2><span class="l"></span></div>
+    <div class="card2">
+      ${sw('data-pa="mode-licence"', C.mode_licence, "<b>Mode licence</b>", ' <span class="du">— sans licence active : lecture seule partout et modules en option coupés</span>')}
+      ${L?`<p style="margin:10px 0 0">✅ Licence active jusqu'au <b>${esc(dateCourte(L.fin))}</b> — ${esc(L.demandeur_nom||"")} · options : ${esc((L.options||[]).map(o=>MODULES_LIB[o]||o).join(", ")||"aucune")}
+        <button class="link" data-pa="licence-retirer" data-id="${esc(L.id)}" style="color:var(--red);margin-left:8px">Retirer</button></p>`:`<p class="du" style="margin:10px 0 0">Aucune licence active.</p>`}
+    </div>
+    ${dem.map(l=>`<div class="card2" style="border-left:4px solid var(--stamp)">
+      <h3 class="serif">Demande de ${esc(l.demandeur_nom||"")} <span class="du" style="display:inline">(${esc(l.demandeur_email||"")})</span></h3>
+      <p class="du">Le ${esc(dateCourte(l.demande_le))} · ${esc(l.duree_mois)} mois · options demandées : ${esc((l.options||[]).map(o=>MODULES_LIB[o]||o).join(", ")||"aucune")}${l.message?"<br>Message : "+esc(l.message):""}${l.statut==="approuvee"?"<br><b>Déjà approuvée</b> : vous pouvez renvoyer le lien en approuvant à nouveau.":""}</p>
+      <label class="fld">Valable jusqu'au</label><input class="f" type="date" id="lic_fin_${esc(l.id)}" value="${esc(l.fin||finSuggeree(l.duree_mois))}">
+      <label class="fld" style="margin-top:8px">Options accordées</label>
+      ${Object.keys(MODULES_LIB).map(m=>`<label style="display:flex;align-items:center;gap:9px;margin:5px 0;font-size:14px"><input type="checkbox" class="lic-ok-${esc(l.id)}" value="${m}" ${(l.options||[]).indexOf(m)>=0?"checked":""}> ${esc(MODULES_LIB[m])}</label>`).join("")}
+      <div class="row-btn"><button class="btn" data-pa="licence-approuver" data-id="${esc(l.id)}">Approuver et envoyer le lien</button>
+        <button class="btn ghost" data-pa="licence-refuser" data-id="${esc(l.id)}">Refuser</button></div>
+      <p class="du">N'approuvez qu'après réception du paiement : le lien d'activation part immédiatement au demandeur.</p></div>`).join("")}
+    ${histo.length?`<details class="card2"><summary style="cursor:pointer">Historique des licences (${histo.length})</summary>${histo.map(l=>`<p class="du" style="margin:6px 0">${esc(dateCourte(l.demande_le))} — ${esc(l.demandeur_nom||"")} — ${esc(STAT[l.statut]||l.statut)}${l.fin?" — fin "+esc(dateCourte(l.fin)):""}</p>`).join("")}</details>`:""}
+
+    <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">État des applications</h2><span class="l"></span></div>
+    <div class="card2">
+      ${[["ca","Espace CA"],["caisse","Caisse"]].map(([k,lab])=>`<div style="margin:0 0 14px"><label class="fld">${lab}</label>
+        <select class="f" id="etat_${k}">${Object.keys(ETAT_LIB).map(v=>`<option value="${v}" ${(etat[k]||"ouverte")===v?"selected":""}>${ETAT_LIB[v]}</option>`).join("")}</select>
+        <input class="f" id="msg_${k}" style="margin-top:6px" maxlength="500" placeholder="Message affiché aux utilisateurs (facultatif)" value="${esc(msgs[k]||"")}"></div>`).join("")}
+      <div class="row-btn"><button class="btn" data-pa="etat-enregistrer">Enregistrer</button></div>
+      <p class="du">Lecture seule : tout reste consultable, plus rien ne peut être modifié. Fermée : plus rien n'est consultable. Vous gardez toujours l'accès complet.</p>
+    </div>
+
+    <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Modules en option</h2><span class="l"></span></div>
+    <div class="card2">${Object.keys(MODULES_LIB).map(m=>sw(`data-pa="module" data-id="${m}"`, mods[m]!==false, esc(MODULES_LIB[m]))).join("")}
+      <p class="du">Avec le mode licence, un module n'est actif que s'il est coché ici <b>et</b> compris dans la licence.</p></div>
+
+    <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Fonctions</h2><span class="l"></span></div>
+    <div class="card2"><h3 class="serif">Admin de l'Espace CA</h3>
+      <p class="du">L'Admin valide les comptes, gère les coopté·es, les bilans moraux, les droits (secrétariat, médiation, salle) et la liste e-mail. La personne qui active une licence devient Admin automatiquement.</p>
+      ${membres.map(m=>sw(`data-pa="admin" data-id="${esc(m.id)}"`, m.admin, esc(m.nom||m.email||""), ` <span class="du">${esc(m.fonction||"")}</span>`)).join("")||'<p class="du">Aucun membre actif.</p>'}
+    </div>
+    <div class="card2"><h3 class="serif">Trésorier de la Caisse</h3>
+      <p class="du">Le trésorier traite les demandes, paie, signe la gestion journalière et décide des budgets dans le CA. Nommez d'abord le nouveau, puis retirez l'ancien.</p>
+      ${(P.caisse||[]).map(c=>`<div class="doc" style="cursor:default;padding:8px 12px"><span class="meta"><p class="dt" style="font-size:14px">${esc(c.nom||c.email||"")}${c.role==="tresorier"?' <span class="badge">Trésorier</span>':""}</p><p class="du">${esc(c.email||"")}</p></span>
+        <button class="chip" data-pa="tresorier" data-id="${esc(c.id)}" data-on="${c.role==="tresorier"?"0":"1"}">${c.role==="tresorier"?"Retirer":"Nommer trésorier"}</button></div>`).join("")}
+      <p class="du">Adresse du trésorier pour les mails : <b>${esc(P.treso_email||"—")}</b></p>
+    </div>
+    <div class="card2"><h3 class="serif">Deuxième signataire de la gestion journalière</h3>
+      <p class="du">Cosigne les actes de gestion journalière avec le trésorier. Par défaut : la personne dont la fonction est « Président·e ». Si la présidente devient trésorière, choisissez une autre personne.</p>
+      <select class="f" id="gj_cosign"><option value="">Automatique (fonction « Président·e »)</option>${(P.membres||[]).filter(m=>m.statut==="actif"&&m.role!=="coopte"&&!m.coopte).map(m=>`<option value="${esc(m.id)}" ${C.gj_cosignataire===m.id?"selected":""}>${esc(m.nom||m.email||"")} — ${esc(m.fonction||"")}</option>`).join("")}</select>
+      <p class="du">Actuellement : <b>${esc((P.gj_cosignataire_effectif&&P.gj_cosignataire_effectif.nom)||"personne — la gestion journalière est bloquée")}</b></p>
+      <div class="row-btn"><button class="btn sm" data-pa="gj-cosign">Enregistrer</button></div>
+    </div>
+    <div class="card2"><h3 class="serif">Votre place dans le CA</h3>
+      ${sw('data-pa="hors-ca"', !!moi.hors_ca, "Je ne fais plus partie du CA", ' <span class="du">— vous ne comptez plus dans l\'effectif, le quorum et les votes ; vous gardez tous vos droits de propriétaire</span>')}
+    </div>
+
+    <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Lien secret</h2><span class="l"></span></div>
+    <div class="card2"><p class="du">Le lien secret ouvre cet espace (connexion et double authentification toujours exigées). Si vous pensez qu'il a été vu, générez-en un nouveau : l'ancien ne marchera plus.</p>
+      <div class="row-btn"><button class="btn ghost sm" data-pa="nouveau-lien">Générer un nouveau lien</button></div>
+      ${S.proprioLien?`<p style="word-break:break-all;margin:10px 0 0"><b>Nouveau lien :</b> ${esc(S.proprioLien)}</p><p class="du">Copiez-le maintenant et gardez-le en lieu sûr : il ne sera plus affiché.</p>`:""}
+    </div>
+
+    <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Réglages techniques</h2><span class="l"></span></div>
+    ${typeof carteMfaCA==="function"?carteMfaCA():""}
+    ${typeof carteAmeliorations==="function"?carteAmeliorations():""}
+    ${typeof carteErreurCA==="function"?carteErreurCA():""}
+    ${S.session&&S.session.role==="owner"?`<div class="card2"><h3 class="serif">Onglets</h3>
+      <p class="du">Un onglet désactivé disparaît pour tout le monde, vous compris. Réactivez-le ici pour le faire revenir.</p>
+      ${ONGLETS_OPTIONNELS.map(([k,l])=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
+        <input type="checkbox" class="sw" role="switch" ${ongletsOff().indexOf(k)<0?"checked":""} data-action="toggle-onglet" data-id="${k}"> ${l}</label>`).join("")}
+    </div>`:""}
+    ${`<div class="card2"><h3 class="serif">Commission Entraide Sociale (CES)</h3>
+      <p class="du">Activez ou désactivez l'onglet « Soutien social — CES » de Waled Buzzian, quand vous le voulez. Désactivé, l'onglet disparaît pour lui (vous le gardez). Ses dossiers ne sont ni modifiés ni effacés.</p>
+      <label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:15px;font-weight:700;cursor:pointer">
+        <input type="checkbox" class="sw" role="switch" id="ces_actif_chk" ${cesActif()?"checked":""}> ${cesActif()?"CES activée":"CES désactivée"} <span class="du">(état enregistré)</span></label>
+      <div class="row-btn"><button class="btn sm" data-action="save-ces-actif">Enregistrer</button></div>`}
+    <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Zone dangereuse</h2><span class="l"></span></div>
+    <div class="compose" style="border-color:var(--red)">
+      <h3 class="serif">Réinitialiser les données</h3>
+      <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Efface tout le contenu (tâches, budgets, réunions, événements, planning, votes, documents, messages, annonces, contacts, bilans, journal, organigramme). <b style="color:var(--ink)">Les comptes et la caisse ne sont pas touchés.</b> Action irréversible — à utiliser après vos tests.</p>
+      <input class="f" id="reset_confirm" placeholder="Tapez RESET pour confirmer">
+      <p class="err" id="reset_err" style="display:none"></p>
+      <div class="row-btn"><button class="btn" style="background:var(--red);border-color:var(--red);color:#fff" data-action="reset-data">Réinitialiser toutes les données</button></div>
+    </div>
+    <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Sauvegarde & journal</h2><span class="l"></span></div>
+    <div class="compose"><h3 class="serif">Données</h3>
+      <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Exportez une sauvegarde de toutes les données (recommandé avant la bascule Supabase), ou réimportez-la.</p>
+      <div class="row-btn"><button class="btn sm" data-action="export-data">Exporter (JSON)</button>
+        <label class="btn ghost sm" style="cursor:pointer">Importer<input type="file" accept="application/json" data-change="importfile" style="display:none"></label></div></div>
+    <p class="du" style="margin:14px 0 0">Le journal des connexions et des actions des membres est dans l'onglet <b>📜 Journal</b>.</p>
+  </div>`;
+}
+document.addEventListener("click", async e=>{
+  const b=e.target.closest("[data-pa]"); if(!b||!sb) return;
+  const pa=b.dataset.pa, id=b.dataset.id||"";
+  if(b.type==="checkbox") return;     // les interrupteurs passent par « change »
+  const ko=r=>{ if(r&&r.error){ modaleInfo("Non enregistré : "+r.error.message,"Erreur"); return true; } return false; };
+  if(pa==="licence-demander"){
+    const opts=[...document.querySelectorAll(".lic-opt")].filter(c=>c.checked).map(c=>c.value);
+    const duree=Number((document.getElementById("lic_duree")||{}).value||12), msg=((document.getElementById("lic_msg")||{}).value||"").trim();
+    if(!(await modaleConfirm("Envoyer la demande de licence ("+duree+" mois, options : "+(opts.map(o=>MODULES_LIB[o]).join(", ")||"aucune")+") au propriétaire ?","Demander une licence"))) return;
+    b.disabled=true; const r=await sb.rpc("licence_demander",{p_duree_mois:duree,p_options:opts,p_message:msg||null}); b.disabled=false;
+    if(ko(r)) return; await chargerEtatApp(); render(); modaleInfo("Demande envoyée. Vous recevrez le lien d'activation par mail dès qu'elle sera approuvée.","Licence"); return;
+  }
+  if(!proprioOuvert()) return;
+  if(pa==="licence-approuver"){
+    const fin=(document.getElementById("lic_fin_"+id)||{}).value||""; const opts=[...document.querySelectorAll(".lic-ok-"+CSS.escape(id))].filter(c=>c.checked).map(c=>c.value);
+    if(!fin) return modaleInfo("Choisissez la date de fin.");
+    if(!(await modaleConfirm("Approuver la licence jusqu'au "+dateCourte(fin)+" (options : "+(opts.map(o=>MODULES_LIB[o]).join(", ")||"aucune")+") ?\n\nLe lien d'activation part immédiatement par mail au demandeur.","Approuver"))) return;
+    b.disabled=true; const r=await sb.rpc("proprio_licence_approuver",{p_id:id,p_fin:fin,p_options:opts}); b.disabled=false;
+    if(ko(r)) return; modaleInfo("Licence approuvée : le lien d'activation a été envoyé à "+((r.data&&r.data.envoye_a)||"le demandeur")+".","Licence");
+  } else if(pa==="licence-refuser"){
+    const motif=window.prompt?window.prompt("Motif du refus (facultatif, envoyé au demandeur) :",""):""; if(motif===null) return;
+    const r=await sb.rpc("proprio_licence_refuser",{p_id:id,p_motif:motif||""}); if(ko(r)) return;
+  } else if(pa==="licence-retirer"){
+    if(!(await modaleConfirm("Retirer la licence active ? Avec le mode licence, les applications passent immédiatement en lecture seule.","Retirer la licence"))) return;
+    const r=await sb.rpc("proprio_licence_retirer",{p_id:id}); if(ko(r)) return;
+  } else if(pa==="etat-enregistrer"){
+    const etat={}, messages={}; ["ca","caisse"].forEach(k=>{ etat[k]=(document.getElementById("etat_"+k)||{}).value||"ouverte"; messages[k]=(document.getElementById("msg_"+k)||{}).value||""; });
+    const ferme=Object.values(etat).some(v=>v!=="ouverte");
+    if(ferme && !(await modaleConfirm("Appliquer ces états ? "+["ca","caisse"].map(k=>(k==="ca"?"Espace CA":"Caisse")+" : "+ETAT_LIB[etat[k]]).join(" · "),"État des applications"))) return;
+    const r=await sb.rpc("proprio_reglages",{p:{etat,messages}}); if(ko(r)) return;
+  } else if(pa==="tresorier"){
+    const on=b.dataset.on==="1"; const c=((S.proprio&&S.proprio.caisse)||[]).find(x=>x.id===id)||{};
+    if(!(await modaleConfirm((on?"Nommer ":"Retirer le rôle de trésorier à ")+(c.nom||c.email||"cette personne")+(on?" trésorier de la Caisse ?":" ?"),"Trésorier"))) return;
+    const r=await sb.rpc("proprio_set_tresorier",{p_user:id,p_on:on}); if(ko(r)) return;
+  } else if(pa==="gj-cosign"){
+    const v=(document.getElementById("gj_cosign")||{}).value||null;
+    const r=await sb.rpc("proprio_set_gj_cosignataire",{p_membre:v}); if(ko(r)) return;
+  } else if(pa==="nouveau-lien"){
+    if(!(await modaleConfirm("Générer un nouveau lien secret ? L'ancien ne fonctionnera plus.","Lien secret"))) return;
+    const r=await sb.rpc("proprio_nouveau_lien"); if(ko(r)) return;
+    S.proprioLien=location.origin+location.pathname+"#proprietaire="+r.data;
+  } else return;
+  await chargerProprio(); await chargerEtatApp(); render();
+});
+document.addEventListener("change", async e=>{
+  const b=e.target.closest("[data-pa]"); if(!b||!sb||b.type!=="checkbox"||!proprioOuvert()) return;
+  const pa=b.dataset.pa, id=b.dataset.id||"", on=!!b.checked;
+  let r=null;
+  if(pa==="mode-licence"){
+    if(!(await modaleConfirm(on?"Activer le mode licence ? Sans licence active, toutes les applications passent en lecture seule pour les autres comptes et les modules en option sont coupés.":"Désactiver le mode licence ? Tout refonctionne normalement, sans licence.","Mode licence"))){ b.checked=!on; return; }
+    r=await sb.rpc("proprio_reglages",{p:{mode_licence:on}});
+  } else if(pa==="module"){ const m={}; m[id]=on; r=await sb.rpc("proprio_reglages",{p:{modules:m}}); }
+  else if(pa==="admin"){ r=await sb.rpc("proprio_set_admin",{p_membre:id,p_on:on}); }
+  else if(pa==="hors-ca"){ r=await sb.rpc("proprio_set_hors_ca",{p_on:on}); }
+  else return;
+  if(r&&r.error){ b.checked=!on; modaleInfo("Non enregistré : "+r.error.message,"Erreur"); return; }
+  await chargerProprio(); await chargerEtatApp(); await loadAccounts();
+  const moi=(S.admins||[]).find(a=>a.id===S.session.id); if(moi){ S.session.horsCa=!!moi.horsCa; }
+  render();
+});
+
 function viewAdmin(){
   /* Onglet reserve au proprietaire : plus de connexion separee, on utilise
      deja la session de l'utilisateur connecte. */
-  if(!(S.session && S.session.role==="owner")) return `<div class="empty">Espace r\u00e9serv\u00e9 au propri\u00e9taire.</div>`;
+  if(!estAdminCA()) return `<div class="empty">Espace r\u00e9serv\u00e9 \u00e0 l'Admin.</div>`;
   const pend = S.admins.filter(a=>a.statut==="attente");
   const actifs = S.admins.filter(a=>a.statut!=="attente" && a.statut!=="revoque").sort((x,y)=>(estCoopteA(x)?1:0)-(estCoopteA(y)?1:0));
   const revoques = S.admins.filter(a=>a.statut==="revoque");
@@ -1766,17 +2025,14 @@ function viewAdmin(){
     const titre=(i===0&&!estCoopteA(a))?`<h3 class="serif" style="margin:6px 0 8px">Membres du CA</h3>`:(estCoopteA(a)&&(i===0||!estCoopteA(actifs[i-1])))?`<h3 class="serif" style="margin:18px 0 8px">Coopté·es <span class="du" style="display:inline">(hors CA)</span></h3>`:"";
     return titre+`<div class="doc" style="cursor:default">
       <span class="ic">${a.role==="owner"?"★":estCoopteA(a)?"◇":"✓"}</span>
-      <span class="meta"><p class="dt">${esc(a.prenom?a.prenom+" "+a.nom:a.nom)}${self?" (vous)":""}${badgeCoopte(a)}</p><p class="du">${esc([a.fonction,a.email?("connexion : "+a.email):"aucune adresse enregistrée"].filter(Boolean).join(" · "))}${a.emailAlt?`<br><span style="opacity:.8">adresse ULB : ${esc(a.emailAlt)}</span>`:""}</p></span>
+      <span class="meta"><p class="dt">${esc(a.prenom?a.prenom+" "+a.nom:a.nom)}${self?" (vous)":""}${badgeCoopte(a)}${a.role==="owner"?' <span class="badge">Propriétaire</span>':a.admin?' <span class="badge">Admin</span>':""}${a.horsCa?' <span class="du" style="display:inline">(hors CA)</span>':""}</p><p class="du">${esc([a.fonction,a.email?("connexion : "+a.email):"aucune adresse enregistrée"].filter(Boolean).join(" · "))}${a.emailAlt?`<br><span style="opacity:.8">adresse ULB : ${esc(a.emailAlt)}</span>`:""}</p></span>
       ${a.email?`<button class="link" data-action="reset-pwd" data-id="${esc(a.id)}">Réinitialiser le mot de passe</button>`:""}
       ${(!self && a.role!=="owner")?`<button class="link" data-action="revoke-admin" data-id="${esc(a.id)}">Révoquer</button>`:""}
     </div>`;
   }).join("");
   return `<div>
-    <h1 class="serif" style="font-size:26px;margin:0 0 6px">Validation des comptes</h1>
+    <h1 class="serif" style="font-size:26px;margin:0 0 6px">Admin — gestion courante</h1>
     <p style="color:var(--slate);font-size:11px;margin:0 0 16px">Version de l'application : <b>${esc(CA_VERSION)}</b></p>
-    ${typeof carteMfaCA==="function"?carteMfaCA():""}
-    ${typeof carteAmeliorations==="function"?carteAmeliorations():""}
-    ${S.session&&S.session.role==="owner"&&typeof carteErreurCA==="function"?carteErreurCA():""}
     <p style="color:var(--slate);font-size:12px;margin:2px 0 0">Mot de passe oublié d'un membre ? Le bouton « Réinitialiser le mot de passe » lui envoie un lien par e-mail ; chacun peut aussi le demander depuis l'écran de connexion.</p>
     <div class="compose"><h3 class="serif">Comptes en attente</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0">Vous seul validez les accès. Les comptes validés peuvent entrer dans l\'espace CA.</p></div>
@@ -1809,14 +2065,9 @@ function viewAdmin(){
       <label class="fld" style="margin-top:10px">Points r\u00e9currents (un par ligne) \u2014 pr\u00e9-remplissage des nouvelles r\u00e9unions</label>
       <textarea id="cfg_modele" placeholder="Ex. Approbation du PV pr\u00e9c\u00e9dent">${esc((S.meta.modeleOdj||[]).join("\n"))}</textarea>
       <div class="row-btn"><button class="btn" data-action="save-secr-cfg">Enregistrer</button></div></div>`:""}
-    ${S.session&&S.session.role==="owner"?`<div class="card2"><h3 class="serif">Onglets</h3>
-      <p class="du">Un onglet désactivé disparaît pour tout le monde, vous compris. Réactivez-le ici pour le faire revenir.</p>
-      ${ONGLETS_OPTIONNELS.map(([k,l])=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
-        <input type="checkbox" class="sw" role="switch" ${ongletsOff().indexOf(k)<0?"checked":""} data-action="toggle-onglet" data-id="${k}"> ${l}</label>`).join("")}
-    </div>`:""}
-    ${S.session&&S.session.role==="owner"?`<div class="card2"><h3 class="serif">Droits secrétariat</h3>
+    ${estAdminCA()?`<div class="card2"><h3 class="serif">Droits secrétariat</h3>
       <p class="du">Réunions, PV, ordre du jour, bilans moraux et code de cooptation. Ces droits ne découlent plus de la fonction déclarée à l'inscription : cochez qui les exerce.</p>
-      ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte").map(a=>{
+      ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte"&&!a.horsCa).map(a=>{
         const on=secretairesExtra().indexOf(a.id)>=0;
         return `<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
           <input type="checkbox" class="sw" role="switch" ${on?"checked":""} data-action="toggle-secretaire" data-id="${a.id}">
@@ -1827,7 +2078,7 @@ function viewAdmin(){
     </div>
     <div class="card2"><h3 class="serif">Droits médiation</h3>
       <p class="du">Liste des médiateurs. Vous attribuez chaque dossier à l'un d'eux : seul celui-ci en voit le contenu. Prévoyez-en au moins trois.</p>
-      ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte").map(a=>{
+      ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte"&&!a.horsCa).map(a=>{
         const on=directionExtra().indexOf(a.id)>=0;
         return `<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
           <input type="checkbox" class="sw med-chk" role="switch" ${on?"checked":""} value="${a.id}">
@@ -1839,11 +2090,6 @@ function viewAdmin(){
     </div>
     ${salleCarteAdmin()}
     ${typeof billetsCarteAdmin==="function"?billetsCarteAdmin():""}
-    <div class="card2"><h3 class="serif">Commission Entraide Sociale (CES)</h3>
-      <p class="du">Activez ou désactivez l'onglet « Soutien social — CES » de Waled Buzzian, quand vous le voulez. Désactivé, l'onglet disparaît pour lui (vous le gardez). Ses dossiers ne sont ni modifiés ni effacés.</p>
-      <label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:15px;font-weight:700;cursor:pointer">
-        <input type="checkbox" class="sw" role="switch" id="ces_actif_chk" ${cesActif()?"checked":""}> ${cesActif()?"CES activée":"CES désactivée"} <span class="du">(état enregistré)</span></label>
-      <div class="row-btn"><button class="btn sm" data-action="save-ces-actif">Enregistrer</button></div>
     </div>`:""}
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Liste e-mail (invités externes)</h2><span class="l"></span></div>
     <div class="compose">
@@ -1852,20 +2098,6 @@ function viewAdmin(){
       <p class="err" id="mail_err" style="display:none"></p>
       <div style="margin-top:10px">${(S.mailing||[]).length ? (S.mailing||[]).map(m=>`<div class="doc" style="cursor:default;padding:8px 12px"><span class="meta"><p class="dt" style="font-size:13px">${esc(m.email)}</p></span><button class="rm2" data-action="del-mail" data-id="${esc(m.id)}">✕</button></div>`).join("") : `<div class="empty">Aucune adresse externe pour l'instant.</div>`}</div>
     </div>
-    <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Zone dangereuse</h2><span class="l"></span></div>
-    <div class="compose" style="border-color:var(--red)">
-      <h3 class="serif">Réinitialiser les données</h3>
-      <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Efface tout le contenu (tâches, budgets, réunions, événements, planning, votes, documents, messages, annonces, contacts, bilans, journal, organigramme). <b style="color:var(--ink)">Les comptes et la caisse ne sont pas touchés.</b> Action irréversible — à utiliser après vos tests.</p>
-      <input class="f" id="reset_confirm" placeholder="Tapez RESET pour confirmer">
-      <p class="err" id="reset_err" style="display:none"></p>
-      <div class="row-btn"><button class="btn" style="background:var(--red);border-color:var(--red);color:#fff" data-action="reset-data">Réinitialiser toutes les données</button></div>
-    </div>
-    <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Sauvegarde & journal</h2><span class="l"></span></div>
-    <div class="compose"><h3 class="serif">Données</h3>
-      <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Exportez une sauvegarde de toutes les données (recommandé avant la bascule Supabase), ou réimportez-la.</p>
-      <div class="row-btn"><button class="btn sm" data-action="export-data">Exporter (JSON)</button>
-        <label class="btn ghost sm" style="cursor:pointer">Importer<input type="file" accept="application/json" data-change="importfile" style="display:none"></label></div></div>
-    <p class="du" style="margin:14px 0 0">Le journal des connexions et des actions des membres est dans l'onglet <b>📜 Journal</b>.</p>
   </div>`;
 }
 function viewPending(){
@@ -2270,7 +2502,7 @@ document.addEventListener("click", async e=>{
 /* ---- DASHBOARD ---- */
 const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["verifsig","\ud83d\udd0e","V\u00e9rifier une signature"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
+  const map={admin:viewAdmin,proprio:viewProprio,licence:tabLicence,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
@@ -2288,10 +2520,16 @@ function viewDash(){
   if(S.sout && S.sout.info && S.sout.info.est_lamia && !estCoopte()) tabs.push(["soutien_etu","\ud83c\udf93","Soutien psy — étudiants"]);
   if(cesOngletVisible() && !estCoopte()) tabs.push(["soutien_ces","\ud83e\udd1d","Soutien social — CES"]);
   const estProprio = S.session && S.session.role==="owner";
-  if(estProprio && !estCoopte()) tabs.push(["admin","\u2699","Admin"]);
-  if(estProprio && !estCoopte()) tabs.push(["journal","\ud83d\udcdc","Journal"]);
-  if(estProprio && !estCoopte()) tabs.push(["registre","\ud83d\uddf3","Registre des votes"]);
-  if((S.tab==="admin"||S.tab==="journal"||S.tab==="registre") && !estProprio) S.tab="accueil";
+  if(estAdminCA() && !estCoopte()) tabs.push(["admin","\u2699","Admin"]);
+  /* Espace Propriétaire, Journal et Registre : seulement après le lien secret. */
+  if(proprioOuvert()) tabs.push(["proprio","\ud83d\udd11","Propri\u00e9taire"]);
+  if(proprioOuvert()) tabs.push(["journal","\ud83d\udcdc","Journal"]);
+  if(proprioOuvert()) tabs.push(["registre","\ud83d\uddf3","Registre des votes"]);
+  if(S.appEtat && S.appEtat.mode_licence && !estCoopte() && (S.appEtat.peut_demander || estAdminCA() || (S.appEtat.demande && S.appEtat.demande.moi)))
+    tabs.push(["licence","\ud83d\udcc4","Licence"]);
+  if(S.tab==="admin" && !estAdminCA()) S.tab="accueil";
+  if((S.tab==="journal"||S.tab==="registre"||S.tab==="proprio") && !proprioOuvert()) S.tab="accueil";
+  if(S.tab==="licence" && !tabs.some(t=>t[0]==="licence")) S.tab="accueil";
   if(bilanOnglet() && !estCoopte()) tabs.push(["bilan","13","Bilans moraux"]);
   /* PV à signer : secrétariat, présidente et vice-président uniquement */
   if(pvsOngletVisible()){ const ip=tabs.findIndex(x=>x[0]==="procuration"); tabs.splice(ip>=0?ip+1:tabs.length,0,["pvsign","\u270d","PV \u00e0 signer"]); }
@@ -2301,13 +2539,20 @@ function viewDash(){
   if(!estCoopte()){ const OFF=ongletsOff();
     for(let i=tabs.length-1;i>=0;i--){ if(OFF.indexOf(tabs[i][0])>=0) tabs.splice(i,1); }
     if(OFF.indexOf(S.tab)>=0) S.tab="accueil"; }
+  /* Modules en option coupés par le propriétaire ou absents de la licence (le propriétaire les voit). */
+  if(S.appEtat && S.appEtat.modules && !estProprioCA()){
+    const MODS={salle:["salle"],billetterie:["billetterie"],ces:["soutien_ces"],soutien:["soutien_etu","soutien"],mediation:["conflits"]};
+    Object.keys(MODS).forEach(m=>{ if(S.appEtat.modules[m]===false){
+      for(let i=tabs.length-1;i>=0;i--) if(MODS[m].indexOf(tabs[i][0])>=0) tabs.splice(i,1);
+      if(MODS[m].indexOf(S.tab)>=0) S.tab=estCoopte()?"agenda":"accueil"; } });
+  }
   /* Onglet Notifs : toujours le dernier, à droite, pour chaque membre du CA. */
   if(!estCoopte()) tabs.push(["notifprefs","\ud83d\udd14","Notifs"]);
   if(S.tab==="notifprefs" && estCoopte()) S.tab="agenda";
-  const notifOwner = S.session.role==="owner" ? (S.admins||[]).filter(a=>a.statut==="attente").length : 0;
+  const notifOwner = estAdminCA() ? (S.admins||[]).filter(a=>a.statut==="attente").length : 0;
   const notifBud = (S.budgets||[]).filter(b=>b.statut==="vote" && !(b.votes||[]).some(v=>(v.nom||"").toLowerCase()===(S.session.sig||"").toLowerCase())).length;
   const notifTot = notifOwner + notifBud;
-  const body = (map[S.tab]||tabOrg)();
+  const body = (S.appEtat && S.appEtat.pour_moi==="fermee") ? ecranFerme() : bandeauEtat() + (map[S.tab]||tabOrg)();
   const bienvenue = (estSecretaire() && !dejaVuGuide("secr")) ? `
     <div class="card2" style="border-left:4px solid var(--or,#c9a227);margin-bottom:16px">
       <h3 class="serif" style="margin-top:0">Bienvenue \u2014 vos fonctions de secr\u00e9tariat</h3>
@@ -2434,7 +2679,7 @@ function detailVoixBudget(b){
     ${sans.length?`<p class="voters" style="margin:4px 0"><b>N'ont pas voté (${sans.length})</b> : ${esc(sans.join(", "))}</p>`:""}</div>`;
 }
 function tabBudgets(){
-  const owner = !!(S.session && S.session.role==="owner");
+  const owner = estTresoCA();   // trésorier (rôle Caisse) ou propriétaire
   const peutDecider = owner;          // seul le propriétaire approuve ou refuse un budget
   const peutCloturer = owner;         // clôturer décide aussi : même restriction
   const effectif = effectifCA(), seuil = seuilMajorite();
@@ -4196,8 +4441,8 @@ function destinatairesDecision(){
 }
 async function cloturerBudget(id, force){
   if(!sb) return;
-  const owner = !!(S.session && S.session.role==="owner");
-  if(!owner){ modaleInfo("Seul le propri\u00e9taire peut cl\u00f4turer ou d\u00e9cider d\u2019un budget."); return; }
+  const owner = estTresoCA();
+  if(!owner){ modaleInfo("Seul le tr\u00e9sorier peut cl\u00f4turer ou d\u00e9cider d\u2019un budget."); return; }
   if(force){ modaleInfo("L'approbation hors seuil a \u00e9t\u00e9 supprim\u00e9e : un budget n'est approuv\u00e9 que si la r\u00e8gle de l'article 16.2 est respect\u00e9e."); return; }
   const b=(S.budgets||[]).find(x=>x.id===id);
   if(!b || b.statut!=="vote") return;
@@ -4285,7 +4530,9 @@ function certifLibelle(b){
   return "Certifié exact par "+(b.certifiePar||"—")+(quand?" le "+quand:"")+" (mot de passe vérifié"+(b.certifCode?", code "+b.certifCode:"")+")"+(b.statut==="approuve"?" · Confirmé par le trésorier"+(b.confirmCode?" (code "+b.confirmCode+")":""):"");
 }
 function seanceLongue(iso){ if(!iso) return "—"; return new Date(String(iso).slice(0,10)+"T12:00:00").toLocaleDateString("fr-BE",{day:"numeric",month:"long",year:"numeric"}); }
-function emailsTresorier(){ return [...new Set((S.admins||[]).filter(a=>a.role==="owner"&&a.statut==="actif"&&a.email).map(a=>String(a.email).toLowerCase().trim()))]; }
+function emailsTresorier(){
+  const t=S.tresoCA&&S.tresoCA.email; if(t) return [String(t).toLowerCase().trim()];
+  return [...new Set((S.admins||[]).filter(a=>a.role==="owner"&&a.statut==="actif"&&a.email).map(a=>String(a.email).toLowerCase().trim()))]; }
 function blocCertifBudget(b, owner){
   const moi=S.session&&S.session.id;
   const jours=b.certifieLe?Math.floor((Date.now()-new Date(b.certifieLe).getTime())/86400000):0;
@@ -4387,7 +4634,7 @@ async function retirerCertif(id){
 }
 async function confirmerCertif(id){
   if(!sb) return;
-  if(!(S.session && S.session.role==="owner")){ modaleInfo("Seul le trésorier peut confirmer."); return; }
+  if(!estTresoCA()){ modaleInfo("Seul le trésorier peut confirmer."); return; }
   const b=(S.budgets||[]).find(x=>x.id===id); if(!b || b.statut!=="attente_tresorier") return;
   if(!(await modaleConfirm("Confirmer « "+(b.titre||"")+" », voté en CA présentiel le "+seanceLongue(b.seanceLe)+" ?\n\n"+certifLibelle(b)+".\n\nLe PDF de la décision sera envoyé à tout le CA.","Confirmer le budget"))) return;
   if(!(await confirmerMalgreReserves(id))) return;
@@ -4869,7 +5116,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       ouvrirFichier(data.signedUrl, nomF); break;
     }
     case "reset-pwd": {
-      if(!(S.session&&S.session.role==="owner")||!sb) break;
+      if(!(estAdminCA())||!sb) break;
       const ad=S.admins.find(a=>a.id===id); if(!ad||!ad.email) break;
       const r=await sb.auth.resetPasswordForEmail(ad.email,{redirectTo:caAppUrl()});
       if(window.alert) window.alert(r&&r.error ? ("Envoi impossible : "+r.error.message)
@@ -4889,13 +5136,13 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       try{ history.replaceState(null,"",location.pathname); }catch(e){}
       await refreshSession(); S.view="ca"; render(); break;
     }
-    case "toggle-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break;
+    case "toggle-bilan": { if(!(estAdminCA())||!sb) break;
       const nv = bilanEtat()==="ouvert" ? "ferme" : "ouvert";
       const r=await sb.from("ca_meta").update({bilan_actif:nv==="ouvert", bilan_etat:nv}).eq("id",1);
       if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
       S.meta.bilanEtat=nv; S.meta.bilanActif=(nv==="ouvert");
       logAct(nv==="ouvert"?"Campagne de bilans moraux ouverte":"Campagne de bilans moraux fermée"); render(); break; }
-    case "bilan-cloturer": { if(!(estSecretaire()||(S.session&&S.session.role==="owner"))||!sb) break;
+    case "bilan-cloturer": { if(!(estSecretaire()||estAdminCA())||!sb) break;
       if(!(await modaleConfirm("Clôturer la campagne ? Plus personne ne pourra déposer de bilan, et le secrétariat pourra les lire."))) break;
       const r=await sb.rpc("ca_bilans_cloturer");
       if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
@@ -4986,7 +5233,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       if(error){ if(window.alert) window.alert("\u00c9chec : "+error.message); break; }
       S.meta.codeCoopte=data||""; logAct("Nouveau code de cooptation g\u00e9n\u00e9r\u00e9"); render(); break; }
     case "approve-coopte": {
-      if(!(S.session&&S.session.role==="owner")) break;
+      if(!(estAdminCA())) break;
       const ad=(S.admins||[]).find(a=>a.id===id);
       if(!(await modaleValidation(ad||{}, "coopte"))) break;
       const r=await sb.from("ca_membres").update({statut:"actif",role:"coopte"}).eq("id",id).select();
@@ -5161,7 +5408,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       if(window.alert) window.alert(res&&res.ok?"Votre demande a été transmise.":"L'envoi a échoué, contactez le bureau directement.");
       break; }
     case "archiver-mandat": {
-      if(!(S.session&&S.session.role==="owner")) break;
+      if(!(estAdminCA())) break;
       const an=new Date().getFullYear();
       const dump={
         archive_du:new Date().toISOString(), bureau:S.meta.nom||"Bureau étudiant",
@@ -5300,7 +5547,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
                       :"✅ Enregistré : la CES est DÉSACTIVÉE. L'onglet « Soutien social — CES » a disparu pour Waled Buzzian (vous le gardez).","Enregistré");
       break; }
     case "save-mediateurs": {
-      if(!(S.session&&S.session.role==="owner")||!sb) break;
+      if(!(estAdminCA())||!sb) break;
       const ids=[...document.querySelectorAll(".med-chk")].filter(c=>c.checked).map(c=>c.value);
       let r; try{ r=await sb.rpc("ca_med_set_liste",{p_ids:ids}); }catch(e){ r={error:{message:String(e&&e.message||e)}}; }
       if(r&&r.error){ modaleInfo("Les médiateurs n'ont PAS été enregistrés.\n\nErreur : "+r.error.message,"Erreur"); break; }
@@ -5312,7 +5559,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       modaleInfo(res.length+" médiateur(s) enregistré(s).","Enregistré");
       break; }
     case "toggle-secretaire": {
-      if(!(S.session&&S.session.role==="owner")||!sb) break;
+      if(!(estAdminCA())||!sb) break;
       const mediation = el.dataset.action==="toggle-direction";
       const type = mediation ? "mediation" : "secretariat";
       const colonne = mediation ? "direction" : "secretaires";
@@ -5329,12 +5576,12 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       S.droitsEtat[type+":"+el.dataset.id]={ok:true,quand:new Date().toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"})};
       logAct((mediation?"Droits m\u00e9diation":"Droits secr\u00e9tariat")+" modifi\u00e9s");
       render(); break; }
-    case "reset-bilan": { if(!(S.session&&S.session.role==="owner")||!sb) break; if(!(await modaleConfirm("Effacer TOUS les bilans moraux déjà déposés et remettre le compteur à zéro ? Action irréversible."))) break; const r=await sb.rpc("ca_reset_bilans"); if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
+    case "reset-bilan": { if(!(estAdminCA())||!sb) break; if(!(await modaleConfirm("Effacer TOUS les bilans moraux déjà déposés et remettre le compteur à zéro ? Action irréversible."))) break; const r=await sb.rpc("ca_reset_bilans"); if(r&&r.error){ if(window.alert) window.alert("Échec : "+r.error.message); break; }
       await sb.from("ca_meta").update({bilan_publie:null, bilan_publie_le:null, bilan_etat:"ferme", bilan_actif:false}).eq("id",1);
       S.meta.bilanPublie=""; S.meta.bilanPublieLe=null; S.meta.bilanEtat="ferme"; S.meta.bilanActif=false; S.bilanPubDraft=undefined;
       await loadBilans(); logAct("Bilans moraux réinitialisés"); render(); break; }
-    case "add-mail": { if(!(S.session&&S.session.role==="owner")||!sb) break; const em=val("mail_new").trim().toLowerCase(); const merr=m=>{const x=document.getElementById("mail_err");if(x){x.textContent=m;x.style.display="block";}}; if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return merr("Adresse e-mail invalide."); const r=await sb.from("ca_mailing").insert({email:em}); if(r&&r.error){ return merr(/duplicate|unique/i.test(r.error.message)?"Cette adresse est déjà dans la liste.":r.error.message); } await loadMailing(); render(); break; }
-    case "del-mail": { if(!(S.session&&S.session.role==="owner")||!sb) break;
+    case "add-mail": { if(!(estAdminCA())||!sb) break; const em=val("mail_new").trim().toLowerCase(); const merr=m=>{const x=document.getElementById("mail_err");if(x){x.textContent=m;x.style.display="block";}}; if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return merr("Adresse e-mail invalide."); const r=await sb.from("ca_mailing").insert({email:em}); if(r&&r.error){ return merr(/duplicate|unique/i.test(r.error.message)?"Cette adresse est déjà dans la liste.":r.error.message); } await loadMailing(); render(); break; }
+    case "del-mail": { if(!(estAdminCA())||!sb) break;
       const av=(S.mailing||[]).find(m=>m.id===id);
       const adr=(av&&av.email)||"cette adresse";
       if(!(await modaleConfirm("Retirer "+adr+" de la liste de diffusion ?\n\nElle ne recevra plus les annonces, les documents ni les votes."))) break;
@@ -5410,7 +5657,7 @@ ${sections||"<p>Aucun retour.</p>"}
       telechargerPDF(nomPDF("bilans-moraux"), cssBil, corpsBil);
       break;
     }
-    case "approve-admin": { if(!(S.session&&S.session.role==="owner")) break;
+    case "approve-admin": { if(!(estAdminCA())) break;
       const ad=(S.admins||[]).find(a=>a.id===id);
       if(!(await modaleValidation(ad||{}, "ca"))) break;
       /* Supabase ne lève pas d'exception quand la RLS écarte la ligne : on exige
@@ -5425,7 +5672,7 @@ ${sections||"<p>Aucun retour.</p>"}
       try{ logAct("Inscription validée : "+(((ad&&ad.prenom)||"")+" "+((ad&&ad.nom)||"")).trim()); }catch(e){}
       await loadAccounts(); render(); break; }
     case "reject-admin": {
-      if(!(S.session&&S.session.role==="owner")) break;
+      if(!(estAdminCA())) break;
       const ad=(S.admins||[]).find(a=>a.id===id);
       const motif=await modaleSaisie(
         "Cette personne recevra votre message par e-mail et pourra vous r\u00e9pondre. Laissez vide pour refuser sans explication.",
@@ -5450,7 +5697,7 @@ ${sections||"<p>Aucun retour.</p>"}
       logAct("Demande refus\u00e9e"+(String(motif).trim()?" (motif transmis)":""));
       await loadAccounts(); render(); break; }
     case "revoke-admin": {
-      if(!(S.session&&S.session.role==="owner")) break;
+      if(!(estAdminCA())) break;
       if(id===S.session.id) break;
       const ad=S.admins.find(a=>a.id===id);
       const label=ad?((ad.prenom?ad.prenom+" "+ad.nom:ad.nom)+(ad.fonction?" ("+ad.fonction+")":"")):"ce compte";
@@ -5468,7 +5715,7 @@ ${sections||"<p>Aucun retour.</p>"}
         if(r&&r.error){ modaleInfo("Réactivation impossible : "+r.error.message); break; }
         logAct("Compte réactivé : "+lab2); }
       await loadAccounts(); render(); break; }
-    case "set-tab": S.tab=el.dataset.tab; S.mailFlash=null; try{ const _t=(TABS.concat([["admin","","Admin"],["journal","","Journal"],["avis","","Idées & avis"],["agenda","","Agenda"],["bilan","","Bilans moraux"],["soutien_etu","","Soutien psy — étudiants"],["soutien_ces","","Soutien social — CES"],["notifs","","À traiter"],["notifprefs","","Notifs"],["registre","","Registre des votes"],["search","","Recherche"]])).find(x=>x[0]===S.tab); auditNav(_t?_t[2]:S.tab); }catch(_){ } if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
+    case "set-tab": S.tab=el.dataset.tab; S.mailFlash=null; try{ const _t=(TABS.concat([["admin","","Admin"],["proprio","","Propriétaire"],["licence","","Licence"],["journal","","Journal"],["avis","","Idées & avis"],["agenda","","Agenda"],["bilan","","Bilans moraux"],["soutien_etu","","Soutien psy — étudiants"],["soutien_ces","","Soutien social — CES"],["notifs","","À traiter"],["notifprefs","","Notifs"],["registre","","Registre des votes"],["search","","Recherche"]])).find(x=>x[0]===S.tab); auditNav(_t?_t[2]:S.tab); }catch(_){ } if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
     /* organigramme */
     case "edit-poste": S.editPoste=id; render(); break;
     case "cancel-edit": S.editPoste=null; render(); break;
@@ -5675,6 +5922,10 @@ ${sections||"<p>Aucun retour.</p>"}
 });
 
 async function boot(){
+  try{ const h=String(location.hash||""); const mp=h.match(/proprietaire=([A-Za-z0-9]+)/), ml=h.match(/licence=([A-Za-z0-9]+)/);
+    if(mp){ sessionStorage.setItem("ca:proprio-code",mp[1]); S.view="ca"; }
+    if(ml){ sessionStorage.setItem("ca:licence-jeton",ml[1]); S.view="ca"; }
+    if(mp||ml) history.replaceState(null,"",location.pathname+location.search); }catch(e){}
   try{ const params=new URLSearchParams(location.search); if(params.get("desabo")!=null){ await pageDesabo(params.get("desabo"), params.get("t")||""); return; } }catch(e){}
   /* Lien de participation : ?go=bilan mène à l'onglet Bilans moraux, après connexion. */
   try{ const params=new URLSearchParams(location.search); const g=params.get("go");
@@ -8328,7 +8579,7 @@ function salleCarteAdmin(){
   if(!(S.session&&S.session.role==="owner")) return "";
   return `<div class="card2"><h3 class="serif">Droits salle facultaire</h3>
     <p class="du">Personnes qui valident ou refusent les réservations, annulent avec motif, gèrent le règlement, les fermetures et les déblocages. Elles reçoivent un mail à chaque nouvelle demande.</p>
-    ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte").map(a=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
+    ${(S.admins||[]).filter(a=>a.statut==="actif"&&a.role!=="coopte"&&!a.horsCa).map(a=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
         <input type="checkbox" class="sw salle-chk" role="switch" ${salleResp().indexOf(a.id)>=0?"checked":""} value="${a.id}">
         ${esc(((a.prenom||"")+" "+(a.nom||"")).trim()||a.email)} <span class="du">${esc(a.fonction||"")}</span></label>`).join("")}
     <div class="row-btn"><button class="btn sm" data-action="salle-save-resp">Enregistrer</button></div>
@@ -8377,7 +8628,7 @@ document.addEventListener("click", async e=>{
       if(await salleEnregistrerReglages(salleCharte(), l)) render();
       break; }
     case "salle-save-resp": {
-      if(!(S.session&&S.session.role==="owner")) break;
+      if(!(estAdminCA())) break;
       const ids=[...document.querySelectorAll(".salle-chk")].filter(c=>c.checked).map(c=>c.value);
       const r=await sb.rpc("ca_salle_set_resp",{p_ids:ids});
       if(r&&r.error){ modaleInfo("Non enregistré : "+r.error.message,"Erreur"); break; }

@@ -95,3 +95,15 @@ Lecture dans le navigateur (rien n'est envoyé). La page autorise `'wasm-unsafe-
 la Billetterie n'est pas concernée). Table `securite_appareils` ; premier appareil d'un compte
 et appareils déjà présents dans le journal : sans mail ; 5 alertes max par compte et par heure.
 L'alerte au propriétaire (« 🚨 Nouvel appareil — … ») existait déjà et n'a pas changé.
+
+### Propriétaire, Admin, état des apps, modules, licences (13/11/2026)
+`sql/2026-11-13_proprietaire_licences.sql` (en-tête = mode d'emploi complet).
+- **Propriétaire** (`ca_membres.role = 'owner'`) : espace « 🔑 Propriétaire » du CA, ouvert par un
+  **lien secret** (`#proprietaire=…`, hash dans `proprio_config.lien_hash`) + connexion + 2FA.
+  Licences, état des apps, modules, fonctions (Admin, trésorier, cosignataire GJ, « hors CA »),
+  réglages techniques (2FA, sauvegardes, page d'erreur, onglets, CES, zone dangereuse, export).
+- **Admin délégué** (`ca_membres.admin`) : onglet Admin (comptes, coopté·es, bilans, droits, liste e-mail).
+- **Trésorier** (`profiles.role`) nommé par le propriétaire ; décide aussi des budgets du CA.
+- **Blocage serveur** : trigger `a0_app_garde` + politique `app_fermee` sur les tables de `app_tables`.
+- **Licence** : `licence_demander` → mail au propriétaire → `proprio_licence_approuver` → lien
+  `#licence=…` → `licence_activer` (le demandeur devient Admin) ; rappels `licence-rappels` (07:13 UTC).
