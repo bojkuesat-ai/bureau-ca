@@ -2033,9 +2033,9 @@ function tabPvSign(){
 function pvsCarte(p){
   const me=S.session&&S.session.id, secr=estSecretaire();
   const badge=p.statut==="valide"?`<span class="badge ok">Signé</span>`:p.statut==="refuse"?`<span class="badge no">Refusé</span>`:`<span class="badge open">En attente de ${esc(p.signataire_nom||"la signature")}</span>`;
-  const sig=(role,nom,at)=>`<div style="flex:1;min-width:200px;border:1px solid var(--line,#ddd);border-radius:10px;padding:9px 11px">
+  const sig=(role,nom,at,cd)=>`<div style="flex:1;min-width:200px;border:1px solid var(--line,#ddd);border-radius:10px;padding:9px 11px">
     <div class="du" style="margin:0">${role}</div>
-    <div style="font-size:13.5px;margin-top:2px">${at?`✓ <b>${esc(nom||"")}</b><div class="du" style="margin:2px 0 0">${esc(pvsDateAffichee(p,at))}</div>`:`<span class="du">pas encore signé</span>`}</div></div>`;
+    <div style="font-size:13.5px;margin-top:2px">${at?`✓ <b>${esc(nom||"")}</b><div class="du" style="margin:2px 0 0">${esc(pvsDateAffichee(p,at))}${cd?" · code <b>"+esc(cd)+"</b>":""}</div>`:`<span class="du">pas encore signé</span>`}</div></div>`;
   const act=[`<button class="chip" data-action="pvs-voir" data-id="${p.id}">📄 PV d'origine</button>`];
   if(pvsAMoi(p)){
     act.unshift(`<button class="btn ghost sm" data-action="pvs-refuser" data-id="${p.id}" style="color:var(--red)">Refuser</button>`);
@@ -2049,7 +2049,7 @@ function pvsCarte(p){
       <div style="flex:1;min-width:220px"><div class="du" style="margin:0">${esc(pvsRef(p))} · réunion : ${esc(pvsReunionLib(p))}</div>
         <div style="font-size:16px;font-weight:600;margin-top:3px">${esc(p.titre)}</div></div>
       <div>${badge}</div></div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">${sig("La secrétaire",p.secretaire_nom,p.sig_secr_at)}${sig(pvsRoleLib(p.signataire_fonction),p.signataire_nom,p.sig_sign_at)}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">${sig("La secrétaire",p.secretaire_nom,p.sig_secr_at,p.code_secr)}${sig(pvsRoleLib(p.signataire_fonction),p.signataire_nom,p.sig_sign_at,p.code_sign)}</div>
     ${p.statut==="refuse"?`<div style="margin-top:10px;border:1px solid var(--red);border-radius:10px;padding:10px 12px"><b style="color:var(--red)">Refusé par ${esc(p.signataire_nom||"")}${p.refus_at?" le "+esc(fmtQuand(p.refus_at)):""}</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(p.motif||"")}</p></div>`:""}
     <div class="row-btn" style="margin-top:10px;flex-wrap:wrap">${act.join("")}</div></div>`;
 }
@@ -2145,14 +2145,16 @@ async function pvsPdfFinal(p){
   for(const l of l1.concat([""]).concat(l2)){ if(l) page.drawText(l,{x:X+8,y,size:8.5,font:FI,color:rgb(.3,.3,.3)}); y-=l?11.5:4; }
   y-=24;
   ecrire("Signatures",FB,13); y-=6;
+  /* Codes de vérification délivrés par le serveur (registre des signatures). Les PV signés avant le
+     13/11/2026 n'en ont pas : on garde pour eux l'ancien code calculé localement. */
   const code=async(role,nom,at)=>{ if(!at) return ""; const x=(await pvsHash(new TextEncoder().encode(JSON.stringify([pvsRef(p),role,nom,at,p.date_mode,p.date_manuelle||null,p.fichier.hash||null])))).slice(0,12).toUpperCase(); return x.slice(0,4)+"-"+x.slice(4,8)+"-"+x.slice(8,12); };
-  const cSecr=await code("secretaire",p.secretaire_nom,p.sig_secr_at), cSign=await code(p.signataire_fonction,p.signataire_nom,p.sig_sign_at);
+  const cSecr=p.code_secr||await code("secretaire",p.secretaire_nom,p.sig_secr_at), cSign=p.code_sign||await code(p.signataire_fonction,p.signataire_nom,p.sig_sign_at);
   const bloc=(x,role,nom,at,cd)=>{ const h=90, bw=(LW-14)/2;
     page.drawRectangle({x,y:y-h+12,width:bw,height:h,borderColor:rgb(.7,.7,.7),borderWidth:.6});
     page.drawText(pvsTxt(role),{x:x+8,y:y-2,size:9,font:FB,color:rgb(.45,.45,.45)});
     page.drawText(pvsTxt(nom||"-"),{x:x+8,y:y-20,size:12,font:FB});
     let yy=y-38; for(const l of lignes(pvsDateAffichee(p,at),F,9,bw-16)){ page.drawText(l,{x:x+8,y:yy,size:9,font:F,color:rgb(.25,.25,.25)}); yy-=12; }
-    if(cd){ page.drawText("Code de vérification : "+cd,{x:x+8,y:yy,size:8.5,font:F,color:rgb(.3,.3,.3)}); yy-=12; }
+    if(cd){ page.drawText("Code de vérification : "+cd,{x:x+8,y:yy,size:8.5,font:FB,color:rgb(.2,.2,.2)}); yy-=12; }
     page.drawText("Signature vérifiée par mot de passe du compte",{x:x+8,y:yy,size:7.5,font:FI,color:rgb(.45,.45,.45)}); };
   bloc(X,"La secrétaire",p.secretaire_nom,p.sig_secr_at,cSecr);
   bloc(X+(LW-14)/2+14,pvsRoleLib(p.signataire_fonction),p.signataire_nom,p.sig_sign_at,cSign);
@@ -2161,6 +2163,7 @@ async function pvsPdfFinal(p){
   const emp=await pvsHash(new TextEncoder().encode(canon));
   ecrire("Empreinte SHA-256 du PV d'origine : "+String(p.fichier.hash||"-"),F,7.5,rgb(.45,.45,.45));
   ecrire("Empreinte SHA-256 des signatures : "+emp,F,7.5,rgb(.45,.45,.45));
+  if(p.code_secr||p.code_sign) ecrire("Les codes de vérification sont délivrés par le serveur et se contrôlent dans l'onglet « Vérifier une signature » de l'espace CA.",FI,7.5,rgb(.45,.45,.45));
   const out=await pdf.save();
   return new Blob([out],{type:"application/pdf"});
 }
@@ -2264,9 +2267,9 @@ document.addEventListener("click", async e=>{
 });
 
 /* ---- DASHBOARD ---- */
-const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
+const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["verifsig","\ud83d\udd0e","V\u00e9rifier une signature"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
+  const map={admin:viewAdmin,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
@@ -2495,12 +2498,15 @@ async function loadProcurations(){
       mandantEmail:p.mandant_email||"", mandataireId:p.mandataire_id, mandataireNom:p.mandataire_nom||"", mandataireEmail:p.mandataire_email||"",
       dateReunion:p.date_reunion, portee:p.portee||"tous", points:Array.isArray(p.points)?p.points:[], clause:!!p.clause_delib,
       signature:p.signature||"", signeLe:p.signe_le||p.created_at, empreinte:p.empreinte||"", statut:p.statut||"active",
-      annuleeLe:p.annulee_le||null, pdfPath:p.pdf_path||"" }));
+      annuleeLe:p.annulee_le||null, pdfPath:p.pdf_path||"", code:p.code||"", codeAnnulation:p.code_annulation||"" }));
   }catch(e){ S.procurations=[]; }
 }
 function prDateLongue(iso){ if(!iso) return "—"; return new Date(String(iso).slice(0,10)+"T12:00:00").toLocaleDateString("fr-BE",{day:"numeric",month:"long",year:"numeric"}); }
 function prDateCourte(iso){ if(!iso) return "—"; return new Date(String(iso).slice(0,10)+"T12:00:00").toLocaleDateString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric"}); }
 function prModifiable(p){ return p.statut==="active" && String(p.dateReunion||"").slice(0,10) >= todayISO(); }
+/* Code de vérification : calculé par le serveur (HMAC + registre des signatures) depuis le 13/11/2026 ;
+   les procurations plus anciennes gardent leur ancien code local (empreinte SHA-256 raccourcie). */
+function prCode(p){ return (p&&p.code) ? p.code : prEmpreinteCourte(p&&p.empreinte); }
 function prEmpreinteCourte(h){ const s=String(h||"").toUpperCase().slice(0,16); return s.match(/.{1,4}/g)?s.match(/.{1,4}/g).join("-"):"—"; }
 async function prCalculerEmpreinte(obj){
   const txt=JSON.stringify(obj);
@@ -2546,7 +2552,8 @@ function corpsPDFProcuration(p){
       ${p.mandantEmail?`Compte : ${esc(p.mandantEmail)}<br>`:""}
       Authentification : ${esc(p.signature&&!/^data:/.test(p.signature)?p.signature:PR_METHODE)}<br>
       Le : ${esc(signeLe.toLocaleDateString("fr-BE"))} à ${esc(signeLe.toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit",second:"2-digit"}))}<br>
-      Code de vérification : <b>${esc(prEmpreinteCourte(p.empreinte))}</b><br>
+      Code de vérification : <b>${esc(prCode(p))}</b>${p.code?" <span style=\"color:#777\">(délivré par le serveur, vérifiable dans l’onglet « Vérifier une signature » de l’espace CA)</span>":""}<br>
+      ${p.statut==="annulee"&&p.codeAnnulation?`Code de l’annulation : <b>${esc(p.codeAnnulation)}</b><br>`:""}
       <span style="color:#777">Empreinte SHA-256 : ${esc(p.empreinte||"—")}</span>
     </div>`;
 }
@@ -2588,7 +2595,7 @@ function tabProcuration(){
   const carte=(p,titre,annulable)=>`<div class="vote"><div class="vote-h"><div><h4 class="serif">Réunion du ${esc(prDateLongue(p.dateReunion))}</h4>
       <p class="by" style="margin:2px 0 0">${titre}</p></div>${badge(p)}</div>
       <p class="b-desc" style="margin:6px 0 0">${esc(portee(p))}${p.clause?" · délibérations incluses":""}</p>
-      <p class="voters">Signée le ${esc(new Date(p.signeLe).toLocaleDateString("fr-BE"))} · code ${esc(prEmpreinteCourte(p.empreinte))}</p>
+      <p class="voters">Signée le ${esc(new Date(p.signeLe).toLocaleDateString("fr-BE"))} · code <b>${esc(prCode(p))}</b>${p.statut==="annulee"&&p.codeAnnulation?" · annulation "+esc(p.codeAnnulation):""}</p>
       <div class="foot-line"><button class="chip" data-action="pr-pdf" data-id="${p.id}">📄 PDF</button>
       ${(annulable&&prModifiable(p))?`<button class="link" data-action="pr-annuler" data-id="${p.id}" style="margin-left:auto;color:var(--red)">Annuler la procuration</button>`:""}</div></div>`;
   const miennes=P.filter(p=>p.mandantId===me.id);
@@ -2642,19 +2649,17 @@ async function prEnvoyer(){
   if(!(await modaleConfirm("Donner procuration à "+mNom+" pour la réunion du "+prDateLongue(date)+" ("+(d.portee==="points"?points.length+" point(s)":"ensemble des points")+") ?\n\nLe PDF signé sera envoyé à la secrétaire ("+PROCURATION_EMAIL+"), à vous et à "+mNom+".","Signer la procuration"))) return;
   const clause=!!d.clause, portee=d.portee;
   if(!(await prAuthentifier(me.email))) return;
-  const signeLe=new Date().toISOString();
-  const contenu={mandant_id:me.id, mandant_nom:me.nom||"", mandant_fonction:me.fonction||"", mandant_email:me.email||"",
-    mandataire_id:m.id, mandataire_nom:mNom, mandataire_email:m.email||"", date_reunion:date, portee:portee, points:points, clause_delib:clause, signe_le:signeLe};
-  const methode=PR_METHODE;
-  const empreinte=await prCalculerEmpreinte(Object.assign({},contenu,{signature:methode}));
-  const ins=await sb.from("ca_procurations").insert(Object.assign({},contenu,{signature:methode, empreinte:empreinte, statut:"active"})).select();
-  if(ins&&ins.error){ modaleInfo("La procuration n'a pas pu être enregistrée : "+ins.error.message+(/ca_procurations/.test(ins.error.message)?"\n\nLa table ca_procurations n'existe pas encore dans Supabase.":"")); return; }
-  if(!ins||!ins.data||!ins.data.length){ modaleInfo("Le serveur a refusé l'enregistrement (règle de droits RLS sur ca_procurations). Rien n'a été envoyé."); return; }
-  const row=ins.data[0];
-  logAct("Procuration donnée à "+mNom+" — réunion du "+prDateCourte(date)+" — code "+prEmpreinteCourte(empreinte));
-  const p={id:row.id, mandantId:me.id, mandantNom:contenu.mandant_nom, mandantFonction:contenu.mandant_fonction, mandantEmail:contenu.mandant_email,
-    mandataireId:m.id, mandataireNom:mNom, mandataireEmail:contenu.mandataire_email, dateReunion:date, portee:portee, points:points, clause:clause,
-    signature:methode, signeLe:signeLe, empreinte:empreinte, statut:"active"};
+  /* La signature est enregistrée par le serveur (procuration_signer) : il vérifie que le mot de passe
+     vient d'être retapé, remplit lui-même mandant, mandataire et date, calcule l'empreinte et délivre
+     le code de vérification (registre des signatures). Rien n'est inséré depuis le navigateur. */
+  const rpc=await sb.rpc("procuration_signer",{p_mandataire:m.id, p_date_reunion:date, p_portee:portee, p_points:points, p_clause:clause});
+  if(rpc&&rpc.error){ modaleInfo("La procuration n'a pas pu être enregistrée : "+rpc.error.message,"Procuration"); return; }
+  const row=rpc&&rpc.data; if(!row||!row.id){ modaleInfo("Le serveur n'a pas renvoyé la procuration. Rien n'a été envoyé.","Procuration"); return; }
+  const signeLe=row.signe_le||new Date().toISOString(), empreinte=row.empreinte||"", code=row.code||"";
+  logAct("Procuration donnée à "+mNom+" — réunion du "+prDateCourte(date)+" — code "+code);
+  const p={id:row.id, mandantId:me.id, mandantNom:row.mandant_nom||me.nom||"", mandantFonction:row.mandant_fonction||me.fonction||"", mandantEmail:row.mandant_email||me.email||"",
+    mandataireId:m.id, mandataireNom:row.mandataire_nom||mNom, mandataireEmail:row.mandataire_email||m.email||"", dateReunion:date, portee:portee, points:points, clause:clause,
+    signature:row.signature||PR_METHODE, signeLe:signeLe, empreinte:empreinte, code:code, statut:"active"};
   S.prDraft=null;
   await loadProcurations(); render();
   /* PDF, dépôt, puis envoi aux trois destinataires. */
@@ -2666,7 +2671,7 @@ async function prEnvoyer(){
       const chemin=uid()+"-"+nom;
       const up=await sb.storage.from("ca-documents").upload(chemin, blob, {contentType:"application/pdf", upsert:false});
       if(!(up&&up.error)){
-        await sb.from("ca_procurations").update({pdf_path:chemin}).eq("id",p.id);
+        await sb.rpc("procuration_pdf",{p_id:p.id, p_path:chemin});
         const su=await sb.storage.from("ca-documents").createSignedUrl(chemin, CA_LIEN_DUREE, {download:nom});
         if(su&&su.data&&su.data.signedUrl) lien=su.data.signedUrl;
       }
@@ -2676,7 +2681,7 @@ async function prEnvoyer(){
   const corps=`<h2 style="margin:0 0 10px">Procuration — réunion du ${caMailEsc(prDateCourte(date))}</h2>`
     +`<p><b>${caMailEsc(p.mandantNom)}</b>${p.mandantFonction?" ("+caMailEsc(p.mandantFonction)+")":""} donne procuration à <b>${caMailEsc(mNom)}</b> pour la réunion de l'Organe d'Administration du <b>${caMailEsc(prDateLongue(date))}</b>.</p>`
     +`<p>${portee==="points"?"Uniquement pour les points : "+points.map(caMailEsc).join(" ; "):"Pour l'ensemble des points inscrits à l'ordre du jour."}${p.clause?"<br>Le/la mandataire peut aussi participer aux délibérations en son nom.":""}</p>`
-    +`<p style="font-size:12px;color:#666">Signée électroniquement le ${caMailEsc(new Date(signeLe).toLocaleString("fr-BE"))} — code de vérification ${caMailEsc(prEmpreinteCourte(empreinte))}</p>`
+    +`<p style="font-size:12px;color:#666">Signée électroniquement le ${caMailEsc(new Date(signeLe).toLocaleString("fr-BE"))} — code de vérification <b>${caMailEsc(prCode(p))}</b> (à contrôler dans l'onglet « Vérifier une signature » de l'espace CA)</p>`
     +(lien?`<p><a href="${lien}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Télécharger la procuration (PDF)</a></p>`:"");
   const res=await envoyerAvecPiece(prDestinataires(p), "Procuration — réunion du "+prDateCourte(date)+" — "+p.mandantNom, corps, piece, {sansInvitation:true, tous:true});
   logAct("Procuration — PDF "+(blob?"généré":"non généré")+(lien?" et déposé":"")+" — "+res.ok+" mail(s) envoyé(s)"+(res.err?", "+res.err+" échec(s)":"")+" (secrétaire, mandant, "+mNom+")");
@@ -2687,17 +2692,16 @@ async function prAnnuler(id){
   const p=(S.procurations||[]).find(x=>x.id===id); if(!p||!sb||!S.session) return;
   if(p.mandantId!==S.session.id || !prModifiable(p)) return;
   if(!(await modaleConfirm("Annuler votre procuration à "+p.mandataireNom+" pour la réunion du "+prDateLongue(p.dateReunion)+" ?\n\nUn mail d'annulation sera envoyé à la secrétaire, à vous et à "+p.mandataireNom+".","Annuler la procuration"))) return;
-  const quand=new Date().toISOString();
-  const r=await sb.from("ca_procurations").update({statut:"annulee", annulee_le:quand}).eq("id",id).select();
+  const r=await sb.rpc("procuration_annuler",{p_id:id});
   if(r&&r.error){ modaleInfo("Annulation impossible : "+r.error.message); return; }
-  if(!r||!r.data||!r.data.length){ modaleInfo("Le serveur a refusé l'annulation (règle de droits RLS). Rien n'a changé."); return; }
-  logAct("Procuration annulée — réunion du "+prDateCourte(p.dateReunion));
+  const row=(r&&r.data)||{}; const quand=row.annulee_le||new Date().toISOString();
+  logAct("Procuration annulée — réunion du "+prDateCourte(p.dateReunion)+" — code "+(row.code_annulation||"?"));
   await loadProcurations(); render();
-  const pa=Object.assign({},p,{statut:"annulee",annuleeLe:quand});
+  const pa=Object.assign({},p,{statut:"annulee",annuleeLe:quand,codeAnnulation:row.code_annulation||""});
   let piece=null; try{ const blob=await prPDFBlob(pa); if(blob){ const b64=await blobEnBase64(blob); if(b64.length<4500000) piece={filename:prNomFichier(pa).replace(/\.pdf$/,"-annulee.pdf"), content:b64, contentType:"application/pdf"}; } }catch(_){ }
   const corps=`<h2 style="margin:0 0 10px;color:#b3261e">Procuration annulée</h2>`
     +`<p><b>${caMailEsc(p.mandantNom)}</b> annule la procuration donnée à <b>${caMailEsc(p.mandataireNom)}</b> pour la réunion de l'Organe d'Administration du <b>${caMailEsc(prDateLongue(p.dateReunion))}</b>.</p>`
-    +`<p style="font-size:12px;color:#666">Annulée le ${caMailEsc(new Date(quand).toLocaleString("fr-BE"))} — procuration d'origine : code ${caMailEsc(prEmpreinteCourte(p.empreinte))}</p>`;
+    +`<p style="font-size:12px;color:#666">Annulée le ${caMailEsc(new Date(quand).toLocaleString("fr-BE"))} — code de l'annulation <b>${caMailEsc(pa.codeAnnulation||"—")}</b> — procuration d'origine : code ${caMailEsc(prCode(p))}</p>`;
   const res=await envoyerAvecPiece(prDestinataires(p), "Annulation de procuration — réunion du "+prDateCourte(p.dateReunion)+" — "+p.mandantNom, corps, piece, {sansInvitation:true, tous:true});
   logAct("Procuration annulée — "+res.ok+" mail(s) d'annulation envoyé(s)"+(res.err?", "+res.err+" échec(s)":""));
   modaleInfo("✓ Procuration annulée. "+res.ok+" mail(s) envoyé(s)."+(res.err?"\n⚠ "+res.err+" échec(s).":""),"Annulation");
@@ -3630,6 +3634,69 @@ function tabRgpdCoopte(){
       <p>Vous disposez d'un droit d'acc\u00e8s, de rectification, de suppression et d'opposition.</p>
     </div>
   </div>`;
+}
+/* =====================================================================
+   VÉRIFIER UNE SIGNATURE
+   Chaque signature par mot de passe (procuration, PV, et côté Caisse : demandes
+   signées, signature conjointe) reçoit un code délivré par le serveur à partir
+   d'un secret que seul le serveur connaît (registre des signatures). On tape le
+   code → le serveur dit s'il est valide, qui a signé, quoi et quand. Un code
+   inventé ou recopié sur un autre document est refusé.
+   ===================================================================== */
+const VS_TYPES={procuration:"Procuration",procuration_annulation:"Annulation de procuration",pv_secretaire:"PV — signature de la secrétaire",
+  pv_presidente:"PV — signature de la présidente",pv_vice:"PV — signature du vice-président",demande:"Caisse — demande signée",
+  demande_doublon:"Caisse — déclaration d'absence de doublon",acte_vp:"Caisse — acte à signature conjointe (vice-président)",acte_treso:"Caisse — acte à signature conjointe (trésorier)"};
+function vsEtat(){ return S.vsUI||(S.vsUI={code:"",res:null,err:"",busy:false}); }
+function tabVerifSig(){
+  const V=vsEtat();
+  let out="";
+  if(V.err) out=`<div class="empty" style="color:var(--red)">${esc(V.err)}</div>`;
+  else if(V.res && V.res.valide){
+    const r=V.res, d=r.details||{};
+    const lignes=[["Document",r.libelle||VS_TYPES[r.type]||r.type],["Type",VS_TYPES[r.type]||r.type],["Signé par",r.signataire||"—"],["Le",fmtQuand(r.signe_le)],["Application",r.app==="caisse"?"Caisse":"Espace CA"]];
+    if(d.mandataire) lignes.push(["Mandataire",d.mandataire]);
+    if(d.date_reunion) lignes.push(["Réunion du",prDateLongue(d.date_reunion)]);
+    if(d.portee) lignes.push(["Portée",d.portee==="points"?"Points : "+((d.points||[]).join(" · ")||"—"):"Ensemble des points"]);
+    if(d.titre) lignes.push(["Titre du PV",d.titre+(d.version?" (version "+d.version+")":"")]);
+    if(d.montant!=null) lignes.push(["Montant",Number(d.montant).toLocaleString("fr-BE",{style:"currency",currency:"EUR"})]);
+    if(d.objet) lignes.push(["Objet",d.objet]);
+    if(d.intitule) lignes.push(["Intitulé",d.intitule]);
+    if(d.numero!=null) lignes.push(["N°",String(d.numero)]);
+    if(d.code_procuration) lignes.push(["Code de la procuration d'origine",d.code_procuration]);
+    if(d.code_secretaire) lignes.push(["Code de la signature de la secrétaire",d.code_secretaire]);
+    if(d.code_vice_president) lignes.push(["Code de la signature du vice-président",d.code_vice_president]);
+    out=`<div class="vote" style="border-left:4px solid var(--green,#2e7d32)"><div class="vote-h"><h4 class="serif">✅ Signature valide — ${esc(r.code)}</h4><span class="badge ok">Valide</span></div>
+      <table style="margin-top:8px;font-size:13.5px"><tbody>${lignes.map(([k,v])=>`<tr><th style="text-align:left;padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top">${esc(k)}</th><td style="padding:3px 0">${esc(v)}</td></tr>`).join("")}</tbody></table>
+      <p class="du" style="margin:8px 0 0">Empreinte du contenu signé : <span style="word-break:break-all">${esc(r.empreinte||"—")}</span></p>
+      <p class="du" style="margin:6px 0 0">Comparez ces informations avec le document que vous avez sous les yeux : si le nom, la date ou le contenu diffèrent, le document a été modifié après signature.</p></div>`;
+  } else if(V.res){
+    const m=V.res.motif;
+    out=`<div class="vote" style="border-left:4px solid var(--red)"><div class="vote-h"><h4 class="serif">❌ Signature non valide</h4><span class="badge no">Invalide</span></div>
+      <p class="b-desc" style="margin:6px 0 0">${m==="format"?"Le code doit comporter 16 caractères (4 groupes de 4, ex. A1B2-C3D4-E5F6-7890).":m==="altere"?"Ce code existe mais ne correspond plus au contenu enregistré : la signature a été altérée. Prévenez le propriétaire de l'application.":"Ce code n'existe pas dans le registre des signatures. Soit il a été mal recopié, soit le document n'a jamais été signé dans l'application."}</p></div>`;
+  }
+  return `<div class="compose">
+    <h3 class="serif" style="margin-top:0">🔎 Vérifier une signature</h3>
+    <p class="du" style="margin:0 0 10px">Chaque signature électronique de l'espace CA et de la Caisse (procuration, PV, demande signée, signature conjointe) porte un <b>code de vérification</b> délivré par le serveur. Tapez-le pour savoir s'il est authentique, qui a signé, quoi et quand. Les documents signés avant le 13/11/2026 n'ont pas de code vérifiable.</p>
+    <div class="row-btn" style="align-items:center">
+      <input class="f" id="vs_code" value="${esc(V.code)}" placeholder="Code de vérification (ex. A1B2-C3D4-E5F6-7890)" autocomplete="off" spellcheck="false" style="flex:1 1 260px;font-family:ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase">
+      <button class="btn" data-action="vs-verifier" ${V.busy?"disabled":""}>${V.busy?"Vérification…":"Vérifier"}</button>
+    </div>
+    ${out}
+  </div>`;
+}
+async function vsVerifier(){
+  const V=vsEtat(); V.code=String(val("vs_code")||"").trim(); V.err=""; V.res=null;
+  if(!V.code){ V.err="Tapez le code de vérification."; render(); return; }
+  if(!sb||!S.session){ V.err="Connexion au serveur indisponible."; render(); return; }
+  V.busy=true; render();
+  try{
+    const r=await sb.rpc("signature_verifier",{p_app:"ca", p_code:V.code});
+    if(r.error) V.err="Vérification impossible : "+r.error.message;
+    else V.res=r.data||{valide:false,motif:"inconnu"};
+    try{ logAct("Vérification de signature — "+V.code+" — "+(V.res&&V.res.valide?"valide":"invalide")); }catch(_){ }
+  }catch(e){ V.err="Vérification impossible : "+(e&&e.message||e); }
+  V.busy=false; render();
+  try{ const n=document.getElementById("vs_code"); if(n) n.focus(); }catch(_){ }
 }
 function tabRgpd(){
   if(estCoopte()) return tabRgpdCoopte();
@@ -5392,6 +5459,7 @@ ${sections||"<p>Aucun retour.</p>"}
     case "pr-envoyer": { await prEnvoyer(); break; }
     case "pr-annuler": { await prAnnuler(id); break; }
     case "pr-pdf": { await prOuvrirPDF(id); break; }
+    case "vs-verifier": { await vsVerifier(); break; }
     case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break;
       if(monVoteBudget(b)){ modaleInfo("Vous avez déjà voté pour ce budget. Votre vote est définitif."); break; }
       { const lib=(CHOIX.find(c=>c.id===el.dataset.choix)||{}).label||el.dataset.choix;
@@ -6504,6 +6572,7 @@ document.addEventListener("click", async e=>{
 });
 /* Entrée = envoyer (Maj+Entrée = retour à la ligne) sur ordinateur. */
 document.addEventListener("keydown", e=>{
+  if(e.key==="Enter" && e.target && e.target.id==="vs_code"){ e.preventDefault(); vsVerifier(); return; }
   if(!S.etu && S.tab!=="soutien" && S.tab!=="soutien_etu") return;
   if(e.key==="Escape" && !document.querySelector(".ca-mod")){ soutSortie(); return; }
   if(e.key==="Enter" && !e.shiftKey && e.target && e.target.id==="sout_txt" && !("ontouchstart" in window)){

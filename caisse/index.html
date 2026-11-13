@@ -718,6 +718,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     <button id="tabTva" aria-pressed="false" hidden>TVA</button>
     <button id="tabGJ" aria-pressed="false" hidden>Gestion journalière<span class="pill" id="pillGJ" hidden>0</span></button>
     <button id="tabSC" aria-pressed="false" hidden>Signature conjointe<span class="pill" id="pillSC" hidden>0</span></button>
+    <button id="tabVS" aria-pressed="false">Vérifier une signature</button>
   </div>
   <div class="who"><b id="whoName">—</b><span id="whoRole">—</span><button id="btnMsg" class="btn ghost sm" style="display:none;margin-left:auto">✉️ Messagerie<span class="pill" id="btnMsgPill" hidden>0</span></button></div>
   <button class="btn ghost sm" id="changePass">Mot de passe</button>
@@ -2019,6 +2020,9 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 
   <!-- signature conjointe (article 10.2) : trésorier et administrateur activé (vice-président) -->
   <section id="viewSC" class="stack" hidden><div id="scBox" class="stack"></div></section>
+
+  <!-- vérification d'un code de signature (registre des signatures, serveur) -->
+  <section id="viewVS" class="stack" hidden><div id="vsBox" class="stack"></div></section>
 </main>
 
 <footer style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -7361,7 +7365,9 @@ function validerDoublon(similaires, signature, opts){
         go.textContent = "Signer et envoyer"; mdp.value = ""; maj(); mdp.focus();
         return;
       }
-      fin({ similaires, signeAt: maintenant().toISOString(), email: r.email });
+      /* mdp conservé en mémoire quelques secondes : il sert à faire enregistrer la signature par le
+         serveur (caisse_demande_signer) une fois la demande créée, puis il est effacé. */
+      fin({ similaires, signeAt: maintenant().toISOString(), email: r.email, mdp: mdp.value });
     };
     setTimeout(() => ok.focus(), 60);
   });
@@ -7371,14 +7377,14 @@ function validerDoublon(similaires, signature, opts){
 async function attestationDoublon(it, sig){
   const blob = await attestationPdf({
     titre: "Attestation — absence de doublon",
-    champs: champsDemande(it).concat([["Compte", sig.email || ""], ["Signée le", fstamp(sig.signeAt)]]),
+    champs: champsDemande(it).concat([["Compte", sig.email || ""], ["Signée le", fstamp(sig.signeAt)]].concat(sig.code ? [["Code de vérification", sig.code]] : [])),
     texte: "Au moment d'envoyer cette demande, " + (it.requester_name || "le demandeur")
       + " a été averti qu'elle pouvait faire double emploi avec :\n"
       + sig.similaires.map(x => "- " + x.titre + " (" + x.detail + ")").join("\n")
       + "\n\nIl déclare sur l'honneur qu'il ne s'agit pas d'un doublon et que les informations fournies sont correctes. "
       + "Il a signé cette déclaration en saisissant le mot de passe de son compte.",
     pied: "Signature électronique par authentification, le " + fstamp(sig.signeAt)
-      + " depuis le compte " + (sig.email || "") + "." });
+      + " depuis le compte " + (sig.email || "") + "." + codeVerifTexte(sig.code) });
   const nom = "attestation-absence-doublon-" + refOf(it) + ".pdf";
   let f;
   try{ f = new File([blob], nom, { type:"application/pdf" }); }
@@ -7393,6 +7399,7 @@ async function attestationDemande(it, sig){
   if(Number(it.amount||0) >= SEUIL_SIGNATURE) motifs.push("montant de " + SEUIL_SIGNATURE + " € ou plus");
   if(it.kind === "direct" && (it.beneficiary_iban || it.iban)) motifs.push("paiement direct vers le compte " + (it.beneficiary_iban || it.iban));
   const champs = champsDemande(it).concat([["Compte", sig.email || ""], ["Signée le", fstamp(sig.signeAt)]]);
+  if(sig.code) champs.push(["Code de vérification", sig.code]);
   if(it.hors_budget) champs.push(["Hors budget (urgence)", it.urgence_motif || ""]);
   const blob = await attestationPdf({
     titre: "Attestation — demande signée",
@@ -7400,12 +7407,28 @@ async function attestationDemande(it, sig){
     texte: (it.requester_name || "Le demandeur") + " atteste que cette demande est fondée et que les informations fournies sont correctes."
       + (motifs.length ? " Signature requise pour : " + motifs.join(" ; ") + "." : "")
       + " Il a signé cette déclaration en saisissant le mot de passe de son compte.",
-    pied: "Signature électronique par authentification, le " + fstamp(sig.signeAt) + " depuis le compte " + (sig.email || "") + "." });
+    pied: "Signature électronique par authentification, le " + fstamp(sig.signeAt) + " depuis le compte " + (sig.email || "") + "." + codeVerifTexte(sig.code) });
   const nom = "attestation-demande-signee-" + refOf(it) + ".pdf";
   let f;
   try{ f = new File([blob], nom, { type:"application/pdf" }); }
   catch(_){ f = blob; f.name = nom; }
   return f;
+}
+/* ---- Code de vérification (registre des signatures, serveur) ----
+   Une fois la demande créée, le serveur enregistre la signature (caisse_demande_signer) :
+   il vérifie que le mot de passe vient d'être retapé, calcule l'empreinte du contenu et
+   délivre un code infalsifiable, vérifiable dans l'onglet « Vérifier une signature ». */
+const codeVerifTexte = code => code ? " Code de vérification : " + code + " (à contrôler dans l'onglet « Vérifier une signature » de la Caisse)." : "";
+async function signerDemandeServeur(demande, sig, type, motifs){
+  if(!sig || !sig.mdp) return "";
+  let code = "";
+  try{
+    code = await gjAvecMotDePasse(sig.mdp, cli => cli.rpc("caisse_demande_signer", { p_request: demande.id, p_type: type, p_motifs: motifs || [] })
+      .then(r => { if(r.error) throw new Error(r.error.message); return r.data || ""; }));
+  }catch(e){ code = ""; sig.erreurCode = e.message || String(e); }
+  sig.mdp = ""; delete sig.mdp;
+  sig.code = code; if(code) demande.signature_code = code;
+  return code;
 }
 const SEUIL_SIGNATURE = 150;
 const demandeASigner = (montant, direct, iban) => !isTreso() && (Number(montant||0) >= SEUIL_SIGNATURE || (direct && !!String(iban||"").trim()));
@@ -8140,6 +8163,8 @@ $("#reqForm").addEventListener("submit", async e => {
       status: "En attente"
     }).select().single();
     if(error) throw error;
+    if(sigDbl) await signerDemandeServeur(data, sigDbl, "doublon", (sigDbl.similaires||[]).map(x => x.titre));
+    if(sigDem) await signerDemandeServeur(data, sigDem, "demande", (sigDem.similaires||[]).map(x => x.titre));
     // L'échec d'envoi des pièces était avalé : la demande partait sans justificatif
     // et le membre lisait « Demande envoyée ». On le lui dit maintenant.
     let piecesOk = true, piecesErr = "", attestOk = true;
@@ -8156,9 +8181,11 @@ $("#reqForm").addEventListener("submit", async e => {
           : especes() ? "Demande envoyée · paiement en espèces confirmé sur la pièce jointe" : "Demande envoyée" });
     if(sigDbl){ try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
       what: "Doublon possible écarté par le demandeur — déclaration signée par mot de passe le " + fstamp(sigDbl.signeAt)
+        + (sigDbl.code ? " — code de vérification " + sigDbl.code : " — code de vérification non délivré" + (sigDbl.erreurCode ? " (" + sigDbl.erreurCode + ")" : ""))
         + (attestOk && piecesOk ? " (attestation PDF jointe)" : " (attestation PDF non jointe)") }); }catch(_){} }
     if(sigDem){ try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
       what: "Demande signée par mot de passe le " + fstamp(sigDem.signeAt)
+        + (sigDem.code ? " — code de vérification " + sigDem.code : " — code de vérification non délivré" + (sigDem.erreurCode ? " (" + sigDem.erreurCode + ")" : ""))
         + (attestOk && piecesOk ? " (attestation PDF jointe)" : " (attestation PDF non jointe)") }); }catch(_){} }
     if(data.hors_budget){ try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
       what: "Demande URGENTE hors budget — " + (data.urgence_motif||"") }); }catch(_){} }
@@ -8290,6 +8317,8 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       status: "En attente"
     }).select().single();
     if(error) throw error;
+    if(sigDblD) await signerDemandeServeur(data, sigDblD, "doublon", (sigDblD.similaires||[]).map(x => x.titre));
+    if(sigDemD) await signerDemandeServeur(data, sigDemD, "demande", (sigDemD.similaires||[]).map(x => x.titre));
     let dirPiecesOk = true, dirErr = "", dirAttestOk = true;
     if(sigDblD){ try{ staged.dir.push({ kind: KIND_DOUBLON, file: await attestationDoublon(data, sigDblD) }); }
                  catch(_){ dirAttestOk = false; } }
@@ -8314,9 +8343,11 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     }catch(_){}
     if(sigDblD){ try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
       what: "Doublon possible écarté par le demandeur — déclaration signée par mot de passe le " + fstamp(sigDblD.signeAt)
+        + (sigDblD.code ? " — code de vérification " + sigDblD.code : " — code de vérification non délivré" + (sigDblD.erreurCode ? " (" + sigDblD.erreurCode + ")" : ""))
         + (dirAttestOk && dirPiecesOk ? " (attestation PDF jointe)" : " (attestation PDF non jointe)") }); }catch(_){} }
     if(sigDemD){ try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
       what: "Demande signée par mot de passe le " + fstamp(sigDemD.signeAt)
+        + (sigDemD.code ? " — code de vérification " + sigDemD.code : " — code de vérification non délivré" + (sigDemD.erreurCode ? " (" + sigDemD.erreurCode + ")" : ""))
         + (dirAttestOk && dirPiecesOk ? " (attestation PDF jointe)" : " (attestation PDF non jointe)") }); }catch(_){} }
     if(data.hors_budget){ try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
       what: "Demande URGENTE hors budget — " + (data.urgence_motif||"") }); }catch(_){} }
@@ -8384,12 +8415,15 @@ function setView(v){
   if($("#tabSC")) $("#tabSC").setAttribute("aria-pressed", v==="sc");
   if($("#viewSC")) $("#viewSC").hidden = v!=="sc";
   if(v==="sc"){ try{ renderSC(); }catch(_){ } }
+  if($("#tabVS")) $("#tabVS").setAttribute("aria-pressed", v==="vs");
+  if($("#viewVS")) $("#viewVS").hidden = v!=="vs";
+  if(v==="vs"){ try{ renderVS(); }catch(_){ } }
   if($("#tabTB")) $("#tabTB").setAttribute("aria-pressed", v==="tb");
   if($("#viewTB")) $("#viewTB").hidden = v!=="tb";
   if(v!=="tb" && state.tbForm){ try{ tbFermerForm(true); }catch(_){ } }
   if(v==="tb"){ try{ renderTB(); tbCharger().then(() => { if(state.view==="tb") renderTB(); }); }catch(_){ } }
   /* La gestion journalière n'est jamais notée dans le journal. */
-  if(v!=="gj" && v!=="sc") try{ auditNav(({mine:"Mes demandes",treso:"Trésorerie",reexam:"Réexamens",overview:"Vue d'ensemble",horaires:"Horaires",expenses:"Dépenses",incomes:"Recettes",members:"Membres",messages:"Messages",mails:"Mails envoyés",budget:"Budgets",compta:"Comptabilité",tva:"TVA",direct:"Paiement direct",factures:"Factures",novelles:"Novelles"})[v]||v); }catch(_){ }
+  if(v!=="gj" && v!=="sc") try{ auditNav(({mine:"Mes demandes",treso:"Trésorerie",reexam:"Réexamens",overview:"Vue d'ensemble",horaires:"Horaires",expenses:"Dépenses",incomes:"Recettes",members:"Membres",messages:"Messages",mails:"Mails envoyés",budget:"Budgets",compta:"Comptabilité",tva:"TVA",direct:"Paiement direct",factures:"Factures",novelles:"Novelles",vs:"Vérifier une signature"})[v]||v); }catch(_){ }
   $("#tabMine").setAttribute("aria-pressed", v==="mine");
   $("#tabTreso").setAttribute("aria-pressed", v==="treso");
   $("#tabReexam").setAttribute("aria-pressed", v==="reexam");
@@ -12570,6 +12604,10 @@ function renderDrawer(it){
       </div>
       <p class="hint" style="margin:6px 0 0">Pour rattacher après coup un remboursement déjà fait. Aucun e-mail n'est envoyé.</p></div>`;
   }
+  if(it.signature_code && (isTreso() || sienne)){
+    actions += `<div class="callout"><b>✍️ Demande signée — code de vérification <span style="font-family:ui-monospace,Menlo,monospace">${esc(it.signature_code)}</span></b>
+      <p>Signature délivrée par le serveur (registre des signatures). Pour la contrôler : onglet « Vérifier une signature ».</p></div>`;
+  }
   if(isTreso() && attesteDoublon(it)){
     actions += `<div class="callout" style="border-color:var(--amber)"><b>Doublon possible écarté par le demandeur</b>
       <p>À l'envoi, l'app a signalé que cette demande ressemblait à une autre. Le demandeur a confirmé sur l'honneur qu'il ne s'agit pas d'un doublon et a signé avec son mot de passe. L'attestation PDF se trouve dans les pièces justificatives ci-dessus.</p></div>`;
@@ -14440,9 +14478,9 @@ function gjCarteHTML(a){
   const badge = a.statut === "valide" ? `<span class="pill" style="background:#1f4d36;color:#bfe8cf">Validé</span>`
     : a.statut === "refuse" ? `<span class="pill" style="background:#5a1f26;color:#f3c4c9">Refusé</span>`
     : `<span class="pill" style="background:#5a4718;color:#f2dc9b">En attente de la 2e signature</span>`;
-  const sig = (nomRole, nom, at, ds) => `<div style="flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+  const sig = (nomRole, nom, at, ds, code) => `<div style="flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 11px">
       <div class="hint" style="margin:0">${nomRole}</div>
-      <div style="font-size:13.5px;margin-top:2px">${at ? `✓ <b>${esc(nom || "")}</b><div class="hint" style="margin:2px 0 0">${esc(texteDateSig(ds, at))}</div>` : `<span style="color:var(--muted)">pas encore signé</span>`}</div></div>`;
+      <div style="font-size:13.5px;margin-top:2px">${at ? `✓ <b>${esc(nom || "")}</b><div class="hint" style="margin:2px 0 0">${esc(texteDateSig(ds, at))}${code ? ` · code <b style="font-family:ui-monospace,Menlo,monospace">${esc(code)}</b>` : ""}</div>` : `<span style="color:var(--muted)">pas encore signé</span>`}</div></div>`;
   const liens = gjLiensDe(a.id);
   const budget = a.budget_id ? G.actes.find(x => x.id === a.budget_id) : null;
   let extra = "";
@@ -14480,7 +14518,7 @@ function gjCarteHTML(a){
     </div>
     ${a.urgente && a.motif_urgence ? `<div class="callout" style="margin-top:10px"><b>Motif de l'urgence</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(a.motif_urgence)}</p></div>` : ""}
     ${extra}
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">${sig("La présidente", a.sig_pres_nom, a.sig_pres_at, a.date_sig_pres)}${sig("Le trésorier", a.sig_treso_nom, a.sig_treso_at, a.date_sig_treso)}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">${sig("La présidente", a.sig_pres_nom, a.sig_pres_at, a.date_sig_pres, a.code_pres)}${sig("Le trésorier", a.sig_treso_nom, a.sig_treso_at, a.date_sig_treso, a.code_treso)}</div>
     ${a.reserve ? `<div class="callout" style="margin-top:10px"><b>Signé avec réserve par le trésorier</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(a.reserve)}</p></div>` : ""}
     ${a.statut === "refuse" ? `<div class="callout" style="margin-top:10px;border-color:#7a2531;background:#2a1216"><b style="color:#f3c4c9">Refusé par ${esc(a.refus_par || "")}${a.refus_at ? " le " + esc(gjFmtHeure(a.refus_at)) : ""}</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(a.refus_motif || "")}</p></div>` : ""}
     ${actions.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${actions.join("")}</div>` : ""}
@@ -14672,8 +14710,9 @@ async function gjPdf(a){
   }
   y += 6; page(48);
   para("Signatures", 12, "bold"); y += 1;
-  const codePres = a.sig_pres_at ? await codeSignature([gjRef(a), "presidente", a.sig_pres_nom, a.sig_pres_at, a.date_sig_pres || null]) : "";
-  const codeTreso = a.sig_treso_at ? await codeSignature([gjRef(a), "tresorier", a.sig_treso_nom, a.sig_treso_at, a.date_sig_treso || null]) : "";
+  /* Codes délivrés par le serveur (registre des signatures) ; les actes signés avant le 13/11/2026 gardent l'ancien code local. */
+  const codePres = a.code_pres || (a.sig_pres_at ? await codeSignature([gjRef(a), "presidente", a.sig_pres_nom, a.sig_pres_at, a.date_sig_pres || null]) : "");
+  const codeTreso = a.code_treso || (a.sig_treso_at ? await codeSignature([gjRef(a), "tresorier", a.sig_treso_nom, a.sig_treso_at, a.date_sig_treso || null]) : "");
   const bloc = (x, role, nom, at, ds, code) => {
     doc.setDrawColor(190); doc.rect(x, y, 84, 34);
     doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(110); doc.text(gjTxt(role), x + 4, y + 6);
@@ -14681,7 +14720,7 @@ async function gjPdf(a){
     doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(40);
     doc.text(gjTxt(texteDateSig(ds, at)), x + 4, y + 19.5);
     if(code){ doc.setFontSize(8); doc.setTextColor(90); doc.text(gjTxt("Code de vérification : " + code), x + 4, y + 25.5);
-      doc.setFont("helvetica", "italic"); doc.setFontSize(7); doc.text("Signature vérifiée par mot de passe du compte", x + 4, y + 30.5); }
+      doc.setFont("helvetica", "italic"); doc.setFontSize(7); doc.text(gjTxt(code === a.code_pres || code === a.code_treso ? "Vérifiable dans l'onglet « Vérifier une signature »" : "Signature vérifiée par mot de passe du compte"), x + 4, y + 30.5); }
   };
   bloc(X, "La présidente, déléguée à la gestion journalière", a.sig_pres_nom, a.sig_pres_at, a.date_sig_pres, codePres);
   bloc(X + 90, "Le trésorier, délégué à la gestion journalière", a.sig_treso_nom, a.sig_treso_at, a.date_sig_treso, codeTreso);
@@ -14899,9 +14938,9 @@ function scCarteHTML(a){
   const badge = a.statut === "valide" ? `<span class="pill" style="background:#1f4d36;color:#bfe8cf">Validé</span>`
     : a.statut === "refuse" ? `<span class="pill" style="background:#5a1f26;color:#f3c4c9">Refusé</span>`
     : `<span class="pill" style="background:#5a4718;color:#f2dc9b">En attente de la signature du trésorier</span>`;
-  const sig = (nomRole, nom, at, ds) => `<div style="flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+  const sig = (nomRole, nom, at, ds, code) => `<div style="flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 11px">
       <div class="hint" style="margin:0">${nomRole}</div>
-      <div style="font-size:13.5px;margin-top:2px">${at ? `✓ <b>${esc(nom || "")}</b><div class="hint" style="margin:2px 0 0">${esc(texteDateSig(ds, at))}</div>` : `<span style="color:var(--muted)">pas encore signé</span>`}</div></div>`;
+      <div style="font-size:13.5px;margin-top:2px">${at ? `✓ <b>${esc(nom || "")}</b><div class="hint" style="margin:2px 0 0">${esc(texteDateSig(ds, at))}${code ? ` · code <b style="font-family:ui-monospace,Menlo,monospace">${esc(code)}</b>` : ""}</div>` : `<span style="color:var(--muted)">pas encore signé</span>`}</div></div>`;
   const actions = [
     `<button class="btn ghost sm" data-sc="voir" data-k="facture" data-id="${a.id}">🧾 Facture</button>`,
     `<button class="btn ghost sm" data-sc="voir" data-k="preuve" data-id="${a.id}">💳 Preuve de paiement</button>`];
@@ -14919,7 +14958,7 @@ function scCarteHTML(a){
       </div>
       <div style="text-align:right"><div style="font-size:18px;font-weight:700">${euro(a.montant)}</div>${badge}</div>
     </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">${sig("Le vice-président, administrateur", a.vp_nom, a.sig_vp_at, a.date_sig_vp)}${sig("Le trésorier, administrateur", a.treso_nom, a.sig_treso_at, a.date_sig_treso)}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">${sig("Le vice-président, administrateur", a.vp_nom, a.sig_vp_at, a.date_sig_vp, a.code_vp)}${sig("Le trésorier, administrateur", a.treso_nom, a.sig_treso_at, a.date_sig_treso, a.code_treso)}</div>
     ${a.statut === "refuse" ? `<div class="callout" style="margin-top:10px;border-color:#7a2531;background:#2a1216"><b style="color:#f3c4c9">Refusé par ${esc(a.treso_nom || "le trésorier")}</b><p style="margin:5px 0 0;white-space:pre-wrap">${esc(a.motif || "")}</p></div>` : ""}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${actions.join("")}</div>
   </div>`;
@@ -15009,8 +15048,9 @@ async function scPdf(a){
   champ("Preuve de paiement", (a.preuve && a.preuve.name || "-") + (a.preuve && a.preuve.hash ? " - SHA-256 " + a.preuve.hash.slice(0, 16) : ""));
   y += 6; page(48);
   para("Signatures", 12, "bold"); y += 1;
-  const codeVp = a.sig_vp_at ? await codeSignature([scRef(a), "vice", a.vp_nom, a.sig_vp_at, a.date_sig_vp || null]) : "";
-  const codeTreso = a.sig_treso_at ? await codeSignature([scRef(a), "tresorier", a.treso_nom, a.sig_treso_at, a.date_sig_treso || null]) : "";
+  /* Codes délivrés par le serveur (registre des signatures) ; les actes signés avant le 13/11/2026 gardent l'ancien code local. */
+  const codeVp = a.code_vp || (a.sig_vp_at ? await codeSignature([scRef(a), "vice", a.vp_nom, a.sig_vp_at, a.date_sig_vp || null]) : "");
+  const codeTreso = a.code_treso || (a.sig_treso_at ? await codeSignature([scRef(a), "tresorier", a.treso_nom, a.sig_treso_at, a.date_sig_treso || null]) : "");
   const bloc = (x, role, nom, at, ds, code) => {
     doc.setDrawColor(190); doc.rect(x, y, 84, 34);
     doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(110); doc.text(gjTxt(role), x + 4, y + 6);
@@ -15018,7 +15058,7 @@ async function scPdf(a){
     doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(40);
     doc.text(gjTxt(texteDateSig(ds, at)), x + 4, y + 19.5);
     if(code){ doc.setFontSize(8); doc.setTextColor(90); doc.text(gjTxt("Code de vérification : " + code), x + 4, y + 25.5);
-      doc.setFont("helvetica", "italic"); doc.setFontSize(7); doc.text("Signature vérifiée par mot de passe du compte", x + 4, y + 30.5); }
+      doc.setFont("helvetica", "italic"); doc.setFontSize(7); doc.text(gjTxt(code === a.code_vp || code === a.code_treso ? "Vérifiable dans l'onglet « Vérifier une signature »" : "Signature vérifiée par mot de passe du compte"), x + 4, y + 30.5); }
   };
   bloc(X, "Le vice-président, administrateur", a.vp_nom, a.sig_vp_at, a.date_sig_vp, codeVp);
   bloc(X + 90, "Le trésorier, administrateur", a.treso_nom, a.sig_treso_at, a.date_sig_treso, codeTreso);
@@ -15153,6 +15193,74 @@ document.addEventListener("change", e => {
   }
 });
 if($("#tabSC")) $("#tabSC").onclick = () => choisirVue("sc");
+if($("#tabVS")) $("#tabVS").onclick = () => choisirVue("vs");
+
+/* =====================================================================
+   VÉRIFIER UNE SIGNATURE
+   Chaque signature par mot de passe de la Caisse (demande ≥ 150 € ou vers un IBAN,
+   doublon écarté, signature conjointe, gestion journalière) reçoit un code délivré
+   par le serveur à partir d'un secret qu'il est seul à connaître (registre des
+   signatures). On tape le code → le serveur dit s'il est valide, qui a signé, quoi
+   et quand. Un code inventé ou recopié sur un autre document est refusé. Depuis la
+   Caisse, seules les signatures de la Caisse sont consultables.
+   ===================================================================== */
+const VS_TYPES = { demande:"Demande signée", demande_doublon:"Déclaration d'absence de doublon", acte_vp:"Signature conjointe — vice-président",
+  acte_treso:"Signature conjointe — trésorier", gj_tresorier:"Gestion journalière — trésorier", gj_presidente:"Gestion journalière — présidente" };
+state.vs = { code:"", res:null, err:"", busy:false };
+function renderVS(){
+  const box = $("#vsBox"); if(!box) return; const V = state.vs;
+  let out = "";
+  if(V.err) out = `<div class="err" style="margin-top:12px">${esc(V.err)}</div>`;
+  else if(V.res && V.res.valide){
+    const r = V.res, d = r.details || {};
+    const L = [["Document", r.libelle || VS_TYPES[r.type] || r.type], ["Type", VS_TYPES[r.type] || r.type], ["Signé par", r.signataire || "—"], ["Le", fstamp(r.signe_le)]];
+    if(d.numero != null) L.push(["N°", String(d.numero)]);
+    if(d.ref) L.push(["Référence", d.ref]);
+    if(d.intitule) L.push(["Intitulé", d.intitule]);
+    if(d.objet) L.push(["Objet", d.objet]);
+    if(d.montant != null) L.push(["Montant", euro(d.montant)]);
+    if(d.date) L.push(["Date de la dépense", fdate(d.date)]);
+    if(d.date_decision) L.push(["Date de la décision", fdate(d.date_decision)]);
+    if(d.date_signature) L.push(["Date de signature affichée", fdate(d.date_signature)]);
+    if(d.beneficiaire) L.push(["Bénéficiaire", d.beneficiaire]);
+    if(d.reserve) L.push(["Réserve", d.reserve]);
+    if(Array.isArray(d.motifs) && d.motifs.length) L.push(["Motifs", d.motifs.join(" ; ")]);
+    if(d.code_vice_president) L.push(["Code de la signature du vice-président", d.code_vice_president]);
+    out = `<div class="callout" style="border-color:var(--green);margin-top:12px"><b style="color:var(--green)">✅ Signature valide — <span style="font-family:ui-monospace,Menlo,monospace">${esc(r.code)}</span></b>
+      <table style="margin-top:8px;font-size:13.5px;border-collapse:collapse">${L.map(([k, v]) => `<tr><th style="text-align:left;padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top;color:var(--muted)">${esc(k)}</th><td style="padding:3px 0">${esc(v)}</td></tr>`).join("")}</table>
+      <p class="hint" style="margin:8px 0 0;word-break:break-all">Empreinte du contenu signé : ${esc(r.empreinte || "—")}</p>
+      <p class="hint" style="margin:6px 0 0">Comparez ces informations avec le document que vous avez sous les yeux : si le nom, la date ou le montant diffèrent, le document a été modifié après signature.</p></div>`;
+  } else if(V.res){
+    const m = V.res.motif;
+    out = `<div class="callout" style="border-color:var(--red);margin-top:12px"><b style="color:var(--red)">❌ Signature non valide</b>
+      <p style="margin:6px 0 0">${m === "format" ? "Le code doit comporter 16 caractères (4 groupes de 4, ex. A1B2-C3D4-E5F6-7890)." : m === "altere" ? "Ce code existe mais ne correspond plus au contenu enregistré : la signature a été altérée. Prévenez le propriétaire de l'application." : "Ce code n'existe pas dans le registre des signatures de la Caisse. Soit il a été mal recopié, soit le document n'a jamais été signé dans l'application (les codes de l'espace CA se vérifient depuis l'espace CA)."}</p></div>`;
+  }
+  box.innerHTML = `<div class="card" style="padding:16px 18px">
+    <div class="eyebrow">Vérifier une signature</div>
+    <p class="hint" style="margin:6px 0 12px">Chaque signature électronique de la Caisse (demande signée, doublon écarté, signature conjointe, gestion journalière) porte un <b>code de vérification</b> délivré par le serveur. Tapez-le pour savoir s'il est authentique, qui a signé, quoi et quand. Les documents signés avant le 13/11/2026 n'ont pas de code vérifiable.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <input id="vs_code" value="${esc(V.code)}" placeholder="Code de vérification (ex. A1B2-C3D4-E5F6-7890)" autocomplete="off" spellcheck="false" style="flex:1 1 260px;font-family:ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase">
+      <button class="btn" id="vs_go" ${V.busy ? "disabled" : ""}>${V.busy ? "Vérification…" : "Vérifier"}</button>
+    </div>
+    ${out}
+  </div>`;
+  const inp = $("#vs_code"), go = $("#vs_go");
+  if(go) go.onclick = vsVerifier;
+  if(inp) inp.onkeydown = e => { if(e.key === "Enter"){ e.preventDefault(); vsVerifier(); } };
+}
+async function vsVerifier(){
+  const V = state.vs; const inp = $("#vs_code");
+  V.code = String((inp && inp.value) || "").trim(); V.err = ""; V.res = null;
+  if(!V.code){ V.err = "Tapez le code de vérification."; renderVS(); return; }
+  V.busy = true; renderVS();
+  try{
+    const r = await sb.rpc("signature_verifier", { p_app: "caisse", p_code: V.code });
+    if(r.error) V.err = "Vérification impossible : " + traduire(r.error.message);
+    else V.res = r.data || { valide:false, motif:"inconnu" };
+  }catch(e){ V.err = "Vérification impossible : " + (e.message || String(e)); }
+  V.busy = false; renderVS();
+  try{ const n = $("#vs_code"); if(n) n.focus(); }catch(_){ }
+}
 
 
 

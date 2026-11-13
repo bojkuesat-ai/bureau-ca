@@ -35,3 +35,18 @@ jeton Firebase de ses responsables. Remettre à `true` uniquement en cas d'urgen
 Scripts exécutés dans l'éditeur SQL, par date. Les scripts plus anciens
 (`billetterie.sql`, `journal.sql`, `salle_facultaire.sql`, `double_authentification.sql`,
 `soutien*.sql`…) n'ont pas encore été récupérés : les ajouter ici au fur et à mesure.
+
+### Registre des signatures (13/11/2026)
+`sql/2026-11-13_signatures_code_verification.sql`. Chaque signature par mot de passe
+(procuration, PV, demande Caisse signée, doublon écarté, signature conjointe, gestion
+journalière) reçoit un **code de vérification** `XXXX-XXXX-XXXX-XXXX` calculé par le
+serveur (HMAC-SHA256 avec le secret de `signatures_secret`, table illisible via l'API)
+et consigné dans `signatures_registre` (insertion seule, trigger anti-modification).
+- Fonctions appelées par les apps : `procuration_signer`, `procuration_annuler`,
+  `procuration_pdf`, `caisse_demande_signer`, `signature_verifier(app, code)`.
+- `pvs_envoyer`, `pvs_signer`, `sc_creer`, `sc_signer` enregistrent aussi leur code ;
+  `gj_actes` passe par le trigger `gj_actes_code_signature`.
+- Les apps vérifient via l'onglet « Vérifier une signature » (CA : tout ; Caisse : ses
+  signatures seulement). Les documents signés avant cette date gardent leur ancien code local.
+- **Ne jamais exporter ni recopier `signatures_secret`** : sans lui, aucun code n'est
+  vérifiable ; s'il fuit, tout le registre peut être falsifié. Il n'est pas dans la sauvegarde.
