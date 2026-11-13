@@ -112,8 +112,7 @@ L'alerte au propriétaire (« 🚨 Nouvel appareil — … ») existait déjà e
 
 Fichier : `sql/2026-11-13_mfa_obligatoire_passation_guide.sql` (migrations `proprio_9`, `proprio_10`).
 
-- L'Admin et le trésorier doivent avoir la double authentification : sans elle, le serveur refuse leurs actions. Un bandeau (CA) ou un écran (Caisse) propose de l'activer. Elle ne peut pas être désactivée tant qu'on est Admin ou trésorier.
-- Nommer un Admin, un trésorier ou faire la passation : la personne doit l'avoir activée avant.
+- Double authentification : **facultative** (retour en arrière le 14/11/2026, migrations `proprio_11` et `proprio_12`). Un bandeau discret la propose aux membres du CA (« Plus tard » pour le masquer). Elle reste exigée pour qui l'a activée.
 - Budgets de la Caisse : approuvés ou refusés par le trésorier. L'effectif du CA exclut le propriétaire retiré et les membres « hors CA ».
 - Passation : le guide complet part par mail à la nouvelle Admin / trésorière ; les notifications push du propriétaire sont supprimées.
 - `send-email` v24 : après la passation, le propriétaire ne reçoit plus aucun mail du CA ni de la Caisse (sauf licence et « Nouvelle connexion »). Les réponses vont à l'Admin.

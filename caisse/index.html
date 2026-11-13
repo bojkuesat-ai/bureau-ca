@@ -3544,7 +3544,6 @@ async function loadProfile(user){
   $("#app").hidden = !ok;
   if(!ok) return;
   verifierEtatCaisse();
-  if(isTreso() && window.mfaExigerEnrolement) setTimeout(function(){ window.mfaExigerEnrolement("trésorier·e"); }, 300);
   $("#whoName").textContent = prof.name || user.email;
   $("#whoRole").textContent = (prof.position ? prof.position + " · " : "") + (isTreso() ? "Trésorier" : "Demandeur");
   $("#tabTreso").hidden = !isTreso();

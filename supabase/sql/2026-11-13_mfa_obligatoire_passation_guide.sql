@@ -1,3 +1,9 @@
+-- 14/11/2026 — ANNULÉ pour la double authentification (migrations proprio_11, proprio_12) :
+--   elle redevient facultative. ca_est_admin / ca_est_tresorier reviennent à mfa_ok() ;
+--   is_tresorier, caisse_/fe_/nv_est_tresorier sans condition de double authentification ;
+--   plus de contrôle a_mfa() dans proprio_set_admin, proprio_set_tresorier, proprio_passation ;
+--   guide : point 1 « Double authentification (conseillée) ».
+--   Le reste de ce fichier (budgets, push, guide, send-email) reste en vigueur.
 -- =====================================================================
 -- 13/11/2026 — Migrations proprio_9 et proprio_10 (déjà appliquées)
 --  1. Double authentification OBLIGATOIRE pour l'Admin et le trésorier :

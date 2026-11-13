@@ -724,7 +724,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-13 · double authentification obligatoire";
+const CA_VERSION="2026-11-14 · double authentification facultative";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -8926,25 +8926,19 @@ document.addEventListener("click", async e=>{
    Activée : code de l'application d'authentification exigé après le mot
    de passe sur le CA, la Caisse et la Billetterie (même compte, même session).
    ===================================================================== */
-/* 13/11/2026 — Double authentification OBLIGATOIRE pour l'Admin et le trésorier : sans elle,
-   le serveur refuse leurs actions (ca_est_admin / is_tresorier exigent aal2). */
+/* Double authentification : facultative depuis le 14/11/2026 (doitMfa n'est plus utilisé). */
 function doitMfa(){ return !!(S.session && (estAdminCA() || (S.appEtat && S.appEtat.tresorier) || (S.tresoCA && S.tresoCA.id===S.session.id) || (S.session.admin && S.session.statut==="actif" && S.session.role!=="proprietaire"))); }
 function bandeauMfa(){
-  const membre=!!(S.session && S.session.statut==="actif" && S.session.role==="membre");
-  if(!doitMfa() && !membre) return "";
+  /* Facultative : simple proposition aux membres actifs, masquable (« Plus tard »). */
+  if(!(S.session && S.session.statut==="actif" && (S.session.role==="membre" || S.session.admin))) return "";
   const M=S.mfa;
   if(!M){ if(!S.mfaCharge){ S.mfaCharge=true; chargerMfaCA().then(()=>rendreEnPreservant()); } return ""; }
   if(M.err||M.actif) return "";
-  if(!doitMfa()){
-    let cache=false; try{ cache=localStorage.getItem("ca:mfa-plus-tard")===S.session.id; }catch(_){}
-    if(cache) return "";
-    return `<div class="card2" style="margin:0 0 14px;padding:10px 14px"><p class="du" style="margin:0">🔐 <b>Double authentification</b> — conseillée pour tous, <b>obligatoire</b> pour devenir Admin ou trésorier·e.
-      <button class="btn sm" data-action="mfa-activer" style="margin-left:8px">Activer</button>
-      <button class="link" onclick="try{localStorage.setItem('ca:mfa-plus-tard',S.session.id)}catch(_){};rendreEnPreservant()">Plus tard</button></p></div>`;
-  }
-  return `<div class="card2" style="border-left:4px solid var(--red);margin:0 0 14px"><h3 class="serif">🔐 Double authentification obligatoire</h3>
-    <p class="du">Vous êtes ${estAdminCA()||S.session.admin?"Admin":"trésorière / trésorier"}. Tant que la double authentification n'est pas activée, le serveur refuse vos actions d'Admin et de trésorier (CA et Caisse). Cela prend une minute avec une application d'authentification sur votre téléphone.</p>
-    <div class="row-btn"><button class="btn sm" data-action="mfa-activer">Activer maintenant</button></div></div>`;
+  let cache=false; try{ cache=localStorage.getItem("ca:mfa-plus-tard")===S.session.id; }catch(_){}
+  if(cache) return "";
+  return `<div class="card2" style="margin:0 0 14px;padding:10px 14px"><p class="du" style="margin:0">🔐 <b>Double authentification</b> — facultative, conseillée pour protéger votre compte.
+    <button class="btn sm" data-action="mfa-activer" style="margin-left:8px">Activer</button>
+    <button class="link" onclick="try{localStorage.setItem('ca:mfa-plus-tard',S.session.id)}catch(_){};rendreEnPreservant()">Plus tard</button></p></div>`;
 }
 function carteMfaCA(){
   if(!S.session) return "";
@@ -9006,7 +9000,6 @@ document.addEventListener("click", async e=>{
       return;
     }
     if(el.dataset.action==="mfa-desactiver"){
-      if(doitMfa()){ modaleInfo("La double authentification est obligatoire pour l'Admin et le trésorier : elle ne peut pas être désactivée.","Double authentification"); return; }
       if(!(await modaleConfirm("Désactiver la double authentification ? Le mot de passe suffira à nouveau pour entrer.","Double authentification"))) return;
       const n=await sb.auth.mfa.getAuthenticatorAssuranceLevel();
       if(!n.data||n.data.currentLevel!=="aal2"){ modaleInfo("Reconnectez-vous avec le code de l'app avant de désactiver.","Double authentification"); return; }
