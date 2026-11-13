@@ -1,6 +1,8 @@
 // Fonction Supabase « salle-cron » — appelée toutes les 5 minutes par pg_cron.
 // Déploiement : Edge Functions › nouvelle fonction « salle-cron », « Verify JWT » DÉSACTIVÉ.
-// Variable à créer (Edge Functions › Secrets) : SALLE_CRON_SECRET = le secret mis dans le SQL.
+// Secret : en-tête x-cron-secret = SALLE_CRON_SECRET (variable facultative) OU le secret interne
+// bil_config.cron_secret (13/11/2026 : la tâche pg_cron le lit en base au moment de l'appel ;
+// avant, elle envoyait le texte « MOTDEPASSE » et la fonction répondait 403 toutes les 5 minutes).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const URL = Deno.env.get("SUPABASE_URL")!;
@@ -37,7 +39,13 @@ async function cle(c: string) {
 }
 
 Deno.serve(async (req) => {
-  if (!SECRET || req.headers.get("x-cron-secret") !== SECRET) return new Response("interdit", { status: 403 });
+  const recu = req.headers.get("x-cron-secret") ?? "";
+  let ok = !!SECRET && recu === SECRET;
+  if (!ok && recu) {
+    const { data: cfg } = await db.from("bil_config").select("cron_secret").eq("id", 1).maybeSingle();
+    ok = !!cfg?.cron_secret && recu === cfg.cron_secret;
+  }
+  if (!ok) return new Response("interdit", { status: 403 });
   const now = Date.now();
   await db.rpc("ca_salle_echeances");
 
