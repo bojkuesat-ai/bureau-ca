@@ -5921,11 +5921,23 @@ ${sections||"<p>Aucun retour.</p>"}
   }
 });
 
-async function boot(){
+/* Lien secret (#proprietaire=…) et lien d'activation (#licence=…) : lus au démarrage ET quand
+   seul le « # » change (lien ouvert dans un onglet où l'app était déjà ouverte : pas de rechargement). */
+function lireLienSpecial(){
   try{ const h=String(location.hash||""); const mp=h.match(/proprietaire=([A-Za-z0-9]+)/), ml=h.match(/licence=([A-Za-z0-9]+)/);
-    if(mp){ sessionStorage.setItem("ca:proprio-code",mp[1]); S.view="ca"; }
-    if(ml){ sessionStorage.setItem("ca:licence-jeton",ml[1]); S.view="ca"; }
-    if(mp||ml) history.replaceState(null,"",location.pathname+location.search); }catch(e){}
+    if(mp) sessionStorage.setItem("ca:proprio-code",mp[1]);
+    if(ml) sessionStorage.setItem("ca:licence-jeton",ml[1]);
+    if(mp||ml){ history.replaceState(null,"",location.pathname+location.search); return true; } }catch(e){}
+  try{ return !!(sessionStorage.getItem("ca:proprio-code")||sessionStorage.getItem("ca:licence-jeton")); }catch(e){ return false; }
+}
+window.addEventListener("hashchange", async ()=>{
+  if(!lireLienSpecial()) return;
+  S.view="ca";
+  if(S.session){ try{ await traiterLiensSpeciaux(); }catch(e){} }
+  render();
+});
+async function boot(){
+  if(lireLienSpecial()) S.view="ca";
   try{ const params=new URLSearchParams(location.search); if(params.get("desabo")!=null){ await pageDesabo(params.get("desabo"), params.get("t")||""); return; } }catch(e){}
   /* Lien de participation : ?go=bilan mène à l'onglet Bilans moraux, après connexion. */
   try{ const params=new URLSearchParams(location.search); const g=params.get("go");
@@ -5951,7 +5963,9 @@ async function boot(){
   etuDemarrer();
   if(!sb){ render(); return; }
   try{ const h=String(location.hash||""); if(/type=recovery/.test(h)||/[?&]type=recovery/.test(location.search)){ S.recovery=true; } }catch(e){}
-  try{ await refreshSession(); }catch(e){} render();
+  try{ await refreshSession(); }catch(e){}
+  if(S.session && (S.tab==="proprio")) S.view="ca";   // lien secret traité : on ouvre directement l'espace
+  render();
   if(S.session && S.session.role!=="coopte"){ traiterEnvoisProgrammes().then(()=>{ if(S.tab==="mail") rendreEnPreservant(); }).catch(()=>{}); traiterRappels().catch(()=>{}); traiterRappelsCertif().catch(()=>{}); traiterRecapIdees().catch(()=>{}); traiterInscriptions().catch(()=>{}); traiterRetardsMediation().catch(()=>{}); traiterSalle().then(()=>{ if(S.tab==="salle") rendreEnPreservant(); }).catch(()=>{}); }
   try{ sb.auth.onAuthStateChange(async (evt)=>{
     if(evt==="PASSWORD_RECOVERY"){ S.recovery=true; render(); return; }
