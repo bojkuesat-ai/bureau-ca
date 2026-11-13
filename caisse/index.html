@@ -2293,14 +2293,14 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       d.style.cssText="position:fixed;inset:0;z-index:2147481000;background:#0b0816;color:#fff;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto";
       d.innerHTML='<div style="width:100%;max-width:420px;background:#241c46;border:1px solid #3b3170;border-radius:16px;padding:22px;text-align:center">'
         +'<div style="font-size:38px;line-height:1">🔐</div>'
-        +'<h2 style="font-family:Fraunces,Georgia,serif;font-weight:500;font-size:21px;margin:8px 0 6px">Double authentification obligatoire</h2>'
-        +'<p style="font-size:13.5px;color:#c9c3e4;margin:0 0 10px;line-height:1.5">En tant que '+esc2(qui||"trésorier")+', vous devez l\'activer avant d\'agir. Installez une application d\'authentification (Google Authenticator, Microsoft Authenticator…), puis « Ajouter » › « Scanner un QR code » :</p>'
+        +'<h2 style="font-family:Fraunces,Georgia,serif;font-weight:500;font-size:21px;margin:8px 0 6px">Activer la double authentification</h2>'
+        +'<p style="font-size:13.5px;color:#c9c3e4;margin:0 0 10px;line-height:1.5">Une seule activation vaut pour la Caisse et l\'Espace CA. Installez une application d\'authentification (Google Authenticator, Microsoft Authenticator…), puis « Ajouter » › « Scanner un QR code » :</p>'
         +'<div style="background:#fff;border-radius:12px;padding:10px;width:fit-content;margin:4px auto 8px"><img src="'+esc2(qr)+'" alt="QR" width="190" height="190" style="display:block"></div>'
         +'<p style="font-size:11.5px;color:#a49dc6;word-break:break-all;margin:0 0 10px">Pas de caméra ? Clé : <b style="font-family:monospace;color:#fff">'+esc2(secret)+'</b></p>'
         +'<input id="mfaEnCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="width:100%;box-sizing:border-box;font-size:26px;letter-spacing:8px;text-align:center;padding:11px;border-radius:10px;border:1px solid #3b3170;background:#000;color:#fff">'
         +'<p id="mfaEnErr" style="color:#f2645f;font-size:13px;min-height:18px;margin:8px 0 0"></p>'
         +'<button id="mfaEnOk" style="width:100%;margin-top:6px;border:none;border-radius:11px;padding:13px;font-size:15px;font-weight:700;background:linear-gradient(150deg,#e8b04b,#9c7628);color:#241100;cursor:pointer">Activer</button>'
-        +'<button id="mfaEnOut" style="margin-top:12px;background:none;border:none;color:#a49dc6;text-decoration:underline;font-size:13px;cursor:pointer">Se déconnecter</button></div>';
+        +'<button id="mfaEnOut" style="margin-top:12px;background:none;border:none;color:#a49dc6;text-decoration:underline;font-size:13px;cursor:pointer">Plus tard</button></div>';
       (document.body||document.documentElement).appendChild(d);
       var c=d.querySelector("#mfaEnCode"), er=d.querySelector("#mfaEnErr"), b=d.querySelector("#mfaEnOk");
       async function valider(){
@@ -2314,7 +2314,7 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       }
       b.addEventListener("click",valider);
       c.addEventListener("keydown",function(e){ if(e.key==="Enter") valider(); });
-      d.querySelector("#mfaEnOut").addEventListener("click",async function(){ try{ await sb.auth.mfa.unenroll({factorId:fid}); }catch(e){ __errSilence(e); } try{ await sb.auth.signOut({scope:"local"}); }catch(e){ __errSilence(e); } location.reload(); });
+      d.querySelector("#mfaEnOut").addEventListener("click",async function(){ try{ await sb.auth.mfa.unenroll({factorId:fid}); }catch(e){ __errSilence(e); } d.remove(); });
       setTimeout(function(){ try{ c.focus(); }catch(e){ __errSilence(e); } },50);
     }catch(e){ __errSilence(e); }
   };
@@ -3544,6 +3544,7 @@ async function loadProfile(user){
   $("#app").hidden = !ok;
   if(!ok) return;
   verifierEtatCaisse();
+  setTimeout(function(){ inviterMfaCaisse(user.id); }, 600);
   $("#whoName").textContent = prof.name || user.email;
   $("#whoRole").textContent = (prof.position ? prof.position + " · " : "") + (isTreso() ? "Trésorier" : "Demandeur");
   $("#tabTreso").hidden = !isTreso();
@@ -11344,6 +11345,33 @@ function bSig(){
   const me = state.caMe;
   if(me){ const nom = (me.prenom || me.nom || state.profile.name || "").trim(); return nom + (me.fonction ? " · " + me.fonction : ""); }
   return (state.profile && state.profile.name) || "Trésorier";
+}
+/* 14/11/2026 — Double authentification (facultative) : bandeau tant qu'elle n'est pas activée
+   et popup une seule fois, UNIQUEMENT pour les membres du CA (pas les coopté·es). */
+async function inviterMfaCaisse(uid){
+  try{
+    const r = await sb.from("ca_membres").select("role,statut,via_code,fonction,hors_ca").eq("id", uid).maybeSingle();
+    const a = r && r.data;
+    const ancien = document.getElementById("mfaBandeau");
+    if(!a || a.statut !== "actif" || !(a.role === "membre" || a.role === "owner") || estCoopteCA(a)){ if(ancien) ancien.remove(); return; }
+    const f = await sb.auth.mfa.listFactors();
+    if(!f || f.error || (f.data && f.data.totp && f.data.totp.length)){ if(ancien) ancien.remove(); return; }
+    if(!ancien && $("#app")){
+      const b = document.createElement("div"); b.id = "mfaBandeau";
+      b.style.cssText = "margin:10px auto;max-width:1100px;padding:10px 14px;border-radius:10px;border:1px solid #3b3170;border-left:4px solid #e8b04b;background:rgba(36,28,70,.6);font-size:13.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap";
+      b.innerHTML = '<span>🔐 <b>Double authentification</b> — conseillée pour protéger votre compte (une activation vaut pour la Caisse et l\'Espace CA).</span>'
+        + '<button type="button" class="btn" style="padding:6px 12px">Activer</button>';
+      b.querySelector("button").addEventListener("click", () => window.mfaExigerEnrolement && window.mfaExigerEnrolement());
+      $("#app").insertBefore(b, $("#app").firstChild);
+    }
+    const cle = "be:mfa-popup:" + uid;
+    let deja = true; try{ deja = !!localStorage.getItem(cle); if(!deja) localStorage.setItem(cle, "1"); }catch(e){ __errSilence(e); }
+    if(!deja && await demander("🔐 Double authentification",
+        "Pour mieux protéger votre compte, activez la double authentification : après le mot de passe, un code à 6 chiffres de votre téléphone sera demandé.\n\nUne seule activation suffit pour la Caisse et l'Espace CA. C'est facultatif et prend une minute.",
+        { bouton:"Activer maintenant", boutonNon:"Plus tard" })){
+      if(window.mfaExigerEnrolement) window.mfaExigerEnrolement();
+    }
+  }catch(e){ __errSilence(e); }
 }
 function bEstOwner(){ return !!(state.caMe && state.caMe.role === "owner"); }
 function bPeutDecider(){ return bEstOwner() || isTreso(); }   // le trésorier approuve ou refuse (le propriétaire tant qu'il est trésorier)

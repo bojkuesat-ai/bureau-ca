@@ -116,3 +116,8 @@ Fichier : `sql/2026-11-13_mfa_obligatoire_passation_guide.sql` (migrations `prop
 - Budgets de la Caisse : approuvés ou refusés par le trésorier. L'effectif du CA exclut le propriétaire retiré et les membres « hors CA ».
 - Passation : le guide complet part par mail à la nouvelle Admin / trésorière ; les notifications push du propriétaire sont supprimées.
 - `send-email` v24 : après la passation, le propriétaire ne reçoit plus aucun mail du CA ni de la Caisse (sauf licence et « Nouvelle connexion »). Les réponses vont à l'Admin.
+
+## Invitation à la double authentification (14/11/2026)
+
+- Mail unique « Sécurité-BE » le samedi 14/11/2026 à 10:00 (tâche `mfa_invitation_1411`, fonction `mfa_invitation_envoyer()`), seulement aux membres actifs du CA (pas les coopté·es) sans double authentification. La table `mfa_invitations` empêche tout second envoi ; la tâche se supprime après l'envoi.
+- Espace CA et Caisse : bandeau pour les membres du CA tant qu'elle n'est pas activée, et popup une seule fois (par compte et par appareil). Personne hors du CA ne voit rien.

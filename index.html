@@ -8929,16 +8929,25 @@ document.addEventListener("click", async e=>{
 /* Double authentification : facultative depuis le 14/11/2026 (doitMfa n'est plus utilisé). */
 function doitMfa(){ return !!(S.session && (estAdminCA() || (S.appEtat && S.appEtat.tresorier) || (S.tresoCA && S.tresoCA.id===S.session.id) || (S.session.admin && S.session.statut==="actif" && S.session.role!=="proprietaire"))); }
 function bandeauMfa(){
-  /* Facultative : simple proposition aux membres actifs, masquable (« Plus tard »). */
-  if(!(S.session && S.session.statut==="actif" && (S.session.role==="membre" || S.session.admin))) return "";
+  /* Facultative : bandeau pour les membres du CA tant qu'elle n'est pas activée,
+     plus un popup affiché une seule fois (par compte, sur cet appareil). */
+  if(!(S.session && S.session.statut==="actif" && (S.session.role==="membre" || S.session.role==="owner"))) return "";
   const M=S.mfa;
   if(!M){ if(!S.mfaCharge){ S.mfaCharge=true; chargerMfaCA().then(()=>rendreEnPreservant()); } return ""; }
   if(M.err||M.actif) return "";
-  let cache=false; try{ cache=localStorage.getItem("ca:mfa-plus-tard")===S.session.id; }catch(_){}
-  if(cache) return "";
-  return `<div class="card2" style="margin:0 0 14px;padding:10px 14px"><p class="du" style="margin:0">🔐 <b>Double authentification</b> — facultative, conseillée pour protéger votre compte.
-    <button class="btn sm" data-action="mfa-activer" style="margin-left:8px">Activer</button>
-    <button class="link" onclick="try{localStorage.setItem('ca:mfa-plus-tard',S.session.id)}catch(_){};rendreEnPreservant()">Plus tard</button></p></div>`;
+  popupMfaUneFois();
+  return `<div class="card2" style="margin:0 0 14px;padding:10px 14px;border-left:4px solid var(--gold-dim)"><p class="du" style="margin:0">🔐 <b>Double authentification</b> — conseillée pour protéger votre compte (une activation vaut pour l'Espace CA et la Caisse).
+    <button class="btn sm" data-action="mfa-activer" style="margin-left:8px">Activer</button></p></div>`;
+}
+function popupMfaUneFois(){
+  const cle="be:mfa-popup:"+S.session.id;
+  try{ if(localStorage.getItem(cle)) return; localStorage.setItem(cle,"1"); }catch(_){ return; }
+  setTimeout(async()=>{
+    const pr=modaleConfirm("Pour mieux protéger votre compte, activez la double authentification : après le mot de passe, un code à 6 chiffres de votre téléphone sera demandé.\n\nUne seule activation suffit pour l'Espace CA et la Caisse. C'est facultatif et prend une minute.\n\nActiver maintenant ?","🔐 Double authentification");
+    try{ document.getElementById("ca_ask_yes").textContent="Activer maintenant"; document.getElementById("ca_ask_no").textContent="Plus tard"; }catch(_){ }
+    const oui=await pr;
+    if(oui){ const b=document.createElement("button"); b.dataset.action="mfa-activer"; b.hidden=true; document.body.appendChild(b); b.click(); setTimeout(()=>b.remove(),0); }
+  },800);
 }
 function carteMfaCA(){
   if(!S.session) return "";
