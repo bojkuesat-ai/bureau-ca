@@ -1898,6 +1898,10 @@ function viewProprio(){
       <p class="du">Actuellement : <b>${esc((P.gj_cosignataire_effectif&&P.gj_cosignataire_effectif.nom)||"personne — la gestion journalière est bloquée")}</b></p>
       <div class="row-btn"><button class="btn sm" data-pa="gj-cosign">Enregistrer</button></div>
     </div>
+    <div class="card2"><h3 class="serif">Vos mails de gestion</h3>
+      ${sw('data-pa="mails-gestion"', C.mails_gestion!==false, "Recevoir les mails de gestion", ' <span class="du">— alertes de sécurité (journal), demandes d\'inscription, demandes RGPD</span>')}
+      <p class="du">Désactivé : ces mails vont uniquement à l'Admin. S'il n'y a aucun Admin, vous continuez à les recevoir pour que rien ne se perde. Les demandes de licence vous arrivent toujours.</p>
+    </div>
     <div class="card2"><h3 class="serif">Votre place dans le CA</h3>
       ${sw('data-pa="hors-ca"', !!moi.hors_ca, "Je ne fais plus partie du CA", ' <span class="du">— vous ne comptez plus dans l\'effectif, le quorum et les votes ; vous gardez tous vos droits de propriétaire</span>')}
     </div>
@@ -1992,6 +1996,7 @@ document.addEventListener("change", async e=>{
   } else if(pa==="module"){ const m={}; m[id]=on; r=await sb.rpc("proprio_reglages",{p:{modules:m}}); }
   else if(pa==="admin"){ r=await sb.rpc("proprio_set_admin",{p_membre:id,p_on:on}); }
   else if(pa==="hors-ca"){ r=await sb.rpc("proprio_set_hors_ca",{p_on:on}); }
+  else if(pa==="mails-gestion"){ r=await sb.rpc("proprio_reglages",{p:{mails_gestion:on}}); }
   else return;
   if(r&&r.error){ b.checked=!on; modaleInfo("Non enregistré : "+r.error.message,"Erreur"); return; }
   await chargerProprio(); await chargerEtatApp(); await loadAccounts();
@@ -4755,7 +4760,8 @@ async function traiterInscriptions(){
   if(S.session.statut!=="actif") return;                 // seul un membre actif d\u00e9clenche l'envoi
   const attentes=(S.admins||[]).filter(a=>a.statut==="attente");
   if(!attentes.length) return;
-  const owners=(S.admins||[]).filter(a=>a.email && a.statut==="actif" && a.role==="owner").map(a=>a.email);
+  /* Destinataires décidés par le serveur : l'Admin, plus le propriétaire s'il veut encore ces mails. */
+  let owners=[]; try{ const rd=await sb.rpc("ca_destinataires_gestion"); owners=(rd&&!rd.error&&rd.data)||[]; }catch(_){ }
   if(!owners.length) return;
   for(const a of attentes){
     try{
@@ -5398,7 +5404,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
     case "rgpd-suppr-moi": {
       const moi=S.session; if(!moi) break;
       if(!(await modaleConfirm("Envoyer une demande de suppression de vos données à la personne responsable du compte ?"))) break;
-      const owners=(S.admins||[]).filter(a=>a.email && a.statut==="actif" && a.role==="owner").map(a=>a.email);
+      let owners=[]; try{ const rd=await sb.rpc("ca_destinataires_gestion"); owners=(rd&&!rd.error&&rd.data)||[]; }catch(_){ }
       if(!owners.length){ if(window.alert) window.alert("Aucun responsable joignable. Adressez votre demande directement au bureau."); break; }
       const corps=`<h2 style="margin:0 0 10px">Demande de suppression de données (RGPD)</h2>`
         +`<p><b>${caMailEsc(moi.nom||moi.prenom||"")}</b>${moi.fonction?" — "+caMailEsc(moi.fonction):""} (${caMailEsc(moi.email||"")}) demande la suppression de ses données personnelles de l'espace CA.</p>`

@@ -628,3 +628,11 @@ alter table public.proprio_config add column if not exists gj_cosignataire uuid;
 -- modules_liste, licence_options_txt : search_path fixé.
 -- Le lien secret de l'espace Propriétaire n'est PAS dans ce dépôt : seul son hash est
 -- en base (proprio_config.lien_hash) ; le propriétaire peut en générer un nouveau.
+
+-- ============================ 5. MAILS DE GESTION ================================
+-- (migration « proprio_6_mails_gestion »)
+-- proprio_config.mails_gestion (vrai par défaut) : le propriétaire reçoit-il encore les
+-- alertes de sécurité, les demandes d'inscription et les demandes RGPD ?
+-- destinataires_gestion() = les Admin + le propriétaire (si mails_gestion, ou s'il n'y a aucun Admin).
+-- Utilisé par audit_alerte, ca_notif_inscription et, côté app, ca_destinataires_gestion().
+-- Les mails de licence vont toujours au propriétaire.
