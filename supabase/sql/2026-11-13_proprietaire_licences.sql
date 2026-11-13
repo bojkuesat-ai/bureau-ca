@@ -636,3 +636,19 @@ alter table public.proprio_config add column if not exists gj_cosignataire uuid;
 -- destinataires_gestion() = les Admin + le propriétaire (si mails_gestion, ou s'il n'y a aucun Admin).
 -- Utilisé par audit_alerte, ca_notif_inscription et, côté app, ca_destinataires_gestion().
 -- Les mails de licence vont toujours au propriétaire.
+
+-- ============================ 6. PASSATION ================================
+-- (migration « proprio_7_passation »)
+-- proprio_passation(personne, cosignataire) : la personne devient Admin et trésorière,
+--   cosignataire GJ enregistré, mails de gestion coupés, propriétaire « hors CA » et
+--   ca_membres.role = 'proprietaire' (propriétaire retiré). proprio_passation_annuler() inverse.
+-- Propriétaire retiré : ca_is_owner() faux (donc plus aucun droit du propriétaire dans les
+--   fonctions existantes), ca_est_membre_plein()/ca_is_actif()/is_approved() faux,
+--   app_lecture_ok() faux (plus rien de lisible dans le CA et la Caisse), écritures refusées
+--   sauf ses réglages techniques (ca_meta : nom, onglets, pages d'erreur, CES, billetterie).
+--   proprio_est() (owner OU proprietaire) garde l'accès à l'espace Propriétaire.
+-- Vers l'Admin : Journal (ca_audit, ca_journal, audit_tableau), Registre, sauvegardes
+--   (fonction Edge « sauvegarde » : ca_est_admin ; mails aux Admin), restauration,
+--   médiation (ca_med_owner = propriétaire actif, sinon premier Admin), billetterie (bil_*).
+-- L'Admin nomme aussi le trésorier (proprio_set_tresorier) et le cosignataire GJ
+--   (proprio_set_gj_cosignataire) ; admin_fonctions() alimente sa carte.

@@ -37,7 +37,8 @@ async function chiffrer(d: Uint8Array) {
   return out;
 }
 async function proprietaires() {
-  const { data } = await db.from("ca_membres").select("id,email,role").eq("role", "owner");
+  // 13/11/2026 : le propriétaire actif et les Admin (après la passation : les Admin seuls).
+  const { data } = await db.from("ca_membres").select("id,email,role,admin,statut").or("role.eq.owner,admin.eq.true").eq("statut", "actif");
   return ((data ?? []) as any[]).filter((m) => m.email);
 }
 async function envoyerMail(corps: string, jwt?: string) {
@@ -128,10 +129,10 @@ Deno.serve(async (req: Request) => {
     const jwt = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     const { data: u } = await db.auth.getUser(jwt);
     if (!u?.user) return rep(req, { ok: false, erreur: "Connexion requise." }, 401);
-    // ca_is_owner() tient compte de la double authentification.
+    // ca_est_admin() tient compte de la double authentification.
     const uc = createClient(SB_URL, ANON, { global: { headers: { Authorization: "Bearer " + jwt } }, auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: own } = await uc.rpc("ca_is_owner");
-    if (own !== true) return rep(req, { ok: false, erreur: "Réservé au propriétaire." }, 403);
+    const { data: own } = await uc.rpc("ca_est_admin");   // propriétaire actif ou Admin
+    if (own !== true) return rep(req, { ok: false, erreur: "Réservé à l'Admin." }, 403);
     if (b.action === "maintenant") return rep(req, await sauvegarder("manuelle", jwt));
     if (b.action === "liste") {
       const { data } = await db.storage.from("sauvegardes").list("", { limit: 100, sortBy: { column: "name", order: "desc" } });

@@ -3463,11 +3463,11 @@ async function verifierEtatCaisse(){
     ban.innerHTML = html;
     ban.style.cssText = html ? "margin:10px auto;max-width:1100px;padding:11px 15px;border-radius:12px;border:1px solid #c47f17;background:var(--surface2);font-size:13.5px" : "";
     let ov = document.getElementById("etatFerme");
-    if(E.pour_moi === "fermee"){
+    if(E.pour_moi === "fermee" || E.pour_moi === "retire"){
       if(!ov){ ov = document.createElement("div"); ov.id = "etatFerme"; document.body.appendChild(ov); }
       ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px";
-      ov.innerHTML = `<div style="max-width:440px;text-align:center"><h2 style="margin:0 0 10px">🔒 Caisse fermée</h2>
-        <p style="color:var(--muted)">${esc(E.message || "L'application est temporairement fermée par son propriétaire.")}</p>
+      ov.innerHTML = `<div style="max-width:440px;text-align:center"><h2 style="margin:0 0 10px">🔒 ${E.pour_moi === "retire" ? "Accès retiré" : "Caisse fermée"}</h2>
+        <p style="color:var(--muted)">${E.pour_moi === "retire" ? "Depuis la passation, ce compte n'a plus accès à la Caisse." : esc(E.message || "L'application est temporairement fermée par son propriétaire.")}</p>
         <button class="btn ghost" id="etatFermeOut" style="margin-top:14px">Se déconnecter</button></div>`;
       ov.querySelector("#etatFermeOut").onclick = async () => { try{ await sb.auth.signOut(); }catch(_){ __errSilence(_); } location.reload(); };
     } else if(ov){ ov.remove(); }

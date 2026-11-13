@@ -935,8 +935,13 @@ function caMailEsc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace
 function membresActifs(){ return (S.admins||[]).filter(a=>a.email && a.statut==="actif" && a.role!=="coopte" && !a.horsCa); }
 /* Niveaux (13/11/2026) : propriétaire (vous) > Admin délégué > membres.
    Le propriétaire peut être « hors CA » : il garde tous ses droits mais ne compte plus dans l'effectif. */
-function estProprioCA(){ return !!(S.session && S.session.role==="owner"); }
-function estAdminCA(){ return estProprioCA() || !!(S.session && S.session.admin && S.session.statut==="actif" && S.session.role!=="coopte"); }
+function estProprioCA(){ return !!(S.session && (S.session.role==="owner" || S.session.role==="proprietaire")); }
+/* Après la passation, le compte propriétaire devient « proprietaire » : plus aucun droit dans le CA. */
+function estProprioRetire(){ return !!(S.session && S.session.role==="proprietaire"); }
+function estAdminCA(){ return !!(S.session && (S.session.role==="owner" || (S.session.admin && S.session.statut==="actif" && S.session.role!=="coopte" && S.session.role!=="proprietaire"))); }
+/* Journal, Registre, sauvegardes : l'Admin ; le propriétaire actif via son lien secret. */
+function voitJournalCA(){ return S.session && S.session.role==="owner" ? proprioOuvert() : estAdminCA(); }
+function estMedDispatch(){ return !!(S.appEtat ? S.appEtat.med_dispatch : (S.session && S.session.role==="owner")); }
 function proprioOuvert(){ try{ return estProprioCA() && sessionStorage.getItem("ca:proprio")==="1"; }catch(e){ return false; } }
 /* Trésorier (rôle de la Caisse) : décide des budgets dans le CA. Le propriétaire garde ce droit. */
 function estTresoCA(){ return estProprioCA() || !!(S.appEtat && S.appEtat.tresorier); }
@@ -1906,6 +1911,20 @@ function viewProprio(){
       ${sw('data-pa="hors-ca"', !!moi.hors_ca, "Je ne fais plus partie du CA", ' <span class="du">— vous ne comptez plus dans l\'effectif, le quorum et les votes ; vous gardez tous vos droits de propriétaire</span>')}
     </div>
 
+    <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Passation</h2><span class="l"></span></div>
+    ${C.passation_faite ? `<div class="card2" style="border-left:4px solid var(--green,#2e7d32)"><h3 class="serif">✅ Passation faite</h3>
+      <p>Le ${esc(dateCourte(C.passation_le))}, à <b>${esc(C.passation_a||"")}</b> (Admin et trésorier·e). Vous n'avez plus accès au contenu du CA ni à la Caisse ; il vous reste cet espace.</p>
+      <div class="row-btn"><button class="btn ghost sm" data-pa="passation-annuler">Annuler la passation</button></div>
+      <p class="du">Annuler vous rend vos accès de propriétaire actif. L'Admin et le trésorier nommés restent en place.</p></div>`
+    : `<div class="card2"><h3 class="serif">Faire la passation</h3>
+      <p class="du">En une fois : la personne choisie devient Admin et trésorière ; le deuxième signataire de la gestion journalière est enregistré ; le Journal, le Registre, les sauvegardes, l'export, la médiation et vos mails de gestion passent à l'Admin ; votre accès au contenu du CA et à la Caisse est coupé. Vous gardez uniquement cet espace (licences, état des apps, modules, fonctions, réglages techniques, zone dangereuse).</p>
+      <label class="fld">Nouvelle Admin / trésorière</label>
+      <select class="f" id="pass_qui"><option value="">— Choisir —</option>${(P.membres||[]).filter(m=>m.statut==="actif"&&m.role==="membre"&&!m.coopte).map(m=>`<option value="${esc(m.id)}">${esc(m.nom||m.email||"")} — ${esc(m.fonction||"")}</option>`).join("")}</select>
+      <label class="fld" style="margin-top:10px">Deuxième signataire de la gestion journalière</label>
+      <select class="f" id="pass_cosign"><option value="">Automatique (fonction « Président·e »)</option>${(P.membres||[]).filter(m=>m.statut==="actif"&&m.role==="membre"&&!m.coopte).map(m=>`<option value="${esc(m.id)}">${esc(m.nom||m.email||"")} — ${esc(m.fonction||"")}</option>`).join("")}</select>
+      <div class="row-btn"><button class="btn" data-pa="passation" style="background:var(--red);border-color:var(--red);color:#fff">Faire la passation</button></div>
+      <p class="du">Pensez à transmettre vous-même la phrase secrète des sauvegardes à la nouvelle Admin.</p></div>`}
+
     <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Lien secret</h2><span class="l"></span></div>
     <div class="card2"><p class="du">Le lien secret ouvre cet espace (connexion et double authentification toujours exigées). Si vous pensez qu'il a été vu, générez-en un nouveau : l'ancien ne marchera plus.</p>
       <div class="row-btn"><button class="btn ghost sm" data-pa="nouveau-lien">Générer un nouveau lien</button></div>
@@ -1914,9 +1933,9 @@ function viewProprio(){
 
     <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Réglages techniques</h2><span class="l"></span></div>
     ${typeof carteMfaCA==="function"?carteMfaCA():""}
-    ${typeof carteAmeliorations==="function"?carteAmeliorations():""}
+    ${!estProprioRetire()&&typeof carteAmeliorations==="function"?carteAmeliorations():""}
     ${typeof carteErreurCA==="function"?carteErreurCA():""}
-    ${S.session&&S.session.role==="owner"?`<div class="card2"><h3 class="serif">Onglets</h3>
+    ${estProprioCA()?`<div class="card2"><h3 class="serif">Onglets</h3>
       <p class="du">Un onglet désactivé disparaît pour tout le monde, vous compris. Réactivez-le ici pour le faire revenir.</p>
       ${ONGLETS_OPTIONNELS.map(([k,l])=>`<label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:14px;cursor:pointer">
         <input type="checkbox" class="sw" role="switch" ${ongletsOff().indexOf(k)<0?"checked":""} data-action="toggle-onglet" data-id="${k}"> ${l}</label>`).join("")}
@@ -1934,12 +1953,12 @@ function viewProprio(){
       <p class="err" id="reset_err" style="display:none"></p>
       <div class="row-btn"><button class="btn" style="background:var(--red);border-color:var(--red);color:#fff" data-action="reset-data">Réinitialiser toutes les données</button></div>
     </div>
-    <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Sauvegarde & journal</h2><span class="l"></span></div>
+    ${estProprioRetire()?"":`<div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Sauvegarde & journal</h2><span class="l"></span></div>
     <div class="compose"><h3 class="serif">Données</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Exportez une sauvegarde de toutes les données (recommandé avant la bascule Supabase), ou réimportez-la.</p>
       <div class="row-btn"><button class="btn sm" data-action="export-data">Exporter (JSON)</button>
         <label class="btn ghost sm" style="cursor:pointer">Importer<input type="file" accept="application/json" data-change="importfile" style="display:none"></label></div></div>
-    <p class="du" style="margin:14px 0 0">Le journal des connexions et des actions des membres est dans l'onglet <b>📜 Journal</b>.</p>
+    <p class="du" style="margin:14px 0 0">Le journal des connexions et des actions des membres est dans l'onglet <b>📜 Journal</b>.</p>`}
   </div>`;
 }
 document.addEventListener("click", async e=>{
@@ -1979,6 +1998,18 @@ document.addEventListener("click", async e=>{
   } else if(pa==="gj-cosign"){
     const v=(document.getElementById("gj_cosign")||{}).value||null;
     const r=await sb.rpc("proprio_set_gj_cosignataire",{p_membre:v}); if(ko(r)) return;
+  } else if(pa==="passation"){
+    const qui=(document.getElementById("pass_qui")||{}).value||"", cos=(document.getElementById("pass_cosign")||{}).value||null;
+    if(!qui) return modaleInfo("Choisissez la nouvelle Admin / trésorière.");
+    const nom=(((S.proprio&&S.proprio.membres)||[]).find(m=>m.id===qui)||{}).nom||"cette personne";
+    if(!(await modaleConfirm("Faire la passation à "+nom+" ?\n\n• "+nom+" devient Admin et trésorière.\n• Le Journal, le Registre, les sauvegardes, la médiation et vos mails de gestion passent chez elle.\n• Vous perdez tout accès au contenu du CA et à la Caisse : il vous reste uniquement l'espace Propriétaire.","Passation"))) return;
+    const r=await sb.rpc("proprio_passation",{p_personne:qui,p_cosign:cos}); if(ko(r)) return;
+    await refreshSession();
+    modaleInfo("Passation faite : "+nom+" est Admin et trésorière. Transmettez-lui la phrase secrète des sauvegardes.","Passation");
+  } else if(pa==="passation-annuler"){
+    if(!(await modaleConfirm("Annuler la passation et retrouver vos accès de propriétaire actif ?","Annuler la passation"))) return;
+    const r=await sb.rpc("proprio_passation_annuler"); if(ko(r)) return;
+    await refreshSession();
   } else if(pa==="nouveau-lien"){
     if(!(await modaleConfirm("Générer un nouveau lien secret ? L'ancien ne fonctionnera plus.","Lien secret"))) return;
     const r=await sb.rpc("proprio_nouveau_lien"); if(ko(r)) return;
@@ -2002,6 +2033,35 @@ document.addEventListener("change", async e=>{
   await chargerProprio(); await chargerEtatApp(); await loadAccounts();
   const moi=(S.admins||[]).find(a=>a.id===S.session.id); if(moi){ S.session.horsCa=!!moi.horsCa; }
   render();
+});
+
+/* Admin : nommer le trésorier de la Caisse et le deuxième signataire de la gestion journalière. */
+function carteFonctionsCaisse(){
+  const F=S.adminFct;
+  if(!F){ if(!S.adminFctCharge){ S.adminFctCharge=true; sb.rpc("admin_fonctions").then(r=>{ S.adminFct=r.error?{err:r.error.message}:r.data; S.adminFctCharge=false; if(S.tab==="admin") rendreEnPreservant(); }); } return `<div class="card2"><p class="du">Chargement…</p></div>`; }
+  if(F.err) return `<div class="card2"><p class="du" style="color:var(--red)">${esc(F.err)}</p></div>`;
+  return `<div class="card2"><h3 class="serif">Trésorier de la Caisse</h3>
+      <p class="du">Nommez d'abord le nouveau trésorier, puis retirez l'ancien. Le trésorier traite les demandes, paie, signe la gestion journalière et décide des budgets du CA.</p>
+      ${(F.caisse||[]).map(c=>`<div class="doc" style="cursor:default;padding:8px 12px"><span class="meta"><p class="dt" style="font-size:14px">${esc(c.nom||c.email||"")}${c.role==="tresorier"?' <span class="badge">Trésorier</span>':""}</p><p class="du">${esc(c.email||"")}</p></span>
+        <button class="chip" data-fa="tresorier" data-id="${esc(c.id)}" data-on="${c.role==="tresorier"?"0":"1"}">${c.role==="tresorier"?"Retirer":"Nommer trésorier"}</button></div>`).join("")}
+      <p class="du">Adresse du trésorier pour les mails : <b>${esc(F.treso_email||"—")}</b></p></div>
+    <div class="card2"><h3 class="serif">Deuxième signataire de la gestion journalière</h3>
+      <select class="f" id="fa_cosign"><option value="">Automatique (fonction « Président·e »)</option>${(F.membres||[]).map(m=>`<option value="${esc(m.id)}" ${F.gj_cosignataire===m.id?"selected":""}>${esc(m.nom||"")} — ${esc(m.fonction||"")}</option>`).join("")}</select>
+      <p class="du">Actuellement : <b>${esc((F.gj_effectif&&F.gj_effectif.nom)||"personne — la gestion journalière est bloquée")}</b></p>
+      <div class="row-btn"><button class="btn sm" data-fa="cosign">Enregistrer</button></div></div>`;
+}
+document.addEventListener("click", async e=>{
+  const b=e.target.closest("[data-fa]"); if(!b||!sb||!estAdminCA()) return;
+  let r=null;
+  if(b.dataset.fa==="tresorier"){
+    const on=b.dataset.on==="1"; const c=((S.adminFct&&S.adminFct.caisse)||[]).find(x=>x.id===b.dataset.id)||{};
+    if(!(await modaleConfirm((on?"Nommer ":"Retirer le rôle de trésorier à ")+(c.nom||c.email||"cette personne")+(on?" trésorier de la Caisse ?":" ?"),"Trésorier"))) return;
+    r=await sb.rpc("proprio_set_tresorier",{p_user:b.dataset.id,p_on:on});
+  } else if(b.dataset.fa==="cosign"){
+    r=await sb.rpc("proprio_set_gj_cosignataire",{p_membre:(document.getElementById("fa_cosign")||{}).value||null});
+  } else return;
+  if(r&&r.error) return modaleInfo("Non enregistré : "+r.error.message,"Erreur");
+  S.adminFct=null; await chargerEtatApp(); render();
 });
 
 function viewAdmin(){
@@ -2096,6 +2156,8 @@ function viewAdmin(){
     ${salleCarteAdmin()}
     ${typeof billetsCarteAdmin==="function"?billetsCarteAdmin():""}
     </div>`:""}
+    ${S.session.role!=="owner"?`<div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Caisse</h2><span class="l"></span></div>${carteFonctionsCaisse()}`:""}
+    ${S.session.role!=="owner"&&typeof carteAmeliorations==="function"?carteAmeliorations():""}
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Liste e-mail (invités externes)</h2><span class="l"></span></div>
     <div class="compose">
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 10px">Ces adresses reçoivent aussi les annonces, documents et votes (en plus des membres inscrits). Une personne déjà inscrite n'est jamais contactée en double.</p>
@@ -2103,6 +2165,10 @@ function viewAdmin(){
       <p class="err" id="mail_err" style="display:none"></p>
       <div style="margin-top:10px">${(S.mailing||[]).length ? (S.mailing||[]).map(m=>`<div class="doc" style="cursor:default;padding:8px 12px"><span class="meta"><p class="dt" style="font-size:13px">${esc(m.email)}</p></span><button class="rm2" data-action="del-mail" data-id="${esc(m.id)}">✕</button></div>`).join("") : `<div class="empty">Aucune adresse externe pour l'instant.</div>`}</div>
     </div>
+  ${S.session.role!=="owner"?`<div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Données</h2><span class="l"></span></div>
+    <div class="compose"><p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Exportez une copie de toutes les données de l'Espace CA (fichier JSON), ou réimportez-la.</p>
+      <div class="row-btn"><button class="btn sm" data-action="export-data">Exporter (JSON)</button>
+        <label class="btn ghost sm" style="cursor:pointer">Importer<input type="file" accept="application/json" data-change="importfile" style="display:none"></label></div></div>`:""}
   </div>`;
 }
 function viewPending(){
@@ -2528,12 +2594,15 @@ function viewDash(){
   if(estAdminCA() && !estCoopte()) tabs.push(["admin","\u2699","Admin"]);
   /* Espace Propriétaire, Journal et Registre : seulement après le lien secret. */
   if(proprioOuvert()) tabs.push(["proprio","\ud83d\udd11","Propri\u00e9taire"]);
-  if(proprioOuvert()) tabs.push(["journal","\ud83d\udcdc","Journal"]);
-  if(proprioOuvert()) tabs.push(["registre","\ud83d\uddf3","Registre des votes"]);
+  if(voitJournalCA()) tabs.push(["journal","\ud83d\udcdc","Journal"]);
+  if(voitJournalCA()) tabs.push(["registre","\ud83d\uddf3","Registre des votes"]);
   if(S.appEtat && S.appEtat.mode_licence && !estCoopte() && (S.appEtat.peut_demander || estAdminCA() || (S.appEtat.demande && S.appEtat.demande.moi)))
     tabs.push(["licence","\ud83d\udcc4","Licence"]);
   if(S.tab==="admin" && !estAdminCA()) S.tab="accueil";
-  if((S.tab==="journal"||S.tab==="registre"||S.tab==="proprio") && !proprioOuvert()) S.tab="accueil";
+  if((S.tab==="journal"||S.tab==="registre") && !voitJournalCA()) S.tab="accueil";
+  if(S.tab==="proprio" && !proprioOuvert()) S.tab="accueil";
+  /* Propriétaire retiré : rien d'autre que son espace. */
+  if(estProprioRetire()){ tabs.length=0; if(proprioOuvert()){ tabs.push(["proprio","\ud83d\udd11","Propri\u00e9taire"]); S.tab="proprio"; } }
   if(S.tab==="licence" && !tabs.some(t=>t[0]==="licence")) S.tab="accueil";
   if(bilanOnglet() && !estCoopte()) tabs.push(["bilan","13","Bilans moraux"]);
   /* PV à signer : secrétariat, présidente et vice-président uniquement */
@@ -2552,12 +2621,14 @@ function viewDash(){
       if(MODS[m].indexOf(S.tab)>=0) S.tab=estCoopte()?"agenda":"accueil"; } });
   }
   /* Onglet Notifs : toujours le dernier, à droite, pour chaque membre du CA. */
-  if(!estCoopte()) tabs.push(["notifprefs","\ud83d\udd14","Notifs"]);
+  if(!estCoopte() && !estProprioRetire()) tabs.push(["notifprefs","\ud83d\udd14","Notifs"]);
   if(S.tab==="notifprefs" && estCoopte()) S.tab="agenda";
   const notifOwner = estAdminCA() ? (S.admins||[]).filter(a=>a.statut==="attente").length : 0;
   const notifBud = (S.budgets||[]).filter(b=>b.statut==="vote" && !(b.votes||[]).some(v=>(v.nom||"").toLowerCase()===(S.session.sig||"").toLowerCase())).length;
   const notifTot = notifOwner + notifBud;
-  const body = (S.appEtat && S.appEtat.pour_moi==="fermee") ? ecranFerme() : bandeauEtat() + (map[S.tab]||tabOrg)();
+  const body = estProprioRetire()
+    ? (proprioOuvert() ? viewProprio() : `<div class="empty" style="padding:40px 20px"><h2 class="serif">🔑 Compte propriétaire</h2><p>Depuis la passation, ce compte n'a plus accès au contenu de l'Espace CA. Ouvrez votre lien propriétaire pour accéder à votre espace.</p></div>`)
+    : (S.appEtat && S.appEtat.pour_moi==="fermee") ? ecranFerme() : bandeauEtat() + (map[S.tab]||tabOrg)();
   const bienvenue = (estSecretaire() && !dejaVuGuide("secr")) ? `
     <div class="card2" style="border-left:4px solid var(--or,#c9a227);margin-bottom:16px">
       <h3 class="serif" style="margin-top:0">Bienvenue \u2014 vos fonctions de secr\u00e9tariat</h3>
@@ -3302,7 +3373,7 @@ const MED_STATUT = {
   tranche:["Décision rendue","--green"]
 };
 async function loadMediateurs(){
-  if(!(S.session&&S.session.role==="owner")){ S.mediateurs=[]; return; }
+  if(!estMedDispatch()){ S.mediateurs=[]; return; }
   try{ const r=await sb.rpc("ca_med_liste_mediateurs"); S.mediateurs=(r&&!r.error&&Array.isArray(r.data))?r.data:[]; }catch(e){ S.mediateurs=[]; }
 }
 async function loadMediation(){
@@ -3323,7 +3394,7 @@ async function traiterRetardsMediation(){
   if(!sb||!S.session||S.session.statut!=="actif") return;
   try{ const r=await sb.rpc("ca_med_verifier_retards"); if(r&&!r.error&&r.data>0){ await medNotif("retard"); } }catch(e){}
   /* Un dossier signalé en retard par un autre appareil doit aussi partir chez le propriétaire. */
-  if(S.session.role==="owner"){ try{ await medNotif("retard"); }catch(e){} }
+  if(estMedDispatch()){ try{ await medNotif("retard"); }catch(e){} }
 }
 function medBadge(d){
   const s=MED_STATUT[d.statut]||[d.statut,"--slate"];
@@ -3420,7 +3491,7 @@ function tabConflits(){
     <p class="du" style="margin:0 0 8px">Anonyme : la personne qui vous répond ne voit pas votre nom.</p>
     <p class="du" style="margin:0 0 8px">Si la médiation n'aboutit pas, le dossier est transmis à la présidence.</p>
     <div class="row-btn"><button class="btn" data-action="cf-envoyer">Envoyer</button></div></div>`;
-  const owner = S.session && S.session.role==="owner";
+  const owner = estMedDispatch();
   const aAttribuer = D.filter(d=>d.role==="owner" && (d.statut==="a_attribuer"||d.statut==="a_reattribuer"));
   const suivi = D.filter(d=>d.role==="owner" && !(d.statut==="a_attribuer"||d.statut==="a_reattribuer"));
   return (S.med.erreur?`<p class="du" style="color:var(--red)">Médiation indisponible : ${esc(S.med.erreur)}</p>`:"")
@@ -5064,7 +5135,7 @@ document.addEventListener("click", async e=>{
       await loadTaches(); logAct("T\u00e2che cr\u00e9\u00e9e depuis une d\u00e9cision"); render();
       modaleInfo("T\u00e2che cr\u00e9\u00e9e."); break; }
     case "toggle-onglet": {
-      if(!(S.session&&S.session.role==="owner")||!sb) break;
+      if(!(estProprioCA())||!sb) break;
       const k=el.dataset.id; const cur=ongletsOff().slice(); const i=cur.indexOf(k);
       if(i>=0) cur.splice(i,1); else cur.push(k);
       const r=await sb.from("ca_meta").update({onglets_off:cur}).eq("id",1).select();
@@ -5307,7 +5378,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       await medNotif("nouveau", r.data);
       modaleInfo("Votre demande est enregistrée. Un médiateur neutre va être désigné, et vous serez prévenu·e par e-mail.","Demande envoyée");
       break; }
-    case "med-attribuer": { if(!sb||!(me&&me.role==="owner")) break;
+    case "med-attribuer": { if(!sb||!estMedDispatch()) break;
       const med=val("med_sel_"+id); if(!med){ modaleInfo("Choisissez un médiateur."); break; }
       const pres=!!(document.getElementById("med_pres_"+id)&&document.getElementById("med_pres_"+id).checked);
       if(!(await modaleConfirm("Confier ce dossier à ce médiateur ? Il devra répondre dans les 12 heures."))) break;
@@ -5541,7 +5612,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
       logAct("R\u00e9glages secr\u00e9tariat modifi\u00e9s"); render();
       if(window.alert) window.alert("Enregistr\u00e9."); break; }
     case "save-ces-actif": {
-      if(!(S.session&&S.session.role==="owner")||!sb) break;
+      if(!(estProprioCA())||!sb) break;
       const chk=document.getElementById("ces_actif_chk"); const voulu=!!(chk&&chk.checked);
       let r; try{ r=await sb.from("ca_meta").update({ces_actif:voulu}).eq("id",1).select(); }catch(e){ r={error:{message:String(e&&e.message||e)}}; }
       if(r&&r.error){ modaleInfo("Le réglage CES n'a PAS été enregistré.\n\nErreur : "+r.error.message+(/ces_actif/.test(r.error.message||"")?"\n\nPasse d'abord le script SQL « CA v6 »."/*colonne absente*/:""),"Erreur"); break; }
@@ -5607,7 +5678,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
         "Suppression confirm\u00e9e");
       break; }
     case "reset-data": {
-      if(!(S.session&&S.session.role==="owner")||!sb) break;
+      if(!(estProprioCA())||!sb) break;
       const rerr=m=>{ const e=document.getElementById("reset_err"); if(e){e.textContent=m;e.style.display="block";} };
       if(val("reset_confirm").trim()!=="RESET") return rerr("Tapez RESET (en majuscules) pour confirmer.");
       if(!(await modaleConfirm("Effacer TOUTES les données (sauf comptes et caisse) ? Action irréversible."))) break;
@@ -8928,7 +8999,7 @@ function audLigne(r,k){
     ${diff?`<button class="link" data-action="aud-diff" data-k="${k}">avant / après</button>`:""}${diff}</div>`;
 }
 function tabJournal(){
-  if(!(S.session&&S.session.role==="owner")) return `<div class="empty">Réservé au propriétaire.</div>`;
+  if(!voitJournalCA()) return `<div class="empty">Réservé à l'Admin.</div>`;
   const A=S.aud;
   if(!A||(!A.rows&&!A.charge&&!A.err)){ if(!A||!A.charge){ chargerAudit().then(()=>{ if(S.tab==="journal") rendreEnPreservant(); }); } return `<p class="du">Chargement du journal…</p>`; }
   if(A.charge&&!A.rows) return `<p class="du">Chargement du journal…</p>`;
@@ -8976,7 +9047,7 @@ function audLireFiltres(){ const A=S.aud; const g=id=>{ const e=document.getElem
   A.f.membre=g("aud_membre"); A.f.app=g("aud_app"); A.f.du=g("aud_du"); A.f.au=g("aud_au"); A.f.q=g("aud_q"); }
 document.addEventListener("click", async e=>{
   const el=e.target.closest("[data-action^='aud-']"); if(!el||!sb) return;
-  if(!(S.session&&S.session.role==="owner")) return;
+  if(!voitJournalCA()) return;
   const a=el.dataset.action, A=S.aud;
   try{
     if(a==="aud-diff"){ const d=document.getElementById("aud_d_"+el.dataset.k); if(d) d.style.display=d.style.display==="none"?"block":"none"; return; }
@@ -9087,7 +9158,7 @@ async function verifierErrCA(){
 }
 setTimeout(verifierErrCA, 0);
 /* La carte des réglages est définie après le premier affichage : on redessine une fois. */
-setTimeout(function(){ try{ if(S.session && S.session.role==="owner") rendreEnPreservant(); }catch(e){} }, 0);
+setTimeout(function(){ try{ if(estProprioCA()) rendreEnPreservant(); }catch(e){} }, 0);
 setInterval(verifierErrCA, 20000);
 try{ sb && sb.auth.onAuthStateChange(function(){ setTimeout(verifierErrCA, 600); }); }catch(e){}
 
@@ -9118,7 +9189,7 @@ document.addEventListener("click", async function(ev){
   var el = ev.target && ev.target.closest ? ev.target.closest("[data-erract]") : null;
   if(!el) return;
   ev.preventDefault(); ev.stopPropagation();
-  if(!(S.session && S.session.role==="owner")) return;
+  if(!estProprioCA()) return;
   var a = el.getAttribute("data-erract");
   if(!ERR_DRAFT) ERR_DRAFT = errValeurs();
   if(a==="choix"){ ERR_DRAFT[el.getAttribute("data-app")] = el.getAttribute("data-v"); try{ rendreEnPreservant(); }catch(e){ render(); } return; }
@@ -9214,7 +9285,7 @@ async function pushDesactiver(){
 }
 /* ---------- Admin : sauvegardes + tâches automatiques (propriétaire) ---------- */
 function carteAmeliorations(){
-  if(!(S.session&&S.session.role==="owner")||!sb) return "";
+  if(!(estAdminCA()||estProprioCA())||!sb) return "";
   const A=S.amel||(S.amel={});
   if(!A.charge){ A.charge=true; amelCharger().then(()=>rendreEnPreservant()); }
   const fmt=d=>d?new Date(d).toLocaleString("fr-BE",{dateStyle:"short",timeStyle:"short"}):"—";
@@ -9448,7 +9519,7 @@ function regAnalyse(b){
 const regDate=d=>d?new Date(d).toLocaleDateString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric"}):"—";
 const regHeure=d=>d?new Date(d).toLocaleString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"—";
 function tabRegistre(){
-  if(!(S.session&&S.session.role==="owner")) return `<div class="empty">Réservé au propriétaire.</div>`;
+  if(!voitJournalCA()) return `<div class="empty">Réservé à l'Admin.</div>`;
   const L=regBudgets();
   const tete=`<div class="compose"><h3 class="serif">🗳 Registre des votes</h3>
     <p style="color:var(--ink-soft);font-size:13px;margin:0 0 10px">${esc(MENTION_163)} Ce registre est tenu automatiquement : il reprend chaque budget voté en ligne, avec le vote de chaque administrateur.</p>
@@ -9493,7 +9564,7 @@ async function regExportPDF(){
 }
 document.addEventListener("click", async e=>{
   const el=e.target.closest&&e.target.closest("[data-reg]"); if(!el) return;
-  if(!(S.session&&S.session.role==="owner")) return;
+  if(!voitJournalCA()) return;
   const a=el.dataset.reg;
   if(a==="filtrer"){ S.regDu=(document.getElementById("reg_du")||{}).value||""; S.regAu=(document.getElementById("reg_au")||{}).value||""; render(); return; }
   if(a==="tout"){ S.regDu=""; S.regAu=""; render(); return; }
