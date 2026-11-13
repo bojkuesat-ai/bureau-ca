@@ -71,3 +71,19 @@ virement rejeté) reçoit lui aussi un code de vérification, inscrit dans `sign
 ## Vérification automatique
 `.github/workflows/verification.yml` contrôle la syntaxe des pages et des fonctions Edge à
 chaque push (croix rouge et mail en cas d'erreur ; le site est publié quand même).
+
+### Décision du trésorier en une étape (Caisse, 13/11/2026)
+`sql/2026-11-13_caisse_decider.sql`. `caisse_decider(id, statut_attendu, patch, évènement, mail)` :
+statut + historique (`events`, nom lu sur le serveur) + code de vérification + mail au membre
+(`caisse_envoyer_mail` via pg_net, adresse lue sur le serveur) dans **une seule transaction**.
+Statut différent de celui attendu → `conflit`, rien n'est écrit ni envoyé. Champs modifiables
+limités (status, decision_note, decided_at, paid_at, pay_mode, attachments, reexamen_*, exported_at).
+Le texte du mail vient de l'app ; `{{CODE_DECISION}}` y est remplacé par le code délivré.
+- `caisse_mails.net_id` : référence de l'envoi ; `caisse_mail_statut(ids)` le lit (l'app prévient
+  le trésorier si le mail n'est pas parti) ; tâche `caisse-mails-statuts` (*/10) reporte ok/erreur.
+- Utilisée par : décision dans le panneau, validation et paiement par lot, série de virements
+  (qui ne marque plus que les demandes encore « Validée »).
+
+### Lecture des tickets (Caisse, 13/11/2026)
+`caisse/lib/ocr/` : tesseract.js 7 + modèle français, chargés seulement quand une photo est jointe.
+Lecture dans le navigateur (rien n'est envoyé). La page autorise `'wasm-unsafe-eval'` (WebAssembly).

@@ -1,0 +1,5 @@
+Lecture des tickets (OCR) — Caisse, 13/11/2026
+tesseract.js 7.0.0 (tesseract.min.js, worker.min.js), tesseract.js-core 7.0.0
+(variantes simd-lstm et lstm), modèle français @tesseract.js-data/fra 1.0.0 (4.0.0_best_int).
+Licence Apache-2.0. Chargés seulement quand un membre joint une photo de ticket ;
+tout se passe dans le navigateur, l'image n'est envoyée nulle part pour être lue.

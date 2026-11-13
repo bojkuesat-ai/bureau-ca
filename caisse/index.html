@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="app-build" content="23.10.2026 · 12">
 <!-- Politique de sécurité (CSP) : la Caisse ne peut charger du code que depuis ces adresses précises, et n'échanger des données qu'avec Supabase. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; media-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; connect-src 'self' https://mlgzdfyqjhvyubrywuim.supabase.co wss://mlgzdfyqjhvyubrywuim.supabase.co; frame-src 'self' blob: data:; worker-src 'self' blob:; manifest-src 'self' blob: data:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; media-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; connect-src 'self' https://mlgzdfyqjhvyubrywuim.supabase.co wss://mlgzdfyqjhvyubrywuim.supabase.co; frame-src 'self' blob: data:; worker-src 'self' blob:; manifest-src 'self' blob: data:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <link rel="preconnect" href="https://mlgzdfyqjhvyubrywuim.supabase.co" crossorigin>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <title>Caisse — Demandes de remboursement</title>
@@ -379,6 +379,9 @@ input[type=checkbox].tgl.sm:checked::before{transform:translateX(16px)}
 .photo-tip{margin:8px 0 0;padding:10px 13px;background:var(--bg);border:1px dashed var(--line);
   border-radius:11px;font-size:12px;color:var(--muted);line-height:1.55}
 .photo-tip b{color:var(--gold-soft)}
+.ocrbox{margin:8px 0 0;padding:10px 13px;border-radius:10px;border:1px solid var(--line);background:var(--surface2);font-size:13.5px}
+.ocrbox .btn{margin-top:8px}
+.ocr-rempli{outline:2px solid var(--gold-dim);outline-offset:1px}
 .photo-tip::before{content:"📷";margin-right:7px}
 .check2{display:flex;gap:9px;flex-wrap:wrap;margin-top:4px}
 .ck{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
@@ -719,7 +722,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 13.11.2026 · contrôles</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 13.11.2026 · décisions serveur</div></div>
   <div class="spacer"></div>
   <div class="grpbar" id="grpBar" role="group" aria-label="Rubriques" hidden></div>
   <div class="roleswitch" role="group" aria-label="Sections">
@@ -810,6 +813,9 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
             <input type="file" id="f_proof" accept="image/*,application/pdf,.pdf">
             <button type="button" class="btn ghost sm" id="r_add">Joindre</button>
           </div>
+          <label class="btn ghost sm" id="f_cameraBtn" style="margin-top:8px;width:max-content;text-transform:none;letter-spacing:0;cursor:pointer">📷 Photographier le ticket
+            <input type="file" id="f_camera" accept="image/*" capture="environment" hidden></label>
+          <div id="ocrBox" class="ocrbox" hidden></div>
           <p class="photo-tip">Sur téléphone, « Choisir le fichier » vous propose <b>Prendre une photo</b>. Posez le ticket à plat, bien éclairé, et cadrez-le en entier — un justificatif illisible sera refusé.</p>
           <div id="r_check" class="check2"></div>
           <div id="r_staged" class="staged"></div>
@@ -2450,6 +2456,35 @@ async function envoyerMailBrut(to, subject, html, reply_to, from, attachments){
     return false;
   }
 }
+/* Mails des décisions du trésorier (13/11/2026) : le texte est construit ici, mais l'envoi
+   se fait sur le serveur, dans la même transaction que la décision (caisse_decider).
+   Un objet portant « _capture » reçoit le mail au lieu de l'envoyer. */
+function envoyerMailOu(it, to, subject, html, reply_to, from){
+  if(it && Array.isArray(it._capture)){ it._capture.push({ sujet: subject, html, reply_to: reply_to || null }); return Promise.resolve(true); }
+  return envoyerMail(to, subject, html, reply_to, from);
+}
+/* L'envoi effectif est asynchrone côté serveur : on vérifie quelques secondes plus tard
+   et on prévient le trésorier si le mail n'est pas parti. */
+function suivreMails(ids, quoi){
+  ids = (ids || []).filter(Boolean); if(!ids.length) return;
+  let essais = 0;
+  const verifier = async () => {
+    essais++;
+    try{
+      const { data, error } = await sb.rpc("caisse_mail_statut", { p_ids: ids });
+      if(error) throw error;
+      const l = Array.isArray(data) ? data : [];
+      const err = l.filter(x => x.etat === "erreur"), enCours = l.filter(x => x.etat === "en_cours");
+      if(err.length){
+        toast((err.length > 1 ? err.length + " mails n'ont pas pu partir" : "Le mail « " + quoi + " » n'est pas parti")
+          + " : " + (err[0].erreur || "raison inconnue") + ". Détail dans « Mails envoyés ».");
+        return;
+      }
+      if(enCours.length && essais < 4) setTimeout(verifier, 6000 * essais);
+    }catch(e){ __errSilence(e); }
+  };
+  setTimeout(verifier, 4000);
+}
 // Prévient le trésorier quand un mail n'est pas parti, au lieu de faire comme si.
 function avertirMail(promesse, quoi){
   return Promise.resolve(promesse).then(ok => {
@@ -2490,7 +2525,7 @@ async function mailRembourse(it, note){
     ${blocCodeDec(it)}
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
-  return envoyerMail(to, "Remboursement effectué — "+refOf(it), html);
+  return envoyerMailOu(it, to, "Remboursement effectué — "+refOf(it), html);
 }
 async function mailCorriger(it, motif){
   const to = await emailDuDemandeur(it); if(!to) return false;
@@ -2504,7 +2539,7 @@ async function mailCorriger(it, motif){
     ${blocCodeDec(it)}
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
-  return envoyerMail(to, "Demande à corriger — "+refOf(it), html);
+  return envoyerMailOu(it, to, "Demande à corriger — "+refOf(it), html);
 }
 
 async function mailRefuse(it, motif){
@@ -2519,7 +2554,7 @@ async function mailRefuse(it, motif){
     ${blocCodeDec(it)}
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
-  return envoyerMail(to, "Demande refusée — "+refOf(it), html);
+  return envoyerMailOu(it, to, "Demande refusée — "+refOf(it), html);
 }
 async function mailModifiee(it, avant){
   const to = (state.profile && state.profile.email) || await emailDuDemandeur(it);
@@ -2619,7 +2654,7 @@ async function mailRouvert(it, note){
     ${blocCodeDec(it)}
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
-  return envoyerMail(to, "Dossier remis en traitement — "+refOf(it), html);
+  return envoyerMailOu(it, to, "Dossier remis en traitement — "+refOf(it), html);
 }
 
 async function mailValide(it, note){
@@ -2637,7 +2672,7 @@ async function mailValide(it, note){
     ${blocCodeDec(it)}
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
-  return envoyerMail(to, "Demande validée — "+refOf(it), html);
+  return envoyerMailOu(it, to, "Demande validée — "+refOf(it), html);
 }
 function construireRelance(it){
   const mem = state.members.find(x=>x.id===it.user_id);
@@ -2741,7 +2776,7 @@ async function mailMessage(it, note){
     ${blocCodeDec(it)}
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
-  return envoyerMail(to, "Message du trésorier — "+refOf(it), html, emailTreso());
+  return envoyerMailOu(it, to, "Message du trésorier — "+refOf(it), html, emailTreso());
 }
 async function mailComplementRecu(it, remisEnAttente){
   const to = (state.profile && state.profile.email) || await emailDuDemandeur(it);
@@ -4015,6 +4050,7 @@ function brancherAttache(cle, selKind, selFile, selBtn){
     $(selFile).value = "";
     renderStaged(cle);
     majControle();
+    if(cle === "req" && fichier.type && fichier.type.startsWith("image/")) lireTicket(fichier);
     if(cle!=="fix") erreurForm({exp:"#expErr", inc:"#incErr", req:"#reqErr", dir:"#directErr", pres:"#presErr"}[cle], null);
   };
 }
@@ -4023,6 +4059,165 @@ brancherAttache("inc", "#i_kind", "#i_proof", "#i_add");
 brancherAttache("req", "#r_kind", "#f_proof", "#r_add");
 brancherAttache("dir", "#fd_kind", "#fd_proof", "#fd_add");
 brancherAttache("pres", "#p_kind", "#p_proof", "#p_add");
+
+/* =====================================================================
+   PHOTO DU TICKET + LECTURE DU MONTANT ET DE LA DATE (13/11/2026)
+   - « 📷 Photographier le ticket » ouvre directement l'appareil photo du téléphone ;
+     la photo passe par le recadrage habituel puis est jointe comme « Ticket de caisse ».
+   - Toute photo jointe à une demande est lue dans le navigateur (tesseract.js,
+     caisse/lib/ocr, chargé seulement à ce moment) : rien n'est envoyé ailleurs.
+   - Le montant et la date trouvés remplissent les champs encore vides (la date du
+     jour mise par défaut compte comme vide) ; sinon ils sont proposés avec un bouton.
+     Le membre vérifie toujours avant d'envoyer.
+   ===================================================================== */
+const OCR_DIR = new URL("./lib/ocr/", location.href).href;
+let _ocrWorker = null, _ocrJob = 0;
+function chargerScript(src){
+  return new Promise((ok, ko) => {
+    if(window.Tesseract) return ok();
+    const sc = document.createElement("script"); sc.src = src; sc.async = true;
+    sc.onload = () => ok(); sc.onerror = () => ko(new Error("module de lecture indisponible"));
+    document.head.appendChild(sc);
+  });
+}
+function simdDispo(){
+  try{ return WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11])); }
+  catch(e){ return false; }
+}
+async function ocrWorker(){
+  if(_ocrWorker) return _ocrWorker;
+  await chargerScript(OCR_DIR + "tesseract.min.js");
+  _ocrWorker = await window.Tesseract.createWorker("fra", 1, {
+    workerPath: OCR_DIR + "worker.min.js",
+    corePath: OCR_DIR + (simdDispo() ? "tesseract-core-simd-lstm.wasm.js" : "tesseract-core-lstm.wasm.js"),
+    langPath: OCR_DIR.replace(/\/$/, ""),
+    workerBlobURL: false,
+    gzip: true
+  });
+  return _ocrWorker;
+}
+// Réduit la photo (les tickets n'ont pas besoin de 12 mégapixels) et la passe en niveaux de gris contrastés.
+async function preparerImageOcr(file){
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ko(new Error("image illisible")); i.src = url; });
+    const maxL = 1800, k = Math.min(1, maxL / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    const g = c.getContext("2d"); g.drawImage(img, 0, 0, c.width, c.height);
+    const d = g.getImageData(0, 0, c.width, c.height), px = d.data;
+    for(let i = 0; i < px.length; i += 4){
+      let y = 0.299 * px[i] + 0.587 * px[i+1] + 0.114 * px[i+2];
+      y = Math.max(0, Math.min(255, (y - 128) * 1.5 + 128));
+      px[i] = px[i+1] = px[i+2] = y;
+    }
+    g.putImageData(d, 0, 0);
+    return c;
+  } finally { URL.revokeObjectURL(url); }
+}
+// Extraction : montant total et date à partir du texte lu.
+function analyserTicket(texte){
+  const lignes = String(texte || "").split(/\n+/).map(l => l.trim()).filter(Boolean);
+  const nombres = l => [...l.replace(/(\d)\s+(\d{2})\b(?!\s*[\/.-]\d)/g, "$1,$2")
+      .matchAll(/(?<![\d\/.,-])(\d{1,5}(?:[ .]\d{3})*[.,]\d{2})(?![\d\/]|[.,\/-]\d)/g)]
+    .map(m => Number(m[1].replace(/[ .](?=\d{3}\b)/g, "").replace(",", ".")))
+    .filter(n => isFinite(n) && n > 0 && n < 100000);
+  const norm = l => l.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
+  const FORT = /(TOTAL\s*(TTC|A\s*PAYER|EUR|€)?|NET\s*A\s*PAYER|A\s*PAYER|MONTANT\s*(TTC|DU|PAYE)?|TOTAAL|TE\s*BETALEN|BETAALD|PAYE\s*(PAR\s*)?(CB|CARTE)|CARTE\s*BANCAIRE|BANCONTACT)/;
+  const EXCLU = /(SOUS[\s-]*TOTAL|SUBTOTAL|TVA|BTW|H\.?T\.?\b|HTVA|RENDU|MONNAIE|REMISE|ECONOMIE|POINTS|FIDELITE|ARTICLES?)/;
+  let montant = null, certitude = "";
+  const candidats = [];
+  lignes.forEach((l, i) => {
+    const n = norm(l);
+    if(FORT.test(n) && !EXCLU.test(n)){
+      let v = nombres(l);
+      if(!v.length && lignes[i+1]) v = nombres(lignes[i+1]);    // montant sur la ligne suivante
+      v.forEach(x => candidats.push({ x, poids: /TOTAL|A\s*PAYER|TOTAAL|TE\s*BETALEN/.test(n) ? 2 : 1 }));
+    }
+  });
+  if(candidats.length){
+    const best = Math.max(...candidats.map(c => c.poids));
+    montant = Math.max(...candidats.filter(c => c.poids === best).map(c => c.x));
+    certitude = "total";
+  } else {
+    const tous = lignes.filter(l => !EXCLU.test(norm(l))).flatMap(nombres);
+    if(tous.length){ montant = Math.max(...tous); certitude = "plus grand montant"; }
+  }
+  // date : jj/mm/aaaa, jj-mm-aa, jj.mm.aaaa ou aaaa-mm-jj ; pas dans le futur, pas plus de 2 ans
+  let date = null;
+  const auj = new Date(), min = new Date(auj.getFullYear() - 2, auj.getMonth(), auj.getDate());
+  const ok = (a, m, j) => {
+    if(a < 100) a += 2000;
+    const d = new Date(a, m - 1, j);
+    if(d.getFullYear() !== a || d.getMonth() !== m - 1 || d.getDate() !== j) return null;
+    if(d > auj || d < min) return null;
+    return `${a}-${String(m).padStart(2,"0")}-${String(j).padStart(2,"0")}`;
+  };
+  const tout = lignes.join(" ");
+  for(const m of tout.matchAll(/\b(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})\b|\b(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})\b/g)){
+    date = m[1] ? ok(+m[1], +m[2], +m[3]) : ok(+m[6], +m[5], +m[4]);
+    if(date) break;
+  }
+  return { montant, date, certitude };
+}
+function majOcrBox(html){ const b = $("#ocrBox"); if(!b) return; b.hidden = !html; b.innerHTML = html || ""; }
+async function lireTicket(file){
+  const job = ++_ocrJob;
+  majOcrBox(`<span style="color:var(--muted)">🔎 Lecture du ticket… (la première fois, quelques secondes de chargement)</span>`);
+  try{
+    const w = await ocrWorker();
+    const canvas = await preparerImageOcr(file);
+    const { data } = await w.recognize(canvas);
+    if(job !== _ocrJob) return;                       // une autre photo a été jointe entre-temps
+    const r = analyserTicket(data && data.text);
+    if(r.montant == null && !r.date){
+      return majOcrBox(`<span style="color:var(--muted)">Ticket joint. Le montant et la date n'ont pas pu être lus : remplissez-les à la main.</span>`);
+    }
+    const fa = $("#f_amount"), fd = $("#f_date");
+    const montantTxt = r.montant != null ? euro(r.montant) : "", dateTxt = r.date ? fdate(r.date) : "";
+    const remplis = [], proposes = [];
+    if(r.montant != null){
+      if(!fa.value){ fa.value = r.montant.toFixed(2); fa.classList.add("ocr-rempli"); remplis.push("montant"); }
+      else if(Math.abs(Number(fa.value) - r.montant) >= 0.005) proposes.push("montant");
+    }
+    if(r.date){
+      if(!fd.value || fd.value === dateLocale()){ if(fd.value !== r.date){ fd.value = r.date; fd.classList.add("ocr-rempli"); remplis.push("date"); } }
+      else if(fd.value !== r.date) proposes.push("date");
+    }
+    if(remplis.length){ try{ fa.dispatchEvent(new Event("input", { bubbles:true })); fd.dispatchEvent(new Event("change", { bubbles:true })); }catch(_){ __errSilence(_); } }
+    const lu = [montantTxt && "<b>" + esc(montantTxt) + "</b>" + (r.certitude === "plus grand montant" ? " (plus grand montant trouvé, pas de ligne « Total »)" : ""),
+                dateTxt && "<b>" + esc(dateTxt) + "</b>"].filter(Boolean).join(" · ");
+    majOcrBox(`🧾 Lu sur le ticket : ${lu}.<br>
+      ${remplis.length ? `<span style="color:var(--muted)">${remplis.join(" et ")} rempli${remplis.length > 1 ? "s" : ""} automatiquement : <b>vérifiez</b> avant d'envoyer.</span>` : ""}
+      ${proposes.length ? `<div><button type="button" class="btn ghost sm" id="ocrAppliquer" data-m="${r.montant ?? ""}" data-d="${r.date || ""}" data-quoi="${proposes.join(",")}">Utiliser ${proposes.join(" et ")} du ticket</button></div>` : ""}`);
+  }catch(e){
+    if(job !== _ocrJob) return;
+    __errSilence(e);
+    majOcrBox(`<span style="color:var(--muted)">Ticket joint. Lecture automatique indisponible sur cet appareil : remplissez le montant et la date à la main.</span>`);
+  }
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("#ocrAppliquer"); if(!b) return;
+  const q = b.dataset.quoi.split(",");
+  if(q.includes("montant") && b.dataset.m){ $("#f_amount").value = Number(b.dataset.m).toFixed(2); $("#f_amount").classList.add("ocr-rempli"); }
+  if(q.includes("date") && b.dataset.d){ $("#f_date").value = b.dataset.d; $("#f_date").classList.add("ocr-rempli"); }
+  try{ $("#f_amount").dispatchEvent(new Event("input", { bubbles:true })); $("#f_date").dispatchEvent(new Event("change", { bubbles:true })); }catch(_){ __errSilence(_); }
+  b.remove(); toast("Valeurs du ticket reprises : vérifiez-les.");
+});
+if($("#reqForm")) $("#reqForm").addEventListener("reset", () => { _ocrJob++; majOcrBox(""); ["#f_amount", "#f_date"].forEach(x => $(x) && $(x).classList.remove("ocr-rempli")); });
+["#f_amount", "#f_date"].forEach(sel => { const el = $(sel); if(el) el.addEventListener("input", () => el.classList.remove("ocr-rempli")); });
+if($("#f_camera")) $("#f_camera").addEventListener("change", async e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = "";
+  if(!f) return;
+  if(staged.req.length >= 8) return toast("Huit pièces maximum par écriture.");
+  let fichier = f;
+  try{ fichier = await recadrerImage(f); }catch(_){ fichier = f; }
+  if(!fichier) return;                                // recadrage annulé
+  const sel = $("#r_kind"); if(sel && [...sel.options].some(o => o.text === "Ticket de caisse")) sel.value = "Ticket de caisse";
+  staged.req.push({ kind: "Ticket de caisse", file: fichier });
+  renderStaged("req"); majControle(); erreurForm("#reqErr", null);
+  lireTicket(fichier);
+});
 
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-drop]"); if(!b) return;
@@ -6225,6 +6420,24 @@ async function exigerMdpDecision(nb){
   }
 }
 const mdpDecisionExpire = msg => { if(/Retapez votre mot de passe/i.test(String(msg || ""))) _mdpDecisionJusque = 0; };
+/* Décision du trésorier en une seule étape serveur (caisse_decider) : statut, historique,
+   code de vérification et mail au membre sont enregistrés ensemble, ou pas du tout.
+   « construire » (facultatif) fabrique le mail à partir d'une copie de la demande. */
+async function deciderServeur(it, patch, evenement, construire){
+  const change = !!(patch.status && patch.status !== it.status);
+  let mail = null;
+  if(construire){
+    const copie = { ...it, ...patch, _capture: [], _codeDec: change ? "{{CODE_DECISION}}" : "" };
+    try{ await construire(copie); }catch(e){ __errSilence(e); }
+    const m = copie._capture[0];
+    if(m) mail = { sujet: m.sujet, html: m.html, reply_to: m.reply_to, lot: mailLotCourant || null };
+  }
+  const { data, error } = await sb.rpc("caisse_decider", { p_id: it.id, p_statut_attendu: it.status,
+    p_patch: patch, p_evenement: evenement || "", p_mail: mail });
+  if(error){ mdpDecisionExpire(error.message); return { erreur: traduire(error.message) }; }
+  if(!data || data.conflit) return { conflit: true };
+  return { ok: true, code: data.code || "", mailId: data.mail_id || null, mailErreur: data.mail_erreur || "", mailPrevu: !!mail };
+}
 async function majSiInchangee(it, patch){
   const { data, error } = await sb.from("requests").update(patch)
     .eq("id", it.id).eq("status", it.status).select("id,decision_code");
@@ -6468,22 +6681,25 @@ $("#payDone").onclick = async () => {
   } else if(!await demander("Marquer comme remboursées", texteDone, { bouton:"Marquer comme remboursées" })) return;
   if(!await exigerMdpDecision(l.length)) return;
   const btn = $("#payDone"); btn.disabled = true; btn.textContent = "En cours…";
-  let ok = 0;
+  let ok = 0, ko = 0, conflits = 0, mailsKo = 0, dernErr = ""; const mailIds = [];
   for(const i of l){
     const quand = new Date().toISOString();
-    const { data: majD, error } = await sb.from("requests")
-      .update({ status:"Remboursée", paid_at:quand }).eq("id", i.id).select("decision_code");
-    if(!error){
-      ok++;
-      const codeD = (i.status !== "Remboursée" && majD && majD[0] && majD[0].decision_code) || "";
-      await sb.from("events").insert({ request_id:i.id, who:state.profile.name,
-        what: (i.user_id === state.profile.id ? "Remboursement effectué au trésorier lui-même" : "Remboursement effectué (série de virements)") + (codeD ? " — code de vérification " + codeD : "") });
-      if(i.kind !== "direct" || mailDirectD) mailRembourse({ ...i, status:"Remboursée", paid_at:quand, _codeDec:codeD });
-    }
+    // Ne marque que les demandes toujours « Validée » (un autre trésorier ou un rejet
+    // bancaire a pu passer entre-temps) : sinon conflit, rien n'est écrit ni envoyé.
+    const r = await deciderServeur(i, { status:"Remboursée", paid_at:quand },
+      i.user_id === state.profile.id ? "Remboursement effectué au trésorier lui-même" : "Remboursement effectué (série de virements)",
+      (i.kind !== "direct" || mailDirectD) ? (c => mailRembourse(c)) : null);
+    if(r.conflit){ conflits++; continue; }
+    if(r.erreur){ ko++; dernErr = r.erreur; continue; }
+    ok++;
+    if(r.mailId) mailIds.push(r.mailId); else if(r.mailErreur) mailsKo++;
   }
+  suivreMails(mailIds, "remboursement effectué");
   btn.disabled = false; btn.textContent = "Marquer comme remboursés";
   await refresh(); buildPayrun();
-  toast(ok + " demande(s) marquée(s) comme remboursée(s).");
+  toast(ok + " demande(s) marquée(s) comme remboursée(s)." + (ko ? " " + ko + " échec(s) : " + dernErr : "")
+    + (mailsKo ? " " + mailsKo + " mail(s) non envoyé(s) (adresse introuvable)." : ""));
+  if(conflits) await dire("Demandes non marquées", conflits + " demande(s) n'étaient plus « Validée » (déjà payées ou modifiées entre-temps). La liste est à jour.");
 };
 
 /* ---------- aperçu par membre ---------- */
@@ -8470,6 +8686,8 @@ const barreAvancement = it => {
   const sep = `<span style="color:var(--line)">──</span>`;
   return `<span style="display:inline-flex;gap:6px;align-items:center">${dot(1,"Envoyée")}${sep}${dot(2,"Validée")}${sep}${dot(3,"Payée")}</span>`;
 };
+const caseEnchainer = () => `<label class="check" style="margin-top:10px;font-size:13px;color:var(--muted);gap:9px;align-items:center;cursor:pointer">
+  <input type="checkbox" id="d_enchainer" ${enchainerActif() ? "checked" : ""}> Ouvrir la demande suivante après la décision</label>`;
 const rowHTML = (it, showWho) => `<div class="row" data-id="${it.id}" tabindex="0" role="button">
   <div class="date mono" style="font-size:13px">${showWho?`<input type="checkbox" class="tgl sm" data-selchk data-id="${it.id}" ${state.sel&&state.sel.has(it.id)?"checked":""} style="margin-right:9px;vertical-align:middle;cursor:pointer">`:""}${fdate(it.expense_date)}</div>
   <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}${it.hors_budget?` <span title="Demande urgente hors budget" style="color:var(--red);font-weight:700;font-size:12px">🔴 URGENTE</span>`:""}${tbBadge(it)}${showWho && budgetNonApprouve(it)?` <span title="Rattachée à un budget qui n'est plus approuvé" style="color:var(--amber);font-weight:700;font-size:12px">⚠ budget non approuvé</span>`:""}${showWho && it.status!=="Remboursée" && depensesSimilaires(it).length?` <span title="Une dépense du même montant, à une date proche, figure déjà dans les dépenses de l'ASBL" style="color:var(--red);font-weight:700;font-size:12px">\u26a0 déjà payée ?</span>`:""}${showWho && attesteDoublon(it)?` <span title="Doublon possible écarté par le demandeur — attestation signée jointe" style="color:var(--amber);font-weight:700;font-size:12px">\u26a0 doublon ?</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div><div style="margin-top:4px">${barreAvancement(it)}</div></div>
@@ -12405,19 +12623,21 @@ async function bulkValider(){
     mailDirect = c.mail;
   } else if(!await demander("Valider les demandes", cibles.length + " demande(s) seront validées.", { bouton:"Valider" })) return;
   if(!await exigerMdpDecision(cibles.length)) return;
-  let ok = 0, ko = 0, conflits = 0;
+  let ok = 0, ko = 0, conflits = 0, mailsKo = 0, dernErr = ""; const mailIds = [];
   for(const it of cibles){
-    const r = await majSiInchangee(it, {status:"Validée", decided_at:new Date().toISOString()});
-    if(r.conflit){ conflits++; continue; }
-    if(r.erreur){ ko++; continue; }
-    ok++;
     const sienne = it.user_id === state.profile.id;
-    try{ await sb.from("events").insert({request_id:it.id, who:state.profile.name,
-      what: (sienne ? "Demande validée par le trésorier lui-même (lot)" : "Demande validée (lot)") + (r.code ? " — code de vérification " + r.code : "")}); }catch(_){ __errSilence(_); }
-    if(it.kind !== "direct" || mailDirect){ try{ mailValide({...it, status:"Validée", _codeDec:r.code}); }catch(_){ __errSilence(_); } }
+    const r = await deciderServeur(it, {status:"Validée", decided_at:new Date().toISOString()},
+      sienne ? "Demande validée par le trésorier lui-même (lot)" : "Demande validée (lot)",
+      (it.kind !== "direct" || mailDirect) ? (c => mailValide(c)) : null);
+    if(r.conflit){ conflits++; continue; }
+    if(r.erreur){ ko++; dernErr = r.erreur; continue; }
+    ok++;
+    if(r.mailId) mailIds.push(r.mailId); else if(r.mailErreur) mailsKo++;
   }
+  suivreMails(mailIds, "demande validée");
   state.sel.clear(); await refresh(); renderBulk();
-  toast(ok+" demande(s) validée(s)." + (ko ? " " + ko + " échec(s)." : "") + (conflits ? " " + conflits + " déjà traitée(s) ailleurs." : ""));
+  toast(ok+" demande(s) validée(s)." + (ko ? " " + ko + " échec(s) : " + dernErr : "") + (conflits ? " " + conflits + " déjà traitée(s) ailleurs." : "")
+    + (mailsKo ? " " + mailsKo + " mail(s) non envoyé(s) (adresse introuvable)." : ""));
   if(conflits) await dire("Demandes non validées", conflits + " demande(s) avaient déjà changé de statut (un autre trésorier est passé avant vous). La liste est à jour.");
 }
 async function bulkPayer(){
@@ -12434,21 +12654,23 @@ async function bulkPayer(){
     mailDirectP = c.mail;
   } else if(!await demander("Marquer comme remboursées", cibles.length + " demande(s) seront marquées comme remboursées.", { bouton:"Marquer" })) return;
   if(!await exigerMdpDecision(cibles.length)) return;
-  let ok = 0, ko = 0, conflits = 0;
+  let ok = 0, ko = 0, conflits = 0, mailsKo = 0, dernErr = ""; const mailIds = [];
   for(const it of cibles){
     const quand = new Date().toISOString();
-    const r = await majSiInchangee(it, {status:"Remboursée", paid_at:quand});
-    if(r.conflit){ conflits++; continue; }
-    if(r.erreur){ ko++; continue; }
-    ok++;
     const sienne = it.user_id === state.profile.id;
-    try{ await sb.from("events").insert({request_id:it.id, who:state.profile.name,
-      what: (sienne ? "Remboursement effectué au trésorier lui-même (lot)" : "Remboursement effectué (lot)") + (r.code ? " — code de vérification " + r.code : "")}); }catch(_){ __errSilence(_); }
-    // paid_at manquait : le reçu envoyé par mail portait une date vide
-    if(it.kind !== "direct" || mailDirectP){ try{ mailRembourse({...it, status:"Remboursée", paid_at:quand, _codeDec:r.code}); }catch(_){ __errSilence(_); } }
+    // paid_at fait partie de la copie passée au mail : le reçu porte la bonne date
+    const r = await deciderServeur(it, {status:"Remboursée", paid_at:quand},
+      sienne ? "Remboursement effectué au trésorier lui-même (lot)" : "Remboursement effectué (lot)",
+      (it.kind !== "direct" || mailDirectP) ? (c => mailRembourse(c)) : null);
+    if(r.conflit){ conflits++; continue; }
+    if(r.erreur){ ko++; dernErr = r.erreur; continue; }
+    ok++;
+    if(r.mailId) mailIds.push(r.mailId); else if(r.mailErreur) mailsKo++;
   }
+  suivreMails(mailIds, "remboursement effectué");
   state.sel.clear(); await refresh(); renderBulk();
-  toast(ok+" demande(s) remboursée(s)." + (ko ? " " + ko + " échec(s)." : "") + (conflits ? " " + conflits + " déjà traitée(s) ailleurs." : ""));
+  toast(ok+" demande(s) remboursée(s)." + (ko ? " " + ko + " échec(s) : " + dernErr : "") + (conflits ? " " + conflits + " déjà traitée(s) ailleurs." : "")
+    + (mailsKo ? " " + mailsKo + " mail(s) non envoyé(s) (adresse introuvable)." : ""));
   if(conflits) await dire("Demandes non marquées", conflits + " demande(s) avaient déjà changé de statut. La liste est à jour.");
 }
 if($("#bulkValider")) $("#bulkValider").onclick = bulkValider;
@@ -12738,12 +12960,12 @@ function renderDrawer(it){
       actions += champMotif(it) + attachVal +
         `<div class="actions"><button class="btn ok" data-act="valider">Valider la demande</button>
         <button class="btn" data-act="corriger" style="background:#c47f17;border-color:#c47f17;color:#fff">Renvoyer pour correction</button>
-        <button class="btn no" data-act="refuser">Refuser</button></div>`;
+        <button class="btn no" data-act="refuser">Refuser</button></div>` + caseEnchainer();
     }else if(it.status === "Validée"){
       actions += champMotif(it) +
         `<div class="actions"><button class="btn ok" data-act="payer">Marquer comme remboursée</button>
         <button class="btn ghost" data-act="message">Envoyer le message</button>
-        <button class="btn ghost" data-act="rouvrir">Remettre en attente</button></div>`;
+        <button class="btn ghost" data-act="rouvrir">Remettre en attente</button></div>` + caseEnchainer();
     }else{
       if(it.status === "Remboursée"){
         actions += `<div class="actions"><button class="btn ghost" data-act="recu">Télécharger le reçu (PDF)</button>
@@ -13239,27 +13461,36 @@ $("#d_body").addEventListener("click", async e => {
     }catch(eV){ toast("Pièce non envoyée : "+(eV.message||eV)); }
   }
   if(patch.status && patch.status !== it.status && !await exigerMdpDecision(1)) return;
+  // Mail au membre : construit ici, envoyé par le serveur avec la décision.
+  // Paiement direct : rien ne part sans que le trésorier l'ait activé dans la fenêtre de confirmation.
+  const MAILS = {
+    valider:  [c => mailValide(c, note), "demande validée"],
+    refuser:  [c => mailRefuse(c, note), "demande refusée"],
+    corriger: [c => mailCorriger(c, note), "demande à corriger"],
+    payer:    [c => mailRembourse(c, note), "remboursement effectué"],
+    rouvrir:  [c => mailRouvert(c, note), "dossier remis en traitement"],
+    rejet:    [c => mailMessage(c, "Le virement n'a pas pu être exécuté par la banque : " + motifRejet
+      + ". Votre demande a été remise en attente de paiement et sera incluse dans le prochain lot de virements. "
+      + "Vérifiez votre IBAN dans votre profil et corrigez-le si nécessaire."), "virement rejeté"],
+    message:  [c => mailMessage(c, note), "message au demandeur"]
+  };
+  const mailDef = mailMembre ? MAILS[act] : null;
+  // Traitement à la chaîne : ordre de la liste affichée, relevé avant la décision.
+  const ordreListe = listeVisibleIds();
   b.disabled = true;
-  const res = await majSiInchangee(it, patch);
+  const res = await deciderServeur(it, patch,
+    direct ? label + (mailMembre ? " — avec e-mail au membre" : " — sans e-mail au membre") : label,
+    mailDef ? mailDef[0] : null);
   b.disabled = false;
   if(res.erreur) return toast("Action impossible : " + res.erreur);
   if(res.conflit){ await refresh(); closeDrawer(); return await dire("Demande déjà traitée", messageConflit()); }
   state.drawerDirty = false;   // l'action est enregistrée : le panneau peut être réécrit
   it._codeDec = res.code || "";
-  await sb.from("events").insert({ request_id:it.id, who:state.profile.name,
-    what: (direct ? label + (mailMembre ? " — avec e-mail au membre" : " — sans e-mail au membre") : label)
-      + (res.code ? " — code de vérification " + res.code : "") });
-  // Les envois sont attendus : sans cela, un échec passait totalement inaperçu.
-  // Paiement direct : rien ne part sans que le trésorier l'ait activé dans la fenêtre de confirmation.
-  if(mailMembre && act==="valider"){ await avertirMail(mailValide(it, note), "demande validée"); }
-  if(mailMembre && act==="refuser"){ await avertirMail(mailRefuse(it, note), "demande refusée"); }
-  if(mailMembre && act==="corriger"){ await avertirMail(mailCorriger(it, note), "demande à corriger"); }
-  if(mailMembre && act==="payer"){ await avertirMail(mailRembourse(it, note), "remboursement effectué"); }
-  if(mailMembre && act==="rouvrir"){ await avertirMail(mailRouvert(it, note), "dossier remis en traitement"); }
-  if(mailMembre && act==="rejet"){ await avertirMail(mailMessage(it, "Le virement n'a pas pu être exécuté par la banque : " + motifRejet
-    + ". Votre demande a été remise en attente de paiement et sera incluse dans le prochain lot de virements. "
-    + "Vérifiez votre IBAN dans votre profil et corrigez-le si nécessaire."), "virement rejeté"); }
-  if(mailMembre && act==="message"){ await avertirMail(mailMessage(it, note), "message au demandeur"); }
+  if(mailDef){
+    if(res.mailErreur || !res.mailPrevu) toast("Décision enregistrée, mais le mail « " + mailDef[1] + " » n'est pas parti : "
+      + (res.mailErreur || "adresse du demandeur introuvable"));
+    else suivreMails([res.mailId], mailDef[1]);
+  }
   // Le bouton cliqué gardait le focus : la synchro croyait à une saisie en cours et ne
   // redessinait pas le panneau, qui continuait d'afficher « Valider ».
   if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
@@ -13268,8 +13499,40 @@ $("#d_body").addEventListener("click", async e => {
   if(apres && state.selected === it.id){ state.drawerDirty = false; renderDrawer(apres); }
   // urgence hors budget validée : l'imputer à un budget ou la classer « hors budget assumé »
   if(act==="valider" && apres && apres.hors_budget && !apres.budget_id && !apres.hors_budget_assume) await imputerUrgence(apres);
+  const msg = label + "." + (res.code ? " Code de vérification : " + res.code : "");
+  if(["valider","refuser","corriger","payer"].includes(act) && enchainerActif()){
+    const suivante = demandeSuivante(ordreListe, it.id);
+    if(suivante){ await openDrawer(suivante); return toast(msg + " Demande suivante ouverte."); }
+    closeDrawer(); return toast(msg + " Plus aucune demande dans la liste.");
+  }
   await loadEvents(it.id);
-  toast(label + "." + (res.code ? " Code de vérification : " + res.code : ""));
+  toast(msg);
+});
+
+/* ---------- traitement à la chaîne (13/11/2026) ----------
+   Après une décision (valider, refuser, renvoyer, payer), le panneau ouvre directement
+   la demande suivante de la liste affichée, au lieu de revenir à la liste.
+   Réglable dans le panneau ; le choix est gardé sur l'appareil. */
+const CLE_ENCHAINER = "caisse:enchainer";
+function enchainerActif(){ try{ return localStorage.getItem(CLE_ENCHAINER) !== "0"; }catch(e){ return true; } }
+function listeVisibleIds(){
+  return [...document.querySelectorAll(".row[data-id]")]
+    .filter(r => r.offsetParent !== null && !r.closest("#drawer"))
+    .map(r => r.dataset.id)
+    .filter((id, i, t) => id && t.indexOf(id) === i && state.items.some(x => x.id === id));
+}
+function demandeSuivante(ordre, courant){
+  const restantes = listeVisibleIds().filter(id => id !== courant);
+  if(!restantes.length) return null;
+  const pos = ordre.indexOf(courant);
+  for(const id of ordre.slice(pos + 1)) if(restantes.includes(id)) return id;
+  return restantes[0];
+}
+document.addEventListener("change", e => {
+  if(e.target && e.target.id === "d_enchainer"){
+    try{ localStorage.setItem(CLE_ENCHAINER, e.target.checked ? "1" : "0"); }catch(_){ __errSilence(_); }
+    toast(e.target.checked ? "La demande suivante s'ouvrira après chaque décision." : "Retour à la liste après chaque décision.");
+  }
 });
 
 /* ---------- export ---------- */
