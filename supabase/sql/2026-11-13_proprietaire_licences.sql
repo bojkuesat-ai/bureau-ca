@@ -652,3 +652,12 @@ alter table public.proprio_config add column if not exists gj_cosignataire uuid;
 --   médiation (ca_med_owner = propriétaire actif, sinon premier Admin), billetterie (bil_*).
 -- L'Admin nomme aussi le trésorier (proprio_set_tresorier) et le cosignataire GJ
 --   (proprio_set_gj_cosignataire) ; admin_fonctions() alimente sa carte.
+
+-- ============================ 7. TRANSPARENCE ================================
+-- (migration « proprio_8_transparence »)
+-- transparence_journal : historique non modifiable (trigger qui refuse update/delete).
+-- Trigger zz_transparence sur ca_membres.role : owner → proprietaire (passation) et
+--   proprietaire → autre (reprise d'accès) sont inscrits et annoncés par mail à TOUS les
+--   membres du CA et utilisateurs de la Caisse (transparence_mail_tous, Securite-BE).
+-- transparence_etat() : page « Transparence » (CA) et ligne dépliable (Caisse) :
+--   accès du propriétaire, passation, historique, connexions du propriétaire depuis.

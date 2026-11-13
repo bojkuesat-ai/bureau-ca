@@ -3462,6 +3462,21 @@ async function verifierEtatCaisse(){
     ban.hidden = !html;
     ban.innerHTML = html;
     ban.style.cssText = html ? "margin:10px auto;max-width:1100px;padding:11px 15px;border-radius:12px;border:1px solid #c47f17;background:var(--surface2);font-size:13.5px" : "";
+    // Transparence : le propriétaire des applications a-t-il accès aux données ? (calculé par le serveur)
+    try{
+      const t = await sb.rpc("transparence_etat");
+      if(!t.error && t.data && (t.data.acces_retire || (t.data.historique||[]).length) && !E.proprio){
+        const T = t.data, q = d => d ? new Date(d).toLocaleString("fr-BE", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }) : "—";
+        let tr = document.getElementById("transpBan");
+        if(!tr){ tr = document.createElement("details"); tr.id = "transpBan"; app.insertBefore(tr, ban.nextSibling); }
+        tr.style.cssText = "margin:10px auto;max-width:1100px;padding:10px 15px;border-radius:12px;border:1px solid var(--line);background:var(--surface2);font-size:13px";
+        tr.innerHTML = `<summary style="cursor:pointer">🔍 Transparence : ${T.acces_retire
+            ? "le propriétaire des applications (" + esc(T.proprietaire || "") + ") n'a plus accès à vos données depuis le " + esc(q(T.passation_le)) + "."
+            : "<b>le propriétaire des applications a retrouvé un accès</b> (voir l'historique)."}</summary>
+          <p style="margin:8px 0 4px;color:var(--muted)">Calculé par le serveur. L'historique ne peut être ni modifié ni effacé, et toute reprise d'accès déclenche un mail automatique à chaque utilisateur.</p>
+          ${(T.historique||[]).map(h => `<p style="margin:4px 0">${h.evenement === "reprise" ? "🚨" : "🔐"} ${esc(q(h.le))} — ${esc(h.details || "")}</p>`).join("")}`;
+      }
+    }catch(_){ __errSilence(_); }
     let ov = document.getElementById("etatFerme");
     if(E.pour_moi === "fermee" || E.pour_moi === "retire"){
       if(!ov){ ov = document.createElement("div"); ov.id = "etatFerme"; document.body.appendChild(ov); }

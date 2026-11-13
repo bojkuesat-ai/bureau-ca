@@ -2064,6 +2064,42 @@ document.addEventListener("click", async e=>{
   S.adminFct=null; await chargerEtatApp(); render();
 });
 
+/* ===================================================================
+   TRANSPARENCE (13/11/2026) — visible par tous les membres : le propriétaire des
+   applications a-t-il accès aux données ? Calculé par le serveur ; l'historique ne
+   peut être ni modifié ni effacé ; toute reprise d'accès déclenche un mail à tous.
+   =================================================================== */
+function tabTransparence(){
+  const T=S.transp;
+  if(!T){ if(!S.transpCharge){ S.transpCharge=true; sb.rpc("transparence_etat").then(r=>{ S.transp=r.error?{err:r.error.message}:r.data; S.transpCharge=false; if(S.tab==="transparence") rendreEnPreservant(); }); }
+    return `<div class="empty">Chargement…</div>`; }
+  if(T.err) return `<div class="empty" style="color:var(--red)">${esc(T.err)}</div>`;
+  const quand=d=>d?new Date(d).toLocaleString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"—";
+  const etat = T.acces_retire
+    ? `<div class="card2" style="border-left:4px solid var(--green,#2e7d32)"><h3 class="serif">✅ ${esc(T.proprietaire||"Le propriétaire")} n'a plus accès à vos données</h3>
+        <p>Depuis le <b>${esc(quand(T.passation_le))}</b> (passation à <b>${esc(T.passation_a||"")}</b>). Il ne peut plus rien lire ni modifier dans l'Espace CA ni dans la Caisse : PV, votes, budgets, réunions, documents, messages, demandes de remboursement… C'est le serveur qui le lui refuse.</p>
+        <p class="du">Il garde uniquement la gestion technique des applications (licence, ouverture ou fermeture, réglages), sans accès au contenu.</p></div>`
+    : `<div class="card2" style="border-left:4px solid #c47f17"><h3 class="serif">${esc(T.proprietaire||"Le propriétaire")} a actuellement accès aux applications</h3>
+        <p>${(T.historique||[]).length?"La passation a été annulée : voir l'historique ci-dessous.":"Aucune passation n'a encore eu lieu : le propriétaire exerce encore ses fonctions."}</p></div>`;
+  return `<div>
+    <h1 class="serif" style="font-size:26px;margin:0 0 6px">🔍 Transparence</h1>
+    <p class="du" style="margin:0 0 16px">Cette page permet à chacun de vérifier qui a accès à vos données. Elle est calculée en direct par le serveur.</p>
+    ${etat}
+    <div class="card2"><h3 class="serif">Les garanties</h3>
+      <ul style="margin:6px 0 0;padding-left:20px;line-height:1.7;font-size:14px">
+        <li>L'état ci-dessus vient du serveur : il ne peut pas être simulé par la page.</li>
+        <li>L'historique ci-dessous ne peut être <b>ni modifié ni effacé</b> depuis les applications, par personne.</li>
+        <li>Si le propriétaire <b>retrouve un accès</b>, chaque membre du CA et chaque utilisateur de la Caisse reçoit <b>immédiatement un mail automatique</b>.</li>
+        <li>Les connexions du compte propriétaire depuis la passation sont listées ci-dessous et dans le Journal de l'Admin.</li>
+      </ul></div>
+    <div class="card2"><h3 class="serif">Historique</h3>
+      ${(T.historique||[]).length?(T.historique||[]).map(h=>`<p style="margin:6px 0;font-size:14px">${h.evenement==="reprise"?"🚨":"🔐"} <b>${esc(quand(h.le))}</b> — ${esc(h.details||"")}</p>`).join(""):`<p class="du">Aucun événement pour l'instant.</p>`}</div>
+    ${T.acces_retire?`<div class="card2"><h3 class="serif">Connexions du compte propriétaire depuis la passation</h3>
+      <p class="du">Il ne peut ouvrir que son espace technique, sans accès au contenu.</p>
+      ${(T.connexions||[]).length?(T.connexions||[]).map(c=>`<p style="margin:5px 0;font-size:13.5px">${esc(quand(c.le))} — ${esc(c.app==="caisse"?"Caisse":"Espace CA")}${c.appareil?" — "+esc(c.appareil):""}</p>`).join(""):`<p class="du">Aucune connexion.</p>`}</div>`:""}
+  </div>`;
+}
+
 function viewAdmin(){
   /* Onglet reserve au proprietaire : plus de connexion separee, on utilise
      deja la session de l'utilisateur connecte. */
@@ -2573,7 +2609,7 @@ document.addEventListener("click", async e=>{
 /* ---- DASHBOARD ---- */
 const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["verifsig","\ud83d\udd0e","V\u00e9rifier une signature"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,proprio:viewProprio,licence:tabLicence,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
+  const map={admin:viewAdmin,proprio:viewProprio,licence:tabLicence,transparence:tabTransparence,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
@@ -2598,6 +2634,7 @@ function viewDash(){
   if(voitJournalCA()) tabs.push(["registre","\ud83d\uddf3","Registre des votes"]);
   if(S.appEtat && S.appEtat.mode_licence && !estCoopte() && (S.appEtat.peut_demander || estAdminCA() || (S.appEtat.demande && S.appEtat.demande.moi)))
     tabs.push(["licence","\ud83d\udcc4","Licence"]);
+  if(!estCoopte()) tabs.push(["transparence","\ud83d\udd0d","Transparence"]);
   if(S.tab==="admin" && !estAdminCA()) S.tab="accueil";
   if((S.tab==="journal"||S.tab==="registre") && !voitJournalCA()) S.tab="accueil";
   if(S.tab==="proprio" && !proprioOuvert()) S.tab="accueil";
@@ -5792,7 +5829,7 @@ ${sections||"<p>Aucun retour.</p>"}
         if(r&&r.error){ modaleInfo("Réactivation impossible : "+r.error.message); break; }
         logAct("Compte réactivé : "+lab2); }
       await loadAccounts(); render(); break; }
-    case "set-tab": S.tab=el.dataset.tab; S.mailFlash=null; try{ const _t=(TABS.concat([["admin","","Admin"],["proprio","","Propriétaire"],["licence","","Licence"],["journal","","Journal"],["avis","","Idées & avis"],["agenda","","Agenda"],["bilan","","Bilans moraux"],["soutien_etu","","Soutien psy — étudiants"],["soutien_ces","","Soutien social — CES"],["notifs","","À traiter"],["notifprefs","","Notifs"],["registre","","Registre des votes"],["search","","Recherche"]])).find(x=>x[0]===S.tab); auditNav(_t?_t[2]:S.tab); }catch(_){ } if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
+    case "set-tab": S.tab=el.dataset.tab; S.mailFlash=null; try{ const _t=(TABS.concat([["admin","","Admin"],["transparence","","Transparence"],["proprio","","Propriétaire"],["licence","","Licence"],["journal","","Journal"],["avis","","Idées & avis"],["agenda","","Agenda"],["bilan","","Bilans moraux"],["soutien_etu","","Soutien psy — étudiants"],["soutien_ces","","Soutien social — CES"],["notifs","","À traiter"],["notifprefs","","Notifs"],["registre","","Registre des votes"],["search","","Recherche"]])).find(x=>x[0]===S.tab); auditNav(_t?_t[2]:S.tab); }catch(_){ } if(S.tab==="messages"){ try{ localStorage.setItem("ca:seen:messages",String(Date.now())); }catch(e){} } render(); break;
     /* organigramme */
     case "edit-poste": S.editPoste=id; render(); break;
     case "cancel-edit": S.editPoste=null; render(); break;
