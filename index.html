@@ -529,6 +529,7 @@ const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createC
   }
   async function garde(){
     if(ouvert) return true;
+    if(window.__signatureMfa) return false;   // signature en cours : le code est demandé dans la signature
     var n=await niveau();
     if(n && n.nextLevel==="aal2" && n.currentLevel!=="aal2"){ afficher(); return true; }
     return false;
@@ -1356,7 +1357,7 @@ async function loadBilans(){
   try{ const f=await sb.from("ca_bilan_faits").select("membre_id"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){ S.meta.bilanSubmitters=[]; }
   try{ const c=await sb.rpc("ca_bilans_nb_deposes"); S.meta.bilanNbDeposes=(c&&typeof c.data==="number")?c.data:(S.meta.bilanSubmitters||[]).length; }catch(e){ S.meta.bilanNbDeposes=(S.meta.bilanSubmitters||[]).length; } }
 async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").select("*").order("created_at",{ascending:false}); S.journal=(data||[]).map(j=>({ts:j.created_at,who:j.who,txt:j.txt})); }catch(e){} }
-async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,pdfPath:b.pdf_path||"",reserve:(b.reserve_tresorier==null?null:String(b.reserve_tresorier)),motifForce:String(b.motif_force||""),certifiePar:String(b.certifie_par||""),certifieId:b.certifie_id||null,certifieLe:b.certifie_le||null,seanceLe:b.seance_le||null,origineCertif:String(b.origine_certif||""),parent:b.parent_budget_id||null,creeLe:b.created_at||null,votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id,le:v.created_at||null}))})); }catch(e){ S.budgets=[]; }
+async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,pdfPath:b.pdf_path||"",reserve:(b.reserve_tresorier==null?null:String(b.reserve_tresorier)),motifForce:String(b.motif_force||""),certifiePar:String(b.certifie_par||""),certifieId:b.certifie_id||null,certifieLe:b.certifie_le||null,seanceLe:b.seance_le||null,origineCertif:String(b.origine_certif||""),certifCode:b.certif_code||"",confirmCode:b.confirm_code||"",parent:b.parent_budget_id||null,creeLe:b.created_at||null,votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id,le:v.created_at||null}))})); }catch(e){ S.budgets=[]; }
   try{ const rr=await sb.from("ca_budget_reserves").select("*").order("created_at",{ascending:true}); S.resBud=(rr&&!rr.error&&rr.data)||[]; S.resBudErr=(rr&&rr.error)?rr.error.message:null; }catch(e){ S.resBud=[]; S.resBudErr=String(e); } }
 async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,rappelLe:v.rappel_le,rappelProg:v.rappel_prog_at,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
 async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
@@ -2107,8 +2108,8 @@ async function pvsAuthentifier(titre){
     const mdp=await modaleChamp("Pour signer, retapez le mot de passe de votre compte ("+email+").", titre, {type:"password",placeholder:"Mot de passe",bouton:"🔒 Signer",erreur:err});
     if(mdp===null) return false;
     if(!mdp){ err="Saisissez votre mot de passe."; essai--; continue; }
-    let r=null; try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }catch(e){ r={error:e}; }
-    if(!(r&&r.error)) return true;
+    let r=null; try{ r=await motDePasseSignature(email, mdp); }catch(e){ r={error:e}; }
+    if(!(r&&r.error)) return (await mfaApresMotDePasse());
     err="Mot de passe incorrect.";
   }
   modaleInfo("Mot de passe incorrect (3 essais). Rien n'a été signé.","Signature refusée");
@@ -2449,7 +2450,7 @@ function tabBudgets(){
       <input class="f" id="b_cout" inputmode="decimal" placeholder="Coût estimé (€)"></div>
     <textarea id="b_desc" placeholder="Description : à quoi sert ce budget, ce que ça finance…"></textarea>
     <p class="du" style="margin:6px 0 0">Un budget soumis au vote est toujours notifié par e-mail — ${destinatairesCA().length} destinataire(s) actuellement.</p>
-    <div class="row-btn"><button class="btn" data-action="add-budget">Soumettre au vote</button>${(owner||!estCoopte())?`<button class="btn ghost" data-action="add-budget-ca" style="border-color:var(--green);color:var(--green)">✓ Voté en CA physique</button>`:""}<button class="btn ghost" data-action="budgets-pdf">⬇ Export PDF</button></div></div>`;
+    <div class="row-btn"><button class="btn" data-action="add-budget">Soumettre au vote</button>${(!estCoopte())?`<button class="btn ghost" data-action="add-budget-ca" style="border-color:var(--green);color:var(--green)">✓ Voté en CA physique</button>`:""}<button class="btn ghost" data-action="budgets-pdf">⬇ Export PDF</button></div></div>`;
   const badge={vote:["open","En vote"],approuve:["ok","Approuvé"],refuse:["no","Refusé"],attente_tresorier:["open","⏳ En attente du trésorier"]};
   if(S.budgets.length===0) return stats+compose+`<div class="empty">Aucune demande. Soumettez un budget ou un projet au vote.</div>`;
   const list=S.budgets.map(b=>{
@@ -2473,8 +2474,8 @@ function tabBudgets(){
       ${(open&&effectif)?`<p class="du" style="margin:8px 0 0;${regle162(b).approuve?"color:var(--green)":""}">${esc(regle162(b).enCours)}</p>`:""}
       ${open?blocRappel("budget",b):""}
       ${(open&&peutCloturer&&effectif)?`<div class="foot-line"><button class="btn sm" data-action="bcloture" data-id="${b.id}">🔒 Clôturer le vote</button>
-        ${(owner&&!regle162(b).approuve)?`<button class="link" data-action="bcloture" data-id="${b.id}" data-force="1" style="color:var(--stamp)">⚠ Forcer l'approbation</button>`:""}</div>`:""}
-      ${(open&&(owner||!estCoopte()))?`<div class="foot-line"><button class="btn sm ghost" data-action="bca-physique" data-id="${b.id}" style="border-color:var(--green);color:var(--green)">✓ Voté en CA physique</button></div>`:""}
+</div>`:""}
+      ${(open&&!estCoopte()&&S.session&&b.creeParId===S.session.id)?`<div class="foot-line"><button class="btn sm ghost" data-action="bca-physique" data-id="${b.id}" style="border-color:var(--green);color:var(--green)">✓ Voté en CA physique</button></div>`:""}
       ${b.statut==="attente_tresorier"?blocCertifBudget(b, owner):""}
       ${owner?`<div class="foot-line"><button class="link" data-action="edit-cout" data-id="${b.id}">✏ Modifier le montant (propriétaire)</button></div>`:""}
       ${(!owner && peutSupprimerBudget(b))?`<div class="foot-line"><button class="link" data-action="del-budget" data-id="${b.id}" style="margin-left:auto;color:var(--red)">Supprimer ma demande</button></div>`:""}
@@ -2617,6 +2618,42 @@ function tabProcuration(){
 
 const PR_METHODE="Mot de passe du compte, v\u00e9rifi\u00e9 par le serveur";
 /* Signature : la personne retape le mot de passe de son compte, vérifié par Supabase. */
+/* 13/11/2026 — Signature par mot de passe + double authentification.
+   Retaper son mot de passe (signInWithPassword) refait une session au niveau « aal1 ».
+   Pour un compte qui a activé la double authentification, le serveur refuse alors ses
+   données (règle mfa_aal2) et la signature (procuration_signer). On redemande donc le
+   code à 6 chiffres juste après le mot de passe : la session redevient « aal2 », avec un
+   jeton tout neuf (exigé par les fonctions de signature). Sans double auth : rien à faire. */
+async function motDePasseSignature(email, mdp){
+  window.__signatureMfa=true;
+  let r=null;
+  try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }
+  catch(e){ window.__signatureMfa=false; throw e; }
+  if(r&&r.error) window.__signatureMfa=false;
+  return r;
+}
+async function mfaApresMotDePasse(){
+  try{ return await mfaApresMotDePasse_(); }
+  finally{ window.__signatureMfa=false; try{ if(window.mfaGarde) setTimeout(window.mfaGarde,0); }catch(_){ } }
+}
+async function mfaApresMotDePasse_(){
+  let n=null; try{ const r=await sb.auth.mfa.getAuthenticatorAssuranceLevel(); n=r&&r.data; }catch(_){ n=null; }
+  if(!n || n.nextLevel!=="aal2" || n.currentLevel==="aal2") return true;
+  let fac=null; try{ const f=await sb.auth.mfa.listFactors(); fac=f&&f.data&&f.data.totp&&f.data.totp[0]; }catch(_){ fac=null; }
+  if(!fac){ modaleInfo("Double authentification : aucune application enregistrée pour ce compte. Rien n'a été signé."); return false; }
+  let err="";
+  for(let essai=0; essai<3; essai++){
+    const code=await modaleChamp("Double authentification : tapez le code à 6 chiffres affiché dans votre application.","Code de double authentification",{placeholder:"123456",bouton:"Valider",erreur:err});
+    if(code===null){ modaleInfo("Signature annulée : le code de double authentification n'a pas été saisi. Rechargez la page si l'app vous le redemande."); return false; }
+    const c=String(code).replace(/\D/g,"");
+    if(c.length!==6){ err="Le code compte 6 chiffres."; essai--; continue; }
+    let v=null; try{ v=await sb.auth.mfa.challengeAndVerify({factorId:fac.id, code:c}); }catch(e){ v={error:e}; }
+    if(!(v&&v.error)) return true;
+    err="Code incorrect ou expiré. Réessayez avec le code affiché maintenant.";
+  }
+  modaleInfo("Code de double authentification incorrect (3 essais). Rien n'a été signé.");
+  return false;
+}
 async function prAuthentifier(email){
   if(!email){ modaleInfo("Votre compte n'a pas d'adresse e-mail : signature impossible."); return false; }
   let err="";
@@ -2624,8 +2661,8 @@ async function prAuthentifier(email){
     const mdp=await modaleChamp("Pour signer, retapez le mot de passe de votre compte ("+email+").","Signer la procuration",{type:"password",placeholder:"Mot de passe",bouton:"\ud83d\udd12 Signer",erreur:err});
     if(mdp===null){ logAct("Procuration \u2014 signature abandonn\u00e9e"); return false; }
     if(!mdp){ err="Saisissez votre mot de passe."; essai--; continue; }
-    let r=null; try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }catch(e){ r={error:e}; }
-    if(!(r&&r.error)){ logAct("Procuration \u2014 mot de passe v\u00e9rifi\u00e9 (signature)"); return true; }
+    let r=null; try{ r=await motDePasseSignature(email, mdp); }catch(e){ r={error:e}; }
+    if(!(r&&r.error)){ if(!(await mfaApresMotDePasse())) return false; logAct("Procuration \u2014 mot de passe v\u00e9rifi\u00e9 (signature)"); return true; }
     err="Mot de passe incorrect.";
     logAct("Procuration \u2014 mot de passe incorrect (essai "+(essai+1)+"/3)");
   }
@@ -3644,7 +3681,7 @@ function tabRgpdCoopte(){
    inventé ou recopié sur un autre document est refusé.
    ===================================================================== */
 const VS_TYPES={procuration:"Procuration",procuration_annulation:"Annulation de procuration",pv_secretaire:"PV — signature de la secrétaire",
-  pv_presidente:"PV — signature de la présidente",pv_vice:"PV — signature du vice-président",demande:"Caisse — demande signée",
+  budget_certification:"Budget voté en CA physique — certification du responsable",budget_confirmation:"Budget voté en CA physique — confirmation du trésorier",pv_presidente:"PV — signature de la présidente",pv_vice:"PV — signature du vice-président",demande:"Caisse — demande signée",
   demande_doublon:"Caisse — déclaration d'absence de doublon",acte_vp:"Caisse — acte à signature conjointe (vice-président)",acte_treso:"Caisse — acte à signature conjointe (trésorier)"};
 function vsEtat(){ return S.vsUI||(S.vsUI={code:"",res:null,err:"",busy:false}); }
 function tabVerifSig(){
@@ -4150,7 +4187,7 @@ async function cloturerBudget(id, force){
   if(!sb) return;
   const owner = !!(S.session && S.session.role==="owner");
   if(!owner){ modaleInfo("Seul le propri\u00e9taire peut cl\u00f4turer ou d\u00e9cider d\u2019un budget."); return; }
-  if(force && !owner){ modaleInfo("Seul le propri\u00e9taire peut approuver hors seuil."); return; }
+  if(force){ modaleInfo("L'approbation hors seuil a \u00e9t\u00e9 supprim\u00e9e : un budget n'est approuv\u00e9 que si la r\u00e8gle de l'article 16.2 est respect\u00e9e."); return; }
   const b=(S.budgets||[]).find(x=>x.id===id);
   if(!b || b.statut!=="vote") return;
   const n=effectifCA(), seuil=seuilMajorite();
@@ -4196,7 +4233,9 @@ async function cloturerBudget(id, force){
    id = null → nouveau budget (formulaire) ; id = budget en vote → clôture en présentiel. */
 async function voteCAPhysique(id){
   if(!sb) return;
-  if(!(S.session && S.session.role==="owner")){ await certifierPresentiel(id); return; }   // membre : certification + confirmation du trésorier
+  /* 13/11/2026 : un budget voté en CA physique est toujours introduit et signé par le
+     responsable qui l'a obtenu, puis confirmé (signé) par le trésorier. Plus de raccourci. */
+  await certifierPresentiel(id); return;
   let b=null, donnees=null;
   if(id){ b=(S.budgets||[]).find(x=>x.id===id); if(!b || b.statut!=="vote") return; if(!(await confirmerMalgreReserves(id))) return; }
   else{
@@ -4232,7 +4271,7 @@ async function voteCAPhysique(id){
    ========================================================================== */
 function certifLibelle(b){
   const quand=b.certifieLe?new Date(b.certifieLe).toLocaleString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"";
-  return "Certifié exact par "+(b.certifiePar||"—")+(quand?" le "+quand:"")+" (mot de passe vérifié)"+(b.statut==="approuve"?" · Confirmé par le trésorier":"");
+  return "Certifié exact par "+(b.certifiePar||"—")+(quand?" le "+quand:"")+" (mot de passe vérifié"+(b.certifCode?", code "+b.certifCode:"")+")"+(b.statut==="approuve"?" · Confirmé par le trésorier"+(b.confirmCode?" (code "+b.confirmCode+")":""):"");
 }
 function seanceLongue(iso){ if(!iso) return "—"; return new Date(String(iso).slice(0,10)+"T12:00:00").toLocaleDateString("fr-BE",{day:"numeric",month:"long",year:"numeric"}); }
 function emailsTresorier(){ return [...new Set((S.admins||[]).filter(a=>a.role==="owner"&&a.statut==="actif"&&a.email).map(a=>String(a.email).toLowerCase().trim()))]; }
@@ -4284,8 +4323,8 @@ async function certifAuthentifier(email, titre){
     const mdp=await modaleChamp("Pour certifier, retapez le mot de passe de votre compte ("+email+").","Confirmer avec votre mot de passe",{type:"password",placeholder:"Mot de passe",bouton:"🔒 Certifier",erreur:err});
     if(mdp===null){ logAct("Budget présentiel — certification abandonnée : "+(titre||"")); return false; }
     if(!mdp){ err="Saisissez votre mot de passe."; essai--; continue; }
-    let r=null; try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }catch(e){ r={error:e}; }
-    if(!(r&&r.error)){ logAct("Budget présentiel — mot de passe vérifié : "+(titre||"")); return true; }
+    let r=null; try{ r=await motDePasseSignature(email, mdp); }catch(e){ r={error:e}; }
+    if(!(r&&r.error)){ if(!(await mfaApresMotDePasse())) return false; logAct("Budget présentiel — mot de passe vérifié : "+(titre||"")); return true; }
     err="Mot de passe incorrect.";
     logAct("Budget présentiel — mot de passe incorrect (essai "+(essai+1)+"/3) : "+(titre||""));
   }
@@ -4296,13 +4335,14 @@ async function certifierPresentiel(id){
   if(!sb||!S.session) return;
   if(estCoopte()){ modaleInfo("Ce bouton est réservé aux membres du CA."); return; }
   let b=null, donnees=null;
-  if(id){ b=(S.budgets||[]).find(x=>x.id===id); if(!b || b.statut!=="vote") return; }
+  if(id){ b=(S.budgets||[]).find(x=>x.id===id); if(!b || b.statut!=="vote") return;
+    if(b.creeParId!==S.session.id){ modaleInfo("Seul le responsable qui a introduit ce budget peut certifier qu'il a été voté en CA physique."); return; } }
   else{
     const t=val("b_titre").trim(); if(!t){ modaleInfo("Indiquez au moins un titre."); return; }
     donnees={titre:t,type:val("b_type"),cout:parseFloat(String(val("b_cout")).replace(",","."))||0,description:val("b_desc").trim()};
   }
   const titre=id?b.titre:donnees.titre;
-  const jour=await modaleDate("Date de la séance du CA qui a approuvé « "+(titre||"")+" » à la majorité simple.","Voté en CA physique");
+  const jour=await modaleDate("Date de la séance du CA qui a approuvé « "+(titre||"")+" » à la majorité simple.\n\nVous certifiez, en tant que responsable de ce budget, que c'est exact : votre signature recevra un code de vérification.","Voté en CA physique");
   if(!jour) return;
   if(!(await modaleCertif(titre, jour))) return;
   if(!(await certifAuthentifier(S.session.email, titre))) return;
@@ -4342,10 +4382,14 @@ async function confirmerCertif(id){
   if(!(await confirmerMalgreReserves(id))) return;
   const reserve=await modaleReserve(b.titre||""); if(reserve===null) return;
   const sig=(S.session&&S.session.sig)||"—";
-  const decidePar="CA physique · "+sig, decideLe=new Date(String(b.seanceLe||todayISO()).slice(0,10)+"T12:00:00").toISOString();
-  const r=await sb.from("ca_budgets").update({statut:"approuve",decide_par:decidePar,decide_le:decideLe}).eq("id",id).eq("statut","attente_tresorier").select();
+  /* 13/11/2026 : la confirmation est une signature (mot de passe) enregistrée par le serveur,
+     qui délivre un code de vérification (registre des signatures). */
+  if(!(await certifAuthentifier(S.session.email, b.titre||""))) return;
+  const r=await sb.rpc("ca_budget_confirmer",{p_id:String(id)});
   if(r&&r.error){ modaleInfo("Confirmation impossible : "+r.error.message); return; }
-  if(!r||!r.data||!r.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refusé la confirmation (aucune ligne modifiée). Le budget a peut-être été retiré entre-temps. Rien n'a été envoyé."); return; }
+  const lg=(r&&r.data)||{};
+  if(!lg.id){ await loadBudgets(); render(); modaleInfo("Le serveur n'a pas confirmé le budget. Rien n'a été envoyé."); return; }
+  const decidePar=lg.decide_par||("CA physique · "+sig), decideLe=lg.decide_le||new Date(String(b.seanceLe||todayISO()).slice(0,10)+"T12:00:00").toISOString();
   await enregistrerReserve(id, reserve);
   logAct("Budget présentiel confirmé par le trésorier"+(reserve!=="aucune"?" (réserve du trésorier)":" (aucune réserve)")+" : "+(b.titre||""));
   await loadBudgets(); render();
@@ -5475,7 +5519,7 @@ ${sections||"<p>Aucun retour.</p>"}
         if(st==="refuse" && !R.approuve){ await cloturerBudget(id, false); break; }
       }
       if(st==="approuve" && !(await confirmerMalgreReserves(id))) break; const md=await sb.from("ca_budgets").update({statut:st,decide_par:st==="vote"?null:me.sig,decide_le:st==="vote"?null:new Date().toISOString()}).eq("id",id).select(); if(md&&md.error){ modaleInfo("Enregistrement impossible : "+md.error.message); break; } if(!md||!md.data||!md.data.length){ await loadBudgets(); render(); modaleInfo("Le serveur a refus\u00e9 la modification (aucune ligne chang\u00e9e) \u2014 il s'agit d'une r\u00e8gle de droits (RLS) sur ca_budgets.","Action non enregistr\u00e9e"); break; } await loadBudgets(); render(); break; }
-    case "bcloture": { await cloturerBudget(id, el.dataset.force==="1"); break; }
+    case "bcloture": { await cloturerBudget(id, false); break; }   // 13/11/2026 : plus d'approbation hors seuil
     case "res-nouv": { await emettreReserveCA(id); break; }
     case "res-lever": { await leverReserveCA(id); break; }
     case "del-budget": {
@@ -6047,8 +6091,8 @@ async function soutAuthentifier(email, quoi){
     const mdp=await modaleChamp("Pour signer "+quoi+", retapez le mot de passe de votre compte ("+email+").","Signer",{type:"password",placeholder:"Mot de passe",bouton:"🔒 Signer",erreur:err});
     if(mdp===null) return false;
     if(!mdp){ err="Saisissez votre mot de passe."; essai--; continue; }
-    let r=null; try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }catch(e){ r={error:e}; }
-    if(!(r&&r.error)) return true;
+    let r=null; try{ r=await motDePasseSignature(email, mdp); }catch(e){ r={error:e}; }
+    if(!(r&&r.error)) return (await mfaApresMotDePasse());
     err="Mot de passe incorrect.";
   }
   modaleInfo("Mot de passe incorrect (3 essais). L'engagement n'a pas été signé.");
@@ -7815,8 +7859,8 @@ async function salleAuthentifier(email){
     const mdp=await modaleChamp("Pour signer le règlement de la salle, retapez le mot de passe de votre compte ("+email+").","Signer le règlement",{type:"password",placeholder:"Mot de passe",bouton:"🔒 Signer",erreur:err});
     if(mdp===null) return false;
     if(!mdp){ err="Saisissez votre mot de passe."; essai--; continue; }
-    let r=null; try{ r=await sb.auth.signInWithPassword({email:email, password:mdp}); }catch(e){ r={error:e}; }
-    if(!(r&&r.error)) return true;
+    let r=null; try{ r=await motDePasseSignature(email, mdp); }catch(e){ r={error:e}; }
+    if(!(r&&r.error)) return (await mfaApresMotDePasse());
     err="Mot de passe incorrect.";
   }
   modaleInfo("Mot de passe incorrect (3 essais). La demande n'a pas été envoyée.");
