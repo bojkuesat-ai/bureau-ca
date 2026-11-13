@@ -277,12 +277,21 @@ async function viaSes(to: string, sujet: string, html: string, pj: PJ[], from = 
 // Repli : la fonction send-email existante du CA.
 async function viaSendEmail(to: string, sujet: string, html: string, pj: PJ[], jwt?: string, from = FROM): Promise<Envoi> {
   const payload = JSON.stringify({ to, subject: sujet, html, from, ...(pj.length ? { attachments: pj.map((p) => ({ filename: p.filename, content: p.content })) } : {}) });
-  const essais = [jwt, SRK, ANON].filter(Boolean) as string[];
+  /* 13/11/2026 : send-email refuse le HTML anonyme (anti-spam). La Billetterie s'y présente donc
+     comme SERVEUR, avec le secret interne (en-tête x-cron-secret, lu dans bil_config.cron_secret),
+     et la clé publique seule dans apikey. Avant, la clé secrète (sb_secret_…) partait en Bearer
+     avec une autre clé dans apikey : la passerelle Supabase rejetait (401 « clés en conflit »),
+     puis l'essai suivant tombait en anonyme (403) → aucun mail de confirmation ne partait. */
+  const sec = String((await config()).cron_secret ?? "");
+  const essais: Record<string, string>[] = [];
+  if (sec) essais.push({ "x-cron-secret": sec, "apikey": ANON || SRK });
+  if (SRK) essais.push({ "apikey": SRK });
+  if (jwt) essais.push({ "Authorization": "Bearer " + jwt, "apikey": ANON || SRK });
   let der = "";
-  for (const t of essais) {
+  for (const h of essais) {
     try {
       const r = await fetch(SB_URL + "/functions/v1/send-email", { method: "POST", body: payload,
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + t, "apikey": ANON || SRK } });
+        headers: { "Content-Type": "application/json", ...h } });
       if (r.ok) return { ok: true, via: "send-email" };
       der = `send-email ${r.status} ${(await r.text()).slice(0, 160)}`;
       if (r.status !== 401 && r.status !== 403) break;
