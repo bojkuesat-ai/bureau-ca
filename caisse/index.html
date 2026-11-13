@@ -98,6 +98,16 @@ header.top .sub{margin:1px 0 0;color:var(--muted);font-size:12.5px}
 .roleswitch button:hover{color:var(--gold-soft);border-color:var(--gold-dim)}
 .roleswitch button[aria-pressed="true"]{background:linear-gradient(160deg,#332863,#281f4e);
   color:var(--text);border-color:var(--gold-dim);box-shadow:inset 0 0 0 1px rgba(232,176,75,.25)}
+/* Rubriques : les onglets sont regroupés quand il y en a beaucoup (trésorier). */
+.grpbar{display:flex;gap:6px;flex-wrap:wrap}
+.grpbar[hidden]{display:none}
+.grpbar button{border:1px solid var(--line);background:transparent;color:var(--muted);
+  padding:8px 14px;border-radius:999px;font-weight:700;font-size:12.5px;letter-spacing:.02em;transition:.15s}
+.grpbar button:hover{color:var(--gold-soft);border-color:var(--gold-dim)}
+.grpbar button[aria-pressed="true"]{background:var(--gold-dim);color:var(--text);border-color:var(--gold-dim)}
+header.top.groupe .grpbar{order:10;flex-basis:100%}
+header.top.groupe .roleswitch{order:11;flex-basis:100%}
+.roleswitch button.grp-off{display:none}
 .pill{display:inline-block;margin-left:7px;background:var(--surface2);color:var(--gold-soft);
   border-radius:20px;padding:1px 7px;font-size:11px;font-weight:700}
 .who{font-size:12.5px;color:var(--muted);text-align:right;line-height:1.35}
@@ -588,6 +598,8 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
   .who{text-align:left}
   .roleswitch{width:100%}
   .roleswitch button{flex:1}
+  .grpbar{width:100%}
+  .grpbar button{flex:1}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -691,8 +703,9 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 <!-- ============ APPLICATION ============ -->
 <div id="app" hidden>
 <header class="top">
-  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 24.10.2026 · TB</div></div>
+  <div><h1>Caisse</h1><div class="sub">Demandes de remboursement</div><div class="sub" id="appVersion" style="opacity:.55;font-size:11px">version 13.11.2026 · rubriques</div></div>
   <div class="spacer"></div>
+  <div class="grpbar" id="grpBar" role="group" aria-label="Rubriques" hidden></div>
   <div class="roleswitch" role="group" aria-label="Sections">
     <button id="tabHoraires" aria-pressed="false" hidden>Horaires</button>
     <button id="tabOverview" aria-pressed="false" hidden>Aperçu</button>
@@ -2440,6 +2453,9 @@ function lienReexamen(it){ return window.location.origin + window.location.pathn
 
 
 // Encadré reprenant le mot du trésorier, ajouté aux mails de décision.
+/* Code de vérification de la décision du trésorier (délivré par le serveur, voir caisse_decision_code). */
+const blocCodeDec = it => it && it._codeDec ? '<p style="color:#555;font-size:13px">Code de vérification de cette décision : <b style="font-family:Consolas,Menlo,monospace">'
+  + mailEsc(it._codeDec) + '</b><br><span style="color:#888;font-size:12px">À contrôler dans la Caisse, onglet « Vérifier une signature ».</span></p>' : "";
 const blocNote = note => {
   const t = String(note || "").trim();
   return t ? '<p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">'
@@ -2455,6 +2471,7 @@ async function mailRembourse(it, note){
     ${blocNote(note)}
     <p style="text-align:center;margin:26px 0"><a href="${lienRecu(it)}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Voir / télécharger mon reçu</a></p>
     <p style="color:#666;font-size:13px">Vous pourrez le consulter, le télécharger en PDF et l'imprimer.</p>
+    ${blocCodeDec(it)}
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
   return envoyerMail(to, "Remboursement effectué — "+refOf(it), html);
@@ -2468,6 +2485,7 @@ async function mailCorriger(it, motif){
     <p style="background:#fdf6ec;border:1px solid #e8d3ab;border-radius:8px;padding:12px"><b>À corriger :</b><br>${mailEsc(motif).replace(/\n/g,"<br>")}</p>
     <p>Ouvrez votre demande dans l'application : vous pouvez <b>ajouter de nouvelles pièces</b> et compléter, puis renvoyer. Elle repassera automatiquement en attente de décision.</p>
     <p style="text-align:center;margin:22px 0"><a href="${lienDemande(it)}" style="background:#c47f17;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Corriger ma demande</a></p>
+    ${blocCodeDec(it)}
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
   return envoyerMail(to, "Demande à corriger — "+refOf(it), html);
@@ -2482,6 +2500,7 @@ async function mailRefuse(it, motif){
     ${String(motif||"").trim() ? `<p style="background:#faf3f3;border:1px solid #e0c3c3;border-radius:8px;padding:12px"><b>Motif :</b><br>${mailEsc(motif).replace(/\n/g,"<br>")}</p>` : ""}
     <p style="color:#666;font-size:13px">Si vous pensez que ce refus est une erreur (par exemple si vous avez ajouté le bon document depuis), vous pouvez demander un réexamen&nbsp;:</p>
     <p style="text-align:center;margin:22px 0"><a href="${lienReexamen(it)}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Demander un réexamen</a></p>
+    ${blocCodeDec(it)}
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">La trésorerie du Bureau étudiant</p></div>`;
   return envoyerMail(to, "Demande refusée — "+refOf(it), html);
@@ -2581,6 +2600,7 @@ async function mailRouvert(it, note){
     <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
     ${blocNote(note)}
     <p>Vous serez informé dès qu'une nouvelle décision sera prise.</p>
+    ${blocCodeDec(it)}
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
   return envoyerMail(to, "Dossier remis en traitement — "+refOf(it), html);
@@ -2598,6 +2618,7 @@ async function mailValide(it, note){
     <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
     ${blocNote(note)}
     <p>${suite} Vous recevrez une confirmation une fois le virement effectué.</p>
+    ${blocCodeDec(it)}
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
   return envoyerMail(to, "Demande validée — "+refOf(it), html);
@@ -2701,6 +2722,7 @@ async function mailMessage(it, note){
     <p style="background:#f4f6f8;border:1px solid #dde3e8;border-radius:8px;padding:12px">${mailEsc(note).replace(/\n/g,"<br>")}</p>
     <p style="color:#555">Référence : ${mailEsc(refOf(it))}</p>
     <p style="text-align:center;margin:24px 0"><a href="${window.location.origin+window.location.pathname}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir ma demande</a></p>
+    ${blocCodeDec(it)}
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#999;font-size:12px">Envoi automatique, merci de ne pas répondre. — Le bureau étudiant, Trésorerie</p></div>`;
   return envoyerMail(to, "Message du trésorier — "+refOf(it), html, emailTreso());
@@ -6160,10 +6182,11 @@ const aVirer = () => state.items.filter(i => i.status === "Validée" && !(i.kind
 // L'update n'aboutit que si le statut est encore celui affiché dans le tiroir.
 async function majSiInchangee(it, patch){
   const { data, error } = await sb.from("requests").update(patch)
-    .eq("id", it.id).eq("status", it.status).select("id");
+    .eq("id", it.id).eq("status", it.status).select("id,decision_code");
   if(error) return { erreur: error.message };
   if(!data || !data.length) return { conflit: true };
-  return { ok: true };
+  /* Changement de statut : le serveur vient d'inscrire la décision au registre des signatures. */
+  return { ok: true, code: (patch && patch.status && patch.status !== it.status && data[0].decision_code) || "" };
 }
 function messageConflit(){
   return "Cette demande a changé entre-temps : quelqu'un d'autre l'a traitée pendant que vous l'aviez ouverte. Rien n'a été modifié — la liste vient d'être rafraîchie.";
@@ -6402,13 +6425,14 @@ $("#payDone").onclick = async () => {
   let ok = 0;
   for(const i of l){
     const quand = new Date().toISOString();
-    const { error } = await sb.from("requests")
-      .update({ status:"Remboursée", paid_at:quand }).eq("id", i.id);
+    const { data: majD, error } = await sb.from("requests")
+      .update({ status:"Remboursée", paid_at:quand }).eq("id", i.id).select("decision_code");
     if(!error){
       ok++;
+      const codeD = (i.status !== "Remboursée" && majD && majD[0] && majD[0].decision_code) || "";
       await sb.from("events").insert({ request_id:i.id, who:state.profile.name,
-        what: i.user_id === state.profile.id ? "Remboursement effectué au trésorier lui-même" : "Remboursement effectué (série de virements)" });
-      if(i.kind !== "direct" || mailDirectD) mailRembourse({ ...i, status:"Remboursée", paid_at:quand });
+        what: (i.user_id === state.profile.id ? "Remboursement effectué au trésorier lui-même" : "Remboursement effectué (série de virements)") + (codeD ? " — code de vérification " + codeD : "") });
+      if(i.kind !== "direct" || mailDirectD) mailRembourse({ ...i, status:"Remboursée", paid_at:quand, _codeDec:codeD });
     }
   }
   btn.disabled = false; btn.textContent = "Marquer comme remboursés";
@@ -8433,6 +8457,8 @@ function setView(v){
   if(v==="horaires"){ try{ renderHoraires(); }catch(_){ } }
   $("#tabExpenses").setAttribute("aria-pressed", v==="expenses");
   $("#tabIncomes").setAttribute("aria-pressed", v==="incomes");
+  if($("#tabReprise")) $("#tabReprise").setAttribute("aria-pressed", v==="reprise");
+  if($("#tabExtraits")) $("#tabExtraits").setAttribute("aria-pressed", v==="extraits");
   $("#tabMembers").setAttribute("aria-pressed", v==="members");
   $("#tabMessages").setAttribute("aria-pressed", v==="messages");
   if($("#tabBudget")) $("#tabBudget").setAttribute("aria-pressed", v==="budget");
@@ -12340,8 +12366,8 @@ async function bulkValider(){
     ok++;
     const sienne = it.user_id === state.profile.id;
     try{ await sb.from("events").insert({request_id:it.id, who:state.profile.name,
-      what: sienne ? "Demande validée par le trésorier lui-même (lot)" : "Demande validée (lot)"}); }catch(_){}
-    if(it.kind !== "direct" || mailDirect){ try{ mailValide({...it, status:"Validée"}); }catch(_){} }
+      what: (sienne ? "Demande validée par le trésorier lui-même (lot)" : "Demande validée (lot)") + (r.code ? " — code de vérification " + r.code : "")}); }catch(_){}
+    if(it.kind !== "direct" || mailDirect){ try{ mailValide({...it, status:"Validée", _codeDec:r.code}); }catch(_){} }
   }
   state.sel.clear(); await refresh(); renderBulk();
   toast(ok+" demande(s) validée(s)." + (ko ? " " + ko + " échec(s)." : "") + (conflits ? " " + conflits + " déjà traitée(s) ailleurs." : ""));
@@ -12369,9 +12395,9 @@ async function bulkPayer(){
     ok++;
     const sienne = it.user_id === state.profile.id;
     try{ await sb.from("events").insert({request_id:it.id, who:state.profile.name,
-      what: sienne ? "Remboursement effectué au trésorier lui-même (lot)" : "Remboursement effectué (lot)"}); }catch(_){}
+      what: (sienne ? "Remboursement effectué au trésorier lui-même (lot)" : "Remboursement effectué (lot)") + (r.code ? " — code de vérification " + r.code : "")}); }catch(_){}
     // paid_at manquait : le reçu envoyé par mail portait une date vide
-    if(it.kind !== "direct" || mailDirectP){ try{ mailRembourse({...it, status:"Remboursée", paid_at:quand}); }catch(_){} }
+    if(it.kind !== "direct" || mailDirectP){ try{ mailRembourse({...it, status:"Remboursée", paid_at:quand, _codeDec:r.code}); }catch(_){} }
   }
   state.sel.clear(); await refresh(); renderBulk();
   toast(ok+" demande(s) remboursée(s)." + (ko ? " " + ko + " échec(s)." : "") + (conflits ? " " + conflits + " déjà traitée(s) ailleurs." : ""));
@@ -12607,6 +12633,14 @@ function renderDrawer(it){
   if(it.signature_code && (isTreso() || sienne)){
     actions += `<div class="callout"><b>✍️ Demande signée — code de vérification <span style="font-family:ui-monospace,Menlo,monospace">${esc(it.signature_code)}</span></b>
       <p>Signature délivrée par le serveur (registre des signatures). Pour la contrôler : onglet « Vérifier une signature ».</p></div>`;
+  }
+  if(Array.isArray(it.decision_codes) && it.decision_codes.length && (isTreso() || sienne)){
+    const dern = it.decision_codes[it.decision_codes.length - 1], mono = "font-family:ui-monospace,Menlo,monospace";
+    const anciens = it.decision_codes.slice(0, -1).reverse();
+    actions += `<div class="callout"><b>🔏 Décision du trésorier — code de vérification <span style="${mono}">${esc(dern.code)}</span></b>
+      <p>${esc(VS_TYPES[dern.type] || dern.statut || "Décision")}${dern.par ? " par " + esc(dern.par) : ""}, le ${esc(fstamp(dern.le))}. Décision inscrite par le serveur au registre des signatures. Pour la contrôler : onglet « Vérifier une signature ».</p>
+      ${anciens.length ? `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px">Décisions précédentes (${anciens.length})</summary>
+        ${anciens.map(d => `<p style="margin:5px 0 0;font-size:13px">${esc(VS_TYPES[d.type] || d.statut || "Décision")} — ${esc(fstamp(d.le))} — <span style="${mono}">${esc(d.code)}</span></p>`).join("")}</details>` : ""}</div>`;
   }
   if(isTreso() && attesteDoublon(it)){
     actions += `<div class="callout" style="border-color:var(--amber)"><b>Doublon possible écarté par le demandeur</b>
@@ -13160,8 +13194,10 @@ $("#d_body").addEventListener("click", async e => {
   if(res.erreur) return toast("Action impossible : " + res.erreur);
   if(res.conflit){ await refresh(); closeDrawer(); return await dire("Demande déjà traitée", messageConflit()); }
   state.drawerDirty = false;   // l'action est enregistrée : le panneau peut être réécrit
+  it._codeDec = res.code || "";
   await sb.from("events").insert({ request_id:it.id, who:state.profile.name,
-    what: direct ? label + (mailMembre ? " — avec e-mail au membre" : " — sans e-mail au membre") : label });
+    what: (direct ? label + (mailMembre ? " — avec e-mail au membre" : " — sans e-mail au membre") : label)
+      + (res.code ? " — code de vérification " + res.code : "") });
   // Les envois sont attendus : sans cela, un échec passait totalement inaperçu.
   // Paiement direct : rien ne part sans que le trésorier l'ait activé dans la fenêtre de confirmation.
   if(mailMembre && act==="valider"){ await avertirMail(mailValide(it, note), "demande validée"); }
@@ -13182,7 +13218,7 @@ $("#d_body").addEventListener("click", async e => {
   // urgence hors budget validée : l'imputer à un budget ou la classer « hors budget assumé »
   if(act==="valider" && apres && apres.hors_budget && !apres.budget_id && !apres.hors_budget_assume) await imputerUrgence(apres);
   await loadEvents(it.id);
-  toast(label + ".");
+  toast(label + "." + (res.code ? " Code de vérification : " + res.code : ""));
 });
 
 /* ---------- export ---------- */
@@ -15205,7 +15241,10 @@ if($("#tabVS")) $("#tabVS").onclick = () => choisirVue("vs");
    Caisse, seules les signatures de la Caisse sont consultables.
    ===================================================================== */
 const VS_TYPES = { demande:"Demande signée", demande_doublon:"Déclaration d'absence de doublon", acte_vp:"Signature conjointe — vice-président",
-  acte_treso:"Signature conjointe — trésorier", gj_tresorier:"Gestion journalière — trésorier", gj_presidente:"Gestion journalière — présidente" };
+  acte_treso:"Signature conjointe — trésorier", gj_tresorier:"Gestion journalière — trésorier", gj_presidente:"Gestion journalière — présidente",
+  decision_validee:"Décision du trésorier — demande validée", decision_refusee:"Décision du trésorier — demande refusée",
+  decision_corriger:"Décision du trésorier — renvoi pour correction", decision_payee:"Décision du trésorier — paiement effectué",
+  decision_rouverte:"Décision du trésorier — remise en attente", decision_rejet:"Décision du trésorier — virement rejeté par la banque" };
 state.vs = { code:"", res:null, err:"", busy:false };
 function renderVS(){
   const box = $("#vsBox"); if(!box) return; const V = state.vs;
@@ -15218,6 +15257,8 @@ function renderVS(){
     if(d.ref) L.push(["Référence", d.ref]);
     if(d.intitule) L.push(["Intitulé", d.intitule]);
     if(d.objet) L.push(["Objet", d.objet]);
+    if(d.demandeur) L.push(["Demandeur", d.demandeur]);
+    if(d.statut) L.push(["Décision", (d.statut_avant ? "« " + d.statut_avant + " » → " : "") + "« " + d.statut + " »"]);
     if(d.montant != null) L.push(["Montant", euro(d.montant)]);
     if(d.date) L.push(["Date de la dépense", fdate(d.date)]);
     if(d.date_decision) L.push(["Date de la décision", fdate(d.date_decision)]);
@@ -15237,7 +15278,7 @@ function renderVS(){
   }
   box.innerHTML = `<div class="card" style="padding:16px 18px">
     <div class="eyebrow">Vérifier une signature</div>
-    <p class="hint" style="margin:6px 0 12px">Chaque signature électronique de la Caisse (demande signée, doublon écarté, signature conjointe, gestion journalière) porte un <b>code de vérification</b> délivré par le serveur. Tapez-le pour savoir s'il est authentique, qui a signé, quoi et quand. Les documents signés avant le 13/11/2026 n'ont pas de code vérifiable.</p>
+    <p class="hint" style="margin:6px 0 12px">Chaque signature électronique de la Caisse (demande signée, doublon écarté, décision du trésorier, signature conjointe, gestion journalière) porte un <b>code de vérification</b> délivré par le serveur. Tapez-le pour savoir s'il est authentique, qui a signé, quoi et quand. Les documents signés avant le 13/11/2026 n'ont pas de code vérifiable.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <input id="vs_code" value="${esc(V.code)}" placeholder="Code de vérification (ex. A1B2-C3D4-E5F6-7890)" autocomplete="off" spellcheck="false" style="flex:1 1 260px;font-family:ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase">
       <button class="btn" id="vs_go" ${V.busy ? "disabled" : ""}>${V.busy ? "Vérification…" : "Vérifier"}</button>
@@ -15602,6 +15643,80 @@ setMode("signin");
 majFormulaire();
 const { data:{ session } } = await sb.auth.getSession();
 if(session) await start();
+</script>
+<script>
+/* =====================================================================
+   RUBRIQUES — regroupe les onglets de la Caisse (13/11/2026).
+   Les boutons d'onglet restent les mêmes (mêmes identifiants, mêmes clics) :
+   ce script n'ajoute qu'une rangée de rubriques au-dessus et n'affiche que
+   les onglets de la rubrique ouverte. Les droits ne changent pas : un onglet
+   masqué par l'application (attribut hidden) reste masqué.
+   Avec 6 onglets ou moins (membre ordinaire), rien n'est regroupé.
+   ===================================================================== */
+(function(){
+  var RUBRIQUES = [
+    { id:"demandes",   nom:"Demandes",           onglets:["tabMine","tabDirect","tabTB","tabFactures","tabPres","tabNovelles"] },
+    { id:"traitement", nom:"Traitement",         onglets:["tabTreso","tabReexam","tabPreuves","tabOverview","tabHoraires"] },
+    { id:"comptes",    nom:"Comptes",            onglets:["tabExpenses","tabIncomes","tabReprise","tabExtraits","tabDocs","tabBudget","tabCompta","tabTva"] },
+    { id:"membres",    nom:"Membres & messages", onglets:["tabMembers","tabMessages","tabMails"] },
+    { id:"signatures", nom:"Signatures",         onglets:["tabGJ","tabSC","tabVS"] }
+  ];
+  var SEUIL = 6;
+  var barre = document.getElementById("grpBar"), zone = document.querySelector(".roleswitch"), entete = document.querySelector("header.top");
+  if(!barre || !zone || !entete) return;
+  var choisie = null, dernier = {}, enCours = false;
+  function rubriqueDe(id){
+    for(var i = 0; i < RUBRIQUES.length; i++) if(RUBRIQUES[i].onglets.indexOf(id) >= 0) return RUBRIQUES[i];
+    return RUBRIQUES[0];   // onglet ajouté plus tard et pas encore classé
+  }
+  function maj(){
+    if(enCours) return; enCours = true;
+    try{
+      var tous = Array.prototype.slice.call(zone.querySelectorAll("button[id^='tab']"));
+      var visibles = tous.filter(function(b){ return !b.hidden; });
+      var actif = tous.filter(function(b){ return b.getAttribute("aria-pressed") === "true" && !b.hidden; })[0];
+      if(visibles.length <= SEUIL){
+        barre.hidden = true; entete.classList.remove("groupe");
+        tous.forEach(function(b){ b.classList.remove("grp-off"); b.style.order = ""; });
+        return;
+      }
+      if(actif){ var ra = rubriqueDe(actif.id); dernier[ra.id] = actif.id; choisie = ra.id; }
+      var presentes = RUBRIQUES.filter(function(r){ return visibles.some(function(b){ return rubriqueDe(b.id) === r; }); });
+      if(!presentes.some(function(r){ return r.id === choisie; })) choisie = presentes[0] ? presentes[0].id : null;
+      tous.forEach(function(b){
+        var r = rubriqueDe(b.id), rang = r.onglets.indexOf(b.id);
+        b.classList.toggle("grp-off", r.id !== choisie);
+        b.style.order = String(rang < 0 ? 99 : rang);
+      });
+      barre.innerHTML = "";
+      presentes.forEach(function(r){
+        var total = 0;
+        visibles.forEach(function(b){
+          if(rubriqueDe(b.id) !== r) return;
+          var p = b.querySelector(".pill");
+          if(p && !p.hidden) total += parseInt(p.textContent, 10) || 0;
+        });
+        var btn = document.createElement("button");
+        btn.type = "button"; btn.textContent = r.nom;
+        btn.setAttribute("aria-pressed", r.id === choisie ? "true" : "false");
+        if(total){ var s = document.createElement("span"); s.className = "pill"; s.textContent = String(total); btn.appendChild(s); }
+        btn.onclick = function(){
+          if(choisie === r.id) return;
+          choisie = r.id;
+          var cible = document.getElementById(dernier[r.id] || "");
+          if(!cible || cible.hidden) cible = visibles.filter(function(b){ return rubriqueDe(b.id) === r; })
+            .sort(function(a, b){ return r.onglets.indexOf(a.id) - r.onglets.indexOf(b.id); })[0];
+          if(cible) cible.click();   // ouvre l'onglet : l'application met à jour l'affichage
+          maj();
+        };
+        barre.appendChild(btn);
+      });
+      barre.hidden = false; entete.classList.add("groupe");
+    } finally { enCours = false; }
+  }
+  new MutationObserver(maj).observe(zone, { subtree:true, childList:true, characterData:true, attributes:true, attributeFilter:["hidden","aria-pressed"] });
+  maj();
+})();
 </script>
 </body>
 </html>

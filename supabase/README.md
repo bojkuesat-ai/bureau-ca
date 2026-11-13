@@ -50,3 +50,12 @@ et consigné dans `signatures_registre` (insertion seule, trigger anti-modificat
   signatures seulement). Les documents signés avant cette date gardent leur ancien code local.
 - **Ne jamais exporter ni recopier `signatures_secret`** : sans lui, aucun code n'est
   vérifiable ; s'il fuit, tout le registre peut être falsifié. Il n'est pas dans la sauvegarde.
+
+### Décisions du trésorier (Caisse, 13/11/2026)
+`sql/2026-11-13_caisse_decisions_code_verification.sql`. Chaque changement de statut d'une
+demande fait par le trésorier (validée, refusée, à corriger, remboursée, remise en attente,
+virement rejeté) reçoit lui aussi un code de vérification, inscrit dans `signatures_registre`
+(types `decision_*`) par le trigger `zy_caisse_decision_code` sur `requests`.
+- `requests.decision_code` = dernière décision ; `requests.decision_codes` = historique.
+  Ces colonnes ne sont écrites que par le trigger (valeurs du navigateur ignorées).
+- Le code figure dans le panneau de la demande, l'historique et le mail envoyé au membre.
