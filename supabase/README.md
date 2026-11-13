@@ -107,3 +107,13 @@ L'alerte au propriétaire (« 🚨 Nouvel appareil — … ») existait déjà e
 - **Blocage serveur** : trigger `a0_app_garde` + politique `app_fermee` sur les tables de `app_tables`.
 - **Licence** : `licence_demander` → mail au propriétaire → `proprio_licence_approuver` → lien
   `#licence=…` → `licence_activer` (le demandeur devient Admin) ; rappels `licence-rappels` (07:13 UTC).
+
+## Double authentification obligatoire, budgets du trésorier, guide de passation (13/11/2026)
+
+Fichier : `sql/2026-11-13_mfa_obligatoire_passation_guide.sql` (migrations `proprio_9`, `proprio_10`).
+
+- L'Admin et le trésorier doivent avoir la double authentification : sans elle, le serveur refuse leurs actions. Un bandeau (CA) ou un écran (Caisse) propose de l'activer. Elle ne peut pas être désactivée tant qu'on est Admin ou trésorier.
+- Nommer un Admin, un trésorier ou faire la passation : la personne doit l'avoir activée avant.
+- Budgets de la Caisse : approuvés ou refusés par le trésorier. L'effectif du CA exclut le propriétaire retiré et les membres « hors CA ».
+- Passation : le guide complet part par mail à la nouvelle Admin / trésorière ; les notifications push du propriétaire sont supprimées.
+- `send-email` v24 : après la passation, le propriétaire ne reçoit plus aucun mail du CA ni de la Caisse (sauf licence et « Nouvelle connexion »). Les réponses vont à l'Admin.

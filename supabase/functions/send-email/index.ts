@@ -151,6 +151,32 @@ const FROM_DEFAULT = "Bureau étudiant <noreply@bureauetuidant.xyz>";
 const FROM_DOMAINE = "bureauetuidant.xyz";
 const REPLY_DEFAUT = "esat.bojku@ulb.be";
 
+/* 13/11/2026 — Passation : le propriétaire « retiré » (ca_membres.role = 'proprietaire') ne
+   reçoit plus AUCUN mail du CA ni de la Caisse, quel que soit l'expéditeur (app, base, autre
+   fonction). Exceptions : les mails de licence (expéditeur « Licence-BE ») et l'alerte
+   « 🔐 Nouvelle connexion » sur son propre compte. Les réponses (Reply-To par défaut, qui
+   était son adresse) vont alors à l'Admin. */
+let retiresCache: { adresses: Set<string>; reply: string; t: number } = { adresses: new Set(), reply: "", t: 0 };
+async function retires() {
+  if (retiresCache.t && Date.now() - retiresCache.t < 120000) return retiresCache;
+  const adresses = new Set<string>(); let reply = "";
+  try {
+    const { data: ms } = await sbAdmin.from("ca_membres").select("id,email,email_alt").eq("role", "proprietaire");
+    for (const m of (ms ?? []) as any[]) {
+      [m.email, m.email_alt].forEach((e: unknown) => { if (e) adresses.add(String(e).toLowerCase().trim()); });
+      try { const { data: p } = await sbAdmin.from("profiles").select("email").eq("id", m.id).maybeSingle(); if (p?.email) adresses.add(String(p.email).toLowerCase().trim()); } catch (_) { /* */ }
+      try { const { data: u } = await sbAdmin.auth.admin.getUserById(m.id); if (u?.user?.email) adresses.add(u.user.email.toLowerCase().trim()); } catch (_) { /* */ }
+    }
+    if (adresses.size) {
+      adresses.add(REPLY_DEFAUT.toLowerCase());
+      const { data: a } = await sbAdmin.from("ca_membres").select("email").eq("admin", true).eq("statut", "actif").neq("role", "proprietaire").order("created_at").limit(1);
+      reply = String((a as any[])?.[0]?.email ?? "");
+    }
+    retiresCache = { adresses, reply, t: Date.now() };
+  } catch (_) { /* on garde l'ancien cache */ }
+  return retiresCache;
+}
+
 const EXPEDITEUR_DELEGATION =
   "Délégation étudiante de la Faculté de Droit et de Criminologie <noreply@bureauetuidant.xyz>";
 
@@ -666,7 +692,20 @@ serve(async (req) => {
       });
     }
 
-    const dest = Array.isArray(to) ? to : [to];
+    let dest = Array.isArray(to) ? to : [to];
+    /* Passation : le propriétaire retiré ne reçoit plus rien (voir retires()). */
+    const R = await retires();
+    const exempt = /^\s*"?Licence-BE\b/i.test(String(from || "")) || /^🔐 Nouvelle connexion/.test(String(subject || ""));
+    if (R.adresses.size && !exempt) {
+      dest = dest.filter((d: unknown) => !R.adresses.has(String(d).toLowerCase().trim()));
+      if (!dest.length) {
+        return new Response(JSON.stringify({ ok: true, ignore: "destinataire retiré (passation)" }), {
+          status: 200, headers: { ...CORS, "Content-Type": "application/json" },
+        });
+      }
+    }
+    const replyDefaut = (R.adresses.size && R.reply) ? R.reply : REPLY_DEFAUT;
+    const replyFinal = (reply_to && !R.adresses.has(String(reply_to).toLowerCase().trim())) ? String(reply_to) : replyDefaut;
     if (dest.length > 20) {
       return new Response(JSON.stringify({ error: "20 destinataires maximum par appel" }), {
         status: 400, headers: { ...CORS, "Content-Type": "application/json" },
@@ -708,7 +747,7 @@ serve(async (req) => {
           Data: b64Octets(encc.encode(messageBrut({
             from: expediteur,
             to: dest.map((d: unknown) => String(d)),
-            replyTo: String(reply_to || REPLY_DEFAUT),
+            replyTo: replyFinal,
             subject: String(subject),
             html: String(html),
             pj: pieces,
@@ -726,7 +765,7 @@ serve(async (req) => {
       FromEmailAddress: expediteur,
       Destination: { ToAddresses: dest },
       Content: contenu,
-      ReplyToAddresses: [reply_to || REPLY_DEFAUT],
+      ReplyToAddresses: [replyFinal],
     };
     const payload = JSON.stringify(body);
 

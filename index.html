@@ -724,7 +724,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-13 · propriétaire et licences";
+const CA_VERSION="2026-11-13 · double authentification obligatoire";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -2665,7 +2665,7 @@ function viewDash(){
   const notifTot = notifOwner + notifBud;
   const body = estProprioRetire()
     ? (proprioOuvert() ? viewProprio() : `<div class="empty" style="padding:40px 20px"><h2 class="serif">🔑 Compte propriétaire</h2><p>Depuis la passation, ce compte n'a plus accès au contenu de l'Espace CA. Ouvrez votre lien propriétaire pour accéder à votre espace.</p></div>`)
-    : (S.appEtat && S.appEtat.pour_moi==="fermee") ? ecranFerme() : bandeauEtat() + (map[S.tab]||tabOrg)();
+    : (S.appEtat && S.appEtat.pour_moi==="fermee") ? ecranFerme() : bandeauEtat() + bandeauMfa() + (map[S.tab]||tabOrg)();
   const bienvenue = (estSecretaire() && !dejaVuGuide("secr")) ? `
     <div class="card2" style="border-left:4px solid var(--or,#c9a227);margin-bottom:16px">
       <h3 class="serif" style="margin-top:0">Bienvenue \u2014 vos fonctions de secr\u00e9tariat</h3>
@@ -8926,8 +8926,20 @@ document.addEventListener("click", async e=>{
    Activée : code de l'application d'authentification exigé après le mot
    de passe sur le CA, la Caisse et la Billetterie (même compte, même session).
    ===================================================================== */
+/* 13/11/2026 — Double authentification OBLIGATOIRE pour l'Admin et le trésorier : sans elle,
+   le serveur refuse leurs actions (ca_est_admin / is_tresorier exigent aal2). */
+function doitMfa(){ return !!(S.session && (estAdminCA() || (S.appEtat && S.appEtat.tresorier) || (S.tresoCA && S.tresoCA.id===S.session.id) || (S.session.admin && S.session.statut==="actif" && S.session.role!=="proprietaire"))); }
+function bandeauMfa(){
+  if(!doitMfa()) return "";
+  const M=S.mfa;
+  if(!M){ if(!S.mfaCharge){ S.mfaCharge=true; chargerMfaCA().then(()=>rendreEnPreservant()); } return ""; }
+  if(M.err||M.actif) return "";
+  return `<div class="card2" style="border-left:4px solid var(--red);margin:0 0 14px"><h3 class="serif">🔐 Double authentification obligatoire</h3>
+    <p class="du">Vous êtes ${estAdminCA()||S.session.admin?"Admin":"trésorière / trésorier"}. Tant que la double authentification n'est pas activée, le serveur refuse vos actions d'Admin et de trésorier (CA et Caisse). Cela prend une minute avec une application d'authentification sur votre téléphone.</p>
+    <div class="row-btn"><button class="btn sm" data-action="mfa-activer">Activer maintenant</button></div></div>`;
+}
 function carteMfaCA(){
-  if(!(S.session&&S.session.role==="owner")) return "";
+  if(!S.session) return "";
   const M=S.mfa;
   if(!M){ if(!S.mfaCharge){ S.mfaCharge=true; chargerMfaCA().then(()=>rendreEnPreservant()); } return `<div class="card2"><h3 class="serif">🔐 Double authentification</h3><p class="du">Chargement…</p></div>`; }
   if(M.err) return `<div class="card2"><h3 class="serif">🔐 Double authentification</h3><p class="du" style="color:var(--red)">${esc(M.err)}</p></div>`;
@@ -8947,7 +8959,7 @@ async function chargerMfaCA(){
 }
 document.addEventListener("click", async e=>{
   const el=e.target.closest("[data-action^='mfa-']"); if(!el||!sb) return;
-  if(!(S.session&&S.session.role==="owner")) return;
+  if(!S.session) return;
   try{
     if(el.dataset.action==="mfa-activer"){
       await chargerMfaCA();
@@ -8981,17 +8993,18 @@ document.addEventListener("click", async e=>{
         setTimeout(()=>{ try{ c.focus(); }catch(_){ } },50);
       });
       if(!ok){ try{ await sb.auth.mfa.unenroll({factorId:fid}); }catch(_){ } return; }
-      await chargerMfaCA(); try{ logAct("Double authentification activée sur le compte propriétaire"); }catch(_){ } rendreEnPreservant();
+      await chargerMfaCA(); try{ logAct("Double authentification activée"); }catch(_){ } rendreEnPreservant();
       modaleInfo("✓ Double authentification activée.\n\nÀ chaque nouvelle connexion (CA, Caisse, Billetterie), le code de l'app sera demandé après le mot de passe.\n\nGardez l'app sur votre téléphone. En cas de perte : Supabase › Authentication › Users › votre compte › supprimer le facteur.","Activée");
       return;
     }
     if(el.dataset.action==="mfa-desactiver"){
-      if(!(await modaleConfirm("Désactiver la double authentification ? Le mot de passe suffira à nouveau pour entrer avec le compte propriétaire.","Double authentification"))) return;
+      if(doitMfa()){ modaleInfo("La double authentification est obligatoire pour l'Admin et le trésorier : elle ne peut pas être désactivée.","Double authentification"); return; }
+      if(!(await modaleConfirm("Désactiver la double authentification ? Le mot de passe suffira à nouveau pour entrer.","Double authentification"))) return;
       const n=await sb.auth.mfa.getAuthenticatorAssuranceLevel();
       if(!n.data||n.data.currentLevel!=="aal2"){ modaleInfo("Reconnectez-vous avec le code de l'app avant de désactiver.","Double authentification"); return; }
       const r=await sb.auth.mfa.unenroll({factorId:S.mfa.id});
       if(r.error){ modaleInfo("Désactivation impossible : "+r.error.message,"Double authentification"); return; }
-      await chargerMfaCA(); try{ logAct("Double authentification désactivée sur le compte propriétaire"); }catch(_){ } rendreEnPreservant();
+      await chargerMfaCA(); try{ logAct("Double authentification désactivée"); }catch(_){ } rendreEnPreservant();
       modaleInfo("Double authentification désactivée.","Désactivée");
     }
   }catch(err){ modaleInfo(String(err&&err.message||err)); }
