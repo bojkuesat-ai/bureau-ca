@@ -1,0 +1,19 @@
+name: Vérification de la syntaxe
+# À chaque push : vérifie que les pages (CA, Caisse, Billetterie) et les fonctions
+# Edge n'ont pas d'erreur de syntaxe. En cas d'erreur, le commit reçoit une croix
+# rouge et GitHub prévient par mail ; le site, lui, est publié quand même.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  syntaxe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-save --no-package-lock esbuild@0.24.2
+      - run: node .github/verifier-syntaxe.mjs

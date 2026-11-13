@@ -3682,7 +3682,11 @@ function tabRgpdCoopte(){
    ===================================================================== */
 const VS_TYPES={procuration:"Procuration",procuration_annulation:"Annulation de procuration",pv_secretaire:"PV — signature de la secrétaire",
   budget_certification:"Budget voté en CA physique — certification du responsable",budget_confirmation:"Budget voté en CA physique — confirmation du trésorier",pv_presidente:"PV — signature de la présidente",pv_vice:"PV — signature du vice-président",demande:"Caisse — demande signée",
-  demande_doublon:"Caisse — déclaration d'absence de doublon",acte_vp:"Caisse — acte à signature conjointe (vice-président)",acte_treso:"Caisse — acte à signature conjointe (trésorier)"};
+  demande_doublon:"Caisse — déclaration d'absence de doublon",acte_vp:"Caisse — acte à signature conjointe (vice-président)",acte_treso:"Caisse — acte à signature conjointe (trésorier)",
+  decision_validee:"Caisse — décision du trésorier : demande validée",decision_refusee:"Caisse — décision du trésorier : demande refusée",
+  decision_corriger:"Caisse — décision du trésorier : renvoi pour correction",decision_payee:"Caisse — décision du trésorier : paiement effectué",
+  decision_rouverte:"Caisse — décision du trésorier : remise en attente",decision_rejet:"Caisse — décision du trésorier : virement rejeté",
+  gj_tresorier:"Caisse — gestion journalière (trésorier)",gj_presidente:"Caisse — gestion journalière (présidente)"};
 function vsEtat(){ return S.vsUI||(S.vsUI={code:"",res:null,err:"",busy:false}); }
 function tabVerifSig(){
   const V=vsEtat();
@@ -3702,10 +3706,17 @@ function tabVerifSig(){
     if(d.code_procuration) lignes.push(["Code de la procuration d'origine",d.code_procuration]);
     if(d.code_secretaire) lignes.push(["Code de la signature de la secrétaire",d.code_secretaire]);
     if(d.code_vice_president) lignes.push(["Code de la signature du vice-président",d.code_vice_president]);
+    if(d.demandeur) lignes.push(["Demandeur",d.demandeur]);
+    if(d.statut) lignes.push(["Décision",(d.statut_avant?"« "+d.statut_avant+" » → ":"")+"« "+d.statut+" »"]);
+    // Demande Caisse modifiée (ou supprimée) après la signature : signalé par le serveur.
+    const a=r.actuel||{}, NOMS={montant:"montant",objet:"objet",date:"date de la dépense",beneficiaire:"bénéficiaire",iban:"IBAN"};
+    const alerte=r.supprimee?`<div class="vote" style="border-left:4px solid #c47f17;margin-top:10px"><h4 class="serif">⚠️ La demande signée a été supprimée depuis</h4><p class="b-desc" style="margin:6px 0 0">La signature est authentique, mais le document qu'elle couvre n'existe plus dans la Caisse.</p></div>`
+      : r.modifie_apres?`<div class="vote" style="border-left:4px solid #c47f17;margin-top:10px"><h4 class="serif">⚠️ Demande modifiée après la signature</h4>
+        <p class="b-desc" style="margin:6px 0 0">La signature est authentique, mais la demande a changé depuis${(r.champs_modifies||[]).length?" ("+esc((r.champs_modifies||[]).map(c=>NOMS[c]||c).join(", "))+")":""}. Aujourd'hui : ${esc(a.montant!=null?Number(a.montant).toLocaleString("fr-BE",{style:"currency",currency:"EUR"}):"—")} · ${esc(a.objet||"—")}${a.beneficiaire?" · "+esc(a.beneficiaire):""}${a.statut?" · statut « "+esc(a.statut)+" »":""}.</p></div>`:"";
     out=`<div class="vote" style="border-left:4px solid var(--green,#2e7d32)"><div class="vote-h"><h4 class="serif">✅ Signature valide — ${esc(r.code)}</h4><span class="badge ok">Valide</span></div>
       <table style="margin-top:8px;font-size:13.5px"><tbody>${lignes.map(([k,v])=>`<tr><th style="text-align:left;padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top">${esc(k)}</th><td style="padding:3px 0">${esc(v)}</td></tr>`).join("")}</tbody></table>
       <p class="du" style="margin:8px 0 0">Empreinte du contenu signé : <span style="word-break:break-all">${esc(r.empreinte||"—")}</span></p>
-      <p class="du" style="margin:6px 0 0">Comparez ces informations avec le document que vous avez sous les yeux : si le nom, la date ou le contenu diffèrent, le document a été modifié après signature.</p></div>`;
+      <p class="du" style="margin:6px 0 0">Comparez ces informations avec le document que vous avez sous les yeux : si le nom, la date ou le contenu diffèrent, le document a été modifié après signature.</p></div>${alerte}`;
   } else if(V.res){
     const m=V.res.motif;
     out=`<div class="vote" style="border-left:4px solid var(--red)"><div class="vote-h"><h4 class="serif">❌ Signature non valide</h4><span class="badge no">Invalide</span></div>

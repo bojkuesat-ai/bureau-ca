@@ -59,3 +59,15 @@ virement rejeté) reçoit lui aussi un code de vérification, inscrit dans `sign
 - `requests.decision_code` = dernière décision ; `requests.decision_codes` = historique.
   Ces colonnes ne sont écrites que par le trigger (valeurs du navigateur ignorées).
 - Le code figure dans le panneau de la demande, l'historique et le mail envoyé au membre.
+
+### Contrôles des signatures Caisse (13/11/2026)
+`sql/2026-11-13_caisse_signatures_controles.sql`.
+- `signature_verifier` signale une demande **modifiée après signature** (`modifie_apres`,
+  `champs_modifies`, `actuel`) ou **supprimée** (`supprimee`). La signature reste valide.
+- Décisions du trésorier : un changement de statut n'est accepté que si le mot de passe a été
+  retapé dans les 5 minutes (`caisse_mdp_ouvrir` → table `caisse_mdp_frais`, contrôlé par le
+  trigger `zy_caisse_decision_code`). Les tâches serveur (sans utilisateur) ne sont pas concernées.
+
+## Vérification automatique
+`.github/workflows/verification.yml` contrôle la syntaxe des pages et des fonctions Edge à
+chaque push (croix rouge et mail en cas d'erreur ; le site est publié quand même).
