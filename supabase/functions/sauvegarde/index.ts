@@ -16,7 +16,7 @@ const PHRASE = Deno.env.get("SAUVEGARDE_PHRASE") ?? "";
 const ORIGINES = ["https://bojkuesat-ai.github.io", ...(Deno.env.get("BILLETS_ORIGINES") ?? "").split(",").map((s) => s.trim()).filter(Boolean)];
 const db = createClient(SB_URL, SRK, { auth: { persistSession: false, autoRefreshToken: false } });
 const enc = new TextEncoder();
-const MAX_PJ = 7 * 1024 * 1024;
+const MAX_PJ = 5 * 1024 * 1024;   // = PJ_MAX_OCTETS de send-email (5 Mo, taille du fichier réel)
 
 function cors(req: Request) {
   const o = req.headers.get("origin") ?? "";
@@ -41,11 +41,20 @@ async function proprietaires() {
   return ((data ?? []) as any[]).filter((m) => m.email);
 }
 async function envoyerMail(corps: string, jwt?: string) {
-  // send-email refuse souvent la clé publique : on essaie le jeton du propriétaire, puis la clé serveur, puis la clé publique.
+  /* 13/11/2026 : comme billets-mail, on se présente à send-email en tant que SERVEUR
+     (en-tête x-cron-secret lu dans bil_config.cron_secret, clé publique seule dans apikey).
+     Avant, la clé secrète partait en Bearer avec une autre clé dans apikey : la passerelle
+     rejetait (401 « clés en conflit ») puis l'essai anonyme était refusé (403). */
+  const { data: cfg } = await db.from("bil_config").select("cron_secret").eq("id", 1).maybeSingle();
+  const sec = String(cfg?.cron_secret ?? "");
+  const essais: Record<string, string>[] = [];
+  if (sec) essais.push({ "x-cron-secret": sec, "apikey": ANON || SRK });
+  if (SRK) essais.push({ "apikey": SRK });
+  if (jwt) essais.push({ "Authorization": "Bearer " + jwt, "apikey": ANON || SRK });
   let der = "";
-  for (const t of [jwt, SRK, ANON].filter(Boolean) as string[]) {
+  for (const h of essais) {
     try {
-      const r = await fetch(SB_URL + "/functions/v1/send-email", { method: "POST", body: corps, headers: { "Content-Type": "application/json", "Authorization": "Bearer " + t, "apikey": ANON || SRK } });
+      const r = await fetch(SB_URL + "/functions/v1/send-email", { method: "POST", body: corps, headers: { "Content-Type": "application/json", ...h } });
       if (r.ok) return "";
       der = "send-email " + r.status + " " + (await r.text()).slice(0, 160);
       if (r.status !== 401 && r.status !== 403) break;
