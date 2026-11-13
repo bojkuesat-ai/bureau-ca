@@ -87,3 +87,11 @@ Le texte du mail vient de l'app ; `{{CODE_DECISION}}` y est remplacé par le cod
 ### Lecture des tickets (Caisse, 13/11/2026)
 `caisse/lib/ocr/` : tesseract.js 7 + modèle français, chargés seulement quand une photo est jointe.
 Lecture dans le navigateur (rien n'est envoyé). La page autorise `'wasm-unsafe-eval'` (WebAssembly).
+
+### Alerte « Nouvelle connexion » au titulaire du compte (CA + Caisse, 13/11/2026)
+`sql/2026-11-13_alerte_nouvel_appareil.sql`. Dans `audit_noter` (connexion) : si l'appareil
+(`be:appareil-id`) n'a jamais été vu pour ce compte, mail de Securite-BE **à la personne**
+(app, appareil, heure, IP). Une alerte par appareil, toutes apps confondues (CA et Caisse ;
+la Billetterie n'est pas concernée). Table `securite_appareils` ; premier appareil d'un compte
+et appareils déjà présents dans le journal : sans mail ; 5 alertes max par compte et par heure.
+L'alerte au propriétaire (« 🚨 Nouvel appareil — … ») existait déjà et n'a pas changé.
