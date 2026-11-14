@@ -121,3 +121,13 @@ Fichier : `sql/2026-11-13_mfa_obligatoire_passation_guide.sql` (migrations `prop
 
 - Mail unique « Sécurité-BE » le samedi 14/11/2026 à 10:00 (tâche `mfa_invitation_1411`, fonction `mfa_invitation_envoyer()`), seulement aux membres actifs du CA (pas les coopté·es) sans double authentification. La table `mfa_invitations` empêche tout second envoi ; la tâche se supprime après l'envoi.
 - Espace CA et Caisse : bandeau pour les membres du CA tant qu'elle n'est pas activée, et popup une seule fois (par compte et par appareil). Personne hors du CA ne voit rien.
+
+### Courriers signés (CA, 14/11/2026)
+`sql/2026-11-14_courriers_signes.sql`. Onglet « ✒ Courriers signés » (activé par défaut, coupable
+dans Admin) : tout membre du CA (pas les coopté·es ni le propriétaire retiré, `courrier_peut()`)
+tape un courrier ou joint un fichier (PDF, Word, PowerPoint, OpenDocument, 15 Mo max), le signe
+avec son mot de passe (+ code si double authentification), et il part par mail à tout le CA.
+- `courrier_signer` : qualité lue sur le serveur (fonction CA, + « Trésorerie de la Caisse » si
+  `ca_est_tresorier()`), code au registre (type `courrier`). Table `ca_courriers` en lecture seule.
+- Texte → PDF du courrier ; PDF joint → PDF + page de signature ; Word/PPT → fichier tel quel +
+  page de signature PDF (empreinte SHA-256). `courrier_finaliser` enregistre le PDF puis l'envoi.

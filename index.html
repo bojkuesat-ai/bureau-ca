@@ -724,7 +724,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-14 · organigramme désactivable";
+const CA_VERSION="2026-11-14 · courriers signés";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1351,7 +1351,7 @@ async function refreshSession(){
   const jobsCoopte=[loadConflits,loadEvenements,loadMeta,loadAvis,loadAvisVotes,loadMediation,loadSoutien];
   const jobs=(S.session.role==="coopte")?jobsCoopte:[loadDocs,loadMessages,loadConflits,loadTaches,loadContacts,loadAnnonces,loadReactions,loadPresence,
     loadEvenements,loadReunions,loadCreneaux,loadOrg,loadBudgets,loadVotes,loadMeta,loadBilans,loadJournal,
-    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes,loadSalle,loadBillets,loadPvSign];
+    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes,loadSalle,loadBillets,loadPvSign,loadCourriers];
   if(S.session.role==="coopte"){ ["docs","messages","taches","contacts","annonces","reunions","creneaux","budgets","votes","bilans","journal","mailing","procurations"].forEach(k=>{ S[k]=[]; }); }
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
   await traiterLiensSpeciaux();
@@ -1387,7 +1387,7 @@ async function traiterLiensSpeciaux(){
     }
   }
 }
-const ONGLETS_OPTIONNELS=[["org","Organigramme"],["taches","Tâches"],["planning","Planning"],["evenements","Événements"],["salle","Réservation salle fac"],["billetterie","Billetterie"],["contacts","Contacts"]];
+const ONGLETS_OPTIONNELS=[["org","Organigramme"],["taches","Tâches"],["planning","Planning"],["evenements","Événements"],["salle","Réservation salle fac"],["billetterie","Billetterie"],["contacts","Contacts"],["courriers","Courriers signés"]];
 function ongletActif(k){ return ongletsOff().indexOf(k)<0; }
 function ongletsOff(){ return (S.meta&&Array.isArray(S.meta.ongletsOff))?S.meta.ongletsOff:[]; }
 /* Notes d'un point : le secrétariat partout, chaque membre seulement sous son propre point. */
@@ -2438,6 +2438,300 @@ document.addEventListener("change", e=>{
   if(t.name==="pvs_sig" || (t.id && String(t.id).indexOf("pvs_")===0)) pvsLireForm();
 });
 
+/* =====================================================================
+   COURRIERS SIGNÉS (14/11/2026)
+   Tout membre du CA (pas les coopté·es) tape un courrier ou joint un fichier
+   (PDF, Word, PowerPoint, OpenDocument), le signe avec son mot de passe, et il
+   part par mail à tous les membres du CA (lui compris).
+   - Texte tapé  → PDF du courrier avec le bloc de signature.
+   - PDF joint   → le PDF d'origine + une page de signature.
+   - Word / PPT  → le fichier tel quel + une page de signature en PDF (empreinte SHA-256).
+   Serveur : courrier_signer (qualité lue sur le serveur, code au registre),
+   courrier_finaliser (PDF signé, résultat de l'envoi). Onglet coupable dans Admin.
+   ===================================================================== */
+const COUR_EXT = /\.(pdf|docx?|pptx?|odt|odp)$/i;
+const COUR_MAX = 15*1024*1024;
+function courEtat(){ if(!S.cour) S.cour={liste:[], form:null, err:null, busy:false}; return S.cour; }
+function courPeut(){ return !!S.session && !estCoopte() && !estProprioRetire() && !S.session.horsCa; }
+function courRef(c){ return "C-"+String(c.numero||0).padStart(3,"0"); }
+function courDest(){ return [...new Set(membresActifs().map(a=>String(a.email||"").toLowerCase().trim()).filter(Boolean)
+  .concat(S.session&&S.session.email?[String(S.session.email).toLowerCase()]:[]))]; }
+function courTaille(n){ n=+n||0; return n>=1048576?(n/1048576).toFixed(1).replace(".",",")+" Mo":Math.max(1,Math.round(n/1024))+" Ko"; }
+function courEstPdf(f){ return !!f && (/\.pdf$/i.test(f.name||"") || f.type==="application/pdf"); }
+
+async function loadCourriers(){
+  const C=courEtat();
+  if(!courPeut()){ C.liste=[]; return; }
+  try{
+    const r=await sb.from("ca_courriers").select("*").order("numero",{ascending:false}).limit(300);
+    if(r.error){ C.err=r.error.message; C.liste=[]; return; }
+    C.err=null; C.liste=r.data||[];
+  }catch(e){ C.err=String(e&&e.message||e); C.liste=[]; }
+}
+
+/* ---------- affichage ---------- */
+function tabCourriers(){
+  const C=courEtat();
+  if(!courPeut()) return `<div class="empty">Réservé aux membres du CA.</div>`;
+  const intro=`<div class="card2" style="border-left:4px solid #8fb3ff">
+    <h3 class="serif" style="margin-top:0">✒ Courriers signés</h3>
+    <p class="du" style="margin:0">Tapez un courrier ou joignez un fichier (PDF, Word, PowerPoint), signez-le avec votre mot de passe : il part par e-mail à <b>tous les membres du CA</b>, vous compris. Chaque signature reçoit un code à contrôler dans « Vérifier une signature ».</p>
+    ${!C.form?`<div class="row-btn" style="margin-top:12px"><button class="btn" data-action="cour-nouveau">+ Nouveau courrier</button></div>`:""}</div>`;
+  const err=C.err?`<div class="card2"><p class="du" style="color:var(--red);margin:0">${esc(C.err)}</p></div>`:"";
+  const liste=C.liste.length?C.liste.map(courCarte).join(""):`<div class="empty">Aucun courrier pour l'instant.</div>`;
+  return intro+(C.form?courFormHTML():"")+err+`<div class="grp-h" style="margin-top:22px"><h2 class="serif">Courriers</h2><span class="c">${C.liste.length}</span><span class="l"></span></div>`+liste;
+}
+function courFormHTML(){
+  const F=courEtat().form, n=courDest().length;
+  return `<div class="compose" style="border:2px solid #8fb3ff">
+    <h3 class="serif">Nouveau courrier</h3>
+    <label class="du" style="display:block;margin:10px 0 4px">Objet</label>
+    <input class="f" id="cour_objet" maxlength="200" value="${esc(F.objet||"")}" placeholder="Ex. Demande de subside 2026">
+    <label class="du" style="display:block;margin:12px 0 4px">Contenu</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13.5px"><input type="radio" name="cour_mode" value="texte" ${F.mode!=="fichier"?"checked":""}> Taper le courrier (un PDF sera créé)</label>
+    <label style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13.5px"><input type="radio" name="cour_mode" value="fichier" ${F.mode==="fichier"?"checked":""}> Joindre un fichier (PDF, Word, PowerPoint)</label>
+    ${F.mode==="fichier"
+      ?`<input class="f" id="cour_file" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.odt,.odp,application/pdf">
+        ${F.file?`<p class="du" style="margin:4px 0 0">✓ ${esc(F.file.name)} (${courTaille(F.file.size)})${courEstPdf(F.file)?" — une page de signature sera ajoutée à la fin.":" — envoyé tel quel, avec une page de signature en PDF."}</p>`:""}`
+      :`<textarea class="f" id="cour_corps" rows="14" placeholder="Madame, Monsieur,&#10;&#10;…" style="min-height:240px">${esc(F.corps||"")}</textarea>
+        <p class="du" style="margin:4px 0 0">Laissez une ligne vide entre les paragraphes. La date, la référence et votre signature sont ajoutées automatiquement.</p>`}
+    <p class="du" style="margin:12px 0 0">📨 Destinataires : les <b>${n}</b> membres du CA (vous compris).</p>
+    <div class="row-btn" style="margin-top:12px;flex-wrap:wrap">
+      <button class="btn" data-action="cour-envoyer"${C_busy()}>✍ Signer et envoyer</button>
+      ${F.mode!=="fichier"?`<button class="btn ghost" data-action="cour-apercu"${C_busy()}>👁 Aperçu PDF</button>`:""}
+      <button class="btn ghost" data-action="cour-annuler">Annuler</button></div>
+  </div>`;
+}
+function C_busy(){ return courEtat().busy?" disabled":""; }
+function courCarte(c){
+  const me=S.session&&S.session.id, moi=c.signataire_id===me, e=c.envoi||null;
+  const etat=!c.pdf_path?`<span class="badge open">PDF non terminé</span>`
+    :!e?`<span class="badge open">Pas encore envoyé</span>`
+    :e.err?`<span class="badge no">Envoyé à ${e.ok}/${e.total}</span>`:`<span class="badge ok">Envoyé à ${e.ok} membre${e.ok>1?"s":""}</span>`;
+  const act=[];
+  if(c.pdf_path) act.push(`<button class="chip" data-action="cour-pdf" data-id="${c.id}">📄 PDF signé</button>`);
+  if(c.mode==="fichier" && c.fichier && c.fichier.path && !courEstPdf(c.fichier)) act.push(`<button class="chip" data-action="cour-orig" data-id="${c.id}">📎 ${esc(c.fichier.name||"Fichier")}</button>`);
+  if(moi && (!c.pdf_path || !e || e.err)) act.push(`<button class="btn sm" data-action="cour-terminer" data-id="${c.id}">${!c.pdf_path?"Terminer et envoyer":"Renvoyer le mail"}</button>`);
+  return `<div class="card2" style="margin-bottom:12px">
+    <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px"><div class="du" style="margin:0">${esc(courRef(c))} · ${esc(fmtQuand(c.signe_le))}</div>
+        <div style="font-size:16px;font-weight:600;margin-top:3px">${esc(c.objet)}</div>
+        <div class="du" style="margin:4px 0 0">✍ <b>${esc(c.signataire_nom||"")}</b> — ${esc(c.signataire_qualite||"")}${c.code?" · code <b>"+esc(c.code)+"</b>":""}</div></div>
+      <div>${etat}</div></div>
+    ${act.length?`<div class="row-btn" style="margin-top:10px;flex-wrap:wrap">${act.join("")}</div>`:""}</div>`;
+}
+
+/* ---------- formulaire : garder ce qui est tapé ---------- */
+function courLireForm(){
+  const F=courEtat().form; if(!F) return;
+  const o=document.getElementById("cour_objet"); if(o) F.objet=o.value;
+  const t=document.getElementById("cour_corps"); if(t) F.corps=t.value;
+  const m=document.querySelector("input[name=cour_mode]:checked"); if(m) F.mode=m.value;
+}
+document.addEventListener("input", e=>{ const t=e.target; if(t && (t.id==="cour_objet"||t.id==="cour_corps")) courLireForm(); });
+document.addEventListener("change", e=>{
+  const t=e.target; if(!t || !courEtat().form) return;
+  if(t.name==="cour_mode"){ courLireForm(); render(); return; }
+  if(t.id==="cour_file"){
+    courLireForm(); const f=t.files&&t.files[0];
+    if(f && !COUR_EXT.test(f.name)){ t.value=""; modaleInfo("Formats acceptés : PDF, Word (.doc, .docx), PowerPoint (.ppt, .pptx), OpenDocument (.odt, .odp).","Fichier refusé"); return; }
+    if(f && f.size>COUR_MAX){ t.value=""; modaleInfo("Fichier trop lourd ("+courTaille(f.size)+"). Maximum : 15 Mo.","Fichier refusé"); return; }
+    courEtat().form.file=f||null; render();
+  }
+});
+
+/* ---------- PDF ---------- */
+async function courPdfLib(){ return await import("./caisse/lib/pdf-lib-1.17.1.js"); }
+/* Outils communs : polices, retour à la ligne, nouvelle page si besoin. */
+async function courOutils(pdf){
+  const { StandardFonts, rgb } = await courPdfLib();
+  const F=await pdf.embedFont(StandardFonts.Helvetica), FB=await pdf.embedFont(StandardFonts.HelveticaBold), FI=await pdf.embedFont(StandardFonts.HelveticaOblique);
+  const W=595.28, H=841.89, X=60, LW=W-120, BAS=70;
+  const o={F,FB,FI,rgb,W,H,X,LW,page:null,y:0};
+  o.lignes=(t,font,size,max)=>{ const out=[]; for(const par of pvsTxt(t).split("\n")){ const mots=par.split(/[ \t]+/).filter(Boolean); let l="";
+      if(!mots.length){ out.push(""); continue; }
+      for(const m of mots){ const e=l?l+" "+m:m; if(font.widthOfTextAtSize(e,size)>max && l){ out.push(l); l=m; } else l=e;
+        while(font.widthOfTextAtSize(l,size)>max && l.length>1){ let k=l.length-1; while(k>1 && font.widthOfTextAtSize(l.slice(0,k),size)>max) k--; out.push(l.slice(0,k)); l=l.slice(k); } }
+      out.push(l); } return out; };
+  o.nouvelle=()=>{ o.page=pdf.addPage([W,H]); o.y=H-60; };
+  o.place=h=>{ if(!o.page || o.y-h<BAS) o.nouvelle(); };
+  o.ecrire=(t,font,size,couleur,interl)=>{ for(const l of o.lignes(t,font,size,LW)){ o.place(size*1.4); if(l) o.page.drawText(l,{x:X,y:o.y,size,font,color:couleur||rgb(0,0,0)}); o.y-=size*(interl||1.45); } };
+  o.entete=()=>{ o.ecrire(S.meta&&S.meta.nom?S.meta.nom:"Le Bureau étudiant",FB,11); o.ecrire("Organe d'Administration",F,9,rgb(.45,.45,.45)); o.y-=6;
+    o.page.drawLine({start:{x:X,y:o.y},end:{x:W-X,y:o.y},thickness:.6,color:rgb(.8,.8,.8)}); o.y-=24; };
+  /* Bloc de signature (encadré). */
+  o.signature=(c)=>{ const h=96; o.place(h+10);
+    o.page.drawRectangle({x:X,y:o.y-h+12,width:LW*0.62,height:h,borderColor:rgb(.6,.6,.7),borderWidth:.7,color:rgb(.975,.975,.99)});
+    let yy=o.y-2; const tx=(t,font,size,col)=>{ for(const l of o.lignes(t,font,size,LW*0.62-18)){ o.page.drawText(l,{x:X+9,y:yy,size,font,color:col||rgb(0,0,0)}); yy-=size*1.35; } };
+    tx(c.signataire_nom||"-",FB,12); tx(c.signataire_qualite||"",F,9.5,rgb(.25,.25,.25)); yy-=3;
+    tx(c.code?"Signé électroniquement le "+fmtQuand(c.signe_le):"APERÇU - document non signé",c.code?F:FB,9,c.code?rgb(.25,.25,.25):rgb(.7,.1,.1));
+    if(c.code) tx("Code de vérification : "+c.code,FB,9,rgb(.15,.15,.15));
+    tx("Signature vérifiée par le mot de passe du compte",FI,7.5,rgb(.45,.45,.45));
+    o.y-=h+8; };
+  o.pied=(texte)=>{ const pages=pdf.getPages(), n=pages.length; pages.forEach((p,i)=>{ const t=pvsTxt(texte+"  -  page "+(i+1)+"/"+n);
+      p.drawText(t,{x:X,y:34,size:7.5,font:F,color:rgb(.5,.5,.5)}); }); };
+  return o;
+}
+/* Courrier tapé → PDF complet. */
+async function courPdfTexte(c){
+  const { PDFDocument } = await courPdfLib();
+  const pdf=await PDFDocument.create(); pdf.setTitle(pvsTxt(c.objet)); pdf.setAuthor(pvsTxt(c.signataire_nom||""));
+  const o=await courOutils(pdf), {F,FB,rgb}=o;
+  o.nouvelle(); o.entete();
+  const date=new Date(c.signe_le||Date.now()).toLocaleDateString("fr-BE",{day:"numeric",month:"long",year:"numeric"});
+  const dw=F.widthOfTextAtSize(pvsTxt("Le "+date),10);
+  o.page.drawText(pvsTxt("Le "+date),{x:o.W-o.X-dw,y:o.y,size:10,font:F}); o.y-=16;
+  o.ecrire("Réf. : "+(c.numero?courRef(c):"(attribuée à la signature)"),F,9.5,rgb(.4,.4,.4)); o.y-=10;
+  o.ecrire("Objet : "+c.objet,FB,11.5); o.y-=12;
+  o.ecrire(String(c.corps||"").replace(/\r/g,"").replace(/\n{3,}/g,"\n\n"),F,10.5,null,1.5); o.y-=22;
+  o.signature(c);
+  if(c.empreinte){ o.ecrire("Empreinte SHA-256 du courrier : "+c.empreinte,F,7,rgb(.5,.5,.5),1.3);
+    o.ecrire("Le code se contrôle dans l'onglet « Vérifier une signature » de l'espace CA.",o.FI,7,rgb(.5,.5,.5),1.3); }
+  o.pied((c.numero?"Courrier "+courRef(c)+" - ":"")+c.objet);
+  return new Blob([await pdf.save()],{type:"application/pdf"});
+}
+/* Page de signature d'un fichier joint (ajoutée au PDF d'origine, ou seule pour Word/PPT). */
+async function courPageSignature(pdf, c, seul){
+  const o=await courOutils(pdf), {F,FB,FI,rgb}=o;
+  o.nouvelle(); o.entete();
+  o.ecrire("Page de signature",FB,17); o.y-=2;
+  o.ecrire("Courrier "+courRef(c)+"  -  "+fmtQuand(c.signe_le),F,10,rgb(.35,.35,.35)); o.y-=8;
+  o.ecrire("Objet : "+c.objet,FB,11.5); o.y-=8;
+  const f=c.fichier||{};
+  o.ecrire((seul?"Document signé (joint au mail) : ":"Document signé (pages précédentes) : ")+(f.name||"-")+(f.size?" ("+courTaille(f.size)+")":""),F,10);
+  o.ecrire("Empreinte SHA-256 du document : "+(f.hash||"-"),F,8,rgb(.35,.35,.35),1.35); o.y-=6;
+  o.ecrire(seul?"Le document joint est signé tel quel. Toute modification du fichier, même d'un seul caractère, change son empreinte : comparez-la pour vérifier qu'il n'a pas été modifié."
+               :"Le document des pages précédentes est signé tel qu'il a été déposé. Toute modification change son empreinte.",FI,8.5,rgb(.4,.4,.4),1.4);
+  o.y-=18; o.ecrire("Signature",FB,13); o.y-=4;
+  o.signature(c);
+  if(c.empreinte) o.ecrire("Empreinte SHA-256 de la signature : "+c.empreinte,F,7,rgb(.5,.5,.5),1.3);
+  o.ecrire("Le code se contrôle dans l'onglet « Vérifier une signature » de l'espace CA.",FI,7,rgb(.5,.5,.5),1.3);
+}
+async function courPdfFichier(c, orig){
+  const { PDFDocument } = await courPdfLib();
+  if(orig && courEstPdf(c.fichier)){
+    try{ const pdf=await PDFDocument.load(orig,{ignoreEncryption:true}); await courPageSignature(pdf,c,false);
+      return {blob:new Blob([await pdf.save()],{type:"application/pdf"}), fusionne:true}; }
+    catch(_){ /* PDF protégé ou abîmé : page de signature à part, fichier joint tel quel */ }
+  }
+  const pdf=await PDFDocument.create(); pdf.setTitle(pvsTxt("Signature - "+c.objet));
+  await courPageSignature(pdf,c,true);
+  return {blob:new Blob([await pdf.save()],{type:"application/pdf"}), fusionne:false};
+}
+async function courTelecharger(path){
+  const su=await sb.storage.from("ca-documents").createSignedUrl(path, 600);
+  if(!su || su.error || !su.data) throw new Error("Fichier introuvable.");
+  const rep=await fetch(su.data.signedUrl); if(!rep.ok) throw new Error("Téléchargement impossible.");
+  return await rep.arrayBuffer();
+}
+
+/* ---------- PDF signé + mail à tout le CA ---------- */
+async function courTerminer(c, origBuf){
+  let pdfBlob=null, fusionne=true;
+  if(!c.pdf_path){
+    if(c.mode==="texte") pdfBlob=await courPdfTexte(c);
+    else { const buf=origBuf||await courTelecharger(c.fichier.path); const r=await courPdfFichier(c, buf); pdfBlob=r.blob; fusionne=r.fusionne; }
+    const chemin="courrier-signe-"+Date.now().toString(36)+uid()+".pdf";
+    const up=await sb.storage.from("ca-documents").upload(chemin, pdfBlob, {contentType:"application/pdf", upsert:false});
+    if(up && up.error) throw new Error("Dépôt du PDF signé impossible : "+up.error.message);
+    const r=await sb.rpc("courrier_finaliser",{p_id:c.id, p_pdf_path:chemin, p_envoi:null});
+    if(r.error) throw new Error("Enregistrement du PDF signé impossible : "+r.error.message);
+    c=r.data;
+  } else {
+    pdfBlob=new Blob([await courTelecharger(c.pdf_path)],{type:"application/pdf"});
+    fusionne=c.mode==="texte" || courEstPdf(c.fichier);
+  }
+  const nomPdf=pvsNomFichier(courRef(c)+"-"+c.objet)+".pdf";
+  const joindreOrig=c.mode==="fichier" && !fusionne;
+  const lien=async(path,nom)=>{ try{ const su=await sb.storage.from("ca-documents").createSignedUrl(path, CA_LIEN_DUREE, {download:nom}); return su&&su.data&&su.data.signedUrl||""; }catch(_){ return ""; } };
+  const lPdf=await lien(c.pdf_path, nomPdf), lOrig=joindreOrig?await lien(c.fichier.path, c.fichier.name):"";
+  /* Pièces jointes : PDF signé (+ fichier d'origine pour Word/PPT) si le total reste raisonnable. */
+  let pieces=[];
+  try{ const b=await blobEnBase64(pdfBlob); pieces.push({filename:nomPdf, content:b, contentType:"application/pdf"});
+    if(joindreOrig){ const buf=origBuf||await courTelecharger(c.fichier.path);
+      const b2=await blobEnBase64(new Blob([buf],{type:c.fichier.type||"application/octet-stream"}));
+      pieces.push({filename:c.fichier.name, content:b2, contentType:c.fichier.type||"application/octet-stream"}); }
+  }catch(_){ }
+  let tot=0; pieces=pieces.filter(p=>{ tot+=p.content.length; return tot<4500000; });
+  const btn=(href,t,bg)=>`<a href="${href}" style="background:${bg};color:#fff;padding:11px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:0 6px 8px 0">${t}</a>`;
+  const corps=`<h2 style="margin:0 0 10px">✒ Courrier signé</h2>
+    <p><b>${caMailEsc(c.signataire_nom||"")}</b> (${caMailEsc(c.signataire_qualite||"")}) a signé ce courrier et l'adresse à tous les membres du CA.</p>
+    <table style="border-collapse:collapse;margin:8px 0 14px;font-size:14px">
+      <tr><td style="padding:3px 12px 3px 0;color:#666">Objet</td><td style="padding:3px 0"><b>${caMailEsc(c.objet)}</b></td></tr>
+      <tr><td style="padding:3px 12px 3px 0;color:#666">Référence</td><td style="padding:3px 0">${caMailEsc(courRef(c))}</td></tr>
+      <tr><td style="padding:3px 12px 3px 0;color:#666">Signé le</td><td style="padding:3px 0">${caMailEsc(fmtQuand(c.signe_le))}</td></tr>
+      <tr><td style="padding:3px 12px 3px 0;color:#666">Code</td><td style="padding:3px 0"><b>${caMailEsc(c.code||"")}</b></td></tr></table>
+    ${joindreOrig?`<p>Le document signé est le fichier <b>${caMailEsc(c.fichier.name)}</b> ; la page de signature (PDF) contient son empreinte.</p>`:""}
+    <p>${lPdf?btn(lPdf,"Télécharger le PDF signé","#241c46"):""}${lOrig?btn(lOrig,"Télécharger "+caMailEsc(c.fichier.name),"#5a4a9c"):""}</p>
+    <p style="color:#777;font-size:12.5px">Le code se contrôle dans l'onglet « Vérifier une signature » de l'espace CA. Le courrier est aussi dans l'onglet « Courriers signés ».</p>`;
+  const res=await envoyerAvecPiece(courDest(), "Courrier signé — "+c.objet, corps, pieces.length?pieces:null, {tous:true, sansInvitation:true, exp:EXP_DOCS});
+  try{ await sb.rpc("courrier_finaliser",{p_id:c.id, p_pdf_path:null, p_envoi:{ok:res.ok, err:res.err, total:res.total, sans_piece:!!res.sansPiece}}); }catch(_){ }
+  try{ logAct("Courrier signé "+courRef(c)+" envoyé ("+res.ok+"/"+res.total+") : "+c.objet); }catch(_){ }
+  return res;
+}
+
+/* ---------- actions ---------- */
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-action^='cour-']"); if(!el || !sb || !S.session) return;
+  const C=courEtat(), a=el.dataset.action, c=el.dataset.id?C.liste.find(x=>x.id===el.dataset.id):null;
+  if(!courPeut()) return;
+  try{
+    switch(a){
+      case "cour-nouveau": C.form={mode:"texte", objet:"", corps:""}; render(); break;
+      case "cour-annuler":
+        courLireForm();
+        if(C.form && (String(C.form.corps||"").trim() || C.form.file) && !(await modaleConfirm("Abandonner ce courrier ? Ce qui est tapé sera perdu.","Annuler"))) break;
+        C.form=null; render(); break;
+      case "cour-apercu": { courLireForm(); const F=C.form; if(!F) break;
+        if(!String(F.corps||"").trim()){ modaleInfo("Tapez d'abord le texte du courrier.","Aperçu"); break; }
+        const blob=await courPdfTexte({objet:String(F.objet||"").trim()||"(sans objet)", corps:F.corps, signataire_nom:S.session.nom, signataire_qualite:S.session.fonction||"Membre du CA"});
+        const u=URL.createObjectURL(blob); window.open(u,"_blank","noopener"); setTimeout(()=>URL.revokeObjectURL(u),60000); break; }
+      case "cour-pdf": case "cour-orig": { if(!c) break;
+        const ch=a==="cour-pdf"?c.pdf_path:(c.fichier&&c.fichier.path); if(!ch){ modaleInfo("Fichier introuvable."); break; }
+        const su=await sb.storage.from("ca-documents").createSignedUrl(ch, 3600, a==="cour-orig"?{download:c.fichier.name}:undefined);
+        if(!su||su.error||!su.data){ modaleInfo("Ouverture impossible"+(su&&su.error?" : "+su.error.message:"")+".","Courrier"); break; }
+        window.open(su.data.signedUrl,"_blank","noopener"); break; }
+      case "cour-envoyer": {
+        if(C.busy) break;
+        courLireForm(); const F=C.form; if(!F) break;
+        const objet=String(F.objet||"").trim();
+        const souci=!objet?"Indiquez l'objet du courrier.":F.mode==="fichier"?(!F.file?"Joignez le fichier à signer.":""):(!String(F.corps||"").trim()?"Tapez le texte du courrier.":"");
+        if(souci){ modaleInfo(souci,"Il manque quelque chose"); break; }
+        const n=courDest().length;
+        if(!(await modaleConfirm("Ce courrier sera signé à votre nom et envoyé par e-mail aux "+n+" membres du CA (vous compris).\n\nObjet : "+objet+"\n\nUne fois signé, il ne peut plus être modifié.","Signer et envoyer"))) break;
+        if(!(await pvsAuthentifier("Signer le courrier « "+objet+" »"))) break;
+        C.busy=true; render();
+        try{
+          let fichier=null, buf=null;
+          if(F.mode==="fichier"){
+            const file=F.file; buf=await file.arrayBuffer(); const hash=await pvsHash(buf);
+            const ext=(file.name.match(COUR_EXT)||[".bin"])[0].toLowerCase();
+            const chemin="courrier-"+Date.now().toString(36)+uid()+"-"+pvsNomFichier(file.name.replace(COUR_EXT,"")).replace(/\./g,"-")+ext;
+            const up=await sb.storage.from("ca-documents").upload(chemin, file, {contentType:file.type||"application/octet-stream", upsert:false});
+            if(up && up.error) throw new Error("Envoi du fichier impossible : "+up.error.message);
+            fichier={path:chemin, name:file.name, hash:hash, type:file.type||"", size:file.size};
+          }
+          const r=await sb.rpc("courrier_signer",{p_objet:objet, p_mode:F.mode==="fichier"?"fichier":"texte", p_corps:F.mode==="fichier"?null:F.corps, p_fichier:fichier});
+          if(r.error) throw new Error("Le courrier n'a pas été signé : "+r.error.message);
+          const signe=r.data; C.form=null; await loadCourriers(); render();
+          try{
+            const res=await courTerminer(signe, buf);
+            await loadCourriers(); C.busy=false; render();
+            modaleInfo("✓ Courrier "+courRef(signe)+" signé (code "+signe.code+").\n"+(res.err?"⚠ Mail envoyé à "+res.ok+" membre(s) sur "+res.total+". Utilisez « Renvoyer le mail » pour réessayer.":"Envoyé par e-mail aux "+res.ok+" membres du CA."),"Courrier envoyé");
+          }catch(err){ await loadCourriers(); C.busy=false; render();
+            modaleInfo("Votre signature est enregistrée (code "+signe.code+"), mais l'envoi n'a pas pu être terminé : "+(err&&err.message||err)+"\nCliquez sur « Terminer et envoyer » pour réessayer.","Attention"); }
+        } finally { C.busy=false; }
+        render(); break; }
+      case "cour-terminer": { if(!c || c.signataire_id!==S.session.id || C.busy) break;
+        C.busy=true; render();
+        try{ const res=await courTerminer(c, null); await loadCourriers();
+          modaleInfo(res.err?"⚠ Mail envoyé à "+res.ok+" membre(s) sur "+res.total+".":"✓ Envoyé par e-mail aux "+res.ok+" membres du CA.","Courrier "+courRef(c)); }
+        catch(err){ modaleInfo("Impossible de terminer : "+(err&&err.message||err),"Erreur"); }
+        finally{ C.busy=false; render(); }
+        break; }
+    }
+  }catch(err){ C.busy=false; render(); modaleInfo("Erreur : "+(err&&err.message||err),"Courriers signés"); }
+});
+
 /* ---------- signature par mot de passe ---------- */
 async function pvsAuthentifier(titre){
   const email=S.session&&S.session.email;
@@ -2607,9 +2901,9 @@ document.addEventListener("click", async e=>{
 });
 
 /* ---- DASHBOARD ---- */
-const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["verifsig","\ud83d\udd0e","V\u00e9rifier une signature"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
+const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["verifsig","\ud83d\udd0e","V\u00e9rifier une signature"],["courriers","\u2712","Courriers sign\u00e9s"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,proprio:viewProprio,licence:tabLicence,transparence:tabTransparence,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
+  const map={admin:viewAdmin,proprio:viewProprio,licence:tabLicence,transparence:tabTransparence,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,courriers:tabCourriers,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
@@ -2649,7 +2943,8 @@ function viewDash(){
   /* Onglets désactivés dans Admin : cachés pour tout le monde, propriétaire compris. */
   if(!estCoopte()){ const OFF=ongletsOff();
     for(let i=tabs.length-1;i>=0;i--){ if(OFF.indexOf(tabs[i][0])>=0) tabs.splice(i,1); }
-    if(OFF.indexOf(S.tab)>=0) S.tab="accueil"; }
+    if(OFF.indexOf(S.tab)>=0) S.tab="accueil";
+    if(!courPeut()){ for(let i=tabs.length-1;i>=0;i--) if(tabs[i][0]==="courriers") tabs.splice(i,1); if(S.tab==="courriers") S.tab="accueil"; } }
   /* Modules en option coupés par le propriétaire ou absents de la licence (le propriétaire les voit). */
   if(S.appEtat && S.appEtat.modules && !estProprioCA()){
     const MODS={salle:["salle"],billetterie:["billetterie"],ces:["soutien_ces"],soutien:["soutien_etu","soutien"],mediation:["conflits"]};
@@ -4044,7 +4339,7 @@ const VS_TYPES={procuration:"Procuration",procuration_annulation:"Annulation de 
   decision_validee:"Caisse — décision du trésorier : demande validée",decision_refusee:"Caisse — décision du trésorier : demande refusée",
   decision_corriger:"Caisse — décision du trésorier : renvoi pour correction",decision_payee:"Caisse — décision du trésorier : paiement effectué",
   decision_rouverte:"Caisse — décision du trésorier : remise en attente",decision_rejet:"Caisse — décision du trésorier : virement rejeté",
-  gj_tresorier:"Caisse — gestion journalière (trésorier)",gj_presidente:"Caisse — gestion journalière (présidente)"};
+  gj_tresorier:"Caisse — gestion journalière (trésorier)",gj_presidente:"Caisse — gestion journalière (présidente)",courrier:"Courrier signé"};
 function vsEtat(){ return S.vsUI||(S.vsUI={code:"",res:null,err:"",busy:false}); }
 function tabVerifSig(){
   const V=vsEtat();
@@ -4532,7 +4827,7 @@ async function envoyerAvecPiece(dest, subject, corpsHtml, piece, opts){
   for(const to of liste){
     let bon=false;
     if(avec){
-      try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify(opts.exp?{to,subject,html,attachments:[piece],from:opts.exp}:{to,subject,html,attachments:[piece]})}); bon=!(r&&r.ok===false); }catch(e){ bon=false; }
+      try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify(opts.exp?{to,subject,html,attachments:Array.isArray(piece)?piece:[piece],from:opts.exp}:{to,subject,html,attachments:Array.isArray(piece)?piece:[piece]})}); bon=!(r&&r.ok===false); }catch(e){ bon=false; }
       if(bon) okAvecPiece++;
     }
     if(!bon){
