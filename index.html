@@ -724,7 +724,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-14 · double authentification facultative";
+const CA_VERSION="2026-11-14 · organigramme désactivable";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1387,7 +1387,7 @@ async function traiterLiensSpeciaux(){
     }
   }
 }
-const ONGLETS_OPTIONNELS=[["taches","Tâches"],["planning","Planning"],["evenements","Événements"],["salle","Réservation salle fac"],["billetterie","Billetterie"],["contacts","Contacts"]];
+const ONGLETS_OPTIONNELS=[["org","Organigramme"],["taches","Tâches"],["planning","Planning"],["evenements","Événements"],["salle","Réservation salle fac"],["billetterie","Billetterie"],["contacts","Contacts"]];
 function ongletActif(k){ return ongletsOff().indexOf(k)<0; }
 function ongletsOff(){ return (S.meta&&Array.isArray(S.meta.ongletsOff))?S.meta.ongletsOff:[]; }
 /* Notes d'un point : le secrétariat partout, chaque membre seulement sous son propre point. */
