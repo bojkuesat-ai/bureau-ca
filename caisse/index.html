@@ -4677,7 +4677,7 @@ const estReprise = e => { const c = String(e.category||"").trim();
 const estRepriseDue = e => String(e.category||"").trim() === CAT_CA_SORTANT;
 /* 15/11/2026 : un prêt remboursé (ex. avance à la délégation) et les dépenses du CA sortant
    remboursées ne sont ni des dépenses ni des recettes : hors résultat, mais toujours dans le solde. */
-const CAT_PRET = "Prêt", CAT_PRET_REMB = "Remboursement de prêt", CAT_REMB_RECU = "Remboursement reçu";
+const CAT_PRET = "Prêt", CAT_PRET_REMB = "Remboursement de prêt", CAT_REMB_RECU = "Remboursement du CA sortant";
 const estPret = e => String(e.category||"").trim() === CAT_PRET;
 const estRecNeutre = i => { const c = String(i.category||"").trim(); return c === CAT_PRET_REMB || c === CAT_REMB_RECU; };
 // La carte est rangée dans le champ « moyen de paiement » : aucune colonne à ajouter en base.
@@ -4803,7 +4803,7 @@ if($("#repList")) $("#repList").addEventListener("click", async e => {
   b.disabled = true;
   const { data: rec, error: eRec } = await sb.from("incomes").insert({
     income_date: aujourdhui, amount: Number(d.amount||0), object: d.object || "",
-    category: "Remboursement reçu", source: d.payee || "CA sortant", method: "Virement",
+    category: CAT_REMB_RECU, source: d.payee || "CA sortant", method: "Virement",
     note: "Remboursement de la dépense du CA sortant du " + fdate(d.expense_date),
     created_by: state.profile.id, author_name: state.profile.name || "", attachments: []
   }).select("id");
@@ -11410,7 +11410,7 @@ function renderRattrapage(an){
   const box = $("#tva_rattrapage"); if(!box) return;
   const yearChanged = (an !== state._ratAn); state._ratAn = an;
   if(!yearChanged && state._ratEdited) return; // ne pas écraser une saisie en cours
-  const nonVente = new Set(["Cotisations","Subsides","Dons","Intérêts bancaires","Remboursement reçu","Solde d'ouverture"]);
+  const nonVente = new Set(["Cotisations","Subsides","Dons","Intérêts bancaires","Remboursement reçu","Solde d'ouverture",CAT_REMB_RECU,CAT_PRET_REMB]);
   const list = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && !estOuverture(i) && !i.tva_regime);
   if(!list.length){ box.innerHTML = `<div class="cpt-note">Toutes les recettes de ${esc(an)} sont qualifiées pour la TVA — rien à rattraper.</div>`; state._ratEdited=false; return; }
   let h = `<p class="hint" style="margin:0 0 10px">${list.length} recette(s) sans régime TVA. Les cotisations, subsides, dons et intérêts sont pré-classés « non concerné » ; choisis « exempté art. 44 » ou « taxable » pour les vraies recettes d'activité, puis enregistre.</p><div class="cpt-tbl">`;
