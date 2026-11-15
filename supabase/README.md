@@ -166,3 +166,16 @@ avec son mot de passe (+ code si double authentification), et il part par mail �
 - Espace Propriétaire › Fin de mandat : dates, annuler / reprogrammer (`fin_mandat_regler`), copies gardées
   (Télécharger), « Renvoyer » (nouveaux liens 30 jours), « Aperçu » (zips pour le propriétaire seul).
 - **Toute nouvelle table de réglages à garder doit être ajoutée à `fin_mandat_garder`**, sinon elle sera vidée.
+
+## Billetterie : liens de scan (15/11/2026)
+
+Remplace le « code de scan des bénévoles » (colonne `bil_evenements.scan_code` et fonctions `bil_scan_code_*` supprimées).
+SQL : `supabase/sql/2026-11-15_billetterie_liens_scan.sql`.
+
+- Table `bil_scan_liens` (aucune politique : accès par fonctions seulement ; seul le hash SHA-256 du jeton est gardé). Vidée à la fin du mandat.
+- Un lien par personne (prénom), valable **24 h**, couvre les événements actifs **du jour de sa création** :
+  ceux des commissions du créateur (`bil_peut_evenement_uid`), ou **tous** (option réservée à l'Admin / au propriétaire, `bil_est_owner`).
+- Le lien `billets/?scan#JETON` permet **uniquement** de scanner et de chercher un nom (`bil_scan`, `bil_scan_liste`, `bil_scan_compteur`, `bil_scan_acces`).
+- Création / liste / révocation : `bil_scan_lien_creer`, `bil_scan_liens_liste`, `bil_scan_lien_revoquer` (connexion + double authentification).
+- Scans tracés dans `bil_scans` (`par` = « Prénom (lien) », `lien_id`), compteur `nb_scans` sur le lien.
+- Page : bouton « 📲 Liens de scan » dans l'en-tête et dans Réglages de l'événement ; le lien n'est affiché qu'une fois (QR, copier, partager).

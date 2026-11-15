@@ -212,7 +212,7 @@ label.l{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margi
    Tout passe par Supabase ; les droits sont revérifiés par le serveur.
    ===================================================================== */
 "use strict";
-const VERSION = "2026-10-23 · billetterie v1";
+const VERSION = "2026-11-15 · liens de scan";
 const SB_URL = "https://mlgzdfyqjhvyubrywuim.supabase.co";
 const SB_KEY = "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const FN = SB_URL + "/functions/v1/billets-mail";
@@ -946,11 +946,11 @@ RES.sondEnvoyer = async (btn) => {
    ===================================================================== */
 const SC = { actif: false, cle: "", ids: [], scanCode: "", titre: "", liste: {}, file: [], conflits: [], cam: null, camOn: false, torche: null, torcheOn: false,
   dernier: { code: "", t: 0 }, compteur: null, sync: false, majLe: 0, minuterie: null, err: "" };
-function scanOuvrir({ ids, scanCode = "", titre = "", cle }) {
+function scanOuvrir({ ids, scanCode = "", titre = "", cle, titres = null }) {
   if (SC.actif && SC.cle === cle) return;
   scanFermer();
   const loc = store.get("scan:" + cle, {});
-  Object.assign(SC, { actif: true, cle, ids: ids || [], scanCode, titre, liste: loc.liste || {}, file: loc.file || [], conflits: loc.conflits || [], compteur: null, err: "" });
+  Object.assign(SC, { actif: true, cle, ids: ids || [], scanCode, titre, titres, liste: loc.liste || {}, file: loc.file || [], conflits: loc.conflits || [], compteur: null, err: "" });
   scanCharger();
   SC.minuterie = setInterval(() => { if (document.visibilityState === "visible") { scanSynchroniser(); scanCharger(true); } }, 8000);
 }
@@ -1021,7 +1021,7 @@ function scanAppliquer(r, code) {
   if (r.resultat === "ok") { if (loc) { loc.entre_le = r.entre_le; loc.app = r.entre_appareil; } else SC.liste[code] = { code, nom: r.nom, prenom: r.prenom, entre_le: r.entre_le, e: r.evenement_id }; flash("ok", "Entrée validée", nomP(r)); }
   else if (r.resultat === "deja") { if (loc) loc.entre_le = r.entre_le; flash("deja", "Déjà entré", nomP(r), "à " + heure(r.entre_le) + (r.entre_par ? " · par " + r.entre_par : "")); }
   else if (r.resultat === "invalide") flash("ko", "Billet non valable", nomP(r), { desinscrit: "désinscrit·e", refuse: "inscription refusée", attente: "liste d'attente", a_valider: "paiement non validé", a_confirmer: "adresse non confirmée" }[r.statut] || r.statut);
-  else if (r.resultat === "acces") flash("ko", "Accès refusé", "", r.message || "");
+  else if (r.resultat === "acces") { flash("ko", "Accès refusé", "", r.message || ""); if (S.mode === "benevole") setTimeout(chargerBenevole, 2500); }
   else flash("ko", "Billet inconnu", "", "code " + code);
   scanSauver(); scanMajUI();
   if (SC.compteur && r.resultat === "ok") { SC.compteur.entres = (SC.compteur.entres || 0) + 1; SC.compteur.dernier = r.entre_le; }
@@ -1040,6 +1040,7 @@ async function scanSynchroniser() {
       SC.file.shift();
       const p = SC.liste[it.code] || { code: it.code };
       if (r.resultat === "deja" && r.doublon) SC.conflits.push({ code: it.code, nom: nomP(r), ici: it.at, ailleurs: r.entre_le, par: r.entre_par || "" });
+      else if (r.resultat === "acces") SC.conflits.push({ code: it.code, nom: nomP(p), ici: it.at, refus: "non enregistrée (lien révoqué ou expiré)" });
       else if (r.resultat === "inconnu" || r.resultat === "invalide") SC.conflits.push({ code: it.code, nom: nomP(p), ici: it.at, refus: r.resultat === "invalide" ? "billet non valable" : "billet inconnu" });
       if (r.entre_le && SC.liste[it.code]) SC.liste[it.code].entre_le = r.entre_le;
     }
@@ -1113,7 +1114,7 @@ function scanMajUI() {
     if (q.length < 2) res.innerHTML = "";
     else {
       const l = Object.values(SC.liste).filter((p) => sansAccents(p.prenom + " " + p.nom + " " + p.nom + " " + p.prenom + " " + p.code).includes(q)).slice(0, 25);
-      res.innerHTML = l.length ? `<div class="lst">${l.map((p) => `<div class="li ${p.entre_le ? "in" : ""}"><div class="m"><div class="n">${esc(nomP(p))}</div><div class="x mono">${esc(p.code)}${p.entre_le ? " · entré à " + heure(p.entre_le) : ""}</div></div>
+      res.innerHTML = l.length ? `<div class="lst">${l.map((p) => `<div class="li ${p.entre_le ? "in" : ""}"><div class="m"><div class="n">${esc(nomP(p))}</div><div class="x mono">${SC.titres && Object.keys(SC.titres).length > 1 && SC.titres[p.e] ? esc(SC.titres[p.e]) + " · " : ""}${esc(p.code)}${p.entre_le ? " · entré à " + heure(p.entre_le) : ""}</div></div>
         ${p.entre_le ? `<span class="badge ok">Entré</span>` : `<button class="btn sm" data-a="scanCode" data-code="${esc(p.code)}">Valider l'entrée</button>`}</div>`).join("")}</div>` : `<p class="du">Aucun billet à ce nom.</p>`;
     }
   }
@@ -1121,50 +1122,58 @@ function scanMajUI() {
   if (inf) inf.innerHTML = [enLigne() ? "● en ligne" : "<b style='color:var(--red)'>● hors ligne</b> — les entrées sont gardées sur ce téléphone", SC.file.length ? `<b style="color:var(--amber)">${SC.file.length} entrée(s) à synchroniser</b>` : "", SC.majLe ? "liste à jour à " + heure(SC.majLe) : "", SC.err ? "<span style='color:var(--red)'>" + esc(SC.err) + "</span>" : ""].filter(Boolean).join(" · ");
 }
 
-/* ---------------- Bénévoles de l'entrée (code de scan par événement) ---------------- */
+/* ---------------- Bénévoles de l'entrée (lien de scan personnel, 24 h) ----------------
+   Le lien (…?scan#JETON) ne permet QUE de scanner et de chercher un nom (contrôlé par le serveur). */
+const lienScanUrl = (j) => APP_URL + "?scan#" + j;
+function jetonDansUrl() { const j = normCode((location.hash || "").replace(/^#/, "")); return j.length >= 20 ? j : ""; }
 async function chargerBenevole() {
+  const neuf = jetonDansUrl();
+  if (neuf) {
+    try { history.replaceState(null, "", APP_URL + "?scan"); } catch (e) {}
+    const a = store.get("benevole", null);
+    if (!a || a.jeton !== neuf) store.set("benevole", { jeton: neuf, depuis: Date.now() });
+  }
   const b = store.get("benevole", null);
-  S.ben = { saisie: !b, err: "" };
-  if (b && b.expire && new Date(b.expire) < new Date()) { store.set("benevole", null); S.ben = { saisie: true, err: "Votre code de scan a expiré (fin de la journée de l'événement)." }; }
+  S.ben = { err: "", info: null };
+  if (b && b.expire && new Date(b.expire) < new Date()) { store.set("benevole", null); S.ben.err = "Votre lien de scan a expiré (valable 24 h). Demandez-en un nouveau à la commission."; }
   else if (b) {
-    S.ben.info = b;
     if (enLigne()) {
-      try { const { data } = await sb.rpc("bil_scan_acces", { p_scan_code: b.code }); if (!data) { store.set("benevole", null); S.ben = { saisie: true, err: "Ce code de scan n'est plus valable." }; } else { S.ben.info = Object.assign({ code: b.code, depuis: b.depuis || Date.now() }, data); store.set("benevole", S.ben.info); } } catch (e) {}
-    }
+      try {
+        const { data, error } = await sb.rpc("bil_scan_acces", { p_scan_code: b.jeton });
+        if (error) throw error;
+        if (!data) { store.set("benevole", null); S.ben.err = "Ce lien de scan n'est plus valable (révoqué ou expiré). Demandez-en un nouveau à la commission."; }
+        else { S.ben.info = Object.assign({ jeton: b.jeton, depuis: b.depuis || Date.now() }, data); store.set("benevole", S.ben.info); }
+      } catch (e) { if (b.lien) S.ben.info = b; else S.ben.err = msgErreur(e); }
+    } else if (b.lien) S.ben.info = b;
+    else S.ben.err = "Pas de connexion internet : la première ouverture du lien demande une connexion.";
   }
   if (S.etat.maintenance) { S.mode = "maintenance"; return rendre(); }
-  rendre();
-  if (!S.ben.saisie) { SC.par = store.get("benevole_nom", "") || "Bénévole"; scanOuvrir({ scanCode: S.ben.info.code, titre: S.ben.info.titre, cle: "ben:" + S.ben.info.id }); scanMajUI(); }
+  scanFermer(); rendre();
+  const I = S.ben.info;
+  if (I && (I.evenements || []).length) {
+    SC.par = I.prenom || "Bénévole";
+    scanOuvrir({ scanCode: I.jeton, titre: "", cle: "lien:" + I.lien, titres: Object.fromEntries(I.evenements.map((e) => [e.id, e.titre])) }); scanMajUI();
+  }
 }
 function vueBenevole() {
-  const B = S.ben || { saisie: true };
-  if (B.saisie) return `<div class="pub">${enteteUlb()}<h1>Scanner à l'entrée</h1><p class="org">Accès bénévoles : entrez le code de scan donné par la commission.</p>
+  const B = S.ben || {}, I = B.info;
+  if (!I) return `<div class="pub">${enteteUlb()}<h1>Scanner à l'entrée</h1>
     ${B.err ? `<div class="alerte">${esc(B.err)}</div>` : ""}
-    <div class="card"><label class="q" style="margin-top:0" for="benCode">Code de scan</label><input class="f mono" id="benCode" placeholder="XXXX-XXXX" autocapitalize="characters" autocomplete="off" style="letter-spacing:2px;text-transform:uppercase">
-    <label class="q" for="benNom">Votre prénom (facultatif)</label><input class="f" id="benNom" value="${esc(store.get("benevole_nom", ""))}" placeholder="Ex. Sarah" maxlength="40">
-    <button class="btn block" style="margin-top:14px" data-a="benEntrer">Commencer à scanner</button>
-    <p class="du">Ce code permet uniquement de scanner les billets de cet événement. Il expire à la fin de la journée de l'événement.</p></div>
+    <div class="card"><p style="margin-top:0">Pour scanner, ouvrez sur ce téléphone le <b>lien de scan personnel</b> reçu d'un responsable de la commission.</p>
+    <p class="du">Ce lien permet uniquement de scanner les billets des événements du jour et de chercher un nom. Il est valable 24 h.</p></div>
     <p class="centre"><a class="link" href="${APP_URL}">Espace des responsables</a></p></div>`;
-  const e = B.info;
-  return `<div class="hd"><div class="hd-in"><span class="brand"><span class="ic">🎟</span>Entrée</span><span class="sp"></span><button class="btn ghost sm" data-a="benQuitter">Quitter</button></div></div>
-    <div class="body" style="max-width:640px"><p class="eyebrow">${esc(e.commission || "")}</p><h1 class="titre">${esc(e.titre)}</h1><p class="sub">${esc(infosLigne(e))}</p>${scanHtml()}</div>`;
+  const E = I.evenements || [];
+  const tete = `<div class="hd"><div class="hd-in"><span class="brand"><span class="ic">🎟</span>Entrée</span><span class="sp"></span><span class="who">${esc(I.prenom || "")}</span><button class="btn ghost sm" data-a="benQuitter">Quitter</button></div></div>`;
+  const pied = `<p class="du centre" style="margin-top:14px">Lien valable jusqu'au ${esc(quand(I.expire))} · scanner et recherche de nom uniquement.</p>`;
+  if (!E.length) return tete + `<div class="body" style="max-width:640px"><div class="alerte" style="margin-top:16px">Aucun événement actif aujourd'hui pour ce lien.</div>${pied}</div>`;
+  const titre = E.length === 1 ? `<p class="eyebrow">${esc(E[0].commission || "")}</p><h1 class="titre">${esc(E[0].titre)}</h1><p class="sub">${esc(infosLigne(Object.assign({ date: I.jour }, E[0])))}</p>`
+    : `<h1 class="titre">Entrée · ${E.length} événements aujourd'hui</h1><p class="sub">${E.map((e) => esc(e.titre) + (e.heure_debut ? " (" + esc(hm(e.heure_debut)) + ")" : "")).join(" · ")}</p>`;
+  return tete + `<div class="body" style="max-width:640px">${titre}${scanHtml()}${pied}</div>`;
 }
-RES.benEntrer = async (btn) => {
-  const code = normCode($("benCode").value); store.set("benevole_nom", $("benNom").value.trim());
-  if (code.length < 8) return echec("Le code de scan compte 8 caractères.", "Code incomplet");
-  if (!enLigne()) return echec("Pas de connexion internet : la première ouverture demande une connexion.", "Hors ligne");
-  btn.disabled = true;
-  const { data, error } = await sb.rpc("bil_scan_acces", { p_scan_code: code });
-  btn.disabled = false;
-  if (error) return echec(msgErreur(error));
-  if (!data) return echec("Code invalide ou expiré. Vérifiez-le auprès de la commission.", "Accès refusé");
-  store.set("benevole", Object.assign({ code, depuis: Date.now() }, data));
-  chargerBenevole();
-};
 RES.benQuitter = async () => {
   if (SC.file.length) { await scanSynchroniser(); if (SC.file.length) return echec(SC.file.length + " entrée(s) ne sont pas encore synchronisées. Restez sur cette page jusqu'au retour de la connexion.", "Pas encore"); }
   if (!(await confirmer("Quitter le scanner sur ce téléphone ?", "Quitter"))) return;
-  scanFermer(); store.set("benevole", null); chargerBenevole();
+  scanFermer(); store.set("benevole", null); S.ben = { err: "", info: null }; rendre();
 };
 
 /* =====================================================================
@@ -1228,8 +1237,7 @@ function vueLogin() {
       <label class="l" for="lgPwd">Mot de passe</label><input class="f" id="lgPwd" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')RES.login()">
       <div id="lgErr"></div><button class="btn block" style="margin-top:12px" data-a="login">Se connecter</button>
       <p class="centre" style="margin:12px 0 0"><button class="link" data-a="mdpOublie">Mot de passe oublié ?</button></p></div>
-    <p class="du centre">Pas encore de compte ? Il se crée dans <a href="${esc(CA_URL)}">l'espace CA</a>.</p>
-    <p class="centre" style="margin-top:22px"><a class="btn ghost sm" href="${APP_URL}?scan">Bénévole à l'entrée ? Scanner avec un code</a></p></div>`;
+    <p class="du centre">Pas encore de compte ? Il se crée dans <a href="${esc(CA_URL)}">l'espace CA</a>.</p></div>`;
 }
 RES.login = async () => {
   const mail = $("lgMail").value.trim().toLowerCase(), pwd = $("lgPwd").value;
@@ -1310,10 +1318,12 @@ function vueResp() {
     ${S.comms && S.comms.length > 1 && S.vue !== "choix" ? `<select class="f" style="width:auto;margin:0;padding:7px 10px;font-size:13px" data-ch="choixComm">${S.comms.map((x) => `<option value="${esc(x.id)}" ${x.id === S.commId ? "selected" : ""}>${esc(x.nom)}${x.actif ? "" : " (retirée)"}</option>`).join("")}</select>` : (c ? `<span class="badge">${esc(c.nom)}</span>` : "")}
     <span class="sp"></span><span class="who">${esc(nomU)}${S.estOwner ? " · propriétaire" : ""}</span>
     <button class="btn ghost sm" data-a="ouvrirGlobal" title="Scanner global">🎯 Scanner global</button>
+    <button class="btn ghost sm" data-a="ouvrirLiens" title="Liens de scan pour les bénévoles">📲 Liens de scan</button>
     <a class="btn ghost sm" href="${esc(CA_URL)}">← CA</a><button class="btn ghost sm" data-a="deconnexion">Se déconnecter</button></div></div>`;
   let corps = "";
   if (S.vue === "choix") corps = vueChoixComm();
   else if (S.vue === "global") corps = vueGlobal();
+  else if (S.vue === "liens") corps = vueLiens();
   else if (S.vue === "evt") corps = vueEvt();
   else corps = vueComm();
   return tete + `<div class="body">${corps}<p class="du centre" style="margin-top:40px;opacity:.6">Version ${esc(VERSION)}</p></div>`;
@@ -1481,12 +1491,9 @@ function vueReglages(e) {
     <div class="card"><h3>Mails automatiques</h3>
       <label class="swl"><input type="checkbox" class="sw" data-ch="basculeAuto" data-k="rappel_auto" ${e.rappel_auto ? "checked" : ""}><span>Rappel la veille de l'événement<small>Envoyé à partir de 10 h aux inscrit·es.</small></span></label>
       <label class="swl"><input type="checkbox" class="sw" data-ch="basculeAuto" data-k="sondage_auto" ${e.sondage_auto ? "checked" : ""}><span>Sondage de satisfaction le lendemain<small>Trois questions + commentaire ; résultats dans l'onglet Bilan.</small></span></label></div>
-    <div class="card"><h3>Code de scan des bénévoles</h3>
-      <p class="du">Pour les personnes hors CA qui scannent à l'entrée : ce code permet <b>uniquement</b> de scanner les billets de cet événement (et de chercher un nom). Il expire à la fin de la journée de l'événement.</p>
-      ${e.scan_code ? `<p style="font-size:26px;letter-spacing:4px;margin:8px 0" class="mono">${esc(e.scan_code.slice(0, 4) + "-" + e.scan_code.slice(4))}</p>
-        <p class="du">À ouvrir sur le téléphone : <span class="mono" style="color:var(--stamp)">${esc(APP_URL)}?scan</span></p>
-        <div class="row"><button class="btn sm" data-a="copierScan">Copier le lien et le code</button><button class="btn ghost sm" data-a="genScan">Changer le code</button><button class="btn ghost sm" data-a="retirerScan">Désactiver</button></div>`
-      : `<div class="row"><button class="btn sm" data-a="genScan">Générer un code</button></div>`}</div>
+    <div class="card"><h3>Bénévoles à l'entrée</h3>
+      <p class="du">Les personnes hors CA scannent avec un <b>lien de scan personnel</b> (un par personne, valable 24 h, événements du jour). Il permet <b>uniquement</b> de scanner un billet et de chercher un nom.</p>
+      <div class="row"><button class="btn sm" data-a="ouvrirLiens">📲 Liens de scan</button></div></div>
     <div class="card"><h3>Vérifier avant le jour J</h3><p class="du">Contrôle automatique : connexion au serveur, droits, infos pratiques, scanner (caméra, liste hors ligne) et envoi d'un mail de test à votre adresse.</p>
       <div class="row"><button class="btn sm" data-a="verifier">Lancer la vérification</button></div><div id="verifRes"></div></div>
     <div class="card"><h3>Archive</h3>
@@ -1540,19 +1547,6 @@ RES.sauverProg = async () => {
   try { await majEvt({ ouverture: o, fermeture: f }); } catch (er) { return echec(er.message); }
   rendre(); succes([o ? "Ouverture : " + quand(o) : "Pas d'ouverture programmée", f ? "Fermeture : " + quand(f) : "Pas de fermeture programmée"].join("\n"));
 };
-RES.genScan = async () => {
-  const e = evtCourant();
-  if (e.scan_code && !(await confirmer("Changer le code ? L'ancien ne fonctionnera plus sur les téléphones des bénévoles.", "Code de scan"))) return;
-  const { data, error } = await sb.rpc("bil_scan_code_generer", { p_eid: e.id });
-  if (error) return echec(msgErreur(error));
-  e.scan_code = data; rendre(); succes("Code de scan : " + data.slice(0, 4) + "-" + data.slice(4) + "\nIl expire à la fin de la journée de l'événement.", "Code généré");
-};
-RES.retirerScan = async () => {
-  if (!(await confirmer("Désactiver le code ? Les bénévoles ne pourront plus scanner.", "Code de scan"))) return;
-  const { error } = await sb.rpc("bil_scan_code_retirer", { p_eid: S.evtId }); if (error) return echec(msgErreur(error));
-  evtCourant().scan_code = null; rendre();
-};
-RES.copierScan = async () => { const e = evtCourant(); const ok = await copier(`Scanner à l'entrée de « ${e.titre} » : ouvrez ${APP_URL}?scan et entrez le code ${e.scan_code.slice(0, 4)}-${e.scan_code.slice(4)}`); toast(ok ? "Copié" : "Copie impossible"); };
 RES.archiver = async () => { if (!(await confirmer("Archiver cet événement ? Les inscriptions se ferment ; les statistiques restent consultables.", "Archiver"))) return; try { await majEvt({ statut: "archive" }); } catch (er) { return echec(er.message); } rendre(); toast("Événement archivé"); };
 RES.desarchiver = async () => { try { await majEvt({ statut: "actif" }); } catch (er) { return echec(er.message); } rendre(); toast("Événement réactivé"); };
 RES.supprimerEvt = async () => {
@@ -1582,7 +1576,6 @@ RES.verifier = async () => {
   let sto = false; try { localStorage.setItem("bil:test", "1"); sto = localStorage.getItem("bil:test") === "1"; localStorage.removeItem("bil:test"); } catch (e) {}
   let sw = false; try { sw = !!(navigator.serviceWorker && await navigator.serviceWorker.getRegistration()); } catch (e) {}
   ligne(sto && sw ? true : "warn", "Scanner hors ligne", sto ? (sw ? "La page et la liste restent disponibles sans réseau." : "Rechargez la page une fois en ligne pour activer le mode hors ligne.") : "Stockage du téléphone indisponible (navigation privée ?).");
-  ligne(v.scan_code ? true : "warn", "Code des bénévoles", v.scan_code ? "Généré." : "Pas encore généré (seulement si des bénévoles hors CA scannent).");
   const m = await appelFn({ action: "test", evenement_id: S.evtId });
   ligne(!!m.ok, "Envoi des mails", m.ok ? "Mail de test envoyé à " + m.email + " (via " + m.via + "). Vérifiez votre boîte (et les spams)." : (m.erreur || "Échec de l'envoi."));
 };
@@ -1607,6 +1600,66 @@ function vueGlobal() {
   return `<button class="link" data-a="retourComm">← Retour</button><h1 class="titre">🎯 Scanner global</h1>
     <p class="sub">Tous les billets des événements actifs de ${S.estOwner ? "toutes les commissions" : "vos commissions"} (${E.length} événement(s)).</p>${scanHtml()}`;
 }
+/* ---------------- Liens de scan (bénévoles hors CA) ---------------- */
+RES.ouvrirLiens = async () => {
+  scanFermer(); S.vue = "liens"; S.evtId = null; S.liens = null; S.liensErr = ""; history.replaceState(null, "", APP_URL);
+  try { auditNav("Liens de scan"); } catch (e) {}
+  rendre(); await chargerLiens();
+};
+async function chargerLiens() {
+  if (!enLigne()) { S.liens = []; S.liensErr = "Hors ligne."; return rendre(); }
+  const { data, error } = await sb.rpc("bil_scan_liens_liste");
+  S.liens = error ? [] : (data || []); S.liensErr = error ? msgErreur(error) : "";
+  if (S.vue === "liens") rendre();
+}
+function vueLiens() {
+  const L = S.liens;
+  return `<button class="link" data-a="retourComm">← Retour</button><h1 class="titre">📲 Liens de scan</h1>
+    <p class="sub">Pour les personnes hors CA qui scannent à l'entrée : un lien par personne, valable 24 h, pour ${S.estOwner ? "vos événements du jour (ou tous)" : "vos événements du jour"}. Il permet <b>uniquement</b> de scanner un billet et de chercher un nom (nom, événement, entré ou pas).</p>
+    <div class="card"><h3>Nouveau lien</h3>
+      <label class="l" for="lnPrenom">Prénom de la personne qui va scanner</label><input class="f" id="lnPrenom" maxlength="40" placeholder="Ex. Sarah" onkeydown="if(event.key==='Enter')RES.creerLien(document.querySelector('[data-a=creerLien]'))">
+      ${S.estOwner ? `<label class="swl" style="margin-top:10px"><input type="checkbox" class="sw" id="lnTous"><span><b>Tous les événements du jour</b><small>Réservé à l'Admin et au propriétaire. Sinon : seulement les événements de vos commissions.</small></span></label>` : ""}
+      <div class="row" style="margin-top:12px"><button class="btn sm" data-a="creerLien">Créer le lien</button></div></div>
+    <div class="card"><h3>Liens des 3 derniers jours</h3>${S.liensErr ? `<div class="alerte">${esc(S.liensErr)}</div>` : ""}
+      ${L == null ? `<p class="du">Chargement…</p>` : !L.length ? `<p class="du">Aucun lien.</p>` : `<div class="lst">${L.map((l) => `<div class="li"><div class="m">
+        <div class="n">${esc(l.prenom)} ${l.tous ? `<span class="badge">tous les événements</span>` : ""} ${l.actif ? `<span class="badge ok">actif</span>` : `<span class="badge no">${l.revoque_le ? "révoqué" : "expiré"}</span>`}</div>
+        <div class="x">${l.actif ? "jusqu'au " + esc(quand(l.expire_le)) : l.revoque_le ? "révoqué le " + esc(quand(l.revoque_le)) : "expiré le " + esc(quand(l.expire_le))} · ${Number(l.nb_scans) || 0} scan(s)${l.dernier_scan ? ", dernier à " + esc(heure(l.dernier_scan)) : ""}${!l.a_moi && l.cree_par_nom ? " · créé par " + esc(l.cree_par_nom) : ""}</div></div>
+        ${l.actif ? `<button class="btn ghost sm" data-a="revoquerLien" data-id="${esc(l.id)}">Révoquer</button>` : ""}</div>`).join("")}</div>`}
+      <p class="du">Le lien n'est affiché qu'une fois, à sa création (seule son empreinte est gardée). Perdu ? Révoquez-le et créez-en un autre. Les scans faits avec un lien apparaissent sous le nom « Prénom (lien) ».</p></div>`;
+}
+RES.creerLien = async (btn) => {
+  const prenom = ($("lnPrenom").value || "").trim(), tous = !!($("lnTous") && $("lnTous").checked);
+  if (!prenom) return echec("Indiquez le prénom de la personne qui va scanner.", "Prénom manquant");
+  if (!enLigne()) return echec("Pas de connexion internet.", "Hors ligne");
+  if (btn) btn.disabled = true;
+  const { data, error } = await sb.rpc("bil_scan_lien_creer", { p_prenom: prenom, p_tous: tous });
+  if (btn) btn.disabled = false;
+  if (error) return echec(msgErreur(error));
+  const url = lienScanUrl(data.jeton), evts = (data.evenements || []).join(", ");
+  const texte = `Bonjour ${data.prenom}, voici ton lien pour scanner les billets à l'entrée (${evts}). Ouvre-le sur ton téléphone : ${url}\nValable 24 h. Il sert uniquement à scanner les billets et à chercher un nom. Ne le transmets à personne.`;
+  $("lnPrenom").value = "";
+  chargerLiens();
+  modale({ titre: "✓ Lien créé pour " + data.prenom, type: "ok",
+    html: `<p class="du">Événements : <b>${esc(evts)}</b><br>Valable jusqu'au ${esc(quand(data.expire))}.</p>
+      <div id="qrLien" style="background:#fff;border-radius:12px;padding:12px;width:fit-content;margin:8px auto"></div>
+      <p class="du centre" style="margin-top:0">${esc(data.prenom)} peut aussi scanner ce QR avec son téléphone.</p>
+      <p class="mono" style="font-size:12px;word-break:break-all;color:var(--stamp)">${esc(url)}</p>
+      <div class="row" style="justify-content:center"><button class="btn sm" id="lnCopL">Copier le lien</button><button class="btn ghost sm" id="lnCopM">Copier le message</button>${navigator.share ? `<button class="btn ghost sm" id="lnPart">Partager…</button>` : ""}</div>
+      <p class="du"><b>Affiché une seule fois.</b> Envoyez-le uniquement à ${esc(data.prenom)}.</p>`,
+    boutons: [{ t: "Fermer", v: null }],
+    auto: (d) => {
+      d.querySelector("#qrLien").appendChild(qrCanvas(url, 240, { level: "M" }));
+      d.querySelector("#lnCopL").onclick = async () => toast((await copier(url)) ? "Lien copié" : "Copie impossible");
+      d.querySelector("#lnCopM").onclick = async () => toast((await copier(texte)) ? "Message copié" : "Copie impossible");
+      const sh = d.querySelector("#lnPart"); if (sh) sh.onclick = () => navigator.share({ title: "Lien de scan", text: texte }).catch(() => {});
+    } });
+};
+RES.revoquerLien = async (el) => {
+  if (!(await confirmer("Révoquer ce lien ? La personne ne pourra plus scanner.", "Révoquer le lien", { danger: true, bouton: "Révoquer" }))) return;
+  const { error } = await sb.rpc("bil_scan_lien_revoquer", { p_id: el.dataset.id });
+  if (error) return echec(msgErreur(error));
+  toast("Lien révoqué"); chargerLiens();
+};
 function vueScannerEvt(e) {
   setTimeout(() => { scanOuvrir({ ids: [e.id], titre: e.titre, cle: "evt:" + e.id }); scanMajUI(); }, 0);
   return scanHtml() + `<p class="du">Plusieurs téléphones peuvent scanner en même temps : chaque billet n'est accepté qu'une fois. Sans réseau, les entrées sont gardées sur le téléphone et envoyées au retour de la connexion.</p>`;
@@ -2065,7 +2118,7 @@ async function demarrer() {
   if (p.has("d")) { S.mode = "desinsc"; return chargerBillet("d"); }
   if (p.has("p")) { S.mode = "presence"; return chargerBillet("p"); }
   if (p.has("s")) { S.mode = "sondage"; return chargerBillet("s"); }
-  if (p.has("scan")) { S.mode = "benevole"; return chargerBenevole(); }
+  if (p.has("scan") || jetonDansUrl()) { S.mode = "benevole"; return chargerBenevole(); }
   return demarrerResp();
 }
 // Toutes les 30 s : page d'erreur, maintenance, « déconnecter tous les appareils ».
