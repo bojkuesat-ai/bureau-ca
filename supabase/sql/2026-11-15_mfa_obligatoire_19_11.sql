@@ -360,3 +360,7 @@ grant execute on function public.mfa_reinitialiser(uuid) to authenticated;
 select cron.schedule('mfa_annonce_1611', '0 9 16 11 *', $$select public.mfa_annonce_envoyer()$$);
 select cron.schedule('mfa_point_1811', '0 17 18 11 *', $$select public.mfa_point_envoyer()$$);
 select cron.schedule('mfa-suivi', '*/5 * * * *', $$select public.mfa_suivi_scan()$$);
+
+-- Ajout 15/11 (migration mfa_rapport_jeudi) : bilan au propriétaire seul, jeudi 19/11 09:00 Bruxelles.
+-- public.mfa_rapport_proprio() : liste activée / pas activée → owner/proprietaire, puis se désinscrit.
+-- select cron.schedule('mfa_rapport_1911', '0 8 19 11 *', $$select public.mfa_rapport_proprio()$$);

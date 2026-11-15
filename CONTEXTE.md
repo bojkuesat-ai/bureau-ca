@@ -83,6 +83,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Décidé le 15/11 : obligatoire pour **tous les membres du CA** (pas les cooptés), Espace CA **et** Caisse.
 - À activer au plus tard le **mercredi 18/11/2026 à 23 h 59** ; blocage le **jeudi 19/11 à 00 h** (`proprio_config.mfa_obligatoire_le`).
 - Annonce unique « Sécurité-BE » le **lundi 16/11 à 10 h** (pas de rappel). Point le mercredi 18/11 à 18 h à l'Admin et au propriétaire.
+- Bilan au propriétaire seul le jeudi 19/11 à 9 h. Confirmation d'activation : envoyée seulement à la personne concernée.
 - Bandeau avec compte à rebours, puis écran d'activation guidé. Contrôle serveur (`mfa_ok`, `mfa_exige_moi`) : une session restée ouverte est refusée aussi.
 - Téléphone perdu : remise à zéro par l'Admin (onglet Admin) ou le propriétaire (espace Propriétaire). Mail de confirmation à chaque activation / retrait.
 - Détails : `supabase/README.md`.

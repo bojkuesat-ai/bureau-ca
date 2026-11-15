@@ -147,4 +147,5 @@ avec son mot de passe (+ code si double authentification), et il part par mail �
   activation ou retrait (`mfa-suivi`, toutes les 5 min, table `mfa_suivi_etat`). Pas de rappel aux membres.
 - Admin › Double authentification (et espace Propriétaire) : liste, « Relancer » (`mfa_relancer`, 6 h mini),
   « Remettre à zéro » (`mfa_reinitialiser` : supprime les facteurs, déconnecte, Journal, mail).
+- Bilan au propriétaire seul le **jeudi 19/11 à 09:00** (`mfa_rapport_1911`, `mfa_rapport_proprio`).
 - Pour décaler la date : `update proprio_config set mfa_obligatoire_le = '…' where id = 1;`
