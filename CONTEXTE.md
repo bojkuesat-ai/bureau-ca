@@ -1,6 +1,6 @@
 # CONTEXTE — à lire en premier (nouvelle conversation)
 
-Dernière mise à jour : 15/11/2026 (nuit). Ce fichier résume l'état des apps et les règles de travail.
+Dernière mise à jour : 15/11/2026 (16 h 30). Ce fichier résume l'état des apps et les règles de travail.
 Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de passe).
 
 ## 1. Règles de travail (préférences du propriétaire, Esat)
@@ -11,6 +11,10 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Tester les changements serveur dans une **transaction annulée** (bloc `do $$ … raise exception 'TEST …' $$`).
   Supabase peut demander une confirmation à l'utilisateur : s'il ne répond pas, le dire et attendre.
 - Après une modification : contrôle de syntaxe, commit, push, puis vérifier que la publication a réussi (`gh run list`).
+- Supabase demande une **confirmation** pour les scripts contenant `drop` : prévenir Esat avant, il clique « Autoriser » (sinon la demande est annulée).
+- Fonction Edge : la déployer avec le **contenu complet** du fichier, puis relire la version en ligne et la comparer au dépôt.
+- Ne pas inventer de chiffres d'exemple : donner les vrais chiffres (requête SQL) ou dire clairement « exemple ».
+- Libellés : utiliser **exactement** les mots demandés par Esat, sans ajouter de détail entre parenthèses.
 - Ne jamais écrire le lien secret du propriétaire dans le dépôt (seul son hash est en base).
 - Pour pousser sur GitHub depuis une nouvelle session : ajouter le dépôt `bojkuesat-ai/bureau-ca` (accès « push »).
 
@@ -81,6 +85,17 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 
 ## 8. Caisse : points notables
 
+- **Classement des dépenses payées** (15/11) — mêmes 4 cases dans **Compta**, **Aperçu** et **À traiter** (aucun nom affiché) :
+  - **Événements et activités** : remboursements aux membres + paiements directs catégorie « Événement / activité » ;
+  - **Codes et syllabus** : catégorie « Codes & syllabus » ou fournisseur Kluwer / die Keure / Larcier / PUB (`RE_CODES_SYLLABUS`) ;
+  - **Fonctionnement** : catégorie « Fonctionnement » (salle, entretien, administratif) ;
+  - **Événements annulés** : remboursements de billets (catégorie « Billetterie »).
+  - Fonctions : `ligneCompta()`, `afficherLignesCompta()`, `LIGNES_COMPTA` (caisse/index.html).
+- **Catégorie obligatoire** pour tout paiement direct (formulaire `#fd_cat`, facture à échéance payée, dépense attribuée) + fenêtre de confirmation (`demanderCategorie`).
+- Au 15/11 : Événements et activités 4 681,95 € · Codes et syllabus 9 321,83 € · Fonctionnement 1 119,93 € · Événements annulés 0 €.
+- Factures PUB (impressions syllabus, ≈ 7 400 €) et Larcier (estimation 3 000 €) **en attente** dans « Factures à échéance » → iront dans Codes et syllabus une fois payées.
+- Extraits › « Paiements de billets reçus » : import CSV → rapprochement Billetterie.
+
 - Décision en une étape côté serveur (`deciderServeur`), code de vérification sur les décisions du trésorier.
 - Traitement à la chaîne, OCR des tickets, onglets regroupés par rubriques (`RUBRIQUES`).
 - **Budgets** : approuvés ou refusés par le **trésorier**. Quorum article 16.2 : `ca_budget_regle162_ok`.
@@ -109,7 +124,14 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Un seul billet par adresse ; « Écrire aux inscrits » ; « Annuler l'événement » (mails + demandes de remboursement dans la Caisse, IBAN repris du virement ou demandé par lien `?r=`) ; rapprochement des virements par import CSV (Billetterie et Caisse › Extraits) ; preuve de paiement facultative ; « Céder ma place » jusqu'au début. Détails : `supabase/README.md`.
 - Supabase demande une confirmation pour les scripts avec `drop` : Esat doit rester devant l'écran et cliquer « Autoriser ».
 
+## 10 quater. Journal et Transparence (15/11)
+
+- Les connexions et actions du propriétaire (`owner` et `proprietaire`) ne sont **jamais** enregistrées ni visibles par l'Admin ; Transparence n'affiche plus de liste de connexions.
+- À corriger si Esat le veut : la page RGPD du CA dit que seul « le propriétaire » consulte le journal (en réalité l'Admin aussi).
+
 ## 11. Idées restantes (pas demandées pour l'instant)
 
 - Bloquer les mots de passe ayant fuité (réglage Auth de Supabase).
-- Relances automatiques pour les preuves ; alerte en cas de changement d'IBAN ; export SEPA ; récapitulatif mensuel.
+- Caisse : relances automatiques des preuves ; alerte en cas de changement d'IBAN ; récapitulatif mensuel ; petite caisse en espèces ; clôture d'exercice.
+- Espace CA : registre des décisions, sondage de disponibilités, assiduité, rapport d'activité, élections du prochain CA, inventaire, partenaires, recherche globale, guide des fonctions.
+- Billetterie : plusieurs tarifs, liste d'invités, codes promo (pas demandés).
