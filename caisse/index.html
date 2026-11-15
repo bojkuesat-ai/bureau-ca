@@ -887,6 +887,9 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
         </div>
         <div class="field"><label for="fd_object">Objet / raison</label>
           <input type="text" id="fd_object" maxlength="90" placeholder="Ex. Réservation hôtel week-end" required></div>
+        <div class="field"><label for="fd_cat">Catégorie (obligatoire)</label>
+          <select id="fd_cat" required><option value="">— Choisir —</option><option>Événement / activité</option><option>Fonctionnement</option><option>Codes & syllabus</option></select>
+          <div class="hint" style="margin-top:4px">Événement / activité : TB, événements des commissions, Novelles… · Fonctionnement : salle, entretien, administratif… · Codes & syllabus : Kluwer, die Keure, Larcier, PUB.</div></div>
         <div class="field"><label for="fd_mode">Mode de paiement (si déjà connu — modifiable par le trésorier au moment de valider)</label>
           <select id="fd_mode"><option value="virement">Virement bancaire</option><option value="especes">Espèces</option><option value="carte_asbl">Carte bancaire de l'ASBL</option></select></div>
         <div id="fd_virementBox" class="stack" style="gap:14px">
@@ -3940,11 +3943,13 @@ $("#d_body").addEventListener("click", async e => {
       + "\n\nLa dépense quitte l'onglet Dépenses et devient un paiement direct payé au nom de " + nom
       + ". Aucun e-mail n'est envoyé. En cas d'erreur, « Remettre en dépense » annule tout.",
       { bouton:"Attribuer" })) return;
+  const catA = await demanderCategorie(dep.payee, dep.object, dep.amount);
+  if(!catA) return;
   b.disabled = true;
   const midi = new Date(dep.expense_date + "T12:00:00").toISOString();
   const ligne = {
     user_id: m.id, requester_name: m.name || "", requester_position: m.position || "",
-    expense_date: dep.expense_date, amount: dep.amount, object: dep.object, category: dep.category || "Paiement direct",
+    expense_date: dep.expense_date, amount: dep.amount, object: dep.object, category: catA,
     kind: "direct", beneficiary: dep.payee || "", pay_mode: modeDepuisMethode(dep.method),
     note: sansMarqueurBanque(dep.note),
     vat_rate: dep.vat_rate || "NA", supplier_vat: dep.supplier_vat || "", tva_affectation: dep.tva_affectation || "taxable",
@@ -8582,7 +8587,7 @@ async function alerteBudget100(bid){
 
 /* ---------- brouillon automatique ---------- */
 const BROUILLONS = { req: ["#f_date","#f_amount","#f_object","#f_cat","#f_pay","#f_note"],
-                     dir: ["#fd_amount","#fd_benef","#fd_object","#fd_mode","#fd_comm","#fd_note"] };  // pas l'IBAN : il ne doit pas rester dans le navigateur
+                     dir: ["#fd_amount","#fd_benef","#fd_object","#fd_cat","#fd_mode","#fd_comm","#fd_note"] };  // pas l'IBAN : il ne doit pas rester dans le navigateur
 const BROUILLON_JOURS = 7;
 function cleBrouillon(cle){ return "caisse.brouillon." + cle + "." + (state.profile ? state.profile.id : "x"); }
 function sauverBrouillon(cle){
@@ -8806,6 +8811,8 @@ function majAccuseBox(){
   }
 }
 $("#fd_pour")?.addEventListener("change", () => { const cb = $("#fd_accuse"); if(cb) cb.checked = false; majAccuseBox(); });
+["#fd_benef","#fd_object"].forEach(sel => $(sel)?.addEventListener("change", () => {
+  const c = $("#fd_cat"); if(c && !c.value && RE_CODES_SYLLABUS.test(($("#fd_benef").value||"") + " " + ($("#fd_object").value||""))) c.value = CAT_CODES; }));
 $("#fd_accuse")?.addEventListener("change", majAccuseBox);
 
 $("#directForm")?.addEventListener("submit", async (e) => {
@@ -8834,6 +8841,8 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     if(!(amount>0)) throw new Error("Indiquez un montant valide.");
     if(!benef)  throw new Error("Indiquez le bénéficiaire à payer.");
     if(!object) throw new Error("Indiquez l'objet de la dépense.");
+    const catChoisie = ($("#fd_cat") && $("#fd_cat").value) || "";
+    if(!CATS_DIRECT.includes(catChoisie)) throw new Error("Choisissez la catégorie du paiement (Événement / activité, Fonctionnement ou Codes & syllabus).");
     if(mode==="virement" && iban){   // IBAN facultatif : vérifié seulement s'il est rempli
       if(!ibanValide(iban)) throw new Error("IBAN du bénéficiaire : " + messageIban(iban));
     }
@@ -8845,6 +8854,8 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       if(estClos(dateDem)) throw new Error("L'exercice " + exerciceLabel(exerciceDe(dateDem)) + " est clôturé : cette date n'est plus acceptée.");
     }
     rattraperFichier("dir", "#fd_kind", "#fd_proof");
+    if(!await demander("Classement du paiement", "« " + object + " » — " + benef + " — " + euro(amount)
+        + "\n\nCe paiement sera classé dans : " + catChoisie + ".\n\nConfirmer ?", { bouton: "Confirmer" })) throw new Error("__annule__");
     const budD = controleBudget("fd", amount);
     let sigDblD = null;
     { const _hs = (await Promise.all(staged.dir.map(p => empreinte(p.file)))).filter(Boolean);
@@ -8866,7 +8877,7 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       requester_name: (pour ? pour.name : state.profile.name) || "",
       requester_position: (pour ? pour.position : state.profile.position) || "",
       expense_date: dateDem,
-      amount, object, category: catDirect(benef, object),
+      amount, object, category: catChoisie,
       kind: "direct", beneficiary: benef, pay_mode: mode,
       beneficiary_iban: (mode==="virement" && iban) ? iban : null,
       communication:    mode==="virement" ? comm : null,
@@ -10154,12 +10165,14 @@ async function fePayer(f, n, carte, b){
         { value:"especes", label:"Espèces" } ] },
       basculeTexte: "Prévenir " + nom + " par e-mail" });
   if(!c.ok) return;
+  const catF = await demanderCategorie(f.fournisseur, objet, e.montant);
+  if(!catF) return;
   b.disabled = true;
   const midi = new Date(datePaie + "T12:00:00").toISOString();
   const noteRef = ["Facture à échéance du " + fdate(e.date), f.reference ? "réf. " + f.reference : ""].filter(Boolean).join(" · ");
   const ligne = {
     user_id: f.member_id, requester_name: m.name || f.member_name || "", requester_position: m.position || "",
-    expense_date: datePaie, amount: feRond(e.montant), object: objet, category: catDirect(f.fournisseur, objet),
+    expense_date: datePaie, amount: feRond(e.montant), object: objet, category: catF,
     kind: "direct", beneficiary: f.fournisseur || "", pay_mode: c.mode || "virement",
     communication: f.reference || null, note: noteRef,
     vat_rate: "NA", supplier_vat: "", tva_affectation: "taxable",
@@ -10601,9 +10614,25 @@ function soldeOuverture(an){
 // ---- calculs de l'état des recettes et dépenses (regroupés au schéma normalisé) ----
 /* 15/11/2026 : factures de codes et syllabus (éditeurs juridiques, Presses universitaires) */
 const RE_CODES_SYLLABUS = /kluwer|die\s*keure|larcier|\bpub\b|presses\s+universitaires/i;
-const CAT_CODES = "Codes & syllabus";
+const CAT_CODES = "Codes & syllabus", CAT_EVT = "Événement / activité", CAT_FONCT = "Fonctionnement";
+const CATS_DIRECT = [CAT_EVT, CAT_FONCT, CAT_CODES];
 function estCodesSyllabus(i){ return i.category === CAT_CODES || RE_CODES_SYLLABUS.test(String(i.beneficiary||"") + " " + String(i.object||"")); }
-const catDirect = (benef, objet) => RE_CODES_SYLLABUS.test(String(benef||"") + " " + String(objet||"")) ? CAT_CODES : "Paiement direct";
+const catDirect = (benef, objet) => RE_CODES_SYLLABUS.test(String(benef||"") + " " + String(objet||"")) ? CAT_CODES : CAT_EVT;
+/* Ligne de la comptabilité d'une demande payée (aucun nom n'apparaît dans la Compta). */
+function ligneCompta(i){
+  if(i.kind === "direct" && estCodesSyllabus(i)) return "Codes et syllabus";
+  if(i.kind === "direct" && i.category === CAT_FONCT) return "Fonctionnement";
+  return "Événements et activités";   // frais avancés par les membres + factures d'événements
+}
+/* Choix obligatoire de la catégorie d'un paiement direct, avec confirmation. Renvoie la catégorie ou null. */
+async function demanderCategorie(benef, objet, montant, choixInitial){
+  const ok = await demander("Classement du paiement",
+    "« " + (objet || "") + " »" + (benef ? " — " + benef : "") + (montant ? " — " + euro(montant) : "")
+    + "\n\nCe paiement sera classé dans la catégorie choisie ci-dessous (comptabilité). Confirmer ?",
+    { bouton: "Confirmer", select: { label: "Catégorie", valeur: choixInitial || catDirect(benef, objet),
+      options: CATS_DIRECT.map(c => ({ value: c, label: c })) } });
+  return ok ? (dlgSelectVal || null) : null;
+}
 function comptaRD(an){
   const recs = (state.incomes||[]).filter(i => dansExercice(i.income_date, an) && !estOuverture(i));
   const recRub = {}; RUB_REC.forEach(r=>recRub[r]=0);
@@ -10620,11 +10649,7 @@ function comptaRD(an){
     depRub[r]+=m; const c=String(e.category||"Autre").trim()||"Autre"; depDet[r][c]=(depDet[r][c]||0)+m; });
   // trois lignes, sans aucun nom : frais des membres, codes et syllabus, autres factures
   if(rembs.length){ const r="Marchandises, services et biens divers";
-    const groupes = [
-      ["Remboursements aux membres (frais d'événements)", rembs.filter(i => i.kind !== "direct")],
-      ["Factures : codes et syllabus", rembs.filter(i => i.kind === "direct" && estCodesSyllabus(i))],
-      ["Factures : fonctionnement et activités", rembs.filter(i => i.kind === "direct" && !estCodesSyllabus(i))] ];
-    for(const [lib, l] of groupes){ if(!l.length) continue; const m=l.reduce((s,i)=>s+Number(i.amount||0),0);
+    for(const i of rembs){ const lib = ligneCompta(i), m = Number(i.amount||0);
       depRub[r]+=m; depDet[r][lib]=(depDet[r][lib]||0)+m; } }
   const totDep = RUB_DEP.reduce((s,r)=>s+depRub[r],0);
 
