@@ -10650,7 +10650,9 @@ function comptaRD(an){
   const recRub = {}; RUB_REC.forEach(r=>recRub[r]=0);
   const recDet = {}; RUB_REC.forEach(r=>recDet[r]={});
   recs.forEach(i => { const r=rubRec(i.category); const m=Number(i.amount||0);
-    recRub[r]+=m; const c=String(i.category||"Autre").trim()||"Autre"; recDet[r][c]=(recDet[r][c]||0)+m; });
+    recRub[r]+=m; let c=String(i.category||"Autre").trim()||"Autre";
+    if(c==="Ventes") c="Codes et syllabus";   // 15/11/2026 : les ventes sont toutes des codes et syllabus
+    recDet[r][c]=(recDet[r][c]||0)+m; });
   const totRec = RUB_REC.reduce((s,r)=>s+recRub[r],0);
 
   const exps = (state.expenses||[]).filter(e => dansExercice(e.expense_date, an));
