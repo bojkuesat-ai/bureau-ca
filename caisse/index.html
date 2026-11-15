@@ -1203,7 +1203,8 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
       <div class="kpi wait"><div class="eyebrow">À traiter</div><div class="n" id="k_pending">0</div></div>
       <div class="kpi wait"><div class="eyebrow">Montant en attente</div><div class="n" id="k_pendingAmt">0 €</div></div>
       <div class="kpi done"><div class="eyebrow">À payer (validé)</div><div class="n" id="k_toPay">0 €</div></div>
-      <div class="kpi done"><div class="eyebrow">Remboursé au total</div><div class="n" id="k_paid">0 €</div></div>
+      <div class="kpi done"><div class="eyebrow">Remboursé aux membres</div><div class="n" id="k_paid">0 €</div></div>
+      <div class="kpi done"><div class="eyebrow">Factures payées directement</div><div class="n" id="k_direct">0 €</div></div>
     </div>
     <div>
       <div class="toolbar">
@@ -7075,7 +7076,7 @@ function renderOverview(){
   $("#o_refuse").textContent  = euro(som(list,"Refusée"));
 
   const par = {};
-  for(const i of list){
+  for(const i of list.filter(x => x.kind !== "direct")){   // tableau par membre : remboursements seulement
     const k = i.user_id || i.requester_name;
     par[k] = par[k] || { nom:i.requester_name || "(inconnu)", poste:"", n:0,
                          paye:0, valide:0, attente:0, refuse:0 };
@@ -12673,7 +12674,9 @@ function render(){
     $("#k_pending").textContent    = by("En attente").length;
     $("#k_pendingAmt").textContent = euro(sum(by("En attente")));
     $("#k_toPay").textContent      = euro(sum(by("Validée")));
-    $("#k_paid").textContent       = euro(sum(by("Remboursée")));
+    // 15/11/2026 : remboursements aux membres et paiements directs (factures) comptés à part
+    $("#k_paid").textContent       = euro(sum(by("Remboursée").filter(i => i.kind !== "direct")));
+    if($("#k_direct")) $("#k_direct").textContent = euro(sum(by("Remboursée").filter(i => i.kind === "direct")));
 
     const nReq = by("En attente").length;
     $("#pillReq").textContent = nReq; $("#pillReq").hidden = nReq === 0;
@@ -13858,7 +13861,7 @@ $("#exportBtn").onclick = () => {
       nb(r.amount), "", r.method, "Encaissée", "", r.income_date, r.note||""]),
     ...state.expenses.filter(e => dansAnnee(e.expense_date, an)).map(e => ["Dépense directe","", e.expense_date, e.payee, "", e.object, e.category,
       "", nb(e.amount), e.method, "Payée", "", e.expense_date, e.note||""]),
-    ...state.items.filter(i => dansAnnee(i.expense_date, an)).map(i => ["Remboursement", refOf(i), i.expense_date, i.requester_name, i.requester_position||"",
+    ...state.items.filter(i => dansAnnee(i.expense_date, an)).map(i => [i.kind === "direct" ? "Paiement direct" : "Remboursement", refOf(i), i.expense_date, i.kind === "direct" ? (i.beneficiary || i.requester_name) : i.requester_name, i.requester_position||"",
       i.object, i.category, "", nb(i.amount),
       ibanMasque(i.iban), i.status,
       jour(i.decided_at), jour(i.paid_at), i.decision_note||""])
@@ -13905,7 +13908,7 @@ $("#exportXlsx").onclick = async () => {
   const lignes = [
     ...recsX.map(r => ["Recette","", r.income_date, r.source, "", r.object, r.category, num(r.amount), "", r.method, "Encaissée", "", r.income_date, r.note||""]),
     ...depsX.map(e => ["Dépense directe","", e.expense_date, e.payee, "", e.object, e.category, "", num(e.amount), e.method, "Payée", "", e.expense_date, e.note||""]),
-    ...itemsX.map(i => ["Remboursement", refOf(i), i.expense_date, i.requester_name, i.requester_position||"", i.object, i.category, "", num(i.amount), ibanMasque(i.iban), i.status, jour(i.decided_at), jour(i.paid_at), i.decision_note||""])
+    ...itemsX.map(i => [i.kind === "direct" ? "Paiement direct" : "Remboursement", refOf(i), i.expense_date, i.kind === "direct" ? (i.beneficiary || i.requester_name) : i.requester_name, i.requester_position||"", i.object, i.category, "", num(i.amount), ibanMasque(i.iban), i.status, jour(i.decided_at), jour(i.paid_at), i.decision_note||""])
   ].sort((a,b) => String(a[2]).localeCompare(String(b[2])));
   if(!lignes.length){ btn.disabled=false; btn.textContent="Télécharger en Excel"; return toast("Aucune écriture pour l'exercice "+an+"."); }
   const totRec = recsX.reduce((s,r)=>s+Number(r.amount||0),0);
@@ -14736,7 +14739,8 @@ $("#detailBox").addEventListener("click", e => { if(e.target.id === "detailBox")
 
 /* les remboursements sortent du bilan : ils sont détaillés ici */
 function detailRemboursements(an){
-  const list = (state.items||[]).filter(i => dansAnnee(i.expense_date, an));
+  // seulement les remboursements aux membres : les paiements directs (factures) sont listés à part
+  const list = (state.items||[]).filter(i => i.kind !== "direct" && dansAnnee(i.expense_date, an));
   const som = st => list.filter(i => i.status === st).reduce((s,i)=>s+Number(i.amount||0),0);
   const par = {};
   for(const i of list){
