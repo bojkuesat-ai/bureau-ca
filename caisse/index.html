@@ -1769,6 +1769,19 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     </div>
 
     <div class="card pad">
+      <div class="eyebrow">Rapprochement</div>
+      <h2 style="font-size:20px;margin:6px 0 10px">Comparer la banque et la Caisse</h2>
+      <p class="hint" style="margin:0 0 14px">Importez l'extrait de compte au format CSV : chaque opération de la banque est
+      cherchée dans la Caisse (même montant, à quelques jours près). Les opérations absentes de la Caisse
+      (frais bancaires, ventes SumUp, virements oubliés…) s'affichent et s'encodent en un clic. Rien n'est enregistré sans votre clic.</p>
+      <div class="attach">
+        <input type="file" id="exRapCsv" accept=".csv,text/csv,text/plain">
+        <button type="button" class="btn sm" id="exRapGo">Comparer avec la Caisse</button>
+      </div>
+      <div id="exRapRes" style="margin-top:12px" hidden></div>
+    </div>
+
+    <div class="card pad">
       <div class="eyebrow">Billetterie</div>
       <h2 style="font-size:20px;margin:6px 0 10px">Paiements de billets reçus</h2>
       <p class="hint" style="margin:0 0 14px">Importez l'extrait de compte au format CSV : les virements portant la communication
@@ -5309,6 +5322,138 @@ async function renderExtraits(){
 if($("#exSearch")) $("#exSearch").oninput = renderExtraits;
 
 /* Billetterie : rapprochement des virements (fonction billets-mail, action « rapprocher »). */
+/* ---------- rapprochement banque ↔ Caisse (15/11/2026) ----------
+   Chaque ligne du CSV bancaire est cherchée dans la Caisse : recettes, dépenses et demandes payées.
+   Correspondance : même montant signé, d'abord le même numéro de mouvement, puis la date la plus proche
+   (7 jours au plus). Chaque écriture de la Caisse ne sert qu'une fois. */
+let rapTexte = null;
+const dateBxl = ts => { try{ return new Date(ts).toLocaleDateString("sv-SE", { timeZone: "Europe/Brussels" }); }catch(_){ return String(ts||"").slice(0,10); } };
+function mouvementsCaisse(){
+  const out = [];
+  const ref = n => (String(n||"").match(/\[mouvement ([^\]]+)\]/) || [])[1] || "";
+  (state.incomes||[]).filter(i => !estOuverture(i)).forEach(i =>
+    out.push({ d: i.income_date, m: Math.round(Number(i.amount||0)*100), o: i.object || "", ref: ref(i.note), pris: false }));
+  (state.expenses||[]).forEach(e =>
+    out.push({ d: e.expense_date, m: -Math.round(Number(e.amount||0)*100), o: e.object || "", ref: ref(e.note), pris: false }));
+  (state.items||[]).filter(i => i.status === "Remboursée" && i.paid_at).forEach(i =>
+    out.push({ d: dateBxl(i.paid_at), m: -Math.round(Number(i.amount||0)*100), o: i.object || "", ref: "", pris: false }));
+  return out;
+}
+function rapprocherBanque(texte){
+  const lignes = lireCSV(texte);
+  if(lignes.length < 2) return { erreur: "Le fichier ne contient aucune ligne exploitable." };
+  const col = colonnesCSV(lignes[0]);
+  const manque = ["date","montant"].filter(k => col[k] === undefined);
+  if(manque.length) return { erreur: "Colonnes introuvables : " + manque.join(", ") + "." };
+  const banque = [];
+  lignes.slice(1).forEach(l => {
+    const g = k => col[k] === undefined ? "" : String(l[col[k]] ?? "").trim();
+    const d = dateCSV(g("date")), brut = signeCSV(g("montant"));
+    if(!d || !Number.isFinite(brut) || brut === 0) return;
+    const lib = g("objet"), lu = lireLibelleING(lib);
+    banque.push({ d, m: Math.round(brut*100), ref: g("ref").slice(0,40), lib, lu, cp: g("benef") });
+  });
+  if(!banque.length) return { erreur: "Aucune opération lisible dans ce fichier." };
+  const caisse = mouvementsCaisse();
+  const jour = x => Date.parse(x + "T00:00:00Z") / 86400000;
+  const manquantes = [];
+  banque.forEach(b => {
+    let t = b.ref ? caisse.find(c => !c.pris && c.ref === b.ref && c.m === b.m) : null;
+    if(!t){
+      let best = null, ecart = 8;
+      caisse.forEach(c => { if(c.pris || c.m !== b.m) return; const e = Math.abs(jour(c.d) - jour(b.d)); if(e < ecart){ ecart = e; best = c; } });
+      t = best;
+    }
+    if(t) t.pris = true; else manquantes.push(b);
+  });
+  const debut = banque.reduce((a,b) => b.d < a ? b.d : a, banque[0].d);
+  const fin   = banque.reduce((a,b) => b.d > a ? b.d : a, banque[0].d);
+  const enTrop = caisse.filter(c => !c.pris && c.d >= debut && c.d <= fin);
+  const net = banque.reduce((s,b) => s + b.m, 0) / 100;
+  return { banque, manquantes, enTrop, debut, fin, net };
+}
+function categorieProposee(b){
+  if(/D[ée]compte de frais/i.test(b.lib)) return "Frais bancaires";
+  if(/SumUp/i.test(b.lib)) return "Ventes";
+  return "";
+}
+function optionsCategories(dep, choix){
+  const base = dep ? CATS_DEPENSE : CATS_RECETTE;
+  const cust = (dep ? comptaCfg().catsDep : comptaCfg().catsRec) || [];
+  const liste = [...base.filter(c => c !== "Autre"), ...cust.filter(c => c && !base.includes(c)), "Autre"];
+  return `<option value="">Catégorie…</option>` + liste.map(c => `<option${c===choix?" selected":""}>${esc(c)}</option>`).join("");
+}
+function afficherRapprochement(){
+  const z = $("#exRapRes"); if(!z || !rapTexte) return;
+  const r = rapprocherBanque(rapTexte);
+  z.hidden = false;
+  if(r.erreur){ z.innerHTML = `<p class="hint">${esc(r.erreur)}</p>`; return; }
+  const sgn = c => (c < 0 ? "−" : "+") + euro(Math.abs(c)/100);
+  let h = `<p style="margin:0 0 10px">Du <b>${fdate(r.debut)}</b> au <b>${fdate(r.fin)}</b> : ${r.banque.length} opération(s) en banque, `
+    + `mouvement net <b>${esc(sgn(Math.round(r.net*100)))}</b>.<br>`
+    + (r.manquantes.length ? `<b>${r.manquantes.length} opération(s) absente(s) de la Caisse</b>.` : `<b>Toutes les opérations de la banque sont dans la Caisse ✓</b>`)
+    + `</p>`;
+  if(r.manquantes.length){
+    h += `<div class="card" style="overflow:auto;max-height:420px">` + r.manquantes.map((b, k) => {
+      const dep = b.m < 0;
+      const objet = (b.lu.objet || b.lib || "Opération bancaire").replace(/\s+/g," ").slice(0,90);
+      const benef = (b.lu.benef || b.cp || "").slice(0,80);
+      return `<div class="row" style="cursor:default;align-items:center" data-rap="${k}">
+        <div class="date mono" style="font-size:13px">${fdate(b.d)}</div>
+        <div><div class="obj">${esc(objet)}</div><div class="meta">${esc(benef)}${b.ref ? " · mouvement " + esc(b.ref) : ""}</div></div>
+        <div><select data-rapcat="${k}" style="max-width:190px">${optionsCategories(dep, categorieProposee(b))}</select></div>
+        <div class="amt" style="color:${dep ? "var(--red)" : "var(--green)"}">${esc(sgn(b.m))}</div>
+        <div><button type="button" class="btn sm" data-rapok="${k}">Encoder</button></div>
+      </div>`; }).join("") + `</div>`;
+  }
+  if(r.enTrop.length){
+    h += `<p class="hint" style="margin:12px 0 0"><b>${r.enTrop.length} écriture(s) de la Caisse sans opération correspondante en banque</b> sur cette période
+      (montant ou date à vérifier, ou paiement hors compte) :<br>`
+      + r.enTrop.map(c => esc(fdate(c.d) + " · " + c.o.slice(0,60) + " · " + sgn(c.m))).join("<br>") + `</p>`;
+  }
+  z.innerHTML = h;
+  z._rap = r;
+}
+async function encoderLigneBanque(k){
+  const z = $("#exRapRes"), r = z && z._rap; if(!r) return;
+  const b = r.manquantes[k]; if(!b) return;
+  const cat = (z.querySelector(`[data-rapcat="${k}"]`) || {}).value || "";
+  if(!cat) return toast("Choisissez d'abord une catégorie.");
+  if(estClos(b.d)) return toast("L'exercice " + exerciceLabel(exerciceDe(b.d)) + " est clôturé.");
+  const dep = b.m < 0, mnt = Math.abs(b.m) / 100;
+  const objet = (b.lu.objet || b.lib || "Opération bancaire").replace(/\s+/g," ").slice(0,90);
+  const benef = (b.lu.benef || b.cp || "—").slice(0,80);
+  const methode = b.lu.carte ? "Carte …" + b.lu.carte.replace(/\D/g,"").slice(-4)
+    : /D[ée]compte de frais/i.test(b.lib) ? "Domiciliation" : "Virement";
+  const note = [b.ref ? "[mouvement " + b.ref + "]" : "", "Encodé depuis l'extrait bancaire", b.cp ? "Contrepartie " + b.cp : ""]
+    .filter(Boolean).join(" · ").slice(0,400);
+  const base = { amount: mnt, object: objet, category: cat, method: methode, note,
+                 created_by: state.profile.id, author_name: state.profile.name || "", attachments: [] };
+  const btn = z.querySelector(`[data-rapok="${k}"]`); if(btn) btn.disabled = true;
+  const { error } = dep
+    ? await sb.from("expenses").insert({ ...base, expense_date: b.d, payee: benef })
+    : await sb.from("incomes").insert({ ...base, income_date: b.d, source: benef });
+  if(error){ if(btn) btn.disabled = false; return toast("Enregistrement impossible : " + error.message); }
+  await refresh();
+  afficherRapprochement();
+  toast((dep ? "Dépense" : "Recette") + " de " + euro(mnt) + " encodée.");
+}
+if($("#exRapRes")) $("#exRapRes").addEventListener("click", e => {
+  const b = e.target.closest("[data-rapok]"); if(b) encoderLigneBanque(Number(b.dataset.rapok));
+});
+async function lireTexteCsv(f){
+  let texte = await f.text();
+  if(/\uFFFD/.test(texte)){ try{ texte = new TextDecoder("windows-1252").decode(await f.arrayBuffer()); }catch(e){} }
+  return texte;
+}
+if($("#exRapGo")) $("#exRapGo").onclick = async () => {
+  const f = $("#exRapCsv").files && $("#exRapCsv").files[0];
+  if(!f) return toast("Choisissez d'abord le fichier CSV de l'extrait.");
+  if(f.size > 5*1024*1024) return toast("Fichier trop lourd (5 Mo au plus).");
+  rapTexte = await lireTexteCsv(f);
+  afficherRapprochement();
+};
+
 if($("#exBilGo")) $("#exBilGo").onclick = async () => {
   const f = $("#exBilCsv").files && $("#exBilCsv").files[0], z = $("#exBilRes");
   if(!f) return toast("Choisissez d'abord le fichier CSV de l'extrait.");
@@ -5356,6 +5501,9 @@ if($("#ex_send")) $("#ex_send").onclick = async () => {
   await renderExtraits();
   if(echecs.length) erreurForm("#exErr", echecs.length + " envoi(s) en échec : " + echecs.slice(0,3).join(" · "));
   toast(ok + " extrait(s) déposé(s)" + (echecs.length ? ", " + echecs.length + " en échec." : "."));
+  // un extrait CSV déposé est aussitôt comparé avec la Caisse
+  const csv = fichiers.find(f => /\.csv$/i.test(f.name));
+  if(csv){ try{ rapTexte = await lireTexteCsv(csv); afficherRapprochement(); }catch(_){ __errSilence(_); } }
 };
 
 if($("#exList")) $("#exList").addEventListener("click", async e => {
