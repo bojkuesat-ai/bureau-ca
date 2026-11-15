@@ -1206,8 +1206,10 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
       <div class="kpi wait"><div class="eyebrow">À traiter</div><div class="n" id="k_pending">0</div></div>
       <div class="kpi wait"><div class="eyebrow">Montant en attente</div><div class="n" id="k_pendingAmt">0 €</div></div>
       <div class="kpi done"><div class="eyebrow">À payer (validé)</div><div class="n" id="k_toPay">0 €</div></div>
-      <div class="kpi done"><div class="eyebrow">Remboursé aux membres</div><div class="n" id="k_paid">0 €</div></div>
-      <div class="kpi done"><div class="eyebrow">Factures payées directement</div><div class="n" id="k_direct">0 €</div></div>
+      <div class="kpi done"><div class="eyebrow">Événements et activités</div><div class="n" id="k_evt">0 €</div></div>
+      <div class="kpi done"><div class="eyebrow">Codes et syllabus</div><div class="n" id="k_codes">0 €</div></div>
+      <div class="kpi done"><div class="eyebrow">Fonctionnement</div><div class="n" id="k_fonct">0 €</div></div>
+      <div class="kpi done"><div class="eyebrow">Événements annulés</div><div class="n" id="k_annul">0 €</div></div>
     </div>
     <div>
       <div class="toolbar">
@@ -1273,8 +1275,10 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 
   <section id="viewOverview" class="stack" hidden>
     <div class="kpis">
-      <div class="kpi"><div class="eyebrow">Remboursé aux membres</div><div class="n" id="o_paye">0 €</div></div>
-      <div class="kpi"><div class="eyebrow">Paiements directs</div><div class="n" id="o_direct">0 €</div></div>
+      <div class="kpi done"><div class="eyebrow">Événements et activités</div><div class="n" id="o_evt">0 €</div></div>
+      <div class="kpi done"><div class="eyebrow">Codes et syllabus</div><div class="n" id="o_codes">0 €</div></div>
+      <div class="kpi done"><div class="eyebrow">Fonctionnement</div><div class="n" id="o_fonct">0 €</div></div>
+      <div class="kpi done"><div class="eyebrow">Événements annulés</div><div class="n" id="o_annul">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Dépenses directes</div><div class="n" id="o_depenses">0 €</div></div>
       <div class="kpi" id="o_repriseCard"><div class="eyebrow">Dépense CA sortant</div><div class="n" id="o_reprise">0 €</div></div>
       <div class="kpi" id="o_sortiesCard"><div class="eyebrow">Total des sorties</div><div class="n" id="o_sorties">0 €</div></div>
@@ -7065,8 +7069,7 @@ function renderOverview(){
                         .reduce((s,i)=>s+Number(i.amount||0),0);
   const recettesAn  = totalRec - soldeInitial;
 
-  $("#o_paye").textContent     = euro(versMembre);
-  $("#o_direct").textContent   = euro(versTiers);
+  afficherLignesCompta("o", payes);
   $("#o_depenses").textContent = euro(depDirectes);
   if($("#o_reprise")) $("#o_reprise").textContent = euro(depRepriseDue);
   // plus rien à rembourser : la carte disparaît du bilan
@@ -10619,10 +10622,19 @@ const CATS_DIRECT = [CAT_EVT, CAT_FONCT, CAT_CODES];
 function estCodesSyllabus(i){ return i.category === CAT_CODES || RE_CODES_SYLLABUS.test(String(i.beneficiary||"") + " " + String(i.object||"")); }
 const catDirect = (benef, objet) => RE_CODES_SYLLABUS.test(String(benef||"") + " " + String(objet||"")) ? CAT_CODES : CAT_EVT;
 /* Ligne de la comptabilité d'une demande payée (aucun nom n'apparaît dans la Compta). */
+const LIGNES_COMPTA = ["Événements et activités", "Codes et syllabus", "Fonctionnement", "Événements annulés"];
 function ligneCompta(i){
+  if(i.kind === "direct" && i.category === "Billetterie") return "Événements annulés";   // remboursements de billets
   if(i.kind === "direct" && estCodesSyllabus(i)) return "Codes et syllabus";
   if(i.kind === "direct" && i.category === CAT_FONCT) return "Fonctionnement";
   return "Événements et activités";   // frais avancés par les membres + factures d'événements
+}
+/* Les quatre cases (Aperçu « o », À traiter « k ») : mêmes totaux que la Compta. */
+function afficherLignesCompta(pre, payes){
+  const t = {}; LIGNES_COMPTA.forEach(l => t[l] = 0);
+  (payes || []).forEach(i => { t[ligneCompta(i)] += Number(i.amount || 0); });
+  const ids = { "Événements et activités": "evt", "Codes et syllabus": "codes", "Fonctionnement": "fonct", "Événements annulés": "annul" };
+  LIGNES_COMPTA.forEach(l => { const el = $("#" + pre + "_" + ids[l]); if(el) el.textContent = euro(t[l]); });
 }
 /* Choix obligatoire de la catégorie d'un paiement direct, avec confirmation. Renvoie la catégorie ou null. */
 async function demanderCategorie(benef, objet, montant, choixInitial){
@@ -10648,7 +10660,8 @@ function comptaRD(an){
   exps.forEach(e => { const r=rubDep(e.category); const m=Number(e.amount||0);
     depRub[r]+=m; const c=String(e.category||"Autre").trim()||"Autre"; depDet[r][c]=(depDet[r][c]||0)+m; });
   // trois lignes, sans aucun nom : frais des membres, codes et syllabus, autres factures
-  if(rembs.length){ const r="Marchandises, services et biens divers";
+  { const r="Marchandises, services et biens divers";
+    LIGNES_COMPTA.forEach(l => { depDet[r][l] = depDet[r][l] || 0; });   // les quatre lignes, même à 0 €
     for(const i of rembs){ const lib = ligneCompta(i), m = Number(i.amount||0);
       depRub[r]+=m; depDet[r][lib]=(depDet[r][lib]||0)+m; } }
   const totDep = RUB_DEP.reduce((s,r)=>s+depRub[r],0);
@@ -12711,8 +12724,7 @@ function render(){
     $("#k_pendingAmt").textContent = euro(sum(by("En attente")));
     $("#k_toPay").textContent      = euro(sum(by("Validée")));
     // 15/11/2026 : remboursements aux membres et paiements directs (factures) comptés à part
-    $("#k_paid").textContent       = euro(sum(by("Remboursée").filter(i => i.kind !== "direct")));
-    if($("#k_direct")) $("#k_direct").textContent = euro(sum(by("Remboursée").filter(i => i.kind === "direct")));
+    afficherLignesCompta("k", by("Remboursée"));
 
     const nReq = by("En attente").length;
     $("#pillReq").textContent = nReq; $("#pillReq").hidden = nReq === 0;
