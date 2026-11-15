@@ -1,6 +1,6 @@
 # CONTEXTE — à lire en premier (nouvelle conversation)
 
-Dernière mise à jour : 15/11/2026. Ce fichier résume l'état des apps et les règles de travail.
+Dernière mise à jour : 15/11/2026 (nuit). Ce fichier résume l'état des apps et les règles de travail.
 Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de passe).
 
 ## 1. Règles de travail (préférences du propriétaire, Esat)
@@ -9,8 +9,10 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Quand il écrit « ne code pas encore » / « réponds en bref » : expliquer, puis **attendre son « go »**.
 - Tout concerne **uniquement le CA**. La Caisse est réservée aux membres du CA. Rien pour l'extérieur.
 - Tester les changements serveur dans une **transaction annulée** (bloc `do $$ … raise exception 'TEST …' $$`).
-- Après une modification : contrôle de syntaxe, commit, push, puis vérifier que la publication a réussi.
+  Supabase peut demander une confirmation à l'utilisateur : s'il ne répond pas, le dire et attendre.
+- Après une modification : contrôle de syntaxe, commit, push, puis vérifier que la publication a réussi (`gh run list`).
 - Ne jamais écrire le lien secret du propriétaire dans le dépôt (seul son hash est en base).
+- Pour pousser sur GitHub depuis une nouvelle session : ajouter le dépôt `bojkuesat-ai/bureau-ca` (accès « push »).
 
 ## 2. Où est quoi
 
@@ -26,86 +28,79 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 | Contrôle de syntaxe | `node .github/verifier-syntaxe.mjs` (nécessite `esbuild` : `npm install --no-save esbuild@0.24.2`) |
 
 - **Supabase** : projet `mlgzdfyqjhvyubrywuim` (base, Auth, fonctions Edge, `pg_cron`, `pg_net`).
-- **Publication** : GitHub Pages (`https://bojkuesat-ai.github.io/bureau-ca/`). Les pages restent en cache environ 10 minutes. En cas de doute, ajouter `?v=…` à l'adresse.
-- La version affichée dans l'app CA est la constante `CA_VERSION` dans `index.html`.
+- **Publication** : GitHub Pages (`https://bojkuesat-ai.github.io/bureau-ca/`). Cache d'environ 10 minutes ; en cas de doute, ajouter `?v=…`.
+- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-15 · fin de mandat programmée »).
 
 ## 3. Rôles et droits
 
-- `ca_membres.role` : `coopte`, `membre`, `owner` (le propriétaire tant qu'il est au CA), `proprietaire` (le propriétaire après la passation).
-- `ca_membres.admin` (booléen) : Admin délégué. `hors_ca` : la personne ne compte pas dans l'effectif du CA.
+- `ca_membres.role` : `coopte`, `membre`, `owner` (le propriétaire tant qu'il est au CA), `proprietaire` (après la passation).
+- `ca_membres.admin` (booléen) : Admin délégué. `hors_ca` : ne compte pas dans l'effectif du CA.
 - `profiles.role = 'tresorier'` (avec `approved`) : trésorier de la Caisse.
+- Aujourd'hui : Esat = owner, fonction « Trésorier », trésorier de la Caisse. Rania Drissi = « Président » (fonction CA).
 - Fonctions SQL :
-  - `ca_is_owner()` : rôle owner, avec double authentification si elle est activée ;
-  - `proprio_est()` : owner ou proprietaire ;
-  - `proprio_exiger()` : refuse si ce n'est pas le propriétaire ;
-  - `ca_est_admin()` : owner, ou Admin actif ;
-  - `ca_est_tresorier()`, `is_tresorier()` : trésorier ;
-  - `mfa_ok()` : code à 6 chiffres déjà donné (aal2), ou aucun facteur activé ;
-  - `a_mfa(uuid)` : la personne a un facteur vérifié.
-- Côté page CA : `estProprioCA()`, `estAdminCA()`, `estTresoCA()`, `proprioOuvert()`.
-- Pour qu'une fonction du propriétaire contourne les gardes, dans une transaction : `set_config('app.proprio_bypass','1',true)`.
+  - `ca_is_owner()`, `proprio_est()` (owner ou proprietaire), `proprio_exiger()` ;
+  - `ca_est_admin()` : owner, ou Admin actif ; `ca_est_tresorier()`, `is_tresorier()` : trésorier ;
+  - `mfa_ok()` = `mfa_ok_base()` (code donné si facteur) **et** `not mfa_exige_moi()` (obligation du 19/11) ;
+  - `a_mfa(uuid)`, `mfa_concerne(uuid)` (membre du CA, pas coopté).
+- Côté page CA : `estProprioCA()`, `estAdminCA()`, `estTresoCA()`, `proprioOuvert()`, `estCoopte()`.
+- Contourner les gardes dans une fonction du propriétaire : `set_config('app.proprio_bypass','1',true)`.
 
 ## 4. Propriété, licences, Transparence (en place)
 
-- **Espace Propriétaire** derrière un lien secret, détecté au chargement par `lireLienSpecial()` (ainsi que lors d'un changement d'ancre `#`).
-- **Licence** : l'Admin la demande, le propriétaire l'approuve après paiement. À l'échéance, les apps passent en lecture seule. Mails envoyés par `licence_mail(to, sujet, html)` avec l'expéditeur « Licence-BE ».
-- **Modules en option** et état de chaque app (ouverte, lecture seule, fermée) : `app_etat`, `app_lecture_ok`, `app_garde`.
-- **Transparence** : page visible par tous, historique non modifiable. Mails à la passation et à toute reprise d'accès par le propriétaire.
+- **Espace Propriétaire** derrière un lien secret (`lireLienSpecial()`), contient aussi : suivi double authentification, **Fin de mandat**.
+- **Licence** : l'Admin la demande, le propriétaire l'approuve. À l'échéance, lecture seule. Mails : `licence_mail` (expéditeur « Licence-BE »).
+- **Modules en option** et état des apps : `app_etat`, `app_lecture_ok`, `app_garde`, `app_refus_motif`.
+- **Transparence** : page visible par tous, historique non modifiable.
 
 ## 5. Passation (à faire prochainement)
 
-- Fonction : `proprio_passation(p_personne, p_cosign)`. Personne prévue : **Rania Drissi** (présidente, Admin et trésorière par intérim). Cosignataire prévu : **Hamza El Fartakhe**.
-- Effets :
-  - la personne devient Admin et trésorière, et l'adresse du trésorier de la Caisse est mise à jour ;
-  - le propriétaire passe en `role='proprietaire'` et `hors_ca` ;
-  - les mails de gestion sont désactivés ;
-  - les abonnements push du propriétaire sont supprimés (le déclencheur `a_pas_proprietaire` refuse aussi les nouveaux) ;
-  - un **guide complet** part par mail à la personne : `passation_guide_html(prenom)`.
-- Après la passation, le propriétaire :
-  - n'a plus accès au contenu du CA ni de la Caisse ;
-  - ne garde que l'espace Propriétaire (licences, état des apps, modules, réglages techniques, zone dangereuse) ;
-  - ne reçoit plus aucun mail du CA ni de la Caisse : un filtre dans `send-email` les bloque, sauf l'expéditeur « Licence-BE » et l'objet « 🔐 Nouvelle connexion ». Les réponses vont à l'Admin.
-- L'Admin peut nommer le prochain trésorier (`proprio_set_tresorier`) et le cosignataire (`proprio_set_gj_cosignataire`).
+- `proprio_passation(p_personne, p_cosign)`. Personne prévue : **Rania Drissi**, cosignataire **Hamza El Fartakhe**.
+- **Attention** : Rania **reste présidente dans le CA** ; elle devient seulement Admin et **trésorière par intérim dans la Caisse**. La passation ne touche pas à sa fonction CA (vérifié).
+- Effets : Admin + `profiles.role='tresorier'` + adresse du trésorier ; le propriétaire passe `proprietaire` + `hors_ca` ; mails de gestion coupés ; push supprimés ; guide `passation_guide_html` envoyé.
+- Après : le propriétaire ne garde que l'espace Propriétaire et ne reçoit plus de mails du CA/Caisse (filtre `send-email`) **sauf** expéditeur « Licence-BE » et objet « 🔐 Nouvelle connexion ». → Tout mail destiné au propriétaire doit partir en « Licence-BE ».
 - La phrase secrète des sauvegardes est remise **en main propre** par Esat.
 
 ## 6. Mails
 
-- Fonction Edge `send-email` (v24). À déployer avec **vérification JWT désactivée**, car elle fait son propre contrôle :
-  - **serveur** : clé secrète, ou en-tête `x-cron-secret` (valeur `bil_config.cron_secret`) ;
-  - **membre** : membre du CA, compte Caisse approuvé ou compte Firebase de l'app QR ;
-  - **anonyme** : uniquement les modèles de mail prévus, avec des limites.
-- Chaque envoi est noté dans `mail_envois` (sans le contenu).
-- Envoi depuis une fonction SQL : `net.http_post` vers `/functions/v1/send-email` avec `x-cron-secret` (modèle : `licence_mail`).
-- Expéditeurs utilisés : « Sécurité-BE », « Licence-BE », « Bureau étudiant ». Adresse : `noreply@bureauetuidant.xyz`.
+- Fonction Edge `send-email` (v24), **vérification JWT désactivée** (contrôle propre : `x-cron-secret` = `bil_config.cron_secret`, membre, ou anonyme limité).
+- Envoi depuis SQL : `net.http_post` vers `/functions/v1/send-email` avec `x-cron-secret`. Aides : `licence_mail`, `mfa_mail` (Sécurité-BE), `fm_mail(to, sujet, html, expéditeur)`.
+- Expéditeurs : « Sécurité-BE », « Licence-BE », « Bureau étudiant », « Documents-BE ». Adresse : `noreply@bureauetuidant.xyz`.
 
-## 7. Double authentification (OBLIGATOIRE au 19/11/2026)
+## 7. Double authentification — OBLIGATOIRE le 19/11/2026
 
-- Décidé le 15/11 : obligatoire pour **tous les membres du CA** (pas les cooptés), Espace CA **et** Caisse.
-- À activer au plus tard le **mercredi 18/11/2026 à 23 h 59** ; blocage le **jeudi 19/11 à 00 h** (`proprio_config.mfa_obligatoire_le`).
-- Annonce unique « Sécurité-BE » le **lundi 16/11 à 10 h** (pas de rappel). Point le mercredi 18/11 à 18 h à l'Admin et au propriétaire.
-- Bilan au propriétaire seul le jeudi 19/11 à 9 h. Confirmation d'activation : envoyée seulement à la personne concernée.
-- Bandeau avec compte à rebours, puis écran d'activation guidé. Contrôle serveur (`mfa_ok`, `mfa_exige_moi`) : une session restée ouverte est refusée aussi.
-- Téléphone perdu : remise à zéro par l'Admin (onglet Admin) ou le propriétaire (espace Propriétaire). Mail de confirmation à chaque activation / retrait.
-- Détails : `supabase/README.md`.
+- Pour **tous les membres du CA** (pas les cooptés), Espace CA **et** Caisse. Au 15/11 : 2/19 l'ont activée (Esat, Pierre Defrenne).
+- À faire au plus tard **mercredi 18/11/2026 23 h 59** ; blocage **jeudi 19/11 00 h** (`proprio_config.mfa_obligatoire_le`).
+- Serveur : les 81 politiques restrictives `mfa_aal2` refusent tout sans code (même une session ouverte) ; `ca_membres`/`profiles` : seule sa ligne reste lisible ; `app_refus_motif` bloque les écritures des fonctions.
+- Pages (même module dans les 2 apps) : bandeau avec compte à rebours, puis écran d'activation guidé (QR, clé à copier, astuce 2e appareil, aide). L'ancienne invitation facultative est coupée.
+- Tâches planifiées :
+  - `mfa_annonce_1611` : **lundi 16/11 10 h**, une seule annonce (pas de rappel) ;
+  - `mfa_point_1811` : mercredi 18/11 18 h, retardataires → Admin + propriétaire ;
+  - `mfa_rapport_1911` : **jeudi 19/11 9 h**, bilan au propriétaire seul (Licence-BE) ;
+  - `mfa-suivi` (5 min) : mail de confirmation / alerte **uniquement à la personne concernée**.
+- Admin › Double authentification (et espace Propriétaire) : liste, « Relancer », « Remettre à zéro » (téléphone perdu ; déconnecte, Journal, mail).
 
 ## 8. Caisse : points notables
 
-- Décision en une étape côté serveur (`deciderServeur`), avec code de vérification sur les décisions du trésorier.
-- Traitement des demandes à la chaîne, lecture des tickets (OCR, tesseract.js), onglets regroupés par rubriques.
-- **Budgets** : approuvés ou refusés par le **trésorier** (`bPeutDecider`, politique `ca_bud_upd`, garde `ca_budgets_garde_decision`). Règle de quorum de l'article 16.2 : `ca_budget_regle162_ok`.
-- Effectif du CA (`membresCAActifs`) : sans le propriétaire retiré ni les membres `hors_ca`.
+- Décision en une étape côté serveur (`deciderServeur`), code de vérification sur les décisions du trésorier.
+- Traitement à la chaîne, OCR des tickets, onglets regroupés par rubriques (`RUBRIQUES`).
+- **Budgets** : approuvés ou refusés par le **trésorier**. Quorum article 16.2 : `ca_budget_regle162_ok`.
 
-## 8 bis. Fin de mandat programmée (01/07/2027)
+## 9. Espace CA : ajouts du 14-15/11
 
-- 01/06/2027 10 h : prévenance de tous les membres. 24/06/2027 10 h : zips « archives du CA » et « comptabilité de la Caisse » → présidente, secrétaire, trésorier (liens 30 jours), copies dans l'espace Propriétaire (Télécharger / Renvoyer / Aperçu).
-- 01/07/2027 00 h : sauvegarde finale chiffrée, puis TOUT est vidé (comptes sauf le propriétaire, données CA + Caisse + Billetterie, fichiers, registre des signatures, Transparence, journaux). Mail d'adieu.
-- Restent seulement les tables de `fin_mandat_garder` (réglages techniques) : **y ajouter toute nouvelle table de réglages**.
-- Détails : `supabase/README.md` (section « Fin de mandat »), fonction Edge `fin-mandat`.
+- **Onglets désactivables** dans Admin (`ONGLETS_OPTIONNELS`, `ca_meta.onglets_off`) : Organigramme et Contacts **désactivés**.
+- Le regroupement des onglets CA en rubriques a été **écarté** par Esat.
+- **✒ Courriers signés** (activé par défaut, coupable dans Admin) : tout membre du CA (pas les cooptés) tape un courrier ou joint un PDF/Word/PPT, le signe (mot de passe + code), envoi à tout le CA. Qualité lue sur le serveur (fonction CA + « Trésorerie de la Caisse » si trésorier). Table `ca_courriers`, `courrier_signer`, `courrier_finaliser`, code au registre (type `courrier`).
 
-## 9. Idées restantes (pas demandées pour l'instant)
+## 10. Fin de mandat programmée — 01/07/2027
+
+- **01/06/2027 10 h** : prévenance de tous les membres.
+- **24/06/2027 10 h** : zips « Archives du CA » et « Comptabilité de la Caisse » → présidente, secrétaire, trésorier (liens 30 jours). Copies dans l'espace Propriétaire (Télécharger, **Renvoyer**, **Aperçu**).
+- **01/07/2027 00 h** : sauvegarde finale chiffrée, puis **tout est vidé** (comptes sauf le propriétaire, données CA + Caisse + Billetterie, fichiers, registre des signatures, Transparence, journaux). Mail d'adieu, rapport au propriétaire.
+- Rien n'est supprimé sans archives envoyées **et** sauvegarde faite. Tâche `fin-mandat` (10 min), fonction Edge `fin-mandat`, SQL `fin_mandat_*`.
+- **Toute nouvelle table de réglages à garder doit être ajoutée à `fin_mandat_garder`**, sinon elle sera vidée.
+- À faire par Esat : cliquer « Aperçu » pour vérifier le contenu des zips (pas encore testé en réel).
+
+## 11. Idées restantes (pas demandées pour l'instant)
 
 - Bloquer les mots de passe ayant fuité (réglage Auth de Supabase).
-- Relances automatiques pour les preuves.
-- Alerte en cas de changement d'IBAN.
-- Export SEPA.
-- Récapitulatif mensuel.
+- Relances automatiques pour les preuves ; alerte en cas de changement d'IBAN ; export SEPA ; récapitulatif mensuel.
