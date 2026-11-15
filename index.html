@@ -2234,13 +2234,9 @@ function tabTransparence(){
         <li>L'état ci-dessus vient du serveur : il ne peut pas être simulé par la page.</li>
         <li>L'historique ci-dessous ne peut être <b>ni modifié ni effacé</b> depuis les applications, par personne.</li>
         <li>Si le propriétaire <b>retrouve un accès</b>, chaque membre du CA et chaque utilisateur de la Caisse reçoit <b>immédiatement un mail automatique</b>.</li>
-        <li>Les connexions du compte propriétaire depuis la passation sont listées ci-dessous et dans le Journal de l'Admin.</li>
       </ul></div>
     <div class="card2"><h3 class="serif">Historique</h3>
       ${(T.historique||[]).length?(T.historique||[]).map(h=>`<p style="margin:6px 0;font-size:14px">${h.evenement==="reprise"?"🚨":"🔐"} <b>${esc(quand(h.le))}</b> — ${esc(h.details||"")}</p>`).join(""):`<p class="du">Aucun événement pour l'instant.</p>`}</div>
-    ${T.acces_retire?`<div class="card2"><h3 class="serif">Connexions du compte propriétaire depuis la passation</h3>
-      <p class="du">Il ne peut ouvrir que son espace technique, sans accès au contenu.</p>
-      ${(T.connexions||[]).length?(T.connexions||[]).map(c=>`<p style="margin:5px 0;font-size:13.5px">${esc(quand(c.le))} — ${esc(c.app==="caisse"?"Caisse":"Espace CA")}${c.appareil?" — "+esc(c.appareil):""}</p>`).join(""):`<p class="du">Aucune connexion.</p>`}</div>`:""}
   </div>`;
 }
 

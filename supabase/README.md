@@ -179,3 +179,7 @@ SQL : `supabase/sql/2026-11-15_billetterie_liens_scan.sql`.
 - Création / liste / révocation : `bil_scan_lien_creer`, `bil_scan_liens_liste`, `bil_scan_lien_revoquer` (connexion + double authentification).
 - Scans tracés dans `bil_scans` (`par` = « Prénom (lien) », `lien_id`), compteur `nb_scans` sur le lien.
 - Page : bouton « 📲 Liens de scan » dans l'en-tête et dans Réglages de l'événement ; le lien n'est affiché qu'une fois (QR, copier, partager).
+
+## Journal et Transparence sans le propriétaire (15/11/2026)
+
+SQL : `supabase/sql/2026-11-15_journal_sans_proprietaire.sql`. Les connexions et actions du compte propriétaire (`owner` **et** `proprietaire` après la passation) ne sont plus enregistrées (`audit_ecrire`, `audit_trigger`, `audit_est_owner`), ni lisibles par l'Admin (politique `ca_audit_lecture` + `audit_proprio_id()`), ni comptées dans `audit_tableau`. Transparence n'affiche plus de liste de connexions (`transparence_etat`). Le mail « 🔐 Nouvelle connexion » au propriétaire est inchangé.
