@@ -149,3 +149,20 @@ avec son mot de passe (+ code si double authentification), et il part par mail �
   « Remettre à zéro » (`mfa_reinitialiser` : supprime les facteurs, déconnecte, Journal, mail).
 - Bilan au propriétaire seul le **jeudi 19/11 à 09:00** (`mfa_rapport_1911`, `mfa_rapport_proprio`).
 - Pour décaler la date : `update proprio_config set mfa_obligatoire_le = '…' where id = 1;`
+
+## Fin de mandat programmée — 01/07/2027 (décidé le 15/11/2026)
+`sql/2026-11-15_fin_de_mandat.sql` (migration `fin_de_mandat`) + fonction Edge `fin-mandat` (Verify JWT **désactivé**).
+- **01/06/2027 10:00** : prévenance à tous les comptes sauf le propriétaire (`fin_mandat_prevenir`).
+- **24/06/2027 10:00** : deux zips (parties de 40 Mo max) dans le stockage privé `fin-mandat` :
+  « archives du CA » (tableaux CSV + fichiers `ca-documents`, résultats de votes sans bulletins) et
+  « comptabilité de la Caisse » (tableaux CSV + `justificatifs`). Liens de 30 jours à la présidente, la
+  secrétaire et le trésorier en fonction ce jour-là (`fin_mandat_destinataires`, adresses figées).
+  Les échanges confidentiels (soutien, CES, médiation, messages privés, bilans) ne sont pas remis.
+- **01/07/2027 00:00** : sauvegarde finale chiffrée (SAUVEGARDE_PHRASE) dans `fin-mandat/sauvegarde-finale/`,
+  puis `fin_mandat_vider()` (service uniquement : vérifie archives + sauvegarde, vide tout le schéma public
+  sauf `fin_mandat_garder`, supprime tous les comptes sauf le propriétaire, nouveau secret de signature),
+  puis tous les fichiers (sauf `fin-mandat`), mail d'adieu, rapport au propriétaire (expéditeur Licence-BE).
+- Tâche `fin-mandat` toutes les 10 min (`fin_mandat_tick`) : n'appelle la fonction Edge que si une étape est due.
+- Espace Propriétaire › Fin de mandat : dates, annuler / reprogrammer (`fin_mandat_regler`), copies gardées
+  (Télécharger), « Renvoyer » (nouveaux liens 30 jours), « Aperçu » (zips pour le propriétaire seul).
+- **Toute nouvelle table de réglages à garder doit être ajoutée à `fin_mandat_garder`**, sinon elle sera vidée.

@@ -864,7 +864,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-15 · double authentification obligatoire le 19/11";
+const CA_VERSION="2026-11-15 · fin de mandat programmée";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -2064,6 +2064,9 @@ function viewProprio(){
       <select class="f" id="pass_cosign"><option value="">Automatique (fonction « Président·e »)</option>${(P.membres||[]).filter(m=>m.statut==="actif"&&m.role==="membre"&&!m.coopte).map(m=>`<option value="${esc(m.id)}">${esc(m.nom||m.email||"")} — ${esc(m.fonction||"")}</option>`).join("")}</select>
       <div class="row-btn"><button class="btn" data-pa="passation" style="background:var(--red);border-color:var(--red);color:#fff">Faire la passation</button></div>
       <p class="du">Pensez à transmettre vous-même la phrase secrète des sauvegardes à la nouvelle Admin.</p></div>`}
+
+    <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Fin de mandat</h2><span class="l"></span></div>
+    ${typeof carteFinMandat==="function"?carteFinMandat():""}
 
     <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Lien secret</h2><span class="l"></span></div>
     <div class="card2"><p class="du">Le lien secret ouvre cet espace (connexion et double authentification toujours exigées). Si vous pensez qu'il a été vu, générez-en un nouveau : l'ancien ne marchera plus.</p>
@@ -9785,6 +9788,111 @@ async function amelAppel(url, corps){
   if(r.status===404 && !j.erreur) j.erreur="La fonction serveur n'est pas encore déployée.";
   return j;
 }
+
+/* =====================================================================
+   FIN DE MANDAT (15/11/2026) — carte de l'espace Propriétaire.
+   Dates (prévenance, archives, suppression), état de chaque étape, fichiers gardés
+   (archives, comptabilité, sauvegarde finale) avec Télécharger / Renvoyer, aperçu.
+   Serveur : fin_mandat_etat / fin_mandat_regler (SQL), fonction Edge « fin-mandat ».
+   ===================================================================== */
+const FM_FN=SB_URL+"/functions/v1/fin-mandat";
+const FM_ROLES={presidente:"Présidence",secretaire:"Secrétariat",tresorier:"Trésorerie"};
+async function fmCharger(){
+  const F=S.fm=S.fm||{};
+  try{ const r=await sb.rpc("fin_mandat_etat"); if(r.error) throw r.error; F.etat=r.data; F.err=null; }
+  catch(e){ F.err=String(e&&e.message||e); }
+  try{ const f=await amelAppel(FM_FN,{action:"fichiers"}); F.fichiers=f.ok?f.fichiers:[]; F.phrase=f.phrase; if(!f.ok) F.errF=f.erreur||""; else F.errF=""; }
+  catch(e){ F.errF=String(e&&e.message||e); }
+}
+function fmLocal(ts){ if(!ts) return ""; const d=new Date(ts), p=n=>String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes()); }
+function fmQuand(ts){ return ts?new Date(ts).toLocaleString("fr-BE",{weekday:"long",day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}):"—"; }
+function fmMo(n){ return ((+n||0)/1048576).toFixed(1).replace(".",",")+" Mo"; }
+function carteFinMandat(){
+  const F=S.fm;
+  if(!F||(!F.etat&&!F.err)){ if(!S.fmCharge){ S.fmCharge=true; fmCharger().then(()=>rendreEnPreservant()); }
+    return `<div class="card2"><h3 class="serif">📅 Fin de mandat</h3><p class="du">Chargement…</p></div>`; }
+  if(F.err) return `<div class="card2"><h3 class="serif">📅 Fin de mandat</h3><p class="du" style="color:var(--red)">${esc(F.err)}</p></div>`;
+  const E=F.etat, fait=E.statut==="termine", annule=E.statut==="annule";
+  const etape=(ok,txt,quand,detail)=>`<div style="display:flex;gap:9px;align-items:flex-start;margin:7px 0"><span style="font-size:16px">${ok?"✅":annule?"⏸":"⏳"}</span>
+    <div><b>${txt}</b> — ${esc(fmQuand(quand))}${detail?`<div class="du" style="margin:2px 0 0">${detail}</div>`:""}</div></div>`;
+  const A=E.archives||{}, partsTxt=t=>{ const s=A[t]; return s&&s.parts?s.parts.length+" partie(s)"+(s.fini?"":" (en cours)"):""; };
+  const dest=(E.destinataires||[]).map(d=>`${esc(FM_ROLES[d.role]||d.role)} : ${esc(d.nom)} &lt;${esc(d.email)}&gt;`).join("<br>");
+  const fichiers=(F.fichiers||[]).map(f=>`<div class="doc" style="cursor:default"><span class="ic">${/\.besav$/.test(f.chemin)?"💾":"📦"}</span>
+      <span class="meta"><p class="dt">${esc(f.chemin.split("/").pop())}</p><p class="du">${esc(f.chemin.split("/")[0])} · ${fmMo(f.octets)}</p></span>
+      <button class="chip" data-fm="lien" data-id="${esc(f.chemin)}">⬇ Télécharger</button></div>`).join("");
+  const envois=(E.envois||[]).slice(0,12).map(x=>`<li>${esc(new Date(x.le).toLocaleString("fr-BE"))} — <b>${esc(x.quoi)}</b>${x.a?" · "+esc(x.a):""}${x.detail?" · "+esc(x.detail):""}</li>`).join("");
+  return `<div class="card2" style="border-left:4px solid ${fait?"#1f6a4a":annule?"var(--slate)":"var(--red)"}">
+    <h3 class="serif" style="margin-top:0">📅 Fin de mandat ${fait?`<span class="badge ok">faite</span>`:annule?`<span class="badge">annulée</span>`:`<span class="badge open">programmée</span>`}</h3>
+    <p class="du" style="margin:0 0 8px">À la date de suppression, <b>tout est vidé</b> (comptes sauf le vôtre, données du CA et de la Caisse, fichiers, registre des signatures, Transparence, journaux). Restent : votre compte, les réglages techniques et ces copies.</p>
+    ${etape(!!E.prevenance_fait,"1. Prévenance de tous les membres",E.prevenance_le,E.prevenance_fait?"envoyée le "+esc(fmQuand(E.prevenance_fait)):"")}
+    ${etape(!!E.archives_envoye,"2. Archives du CA + comptabilité de la Caisse",E.archives_le,
+      (E.archives_envoye?"envoyées le "+esc(fmQuand(E.archives_envoye))+"<br>":"à la présidente, la secrétaire et le trésorier en fonction ce jour-là (liens de 30 jours)<br>")+(partsTxt("ca")?"CA : "+partsTxt("ca")+" · Caisse : "+(partsTxt("compta")||"—")+"<br>":"")+dest)}
+    ${etape(!!E.suppression_fait,"3. Sauvegarde finale chiffrée, puis suppression",E.suppression_le,
+      (E.sauvegarde?"sauvegarde faite le "+esc(fmQuand(E.sauvegarde.le))+"<br>":"")+(E.rapport?esc(JSON.stringify(E.rapport)):"")+(F.phrase===false?`<span style="color:var(--red)">⚠ Phrase secrète des sauvegardes absente : la sauvegarde finale (et donc la suppression) sera bloquée.</span>`:""))}
+    ${E.derniere_erreur?`<p class="du" style="color:var(--red)">⚠ Dernier problème : ${esc(E.derniere_erreur)} (nouvel essai toutes les 10 minutes)</p>`:""}
+    ${!fait?`<details style="margin:10px 0"><summary class="du" style="cursor:pointer"><b>Modifier les dates / annuler</b></summary>
+      <label class="du" style="display:block;margin:8px 0 3px">Prévenance</label><input class="f" type="datetime-local" id="fm_prev" value="${fmLocal(E.prevenance_le)}">
+      <label class="du" style="display:block;margin:8px 0 3px">Archives</label><input class="f" type="datetime-local" id="fm_arch" value="${fmLocal(E.archives_le)}">
+      <label class="du" style="display:block;margin:8px 0 3px">Suppression</label><input class="f" type="datetime-local" id="fm_supp" value="${fmLocal(E.suppression_le)}">
+      <div class="row-btn" style="margin-top:10px;flex-wrap:wrap"><button class="btn sm" data-fm="regler" data-id="programme">${annule?"Reprogrammer":"Enregistrer les dates"}</button>
+        ${annule?"":`<button class="btn ghost sm" style="color:var(--red);border-color:var(--red)" data-fm="regler" data-id="annule">Annuler la fin de mandat</button>`}</div></details>`:""}
+    <div class="grp-h" style="margin:14px 0 6px"><h2 class="serif" style="font-size:15px">Copies gardées</h2><span class="c">${(F.fichiers||[]).length}</span><span class="l"></span></div>
+    ${F.errF?`<p class="du" style="color:var(--red)">${esc(F.errF)}</p>`:""}
+    ${fichiers||`<p class="du">Rien pour l'instant. Les archives arrivent le ${esc(fmQuand(E.archives_le))}.</p>`}
+    <div class="row-btn" style="margin-top:10px;flex-wrap:wrap">
+      <button class="btn ghost sm" data-fm="apercu">👁 Aperçu des archives (pour vous seul)</button>
+      ${E.archives_envoye?`<button class="btn sm" data-fm="renvoyer">✉ Renvoyer les archives…</button>`:""}
+      <button class="btn ghost sm" data-fm="maj">↻ Actualiser</button></div>
+    ${envois?`<details style="margin-top:10px"><summary class="du" style="cursor:pointer">Historique</summary><ul class="du" style="padding-left:18px">${envois}</ul></details>`:""}
+  </div>`;
+}
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-fm]"); if(!el || !sb || !S.session) return;
+  const a=el.dataset.fm, F=S.fm||{};
+  try{
+    if(a==="maj"){ await fmCharger(); rendreEnPreservant(); return; }
+    if(a==="lien"){ const r=await amelAppel(FM_FN,{action:"lien",chemin:el.dataset.id}); if(!r.ok) return modaleInfo(r.erreur||"Lien indisponible.","Fin de mandat"); window.open(r.url,"_blank","noopener"); return; }
+    if(a==="apercu"){
+      if(F.busy) return; F.busy=true; el.disabled=true; el.textContent="Préparation… (1 à 2 minutes)";
+      const r=await amelAppel(FM_FN,{action:"apercu"}); F.busy=false;
+      await fmCharger(); rendreEnPreservant();
+      if(!r.ok) return modaleInfo("Aperçu impossible : "+(r.erreur||"?"),"Fin de mandat");
+      modaleInfo("✓ Aperçu prêt : "+(r.parts||[]).length+" fichier(s) zip dans « Copies gardées » (dossier apercu).\n\nRien n'a été envoyé ni supprimé. Ouvrez-les pour vérifier le contenu des archives.","Aperçu");
+      return;
+    }
+    if(a==="renvoyer"){
+      const E=F.etat||{}, L=(E.destinataires||[]);
+      if(!L.length) return modaleInfo("Aucun destinataire enregistré.","Renvoyer");
+      const choix=await new Promise(res=>{
+        const d=document.createElement("div"); d.className="ca-mod";
+        d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true" style="max-width:440px"><h3>Renvoyer les archives</h3><p style="font-size:13.5px;color:var(--ink)">Nouveaux liens de 30 jours (archives du CA + comptabilité) à :</p>'
+          +L.map(x=>'<label style="display:flex;gap:8px;align-items:center;margin:6px 0;font-size:14px"><input type="checkbox" value="'+esc(x.role)+'" checked> '+esc(FM_ROLES[x.role]||x.role)+' — '+esc(x.nom)+' <span class="du">('+esc(x.email)+')</span></label>').join("")
+          +'<div class="ca-mod-btns"><button class="btn ghost sm" id="fm_no">Annuler</button><button class="btn sm" id="fm_ok">Renvoyer</button></div></div>';
+        document.body.appendChild(d);
+        d.querySelector("#fm_no").onclick=()=>{ d.remove(); res(null); };
+        d.querySelector("#fm_ok").onclick=()=>{ const v=[...d.querySelectorAll("input:checked")].map(x=>x.value); d.remove(); res(v); };
+      });
+      if(!choix||!choix.length) return;
+      const r=await amelAppel(FM_FN,{action:"renvoyer",roles:choix});
+      await fmCharger(); rendreEnPreservant();
+      if(!r.ok) return modaleInfo("Non envoyé : "+(r.erreur||"?"),"Renvoyer");
+      modaleInfo((r.resultats||[]).map(x=>(x.ok?"✓ ":"✗ ")+x.nom+" <"+x.email+">"+(x.ok?"":" : "+x.err)).join("\n"),"Archives renvoyées");
+      return;
+    }
+    if(a==="regler"){
+      const v=id=>{ const x=document.getElementById(id); return x&&x.value?new Date(x.value).toISOString():null; };
+      const p=v("fm_prev"), ar=v("fm_arch"), su=v("fm_supp"), st=el.dataset.id;
+      if(!p||!ar||!su) return modaleInfo("Indiquez les trois dates.","Fin de mandat");
+      const msg=st==="annule"?"Annuler la fin de mandat programmée ? Rien ne sera envoyé ni supprimé (vous pourrez la reprogrammer).":
+        "Programmer la fin de mandat :\n\n• Prévenance : "+fmQuand(p)+"\n• Archives : "+fmQuand(ar)+"\n• Suppression de TOUT : "+fmQuand(su)+"\n\nConfirmer ?";
+      if(!(await modaleConfirm(msg,"Fin de mandat"))) return;
+      const r=await sb.rpc("fin_mandat_regler",{p_statut:st,p_prevenance:p,p_archives:ar,p_suppression:su});
+      if(r.error) return modaleInfo("Non enregistré : "+r.error.message,"Fin de mandat");
+      await fmCharger(); rendreEnPreservant(); modaleInfo("✓ Enregistré.","Fin de mandat");
+    }
+  }catch(err){ F.busy=false; modaleInfo(String(err&&err.message||err),"Fin de mandat"); }
+});
 /* ---------- Notifications sur le téléphone (Accueil, chaque membre) ---------- */
 function pushEtatNavigateur(){
   const ios=/iphone|ipad|ipod/i.test(navigator.userAgent), installee=(window.matchMedia&&matchMedia("(display-mode: standalone)").matches)||navigator.standalone===true;

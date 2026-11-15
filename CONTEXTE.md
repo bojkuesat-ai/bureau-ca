@@ -95,6 +95,13 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - **Budgets** : approuvés ou refusés par le **trésorier** (`bPeutDecider`, politique `ca_bud_upd`, garde `ca_budgets_garde_decision`). Règle de quorum de l'article 16.2 : `ca_budget_regle162_ok`.
 - Effectif du CA (`membresCAActifs`) : sans le propriétaire retiré ni les membres `hors_ca`.
 
+## 8 bis. Fin de mandat programmée (01/07/2027)
+
+- 01/06/2027 10 h : prévenance de tous les membres. 24/06/2027 10 h : zips « archives du CA » et « comptabilité de la Caisse » → présidente, secrétaire, trésorier (liens 30 jours), copies dans l'espace Propriétaire (Télécharger / Renvoyer / Aperçu).
+- 01/07/2027 00 h : sauvegarde finale chiffrée, puis TOUT est vidé (comptes sauf le propriétaire, données CA + Caisse + Billetterie, fichiers, registre des signatures, Transparence, journaux). Mail d'adieu.
+- Restent seulement les tables de `fin_mandat_garder` (réglages techniques) : **y ajouter toute nouvelle table de réglages**.
+- Détails : `supabase/README.md` (section « Fin de mandat »), fonction Edge `fin-mandat`.
+
 ## 9. Idées restantes (pas demandées pour l'instant)
 
 - Bloquer les mots de passe ayant fuité (réglage Auth de Supabase).
