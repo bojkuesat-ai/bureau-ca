@@ -104,6 +104,11 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 
 - Le code bénévole est supprimé. À la place : **📲 Liens de scan** (un par personne, 24 h, événements du jour ; « tous » réservé à l'Admin/propriétaire). Le lien ne permet que scanner + chercher un nom. Table `bil_scan_liens`, fonctions `bil_scan_lien_*`.
 
+## 10 ter. Billetterie (15/11, suite)
+
+- Un seul billet par adresse ; « Écrire aux inscrits » ; « Annuler l'événement » (mails + demandes de remboursement dans la Caisse, IBAN repris du virement ou demandé par lien `?r=`) ; rapprochement des virements par import CSV (Billetterie et Caisse › Extraits) ; preuve de paiement facultative ; « Céder ma place » jusqu'au début. Détails : `supabase/README.md`.
+- Supabase demande une confirmation pour les scripts avec `drop` : Esat doit rester devant l'écran et cliquer « Autoriser ».
+
 ## 11. Idées restantes (pas demandées pour l'instant)
 
 - Bloquer les mots de passe ayant fuité (réglage Auth de Supabase).

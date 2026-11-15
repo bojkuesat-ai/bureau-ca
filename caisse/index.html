@@ -1760,6 +1760,19 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
       <div class="err" id="exErr" hidden></div>
     </div>
 
+    <div class="card pad">
+      <div class="eyebrow">Billetterie</div>
+      <h2 style="font-size:20px;margin:6px 0 10px">Paiements de billets reçus</h2>
+      <p class="hint" style="margin:0 0 14px">Importez l'extrait de compte au format CSV : les virements portant la communication
+      structurée d'un billet sont reconnus, l'inscription est validée et le billet part tout seul. Pour un événement annulé,
+      la demande de remboursement est créée ici avec l'IBAN du payeur. Rien d'autre n'est modifié.</p>
+      <div class="attach">
+        <input type="file" id="exBilCsv" accept=".csv,text/csv,text/plain">
+        <button type="button" class="btn sm" id="exBilGo">Rapprocher les paiements</button>
+      </div>
+      <div id="exBilRes" class="hint" style="margin-top:10px;white-space:pre-wrap" hidden></div>
+    </div>
+
     <div>
       <div class="toolbar">
         <input type="text" id="exSearch" placeholder="Rechercher un extrait par nom…">
@@ -5280,6 +5293,30 @@ async function renderExtraits(){
 
 if($("#exSearch")) $("#exSearch").oninput = renderExtraits;
 
+/* Billetterie : rapprochement des virements (fonction billets-mail, action « rapprocher »). */
+if($("#exBilGo")) $("#exBilGo").onclick = async () => {
+  const f = $("#exBilCsv").files && $("#exBilCsv").files[0], z = $("#exBilRes");
+  if(!f) return toast("Choisissez d'abord le fichier CSV de l'extrait.");
+  if(f.size > 5*1024*1024) return toast("Fichier trop lourd (5 Mo au plus).");
+  let texte = await f.text();
+  if(/\uFFFD/.test(texte)){ try{ texte = new TextDecoder("windows-1252").decode(await f.arrayBuffer()); }catch(e){} }
+  const l = lireCSV(texte);
+  if(l.length < 2) return toast("Le fichier ne contient aucune ligne exploitable.");
+  const btn = $("#exBilGo"); btn.disabled = true; z.hidden = false; z.textContent = "Rapprochement en cours…";
+  try{
+    const { data: ses } = await sb.auth.getSession();
+    const r = await fetch(SUPABASE_URL + "/functions/v1/billets-mail", { method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + ((ses && ses.session && ses.session.access_token) || "") },
+      body: JSON.stringify({ action: "rapprocher", entete: l[0], lignes: l.slice(1) }) });
+    const j = await r.json().catch(() => ({}));
+    if(!j.ok) throw new Error(j.erreur || ("Erreur " + r.status));
+    const et = { valide: "payé : billet envoyé", deja: "déjà payé", attente: "payé, en liste d'attente", annule: "événement annulé → remboursement", montant: "montant insuffisant", hors: "inscription refusée/désinscrite : à rembourser à la main" };
+    z.textContent = j.lignes + " ligne(s) lue(s), " + j.reconnues + " paiement(s) de billetterie reconnu(s) : " + j.valides + " billet(s) validé(s)"
+      + (j.demandes ? ", " + j.demandes + " demande(s) de remboursement créée(s)" : "") + "."
+      + ((j.rapport || []).length ? "\n" + j.rapport.slice(0, 40).map(x => "· " + x.nom + " — " + (x.titre || "") + " — " + (et[x.etat] || x.etat)).join("\n") : "");
+  }catch(e){ z.textContent = "Échec : " + (e.message || e); }
+  finally{ btn.disabled = false; }
+};
 if($("#ex_send")) $("#ex_send").onclick = async () => {
   const champ = $("#ex_files");
   const fichiers = [...(champ.files || [])];

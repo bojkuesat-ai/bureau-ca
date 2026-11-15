@@ -212,7 +212,7 @@ label.l{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margi
    Tout passe par Supabase ; les droits sont revérifiés par le serveur.
    ===================================================================== */
 "use strict";
-const VERSION = "2026-11-15 · liens de scan";
+const VERSION = "2026-11-15 · annulation, transfert, rapprochement";
 const SB_URL = "https://mlgzdfyqjhvyubrywuim.supabase.co";
 const SB_KEY = "sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
 const FN = SB_URL + "/functions/v1/billets-mail";
@@ -328,6 +328,7 @@ function msgErreur(err) {
   const m = String((err && (err.message || err.erreur)) || err || "");
   if (/Failed to fetch|NetworkError|Load failed|fetch/i.test(m) && !enLigne()) return "Pas de connexion internet.";
   if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return "Le serveur n'a pas répondu. Vérifiez votre connexion.";
+  if (/bil_insc_un_billet_par_mail|un seul billet par adresse/i.test(m)) return "Cette adresse e-mail a déjà un billet pour cet événement (un seul billet par adresse).";
   if (/row-level security|permission denied|42501/i.test(m)) return "Vous n'êtes pas responsable de cette commission.";
   if (/bil_|does not exist|Could not find/i.test(m) && /function|relation|table/i.test(m)) return "La billetterie n'est pas encore installée sur le serveur (script billetterie.sql à exécuter dans Supabase).";
   return m || "Erreur inconnue.";
@@ -383,7 +384,7 @@ function ecranMaintenance() {
 const app = () => $("app");
 function rendre() {
   const vues = { form: vueFormPublic, agenda: vueAgenda, confirm: vueConfirm, billet: vueBillet, desinsc: vueDesinsc, presence: vuePresence,
-    sondage: vueSondage, virement: vueVirement, benevole: vueBenevole, login: vueLogin, refus: vueRefus, resp: vueResp, maintenance: ecranMaintenance, charge: () => `<div class="pub"><p class="du centre" style="margin-top:40px">Chargement…</p></div>` };
+    sondage: vueSondage, virement: vueVirement, rembt: vueRembt, benevole: vueBenevole, login: vueLogin, refus: vueRefus, resp: vueResp, maintenance: ecranMaintenance, charge: () => `<div class="pub"><p class="du centre" style="margin-top:40px">Chargement…</p></div>` };
   const f = vues[S.mode] || vues.charge;
   app().innerHTML = f();
   if (typeof apresRendu === "function") apresRendu();
@@ -599,7 +600,7 @@ function formulaireHtml(e, apercu = false) {
     ${(e.formulaire || []).map((c) => champHtml(c, apercu)).join("")}
     ${e.cooptation ? `<label class="chk" style="margin-top:18px"><input type="checkbox" id="p_coopte"${dis}> <span>${esc(e.cooptation)}</span></label>` : ""}
     ${e.payant ? `${blocPaiementPublic(e.titulaire || "Le bureau étudiant ASBL", e.iban || "BE74363057740807", e.prix, S.pub && S.pub.comm || "+++000/0000/09797+++")}
-      <label class="q">Preuve de paiement <span class="req">*</span></label><p class="aide">Capture d'écran ou photo de votre virement (image ou PDF).</p>
+      <label class="q">Preuve de paiement <span class="du" style="font-weight:400">(facultatif)</span></label><p class="aide">Votre paiement est reconnu automatiquement grâce à la communication ci-dessus, et votre billet part dès réception du virement. Une capture du virement (image ou PDF) peut accélérer la validation.</p>
       <div class="opts"><button type="button" class="opt" data-a="pubFichier" data-cible="preuve_cam"${dis}>📷 Photo</button><button type="button" class="opt" data-a="pubFichier" data-cible="preuve_img"${dis}>🖼️ Image</button><button type="button" class="opt" data-a="pubFichier" data-cible="preuve_pdf"${dis}>📄 PDF</button></div>
       <input type="file" id="preuve_cam" accept="image/*" capture="environment" hidden data-ch="pubFichierChoisi" data-champ-f="__preuve"><input type="file" id="preuve_img" accept="image/*" hidden data-ch="pubFichierChoisi" data-champ-f="__preuve"><input type="file" id="preuve_pdf" accept="application/pdf,.pdf" hidden data-ch="pubFichierChoisi" data-champ-f="__preuve"><p class="fich" id="nom___preuve"></p>` : ""}
     <div class="rgpd"><div style="font-weight:700;color:var(--stamp);margin-bottom:6px">Protection de vos données (RGPD)</div>
@@ -629,7 +630,7 @@ function vueFormPublic() {
   if (P.resultat) return `<div class="pub">${tete}${P.resultat}</div>`;
   if (!e.ouvert) {
     const r = { maintenance: "La billetterie est en maintenance. Réessayez un peu plus tard.", pas_encore: "Les inscriptions ne sont pas encore ouvertes" + (e.ouverture ? " : elles ouvriront le " + quand(e.ouverture) + "." : "."),
-      termine: "L'événement est terminé.", ferme: "Les inscriptions sont fermées." }[e.raison] || "Les inscriptions sont fermées.";
+      termine: "L'événement est terminé.", ferme: "Les inscriptions sont fermées.", annule: "Cet événement est annulé." }[e.raison] || "Les inscriptions sont fermées.";
     return `<div class="pub">${tete}<div class="card centre"><p class="big">${e.raison === "pas_encore" ? "⏳" : "⛔"}</p><p style="font-size:16px;margin:0">${esc(r)}</p></div>
       <p class="centre"><a href="${APP_URL}?agenda">Voir les autres événements</a></p></div>`;
   }
@@ -643,6 +644,13 @@ function vueFormPublic() {
     <p class="du centre" style="margin-top:12px">${e.verif_email ? "Un e-mail de confirmation vous sera envoyé" : "Vous recevrez " + (e.payant ? "un e-mail de suivi" : "votre billet par e-mail")} : vérifiez bien votre adresse et pensez à regarder vos <b>spams</b>.</p></div>`;
 }
 RES.recharger = () => location.reload();
+RES.pubRenvoyer = async (btn) => {
+  btn.disabled = true;
+  const r = await appelFn({ action: "renvoyer", evenement: S.pub.evt.code, email: S.pub.mailRenvoi || "" }, { public: true });
+  btn.disabled = false;
+  if (!r.ok) return echec(r.erreur || "Envoi impossible.");
+  succes("Si cette adresse est inscrite, un mail vient de lui être renvoyé (billet, paiement ou liste d'attente). Pensez à regarder dans les spams.", "Mail renvoyé");
+};
 RES.pubFichier = (el) => { const i = $(el.dataset.cible); if (i) i.click(); };
 async function compresserImage(f) {
   if (!f || !/^image\/(jpeg|png|webp|gif)/.test(f.type)) return f;
@@ -689,7 +697,6 @@ RES.pubEnvoyer = async (btn) => {
     const v = (c.type === "photo" || c.type === "fichier") ? S.pub.fichiers[c.id] : rep[c.id];
     if (!v || (Array.isArray(v) && !v.length)) return montre(c.type === "case" ? `« ${c.label} » doit être cochée.` : `« ${c.label} » est obligatoire.`);
   }
-  if (e.payant && !S.pub.fichiers.__preuve) return montre("La preuve de paiement est obligatoire.");
   if (!$("p_rgpd").checked) return montre("Merci d'accepter le traitement de vos données (case RGPD).");
   if (!enLigne()) return montre("Pas de connexion internet. Réessayez quand vous serez connecté·e.");
   const fd = new FormData();
@@ -697,19 +704,26 @@ RES.pubEnvoyer = async (btn) => {
   fd.append("rgpd", "1"); fd.append("t0", String(S.pub.t0 || 0)); fd.append("site_web", $("p_site").value || "");
   fd.append("reponses", JSON.stringify(rep));
   if (e.cooptation && $("p_coopte") && $("p_coopte").checked) fd.append("coopte", "1");
-  if (e.payant) { fd.append("communication", S.pub.comm); fd.append("preuve", S.pub.fichiers.__preuve); }
+  if (e.payant) { fd.append("communication", S.pub.comm); if (S.pub.fichiers.__preuve) fd.append("preuve", S.pub.fichiers.__preuve); }
   for (const c of e.formulaire || []) if ((c.type === "photo" || c.type === "fichier") && S.pub.fichiers[c.id]) fd.append("f_" + c.id, S.pub.fichiers[c.id]);
   const lab = btn.textContent;
   btn.disabled = true; btn.textContent = "Envoi en cours…"; err.innerHTML = "";
   const r = await appelFn(fd, { public: true });
   btn.disabled = false; btn.textContent = lab;
-  if (!r.ok) return montre(r.erreur || "Inscription impossible. Réessayez.");
+  if (!r.ok) {
+    if (/déjà inscrite/.test(r.erreur || "")) {
+      err.innerHTML = `<div class="alerte">${esc(r.erreur)}<div class="row" style="margin-top:10px"><button class="btn sm" data-a="pubRenvoyer">✉ Renvoyer mon billet à cette adresse</button></div></div>`;
+      S.pub.mailRenvoi = mail; err.scrollIntoView({ behavior: "smooth", block: "center" }); return;
+    }
+    return montre(r.erreur || "Inscription impossible. Réessayez.");
+  }
   store.set("comm:" + e.code, null);
   if (r.etat === "direct") {
     /* Sans vérification de l'adresse : l'inscription compte tout de suite. */
     const lien = r.secret ? APP_URL + "?t=" + encodeURIComponent(r.secret) : "";
     const t = { inscrit: ["✅", "Inscription confirmée", `Votre billet vient d'être envoyé à <b>${esc(r.email || mail)}</b>.`],
-      a_valider: ["🔎", "Inscription enregistrée", `Votre preuve de paiement va être vérifiée par un·e responsable. Vous recevrez votre billet à <b>${esc(r.email || mail)}</b> dès la validation.`],
+      a_valider: ["🔎", "Inscription enregistrée", S.pub.fichiers.__preuve ? `Votre preuve de paiement va être vérifiée par un·e responsable. Vous recevrez votre billet à <b>${esc(r.email || mail)}</b> dès la validation.`
+        : `Faites le virement avec la communication <b>${esc(S.pub.comm || "")}</b> : votre billet partira automatiquement à <b>${esc(r.email || mail)}</b> dès réception du paiement.`],
       attente: ["⏳", "Liste d'attente", `L'événement est complet : vous êtes sur la liste d'attente. Si une place se libère, vous recevrez votre billet à <b>${esc(r.email || mail)}</b>.`] }[r.statut] || ["✅", "Inscription enregistrée", ""];
     S.pub.resultat = `<div class="card centre"><p class="big">${t[0]}</p><h2 class="serif" style="margin:0 0 8px">${t[1]}</h2><p>${t[2]}</p>
       ${lien ? `<p><a class="btn" href="${esc(lien)}">${r.statut === "inscrit" ? "📱 Afficher mon billet" : "Voir mon inscription"}</a></p><p class="du">Gardez ce lien : il ouvre votre ${r.statut === "inscrit" ? "billet" : "inscription"} à tout moment.</p>` : ""}
@@ -833,13 +847,17 @@ function vueBillet() {
   if (!b) return `<div class="pub"><p class="du centre" style="margin-top:40px">Chargement du billet…</p></div>`;
   if (b.err) return `<div class="pub">${enteteUlb()}<div class="alerte">${esc(b.err)}</div><button class="btn ghost" data-a="recharger">Réessayer</button></div>`;
   if (b.introuvable) return `<div class="pub">${enteteUlb()}<p class="big">🔍</p><h1 class="centre">Billet introuvable</h1><p class="org centre">Ce lien n'est pas (ou plus) valable.</p></div>`;
+  if (b.cede) return `<div class="pub">${enteteUlb()}<h1>${esc(b.evenement.titre)}</h1><div class="card centre"><p class="big">✅</p><h2 class="serif" style="margin:0 0 8px">Place cédée</h2><p>Un nouveau billet vient d'être envoyé à <b>${esc(b.email)}</b>. Votre ancien billet n'est plus valable.</p></div></div>`;
   const e = b.evenement;
   const statut = { a_confirmer: ["📬", "Confirmez d'abord votre adresse e-mail (lien reçu par mail)."], a_valider: ["🔎", "Votre preuve de paiement est en cours de vérification. Le billet arrivera par e-mail dès la validation."],
     attente: ["⏳", "Vous êtes sur la liste d'attente" + (b.rang ? " (position " + b.rang + ")" : "") + ". Si une place se libère, vous recevrez votre billet par e-mail."],
-    refuse: ["⛔", "Cette inscription n'a pas été validée."], desinscrit: ["👋", "Vous vous êtes désinscrit·e de cet événement."] }[b.statut];
+    refuse: ["⛔", "Cette inscription n'a pas été validée."], desinscrit: ["👋", "Vous vous êtes désinscrit·e de cet événement."],
+    annule: ["🚫", "Cet événement est annulé. Votre billet n'est plus valable." + (b.rembt === "demande" ? " Votre remboursement est en cours." : "")] }[b.statut];
   if (b.statut !== "inscrit") {
     return `<div class="pub">${enteteUlb()}<h1>${esc(e.titre)}</h1><p class="org">Organisé par la commission ${esc(e.commission)}</p>${blocInfos(e)}
       <div class="card centre"><p class="big">${statut ? statut[0] : "ℹ️"}</p><p style="font-size:15px;margin:0">${esc(statut ? statut[1] : "")}</p></div>
+      ${b.statut === "annule" && b.annule_motif ? `<div class="note" style="white-space:pre-wrap"><b>Motif :</b> ${esc(b.annule_motif)}</div>` : ""}
+      ${b.statut === "annule" && b.rembt_token ? `<p class="centre"><a class="btn" href="${APP_URL}?r=${esc(b.rembt_token)}">💶 Recevoir mon remboursement</a></p>` : ""}
       ${b.statut === "a_valider" && e.payant ? blocPaiementPublic(b.titulaire, b.iban, b.montant || e.prix, b.communication || "") : ""}
       ${["attente", "a_valider", "a_confirmer"].includes(b.statut) ? `<p class="centre"><a class="link" href="${APP_URL}?d=${esc(S.params.get("t") || S.params.get("v") || "")}">Me désinscrire</a></p>` : ""}</div>`;
   }
@@ -850,8 +868,30 @@ function vueBillet() {
     <p class="du centre" style="margin-top:14px">Présentez ce QR à l'entrée. Gardez l'écran allumé, luminosité au maximum. Valable une seule fois.</p>
     ${e.infos ? `<div class="note" style="white-space:pre-wrap">${esc(e.infos)}</div>` : ""}
     <div class="row" style="justify-content:center;margin-top:12px"><button class="btn ghost sm" data-a="billetIcs">📅 Ajouter à mon agenda</button><button class="btn ghost sm" data-a="billetPdf">⬇ Télécharger le PDF</button></div>
+    ${b.cessible ? `<details class="card" style="margin-top:18px"><summary style="cursor:pointer;font-weight:600">🔁 Céder ma place à quelqu'un</summary>
+      <p class="du">Possible jusqu'au début de l'événement. La personne reçoit un <b>nouveau billet</b> ; le vôtre (ce QR) ne sera plus valable.</p>
+      <label class="q" for="tfPrenom">Prénom</label><input class="f" id="tfPrenom" maxlength="120" autocomplete="off">
+      <label class="q" for="tfNom">Nom</label><input class="f" id="tfNom" maxlength="120" autocomplete="off">
+      <label class="q" for="tfMail">Son adresse e-mail</label><input class="f" id="tfMail" type="email" inputmode="email" autocomplete="off">
+      <label class="q" for="tfMail2">Confirmez son adresse e-mail</label><input class="f" id="tfMail2" type="email" inputmode="email" autocomplete="off" onpaste="return false">
+      <div id="tfErr"></div><button class="btn block" style="margin-top:12px" data-a="ceder">Céder ma place</button></details>` : ""}
     ${!b.entre_le ? `<p class="centre" style="margin-top:22px"><a class="link" href="${APP_URL}?d=${esc(S.params.get("t") || "")}">Je ne peux plus venir : me désinscrire</a></p>` : ""}</div>`;
 }
+RES.ceder = async (btn) => {
+  const v = (id) => ($(id).value || "").trim();
+  const prenom = v("tfPrenom"), nom = v("tfNom"), mail = v("tfMail").toLowerCase(), mail2 = v("tfMail2").toLowerCase();
+  const montre = (m) => { $("tfErr").innerHTML = `<div class="alerte" style="margin-top:10px">${esc(m)}</div>`; };
+  if (!prenom || !nom) return montre("Indiquez le prénom et le nom de la personne.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)) return montre("Adresse e-mail invalide.");
+  if (mail !== mail2) return montre("Les deux adresses e-mail ne sont pas identiques.");
+  if (!(await confirmer(`Céder votre place à ${prenom} ${nom} (${mail}) ?\n\nVotre billet actuel ne sera plus valable.`, "Céder ma place"))) return;
+  btn.disabled = true; btn.textContent = "Envoi…";
+  const r = await appelFn({ action: "transferer", secret: S.params.get("t") || "", prenom, nom, email: mail, email2: mail2 }, { public: true });
+  btn.disabled = false; btn.textContent = "Céder ma place";
+  if (!r.ok) return montre(r.erreur || "Transfert impossible.");
+  S.billet = { introuvable: false, cede: true, email: r.email, evenement: S.billet.evenement };
+  rendre();
+};
 function vueVirement() {
   const b = S.billet;
   if (!b || b.err || b.introuvable) return vueBillet();
@@ -859,6 +899,50 @@ function vueVirement() {
   return `<div class="pub">${enteteUlb()}<h1>${esc(e.titre)}</h1><p class="org">Organisé par la commission ${esc(e.commission)}</p>
     ${e.payant ? (b.paye ? `<div class="card centre"><p class="big">✅</p><p>Votre paiement a été validé.</p></div>` : blocPaiementPublic(b.titulaire, b.iban, b.montant || e.prix, b.communication || "")) : `<div class="card">Cet événement est gratuit.</div>`}</div>`;
 }
+
+/* ---------------- Remboursement (événement annulé) ---------------- */
+async function chargerRembt() {
+  S.rembt = null; rendre();
+  try { const { data, error } = await sb.rpc("bil_public_rembt", { p_token: S.params.get("r") || "" }); if (error) throw error; S.rembt = data || { introuvable: true }; }
+  catch (e) { S.rembt = { err: msgErreur(e) }; }
+  rendre();
+}
+function vueRembt() {
+  const R = S.rembt;
+  if (!R) return `<div class="pub"><p class="du centre" style="margin-top:40px">Chargement…</p></div>`;
+  if (R.err) return `<div class="pub">${enteteUlb()}<div class="alerte">${esc(R.err)}</div><button class="btn ghost" data-a="recharger">Réessayer</button></div>`;
+  if (R.introuvable) return `<div class="pub">${enteteUlb()}<p class="big">🔍</p><h1 class="centre">Lien introuvable</h1><p class="org centre">Ce lien de remboursement n'est pas (ou plus) valable.</p></div>`;
+  const tete = `${enteteUlb()}<h1>${esc(R.titre)}</h1><p class="org">Organisé par la commission ${esc(R.commission)} · <b>événement annulé</b></p>`;
+  if (R.etat === "demande" || R.fait) {
+    const paye = R.caisse === "Remboursée";
+    return `<div class="pub">${tete}<div class="card centre"><p class="big">${paye ? "✅" : "💶"}</p><h2 class="serif" style="margin:0 0 8px">${paye ? "Remboursement effectué" : "Remboursement en cours"}</h2>
+      <p>${esc(((R.prenom || "") + " " + (R.nom || "")).trim())} · <b>${eur(R.montant)}</b>${R.iban_fin ? ` · compte se terminant par <span class="mono">${esc(R.iban_fin)}</span>` : ""}</p>
+      <p class="du">${paye ? "Le virement a été envoyé." : "La trésorerie du Bureau étudiant va effectuer le virement. Rien d'autre à faire."}</p></div></div>`;
+  }
+  return `<div class="pub">${tete}${R.motif ? `<div class="note" style="white-space:pre-wrap"><b>Motif :</b> ${esc(R.motif)}</div>` : ""}
+    <div class="card"><p style="margin-top:0">Bonjour ${esc(R.prenom || "")}, votre paiement de <b>${eur(R.montant)}</b> va vous être remboursé. Indiquez le compte sur lequel le recevoir :</p>
+      <label class="q" for="rbIban">IBAN</label><input class="f mono" id="rbIban" placeholder="BE00 0000 0000 0000" autocomplete="off" autocapitalize="characters">
+      <label class="q" for="rbTit">Titulaire du compte</label><input class="f" id="rbTit" maxlength="120" value="${esc(((R.prenom || "") + " " + (R.nom || "")).trim())}">
+      <div id="rbErr"></div><button class="btn block" style="margin-top:14px" data-a="rembtEnvoyer">Recevoir mon remboursement</button>
+      <p class="du">Ces coordonnées servent uniquement à ce remboursement.</p></div></div>`;
+}
+function ibanOk(brut) {
+  const s = String(brut || "").replace(/\s/g, "").toUpperCase();
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(s)) return false;
+  let m = 0; for (const ch of s.slice(4) + s.slice(0, 4)) { const v = /[A-Z]/.test(ch) ? String(ch.charCodeAt(0) - 55) : ch; for (const d of v) m = (m * 10 + Number(d)) % 97; }
+  return m === 1;
+}
+RES.rembtEnvoyer = async (btn) => {
+  const iban = $("rbIban").value, tit = $("rbTit").value.trim();
+  const montre = (m) => { $("rbErr").innerHTML = `<div class="alerte" style="margin-top:10px">${esc(m)}</div>`; };
+  if (!ibanOk(iban)) return montre("IBAN invalide : vérifiez-le.");
+  if (tit.length < 3) return montre("Indiquez le nom du titulaire du compte.");
+  btn.disabled = true;
+  const r = await appelFn({ action: "rembt_iban", token: S.params.get("r") || "", iban, titulaire: tit }, { public: true });
+  btn.disabled = false;
+  if (!r.ok) return montre(r.erreur || "Enregistrement impossible.");
+  S.rembt.fait = true; S.rembt.iban_fin = iban.replace(/\s/g, "").slice(-4); rendre();
+};
 
 /* ---------------- Désinscription ---------------- */
 function vueDesinsc() {
@@ -1020,7 +1104,7 @@ function scanAppliquer(r, code) {
   const loc = SC.liste[code];
   if (r.resultat === "ok") { if (loc) { loc.entre_le = r.entre_le; loc.app = r.entre_appareil; } else SC.liste[code] = { code, nom: r.nom, prenom: r.prenom, entre_le: r.entre_le, e: r.evenement_id }; flash("ok", "Entrée validée", nomP(r)); }
   else if (r.resultat === "deja") { if (loc) loc.entre_le = r.entre_le; flash("deja", "Déjà entré", nomP(r), "à " + heure(r.entre_le) + (r.entre_par ? " · par " + r.entre_par : "")); }
-  else if (r.resultat === "invalide") flash("ko", "Billet non valable", nomP(r), { desinscrit: "désinscrit·e", refuse: "inscription refusée", attente: "liste d'attente", a_valider: "paiement non validé", a_confirmer: "adresse non confirmée" }[r.statut] || r.statut);
+  else if (r.resultat === "invalide") flash("ko", "Billet non valable", nomP(r), { desinscrit: "désinscrit·e", refuse: "inscription refusée", attente: "liste d'attente", a_valider: "paiement non validé", a_confirmer: "adresse non confirmée", annule: "événement annulé" }[r.statut] || r.statut);
   else if (r.resultat === "acces") { flash("ko", "Accès refusé", "", r.message || ""); if (S.mode === "benevole") setTimeout(chargerBenevole, 2500); }
   else flash("ko", "Billet inconnu", "", "code " + code);
   scanSauver(); scanMajUI();
@@ -1180,7 +1264,7 @@ RES.benQuitter = async () => {
    ESPACE DES RESPONSABLES (identifiants du CA)
    ===================================================================== */
 const STATUTS = { a_confirmer: ["À confirmer (e-mail)", "info"], a_valider: ["Preuve à vérifier", "wait"], attente: ["Liste d'attente", "wait"],
-  inscrit: ["Inscrit·e", "ok"], refuse: ["Refusé·e", "no"], desinscrit: ["Désinscrit·e", "no"] };
+  inscrit: ["Inscrit·e", "ok"], refuse: ["Refusé·e", "no"], desinscrit: ["Désinscrit·e", "no"], annule: ["Annulé (événement)", "no"] };
 const badgeStatut = (s) => { const x = STATUTS[s] || [s, ""]; return `<span class="badge ${x[1]}">${esc(x[0])}</span>`; };
 const lienInscription = (e) => APP_URL + "?e=" + e.code;
 function evtCourant() { return (S.evts || []).find((x) => x.id === S.evtId) || null; }
@@ -1344,7 +1428,7 @@ function vueComm() {
     const p = e.places ? `${(k.inscrit || 0) + (k.a_valider || 0)} / ${e.places}` : `${k.inscrit || 0} inscrit·e(s)`;
     return `<button class="evt-card" data-a="ouvrirEvt" data-id="${e.id}"><span class="d"><b>${d ? esc(d.slice(8, 10)) : "·"}</b><span>${d ? esc(dateCourte(d).replace(/^\d+\s*/, "")) : ""}</span></span>
       <span class="m"><span class="t">${esc(e.titre)}</span><span class="s" style="display:block">${esc([infosLigne(e) || "date à fixer", p, e.payant ? eur(e.prix) : "gratuit"].join(" · "))}</span></span>
-      ${k.a_valider ? `<span class="badge wait">${k.a_valider} à vérifier</span>` : ""}${k.attente ? `<span class="badge">${k.attente} en attente</span>` : ""}<span>›</span></button>`;
+      ${e.statut === "annule" ? `<span class="badge no">annulé</span>` : ""}${k.a_valider ? `<span class="badge wait">${k.a_valider} à vérifier</span>` : ""}${k.attente ? `<span class="badge">${k.attente} en attente</span>` : ""}<span>›</span></button>`;
   };
   return `<p class="eyebrow">Commission</p><h1 class="titre">${esc(c.nom)}</h1><p class="sub">${esc(c.responsables || "")}${c.actif ? "" : " · <b>commission retirée</b> (visible par vous seul·e)"}</p>
     ${S.evtsErr ? `<div class="alerte">${esc(S.evtsErr)}</div>` : ""}
@@ -1420,7 +1504,8 @@ function vueEvt() {
   return `<button class="link" data-a="retourComm">← ${esc((commCourante() || {}).nom || "Commission")}</button>
     <h1 class="titre">${esc(e.titre)}</h1>
     <p class="sub">${esc(infosLigne(e) || "Date et lieu à fixer (onglet Réglages)")} · organisé par la commission ${esc((commCourante() || {}).nom || "")}<br>
-      ${e.places ? `${res} / ${e.places} places` : `${n("inscrit")} inscrit·e(s)`} · ${e.payant ? "payant " + eur(e.prix) : "gratuit"}${e.statut !== "actif" ? " · <b>archivé</b>" : ""}</p>
+      ${e.places ? `${res} / ${e.places} places` : `${n("inscrit")} inscrit·e(s)`} · ${e.payant ? "payant " + eur(e.prix) : "gratuit"}${e.statut === "annule" ? " · <b style='color:var(--red)'>ANNULÉ</b>" : e.statut !== "actif" ? " · <b>archivé</b>" : ""}</p>
+    ${e.statut === "annule" ? `<div class="alerte">🚫 <b>Événement annulé</b>${e.annule_le ? " le " + esc(quand(e.annule_le)) : ""}${e.annule_par ? " par " + esc(e.annule_par) : ""}.${e.annule_motif ? " Motif : " + esc(e.annule_motif) : ""}</div>` : ""}
     <div class="card" style="padding:11px 13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="mono" style="font-size:12.5px;color:var(--stamp);word-break:break-all;flex:1;min-width:200px">${esc(lienInscription(e))}</span>
       <button class="btn sm" data-a="copierLien">Copier</button><button class="btn ghost sm" data-a="qrInscription">QR d'inscription</button><button class="btn ghost sm" data-a="affiche">Affiche</button></div>
     ${S.inscErr ? `<div class="alerte">${esc(S.inscErr)}</div>` : ""}
@@ -1494,10 +1579,13 @@ function vueReglages(e) {
     <div class="card"><h3>Bénévoles à l'entrée</h3>
       <p class="du">Les personnes hors CA scannent avec un <b>lien de scan personnel</b> (un par personne, valable 24 h, événements du jour). Il permet <b>uniquement</b> de scanner un billet et de chercher un nom.</p>
       <div class="row"><button class="btn sm" data-a="ouvrirLiens">📲 Liens de scan</button></div></div>
+    ${e.statut !== "annule" ? `<div class="card" style="border-color:#7a2a2a"><h3>Annuler l'événement</h3>
+      <p class="du">Tous les inscrits (et la liste d'attente) reçoivent un mail avec le motif. Les billets ne sont plus valables. Pour un événement payant, une <b>demande de remboursement</b> est créée dans la Caisse pour chaque personne qui a payé (IBAN repris du virement, sinon demandé à la personne par un lien). Irréversible.</p>
+      <div class="row"><button class="btn danger sm" data-a="annulerEvt">Annuler l'événement…</button></div></div>` : ""}
     <div class="card"><h3>Vérifier avant le jour J</h3><p class="du">Contrôle automatique : connexion au serveur, droits, infos pratiques, scanner (caméra, liste hors ligne) et envoi d'un mail de test à votre adresse.</p>
       <div class="row"><button class="btn sm" data-a="verifier">Lancer la vérification</button></div><div id="verifRes"></div></div>
     <div class="card"><h3>Archive</h3>
-      <div class="row">${e.statut === "actif" ? `<button class="btn ghost sm" data-a="archiver">Archiver l'événement</button>` : `<button class="btn ghost sm" data-a="desarchiver">Réactiver l'événement</button>`}
+      <div class="row">${e.statut === "annule" ? "" : e.statut === "actif" ? `<button class="btn ghost sm" data-a="archiver">Archiver l'événement</button>` : `<button class="btn ghost sm" data-a="desarchiver">Réactiver l'événement</button>`}
       <button class="btn danger sm" data-a="supprimerEvt">Supprimer l'événement</button></div>
       <p class="du">Archivé : il quitte la liste principale ; ses statistiques restent consultables. La suppression n'est possible que sans aucune inscription.</p></div>`;
 }
@@ -1546,6 +1634,33 @@ RES.sauverProg = async () => {
   if (o && f && new Date(f) <= new Date(o)) return echec("La fermeture doit être après l'ouverture.");
   try { await majEvt({ ouverture: o, fermeture: f }); } catch (er) { return echec(er.message); }
   rendre(); succes([o ? "Ouverture : " + quand(o) : "Pas d'ouverture programmée", f ? "Fermeture : " + quand(f) : "Pas de fermeture programmée"].join("\n"));
+};
+RES.annulerEvt = async () => {
+  const e = evtCourant();
+  const motif = await saisir(`Annuler « ${e.titre} » ?\n\nMotif (envoyé à tous les inscrits) :`, "Annuler l'événement", { long: true, bouton: "Continuer", danger: true, placeholder: "Ex. Salle indisponible, report à une date ultérieure…" });
+  if (motif === null) return;
+  if (motif.trim().length < 5) return echec("Indiquez le motif de l'annulation (5 caractères au moins).", "Motif manquant");
+  const v = await saisir("Action irréversible : mails à tous les inscrits" + (e.payant ? " et demandes de remboursement dans la Caisse" : "") + ".\n\nTapez ANNULER pour confirmer.", "Confirmer l'annulation", { bouton: "Annuler l'événement", danger: true });
+  if (v === null) return;
+  if (v.trim().toUpperCase() !== "ANNULER") return echec("Confirmation incorrecte : rien n'a été fait.", "Pas annulé");
+  let env = 0, dem = 0, iban = 0, echecs = [], tour = 0, err = "";
+  const d = document.createElement("div"); d.className = "ca-mod";
+  d.innerHTML = `<div class="ca-mod-box"><h3>Annulation en cours</h3><p id="anTxt">Préparation…</p><div class="bar"><i id="anBar" style="width:5%"></i></div></div>`;
+  document.body.appendChild(d);
+  try {
+    while (tour++ < 60) {
+      const r = await appelFn({ action: "annuler", evenement_id: S.evtId, motif: motif.trim() });
+      if (!r.ok) { err = r.erreur || "Échec."; break; }
+      env += r.envoyes || 0; dem += r.demandes || 0; iban += r.iban || 0; echecs = echecs.concat(r.echecs || []);
+      d.querySelector("#anTxt").textContent = env + " mail(s) envoyé(s)" + (r.restants ? ", " + r.restants + " restant(s)…" : "");
+      d.querySelector("#anBar").style.width = r.restants ? Math.min(95, 100 * env / (env + r.restants)) + "%" : "100%";
+      if (!r.restants) break;
+    }
+  } finally { d.remove(); }
+  await rechargerEvt(); await chargerInscriptions(); rendre();
+  if (err && !env) return echec(err);
+  (echecs.length || err ? echec : succes)(`Événement annulé.\n${env} mail(s) envoyé(s).` + (e.payant ? `\n${dem} demande(s) de remboursement créée(s) dans la Caisse.\n${iban} personne(s) doivent encore indiquer leur IBAN (lien envoyé par mail).` : "")
+    + (echecs.length ? "\n\nProblèmes (" + echecs.length + ") :\n" + echecs.slice(0, 12).join("\n") : "") + (err ? "\n\n" + err : ""), "Annulation");
 };
 RES.archiver = async () => { if (!(await confirmer("Archiver cet événement ? Les inscriptions se ferment ; les statistiques restent consultables.", "Archiver"))) return; try { await majEvt({ statut: "archive" }); } catch (er) { return echec(er.message); } rendre(); toast("Événement archivé"); };
 RES.desarchiver = async () => { try { await majEvt({ statut: "actif" }); } catch (er) { return echec(er.message); } rendre(); toast("Événement réactivé"); };
@@ -1703,10 +1818,13 @@ function vueInscriptions(e) {
   const c = commCourante() || {};
   const ferme = !c.inscriptions_ouvertes || !e.inscriptions_ouvertes;
   setTimeout(chargerApercus, 0);
-  return `${ferme ? `<div class="alerte">⛔ <b>Inscriptions fermées</b>${!c.inscriptions_ouvertes ? " pour toute la commission" : ""} : le formulaire en ligne et l'ajout manuel sont bloqués.</div>` : ""}
-    ${e.payant || av.length ? `<div class="grp-h"><h2>Preuves de paiement à vérifier</h2><span class="c">${av.length}</span><span class="l"></span></div>
+  if (e.statut === "annule") return vueRembts(e);
+  return `${e.payant ? `<div class="card" style="padding:12px 14px"><div class="row" style="align-items:center"><div style="flex:1;min-width:200px"><b>🏦 Paiements reçus</b><div class="du">Importez l'extrait bancaire (CSV) : les virements avec la bonne communication sont reconnus et les billets partent tout seuls.</div></div>
+      <button class="btn sm" data-a="importExtrait">Importer un extrait (CSV)</button></div><input type="file" id="exCsv" accept=".csv,text/csv,text/plain" hidden data-ch="extraitChoisi"></div>` : ""}
+    ${ferme ? `<div class="alerte">⛔ <b>Inscriptions fermées</b>${!c.inscriptions_ouvertes ? " pour toute la commission" : ""} : le formulaire en ligne et l'ajout manuel sont bloqués.</div>` : ""}
+    ${e.payant || av.length ? `<div class="grp-h"><h2>Paiements à vérifier</h2><span class="c">${av.length}</span><span class="l"></span></div>
       ${av.length ? av.map((i) => `<div class="card" style="padding:12px"><div class="row" style="align-items:flex-start">
-        ${i.preuve_path ? (/\.pdf$/i.test(i.preuve_path) ? `<a class="btn ghost sm" target="_blank" rel="noopener" data-fichier="${esc(i.preuve_path)}">📄 Ouvrir la preuve (PDF)</a>` : `<a target="_blank" rel="noopener"><img data-fichier="${esc(i.preuve_path)}" alt="Preuve" style="width:120px;max-height:160px;object-fit:cover;border-radius:8px;background:#111"></a>`) : `<span class="badge no">Pas de preuve</span>`}
+        ${i.preuve_path ? (/\.pdf$/i.test(i.preuve_path) ? `<a class="btn ghost sm" target="_blank" rel="noopener" data-fichier="${esc(i.preuve_path)}">📄 Ouvrir la preuve (PDF)</a>` : `<a target="_blank" rel="noopener"><img data-fichier="${esc(i.preuve_path)}" alt="Preuve" style="width:120px;max-height:160px;object-fit:cover;border-radius:8px;background:#111"></a>`) : `<span class="badge info" title="Validé automatiquement à l'import de l'extrait bancaire">Attend le virement</span>`}
         <div style="flex:1;min-width:200px"><div style="font-weight:600;font-size:15px">${esc(nomI(i))}</div><div class="du">${esc(i.email || "")}</div>
           <div class="du">Montant : <b>${eur(i.montant || e.prix)}</b> · communication <span class="mono">${esc(i.communication || "—")}</span></div>
           <div class="du">Inscrit·e le ${esc(quand(i.created_at))}</div>${resumeReponses(e, i)}
@@ -1731,6 +1849,50 @@ function vueInscriptions(e) {
       <div class="lst">${rd.map((i) => `<div class="li"><div class="m"><div class="n">${esc(nomI(i))}</div><div class="x">${esc(i.email || "")}${i.refus_motif ? " · motif : " + esc(i.refus_motif) : ""}</div></div>${badgeStatut(i.statut)}
         ${i.statut === "refuse" ? `<button class="btn ghost sm" data-a="repecher" data-id="${i.id}">Repêcher</button>` : ""}</div>`).join("")}</div></details>` : ""}`;
 }
+/* Événement annulé : suivi des remboursements (état lu dans la Caisse). */
+function vueRembts(e) {
+  const I = (S.insc || []).filter((i) => i.statut === "annule");
+  if (!S.rembts || S.rembts.eid !== e.id) { S.rembts = { eid: e.id, l: null }; sb.rpc("bil_rembt_etats", { p_eid: e.id }).then(({ data }) => { S.rembts = { eid: e.id, l: data || [] }; if (S.vue === "evt" && S.onglet === "inscriptions") rendreEnPreservant(); }); }
+  const R = Object.fromEntries(((S.rembts && S.rembts.l) || []).map((x) => [x.id, x]));
+  const lab = (x) => !x ? "" : x.caisse === "Remboursée" ? `<span class="badge ok">remboursé</span>` : x.caisse === "Refusée" ? `<span class="badge no">refusé par le trésorier</span>`
+    : x.etat === "demande" ? `<span class="badge wait">demande dans la Caisse${x.caisse ? " · " + esc(x.caisse) : ""}</span>` : x.etat === "iban_attendu" ? `<span class="badge">IBAN attendu</span>` : `<span class="badge">à traiter</span>`;
+  const payeurs = I.filter((i) => R[i.id]), autres = I.filter((i) => !R[i.id]);
+  return `<div class="grp-h"><h2>Remboursements</h2><span class="c">${payeurs.length}</span><span class="l"></span></div>
+    ${!e.payant ? `<div class="empty">Événement gratuit : rien à rembourser.</div>` : S.rembts.l == null ? `<p class="du">Chargement…</p>` : payeurs.length ? `<div class="lst">${payeurs.map((i) => `<div class="li"><div class="m"><div class="n">${esc(nomI(i))}</div><div class="x">${esc(i.email || "")} · ${eur(i.montant)}</div></div>${lab(R[i.id])}</div>`).join("")}</div>
+      <p class="du">« IBAN attendu » : la personne a reçu un lien pour indiquer son compte ; la demande arrive dans la Caisse dès qu'elle l'a fait. Un virement reçu plus tard (extrait importé) crée aussi la demande.</p>` : `<div class="empty">Aucun paiement à rembourser.</div>`}
+    <div class="grp-h"><h2>Inscriptions annulées</h2><span class="c">${autres.length}</span><span class="l"></span></div>
+    ${autres.length ? `<div class="lst">${autres.map((i) => `<div class="li"><div class="m"><div class="n">${esc(nomI(i))}</div><div class="x">${esc(i.email || "")}${i.annule_mail_le ? " · prévenu·e" : ""}</div></div>${badgeStatut(i.statut)}</div>`).join("")}</div>` : `<div class="empty">—</div>`}`;
+}
+/* Rapprochement : import d'un extrait bancaire CSV (virements reconnus par leur communication). */
+function lireCsv(txt) {
+  txt = String(txt).replace(/^\uFEFF/, "");
+  const tete = txt.split(/\r?\n/)[0] || "", sep = (tete.split(";").length >= tete.split(",").length) ? ";" : ",";
+  const lignes = []; let champ = "", ligne = [], g = false;
+  for (let k = 0; k < txt.length; k++) {
+    const c = txt[k];
+    if (g) { if (c === '"') { if (txt[k + 1] === '"') { champ += '"'; k++; } else g = false; } else champ += c; }
+    else if (c === '"') g = true; else if (c === sep) { ligne.push(champ); champ = ""; }
+    else if (c === "\n") { ligne.push(champ); lignes.push(ligne); ligne = []; champ = ""; } else if (c !== "\r") champ += c;
+  }
+  if (champ !== "" || ligne.length) { ligne.push(champ); lignes.push(ligne); }
+  return lignes.filter((l) => l.some((x) => String(x).trim() !== ""));
+}
+async function rapprocherFichier(f, appel) {
+  if (!f) return;
+  if (f.size > 5 * 1024 * 1024) return echec("Fichier trop lourd (5 Mo au plus).");
+  let texte = await f.text();
+  if (/\uFFFD/.test(texte)) { try { texte = new TextDecoder("windows-1252").decode(await f.arrayBuffer()); } catch (e) {} }
+  const l = lireCsv(texte);
+  if (l.length < 2) return echec("Le fichier ne contient aucune ligne exploitable.", "Extrait");
+  const r = await appel({ action: "rapprocher", entete: l[0], lignes: l.slice(1) });
+  if (!r.ok) return echec(r.erreur || "Import impossible.");
+  const et = { valide: "✅ payé : billet envoyé", deja: "déjà payé", attente: "payé, en liste d'attente", annule: "événement annulé → remboursement", montant: "⚠ montant insuffisant", hors: "⚠ inscription refusée/désinscrite : à rembourser à la main" };
+  const lst = (r.rapport || []).map((x) => `${x.nom} — ${x.titre ? x.titre + " — " : ""}${et[x.etat] || x.etat}${x.etat === "montant" ? ` (reçu ${eur(x.recu)} au lieu de ${eur(x.montant)})` : ""}`);
+  succes(`${r.lignes} ligne(s) lue(s), ${r.reconnues} paiement(s) de billetterie reconnu(s).\n${r.valides} billet(s) validé(s) et envoyé(s)${r.demandes ? `, ${r.demandes} remboursement(s) créé(s) dans la Caisse` : ""}.` + (lst.length ? "\n\n" + lst.slice(0, 30).join("\n") + (lst.length > 30 ? "\n…" : "") : ""), "Extrait bancaire");
+  return r;
+}
+RES.importExtrait = () => { const i = $("exCsv"); if (i) { i.value = ""; i.click(); } };
+RES.extraitChoisi = async (el) => { const f = el.files && el.files[0]; el.value = ""; const r = await rapprocherFichier(f, (c) => appelFn(c)); if (r) { await chargerInscriptions(); rendre(); } };
 function valeurReponse(c, v) {
   if (v === undefined || v === null || v === "") return "";
   if (Array.isArray(v)) return v.join(", ");
@@ -1826,6 +1988,7 @@ function vueSuivi(e) {
       <div class="row">${f("tous", "Inscrit·es")}${f("non", "Non entrés")}${f("coopte", "Cooptation")}${f("toutes", "Toutes les inscriptions")}
         <button class="btn ghost sm" data-a="rafraichir">↻ Rafraîchir</button></div>
       <div class="row" style="margin-top:10px">
+        <button class="btn sm" data-a="ecrire">✉ Écrire aux inscrits</button>
         <button class="btn ghost sm" data-a="relance">Relancer les non-venus</button>
         <button class="btn ghost sm" data-a="presenceTous">Demander la confirmation de présence</button>
         <button class="btn ghost sm" data-a="rappelTous">Envoyer le rappel maintenant</button>
@@ -1849,6 +2012,36 @@ function vueSuivi(e) {
       ${i.statut !== "inscrit" ? badgeStatut(i.statut) : i.entre_le ? `<span class="badge ok">Entré ${esc(heure(i.entre_le))}</span>` : `<span class="badge">Attendu</span>`}
       <button class="ico" data-a="details" data-id="${i.id}" title="Détails">⋯</button></div>`).join("")}</div>` : `<div class="empty">Aucune personne dans cette liste.</div>`}`;
 }
+RES.ecrire = async () => {
+  const I = S.insc || [], n = (l) => I.filter((i) => l.includes(i.statut) && i.email).length;
+  const html = `<label class="l" for="msCible">Destinataires</label>
+    <select class="f" id="msCible"><option value="inscrits">Inscrit·es (${n(["inscrit"])})</option><option value="attente">Liste d'attente (${n(["attente"])})</option><option value="tous">Tout le monde : inscrit·es, paiements en attente, liste d'attente (${n(["inscrit", "a_valider", "attente"])})</option></select>
+    <label class="l" for="msSujet">Objet</label><input class="f" id="msSujet" maxlength="150" placeholder="Ex. Changement de salle">
+    <label class="l" for="msTexte">Message</label><textarea class="f" id="msTexte" rows="7" maxlength="5000" placeholder="Bonjour… (le prénom de chaque personne est ajouté automatiquement)"></textarea>
+    <p class="du">Envoyé au nom de la commission, avec les infos pratiques de l'événement et, pour les inscrit·es, le lien vers leur billet.</p>`;
+  const v = await modale({ titre: "✉ Écrire aux inscrits", html, boutons: [{ t: "Annuler", v: null }, { t: "Envoyer", v: (d) => ({ cible: d.querySelector("#msCible").value, sujet: d.querySelector("#msSujet").value.trim(), texte: d.querySelector("#msTexte").value.trim() }) }] });
+  if (!v) return;
+  if (v.sujet.length < 3) return echec("Indiquez un objet.", "Message");
+  if (v.texte.length < 5) return echec("Le message est vide.", "Message");
+  if (!(await confirmer(`Envoyer « ${v.sujet} » à ${n(v.cible === "inscrits" ? ["inscrit"] : v.cible === "attente" ? ["attente"] : ["inscrit", "a_valider", "attente"])} personne(s) ?`, "Écrire aux inscrits"))) return;
+  const mid = (crypto.randomUUID ? crypto.randomUUID() : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
+  let total = 0, echecs = [], tour = 0, curseur = "", erreur = "";
+  const d = document.createElement("div"); d.className = "ca-mod";
+  d.innerHTML = `<div class="ca-mod-box"><h3>Envoi du message</h3><p id="msTxt">Envoi en cours…</p><div class="bar"><i id="msBar" style="width:5%"></i></div></div>`;
+  document.body.appendChild(d);
+  try {
+    while (tour++ < 60) {
+      const r = await appelFn({ action: "message", evenement_id: S.evtId, message_id: mid, cible: v.cible, sujet: v.sujet, texte: v.texte, curseur });
+      if (!r.ok) { erreur = r.erreur || "Échec."; break; }
+      total += r.envoyes; echecs = echecs.concat(r.echecs || []); curseur = r.curseur || curseur; if (r.erreur) erreur = r.erreur;
+      d.querySelector("#msTxt").textContent = total + " envoyé(s)" + (r.restants ? ", " + r.restants + " restant(s)…" : "");
+      d.querySelector("#msBar").style.width = r.restants ? Math.min(95, 100 * total / (total + r.restants)) + "%" : "100%";
+      if (!r.restants) break;
+    }
+  } finally { d.remove(); }
+  if (!total && !echecs.length && !erreur) return info("Personne à qui envoyer ce message.", "Message");
+  (echecs.length || (erreur && !total) ? echec : succes)(total + " mail(s) envoyé(s)." + (echecs.length ? "\n\nÉchecs (" + echecs.length + ") :\n" + echecs.slice(0, 15).join("\n") : "") + (erreur && !total ? "\n\n" + erreur : ""), "Message");
+};
 RES.filtre = (el) => { S.filtre = el.dataset.k; rendre(); };
 RES.cherche = (el) => { S.cherche = el.value; clearTimeout(S.chT); S.chT = setTimeout(() => { const p = el.selectionStart; rendre(); const n = $("suCherche"); if (n) { n.focus(); try { n.setSelectionRange(p, p); } catch (e) {} } }, 160); };
 RES.rafraichir = async () => { await chargerInscriptions(); rendre(); toast("Liste à jour"); };
@@ -2118,6 +2311,7 @@ async function demarrer() {
   if (p.has("d")) { S.mode = "desinsc"; return chargerBillet("d"); }
   if (p.has("p")) { S.mode = "presence"; return chargerBillet("p"); }
   if (p.has("s")) { S.mode = "sondage"; return chargerBillet("s"); }
+  if (p.has("r")) { S.mode = "rembt"; return chargerRembt(); }
   if (p.has("scan") || jetonDansUrl()) { S.mode = "benevole"; return chargerBenevole(); }
   return demarrerResp();
 }

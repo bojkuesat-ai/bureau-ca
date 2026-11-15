@@ -9,6 +9,9 @@
 //  et signature au prénom du ou des responsables de la commission (ca_membres.fonction).
 //  13/11/2026 — envoi via send-email en tant que serveur (x-cron-secret) ; vérification
 //  de l'adresse e-mail au choix par événement (bil_evenements.verif_email, désactivée par défaut).
+//  15/11/2026 — message aux inscrits, annulation d'un événement (mails + remboursements dans la
+//  Caisse), IBAN de remboursement, transfert de billet, « renvoyer mon billet », rapprochement
+//  des virements (extrait CSV) ; preuve de paiement facultative.
 // =====================================================================
 import { createClient } from "npm:@supabase/supabase-js@2.115.0";
 import qrcode from "npm:qrcode-generator@1.4.4";
@@ -62,6 +65,10 @@ Deno.serve(async (req: Request) => {
     if (a === "cron") return rep(req, await cron(req));
     if (a === "confirmer") return rep(req, await confirmer(String(b.token ?? "")));
     if (a === "desinscrire") return rep(req, await desinscrire(String(b.secret ?? "")));
+    if (a === "renvoyer") return rep(req, await renvoyer(String(b.evenement ?? ""), String(b.email ?? "")));
+    if (a === "transferer") return rep(req, await transferer(b));
+    if (a === "rembt_iban") return rep(req, await rembtIban(String(b.token ?? ""), String(b.iban ?? ""), String(b.titulaire ?? "")));
+    if (a === "rapprocher") return rep(req, await rapprocher(req, b));
     const u = await utilisateur(req);
     if (!u) throw new Refus("Connexion requise : reconnectez-vous.", 401);
     switch (a) {
@@ -77,6 +84,8 @@ Deno.serve(async (req: Request) => {
       case "relance": return rep(req, await lotAction(u, "relance", b));
       case "bilan": return rep(req, await bilanAction(u, String(b.evenement_id)));
       case "test": return rep(req, await testAction(u, String(b.evenement_id)));
+      case "message": return rep(req, await messageAction(u, b));
+      case "annuler": return rep(req, await annulerAction(u, b));
       default: throw new Refus("Action inconnue.");
     }
   } catch (e) {
@@ -396,7 +405,7 @@ function billetPdf(e: Evt, i: Insc): string {
   out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   return b64(Uint8Array.from(out, (ch) => ch.charCodeAt(0) & 0xff));
 }
-const nomFichier = (s: string) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "billet";
+const nomFichier = (s: string) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "billet";
 
 // ------------------------------------------------------------------ Les mails
 async function mailConfirmationAdresse(e: Evt, i: Insc, token: string) {
@@ -442,7 +451,9 @@ async function mailAttente(e: Evt, i: Insc) {
 async function mailPaiementEnVerification(e: Evt, i: Insc, placeLiberee = false) {
   const cfg = await config();
   const corps = (placeLiberee ? `<div style="background:#e8f6ee;border:1px solid #bfe3cd;border-radius:8px;padding:10px 12px;margin:0 0 12px;font-weight:bold">Bonne nouvelle : une place s'est libérée pour vous !</div>` : "")
-    + `<p>Bonjour ${esc(prenomOu(i))},</p><p>${placeLiberee ? "Votre" : "Merci, votre adresse est confirmée. Votre"} preuve de paiement va être vérifiée par un·e responsable de la commission ${esc(e.commission)}. Vous recevrez votre billet dès la validation.</p>`
+    + `<p>Bonjour ${esc(prenomOu(i))},</p>` + (i.preuve_path
+      ? `<p>${placeLiberee ? "Votre" : "Merci, votre adresse est confirmée. Votre"} preuve de paiement va être vérifiée par un·e responsable de la commission ${esc(e.commission)}. Vous recevrez votre billet dès la validation.</p>`
+      : `<p>${placeLiberee ? "" : "Merci pour votre inscription. "}Votre billet vous sera envoyé <b>dès réception de votre virement</b>, reconnu automatiquement grâce à la communication ci-dessous : utilisez-la exactement.</p>`)
     + blocPaiement(e, i, cfg) + infos(e) + piedDesinsc(i);
   return envoyer(i.email, (placeLiberee ? "Une place s'est libérée — " : "Paiement en vérification — ") + e.titre, cadre(e, "", corps), [], undefined, e.expediteur);
 }
@@ -501,7 +512,7 @@ async function alerteResponsables(e: Evt, sujet: string, corps: string) {
   return ok;
 }
 async function alertePreuves(e: Evt, forcer = false) {
-  const { count } = await db.from("bil_inscriptions").select("id", { count: "exact", head: true }).eq("evenement_id", e.id).eq("statut", "a_valider");
+  const { count } = await db.from("bil_inscriptions").select("id", { count: "exact", head: true }).eq("evenement_id", e.id).eq("statut", "a_valider").not("preuve_path", "is", null);
   if (!count) return;
   const tranche = new Date(); tranche.setUTCMinutes(tranche.getUTCMinutes() < 30 ? 0 : 30, 0, 0);
   if (!forcer && !(await cleUnique(`bil:preuves:${e.id}:${tranche.toISOString()}`))) return;
@@ -599,11 +610,15 @@ async function inscrire(req: Request) {
   }
   let preuve: File | null = null, communication = "";
   if (e.payant) {
+    /* 15/11/2026 : preuve facultative — le paiement est reconnu automatiquement à l'import de
+       l'extrait bancaire (communication structurée). La preuve accélère la validation. */
     const p = fd.get("preuve");
-    if (!(p instanceof File) || !p.size) throw new Refus("La preuve de paiement est obligatoire.");
-    if (p.size > MAX_FICHIER) throw new Refus("Preuve de paiement trop lourde (10 Mo au plus).");
-    if (!TYPES_FICHIERS.includes(p.type)) throw new Refus("Preuve de paiement : envoyez une image ou un PDF.");
-    preuve = p; communication = g("communication");
+    if (p instanceof File && p.size) {
+      if (p.size > MAX_FICHIER) throw new Refus("Preuve de paiement trop lourde (10 Mo au plus).");
+      if (!TYPES_FICHIERS.includes(p.type)) throw new Refus("Preuve de paiement : envoyez une image ou un PDF.");
+      preuve = p;
+    }
+    communication = g("communication");
     if (!ogmValide(communication)) throw new Refus("Communication de paiement invalide : rechargez la page.");
   }
   const coopte = g("coopte") === "1" && !!(e.cooptation?.actif);
@@ -793,6 +808,209 @@ async function testAction(u: Membre, eid: string) {
   const r = await envoyer(u.email, "Test de la billetterie — " + e.titre,
     cadre(e, "Test d'envoi", `<p>Bonjour ${esc(u.prenom)},</p><p>Ce message confirme que les mails de la billetterie partent bien vers votre adresse (expéditeur : ${esc(e.expediteur)}).</p>${infos(e)}`), [], undefined, e.expediteur);   // même chemin que les mails publics (sans compte)
   return { ok: r.ok, via: r.via, erreur: r.erreur ?? "", email: u.email, pdf };
+}
+
+// ------------------------------------------------------------------ 15/11/2026 : nouveautés
+const lienRembt = (tok: string) => APP + "?r=" + tok;
+function ibanValide(brut: string) {
+  const s = String(brut ?? "").replace(/\s/g, "").toUpperCase();
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(s)) return false;
+  const r = s.slice(4) + s.slice(0, 4);
+  let m = 0;
+  for (const ch of r) { const v = /[A-Z]/.test(ch) ? String(ch.charCodeAt(0) - 55) : ch; for (const d of v) m = (m * 10 + Number(d)) % 97; }
+  return m === 1;
+}
+function texteHtml(t: string) { return esc(t).replace(/\r?\n/g, "<br>"); }
+
+/* « Renvoyer mon billet » : réponse identique que l'adresse soit inscrite ou non. */
+async function renvoyer(code: string, email: string) {
+  const mail = email.trim().toLowerCase();
+  if (!RE_MAIL.test(mail)) throw new Refus("Adresse e-mail invalide.");
+  if (!(await rpc("bil_srv_limite", { p_cle: "renvoi:" + mail, p_max: 3, p_minutes: 60 }))) throw new Refus("Trop de demandes pour cette adresse. Réessayez dans une heure.", 429);
+  const { data: e0 } = await db.from("bil_evenements").select("id").eq("code", code.toUpperCase().replace(/[^A-Z0-9]/g, "")).maybeSingle();
+  if (e0) {
+    const { data: i } = await db.from("bil_inscriptions").select("*").eq("evenement_id", e0.id).eq("email", mail)
+      .not("statut", "in", "(refuse,desinscrit,annule,a_confirmer)").maybeSingle();
+    if (i) {
+      const e = await lireEvt(e0.id);
+      if (i.statut === "inscrit") await mailBillet(e, i);
+      else if (i.statut === "a_valider") await mailPaiementEnVerification(e, i);
+      else if (i.statut === "attente") await mailAttente(e, i);
+    }
+  }
+  return { ok: true };
+}
+
+/* Transfert : jusqu'au début de l'événement, nouveau code et nouveau lien. */
+async function transferer(b: Record<string, any>) {
+  const secret = String(b.secret ?? ""), nom = String(b.nom ?? "").trim().slice(0, 120), prenom = String(b.prenom ?? "").trim().slice(0, 120);
+  const email = String(b.email ?? "").trim().toLowerCase();
+  if (!secret) throw new Refus("Lien incomplet.");
+  if (!nom || !prenom) throw new Refus("Indiquez le nom et le prénom de la personne.");
+  if (!RE_MAIL.test(email)) throw new Refus("Adresse e-mail invalide.");
+  if (b.email2 !== undefined && String(b.email2).trim().toLowerCase() !== email) throw new Refus("Les deux adresses e-mail ne sont pas identiques.");
+  if (!(await rpc("bil_srv_limite", { p_cle: "transfert:" + (await hacher(secret)), p_max: 5, p_minutes: 60 }))) throw new Refus("Trop d'essais. Réessayez dans une heure.", 429);
+  const r = await rpc("bil_srv_transferer", { p_secret: secret, p_nom: nom, p_prenom: prenom, p_email: email }) as any;
+  const msg: Record<string, string> = { inconnu: "Ce billet n'existe pas (ou a déjà été cédé).", ferme: "L'événement n'est plus actif.",
+    statut: "Seul un billet confirmé peut être cédé.", entre: "Ce billet a déjà été utilisé à l'entrée.", commence: "L'événement a commencé : le billet ne peut plus être cédé.",
+    invalide: "Coordonnées invalides.", meme: "C'est déjà votre adresse.", deja: "Cette personne a déjà un billet pour cet événement (un seul billet par adresse)." };
+  if (r.etat !== "ok") throw new Refus(msg[r.etat] ?? "Transfert impossible.", 409);
+  const e = await lireEvt(r.evenement_id);
+  const i = await lireInsc(r.id);
+  const m = await mailBillet(e, i, `${esc(String(r.ancien_prenom ?? "").trim() || "Une personne")} vous a cédé sa place.`);
+  if (r.ancien_email) {
+    await envoyer(r.ancien_email, "Place cédée — " + e.titre, cadre(e, "", `<p>Bonjour ${esc(r.ancien_prenom || "")},</p><p>Votre place pour <b>${esc(e.titre)}</b> a bien été cédée à <b>${esc(prenom + " " + nom)}</b>. Votre ancien billet (QR) n'est plus valable.</p>`), [], undefined, e.expediteur);
+  }
+  return { ok: true, mail: m.ok, email };
+}
+
+/* IBAN de remboursement donné par le participant. */
+async function rembtIban(token: string, iban: string, titulaire: string) {
+  if (!token) throw new Refus("Lien incomplet.");
+  if (!ibanValide(iban)) throw new Refus("IBAN invalide : vérifiez-le (ex. BE68 5390 0754 7034).");
+  if (titulaire.trim().length < 3) throw new Refus("Indiquez le nom du titulaire du compte.");
+  if (!(await rpc("bil_srv_limite", { p_cle: "rembt:" + (await hacher(token)), p_max: 6, p_minutes: 60 }))) throw new Refus("Trop d'essais. Réessayez plus tard.", 429);
+  const r = await rpc("bil_srv_rembt_iban", { p_token: token, p_iban: iban, p_titulaire: titulaire }) as any;
+  if (!r.ok) throw new Refus(r.raison === "inconnu" ? "Ce lien de remboursement n'est pas valable." : "Enregistrement impossible.", 404);
+  return { ok: true, etat: r.etat };
+}
+
+/* Message libre d'un responsable aux inscrits de son événement (par lots). */
+async function messageAction(u: Membre, b: Record<string, any>) {
+  const eid = String(b.evenement_id); await exigerDroit(u, eid);
+  const mid = String(b.message_id ?? "");
+  if (!/^[0-9a-f-]{36}$/i.test(mid)) throw new Refus("Identifiant du message manquant.");
+  const cible = String(b.cible ?? "inscrits");
+  const statuts: Record<string, string[]> = { inscrits: ["inscrit"], attente: ["attente"], tous: ["inscrit", "a_valider", "attente"] };
+  if (!statuts[cible]) throw new Refus("Destinataires inconnus.");
+  const sujet = String(b.sujet ?? "").trim().slice(0, 150), texte = String(b.texte ?? "").trim().slice(0, 5000);
+  if (sujet.length < 3) throw new Refus("Indiquez un objet.");
+  if (texte.length < 5) throw new Refus("Le message est vide.");
+  const e = await lireEvt(eid);
+  await db.from("bil_messages").upsert({ id: mid, evenement_id: eid, cible, sujet, texte, par: u.id, par_nom: nomDe(u) }, { onConflict: "id", ignoreDuplicates: true });
+  const curseur = String(b.curseur ?? "");
+  let q = db.from("bil_inscriptions").select("*").eq("evenement_id", eid).in("statut", statuts[cible]).not("email", "is", null).order("id");
+  if (curseur) q = q.gt("id", curseur);
+  const { data, error } = await q.limit(LOT + 1);
+  if (error) throw new Refus(error.message);
+  const liste = (data ?? []) as Insc[], lot = liste.slice(0, LOT);
+  let envoyes = 0; const echecs: string[] = []; let der = "", via = "";
+  for (const i of lot) {
+    if (!(await cleUnique(`bil:msg:${mid}:${i.id}`))) continue;
+    const corps = `<p>Bonjour ${esc(prenomOu(i))},</p><div style="white-space:normal">${texteHtml(texte)}</div>`
+      + (i.statut === "inscrit" ? bouton(lienBillet(i), "📱 Afficher mon billet (QR)") : "") + infos(e);
+    const r = await envoyer(i.email, sujet + " — " + e.titre, cadre(e, "", corps), [], u.jwt, e.expediteur);
+    if (r.ok) envoyes++; else { echecs.push(`${i.prenom} ${i.nom} <${i.email}>`); der = r.erreur ?? ""; }
+    via = r.via || via; await pause();
+  }
+  if (envoyes) { const { data: m } = await db.from("bil_messages").select("envoyes").eq("id", mid).maybeSingle(); await db.from("bil_messages").update({ envoyes: (m?.envoyes ?? 0) + envoyes }).eq("id", mid); }
+  const restants = Math.max(liste.length - lot.length, 0);
+  return { ok: true, envoyes, echecs, restants, curseur: lot.length ? lot[lot.length - 1].id : curseur, via, erreur: der };
+}
+
+/* Annulation : 1er appel = l'événement passe « annulé » ; puis mails et remboursements par lots. */
+async function mailAnnulation(e: Evt, i: Insc, r: any) {
+  const etat = r?.etat;
+  const rembt = etat === "demande" ? `<p>Votre paiement de <b>${eur(i.montant)}</b> va vous être <b>remboursé</b> par virement sur le compte qui a payé (dernières lettres : ${esc(String(i.iban_payeur ?? "").slice(-4))}).</p>`
+    : etat === "iban_attendu" ? `<p>Votre paiement de <b>${eur(i.montant)}</b> va vous être <b>remboursé</b>. Indiquez-nous le compte bancaire (IBAN) sur lequel le recevoir :</p>${bouton(lienRembt(r.token), "💶 Recevoir mon remboursement", "#2e8b57")}`
+    : "";
+  const corps = `<p>Bonjour ${esc(prenomOu(i))},</p><p>Nous sommes au regret de vous annoncer que l'événement <b>${esc(e.titre)}</b>${e.date_evt ? " du " + esc(dateLongue(e.date_evt)) : ""} est <b>annulé</b>.</p>`
+    + (e.annule_motif ? `<p><b>Motif :</b></p><p style="background:#f7f7fb;border-radius:8px;padding:10px 12px;white-space:pre-wrap">${esc(e.annule_motif)}</p>` : "")
+    + rembt + `<p>Votre billet n'est plus valable. Toutes nos excuses pour ce désagrément.</p>`;
+  return envoyer(i.email, "Événement annulé — " + e.titre, cadre(e, "Événement annulé", corps), [], undefined, e.expediteur);
+}
+async function annulerAction(u: Membre, b: Record<string, any>) {
+  const eid = String(b.evenement_id); await exigerDroit(u, eid);
+  const a = await rpc("bil_srv_annuler", { p_eid: eid, p_uid: u.id, p_par: nomDe(u), p_motif: String(b.motif ?? "") }) as any;
+  if (!a.ok) throw new Refus(a.raison === "motif" ? "Indiquez le motif de l'annulation (5 caractères au moins)." : a.raison === "purge" ? "Les données de cet événement ont déjà été supprimées." : "Annulation impossible.");
+  const e = await lireEvt(eid);
+  const { data, error } = await db.from("bil_inscriptions").select("*").eq("evenement_id", eid).eq("statut", "annule").is("annule_mail_le", null).order("id").limit(LOT + 1);
+  if (error) throw new Refus(error.message);
+  const liste = (data ?? []) as Insc[], lot = liste.slice(0, LOT);
+  let envoyes = 0, demandes = 0, iban = 0; const echecs: string[] = [];
+  for (const i of lot) {
+    let r: any = null;
+    if (i.rembt_statut) {
+      try { r = await rpc("bil_srv_rembt_creer", { p_id: i.id }); if (r?.etat === "demande") demandes++; else if (r?.etat === "iban_attendu") iban++; }
+      catch (x) { console.error("rembt", i.id, x); echecs.push(`${i.prenom} ${i.nom} : remboursement non créé (${String((x as Error).message ?? x).slice(0, 80)})`); }
+    }
+    const i2 = r ? await lireInsc(i.id) : i;
+    const m = i.email && i.statut_avant_annulation !== "a_confirmer" ? await mailAnnulation(e, i2, r) : { ok: true };
+    if (m.ok) { envoyes++; await db.from("bil_inscriptions").update({ annule_mail_le: new Date().toISOString() }).eq("id", i.id); }
+    else echecs.push(`${i.prenom} ${i.nom} <${i.email}>`);
+    await pause();
+  }
+  return { ok: true, envoyes, demandes, iban, echecs, restants: Math.max(liste.length - lot.length, 0) };
+}
+
+/* Rapprochement : lignes d'un extrait CSV. Responsables (leurs événements) ou trésorier (tous). */
+function lireOgm(t: string): string[] {
+  const out = new Set<string>();
+  const re = /(\d{3})\s*\/?\s*(\d{4})\s*\/?\s*(\d{5})/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t))) {
+    const d = m[1] + m[2] + m[3]; const r = Number(BigInt(d.slice(0, 10)) % 97n);
+    if ((r === 0 ? 97 : r) === Number(d.slice(10))) out.add(d);
+  }
+  return [...out];
+}
+function lireMontant(v: unknown): number | null {
+  let t = String(v ?? "").replace(/[\s€\u00a0]/g, "");
+  if (!/^[+-]?[\d.,]+$/.test(t)) return null;
+  if (t.includes(",") && t.includes(".")) t = t.lastIndexOf(",") > t.lastIndexOf(".") ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
+  else t = t.replace(",", ".");
+  const n = Number(t); return Number.isFinite(n) ? n : null;
+}
+async function rapprocher(req: Request, b: Record<string, any>) {
+  const jwt = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  if (!jwt || jwt.startsWith("sb_") || jwt === ANON) throw new Refus("Connexion requise : reconnectez-vous.", 401);
+  const { data: ud, error: ue } = await db.auth.getUser(jwt);
+  if (ue || !ud?.user) throw new Refus("Connexion requise : reconnectez-vous.", 401);
+  const uid = ud.user.id;
+  const treso = (await rpc("bil_srv_est_tresorier", { p_uid: uid })) === true;
+  const { data: m } = await db.from("ca_membres").select("id,prenom,nom,email,role,statut").eq("id", uid).maybeSingle();
+  if (!treso && !m) throw new Refus("Réservé aux responsables de la Billetterie et au trésorier.", 403);
+  const entete: string[] = (Array.isArray(b.entete) ? b.entete : []).map((x: unknown) => String(x ?? ""));
+  const lignes: string[][] = (Array.isArray(b.lignes) ? b.lignes : []).slice(0, 5000).map((l: unknown) => (Array.isArray(l) ? l : []).map((x) => String(x ?? "").slice(0, 500)));
+  const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const iMnt = entete.findIndex((h) => /^montant/.test(norm(h).trim()));
+  const iCp = entete.findIndex((h) => /contrepartie/.test(norm(h)) && !/nom/.test(norm(h)));
+  const iNom = entete.findIndex((h) => /nom.*contrepartie|contrepartie.*nom|^beneficiaire|^nom du (beneficiaire|donneur)/.test(norm(h)));
+  const cfg = await config(); const notreIban = String(cfg.iban ?? "").replace(/\s/g, "").toUpperCase();
+  const candidats: any[] = []; let ignorees = 0;
+  for (const l of lignes) {
+    const texte = l.join(" ");
+    const ogms = lireOgm(texte); if (!ogms.length) continue;
+    const mnt = iMnt >= 0 ? lireMontant(l[iMnt]) : null;
+    if (mnt !== null && mnt <= 0) { ignorees++; continue; }          // sortie d'argent
+    let iban = iCp >= 0 ? String(l[iCp] ?? "").replace(/\s/g, "").toUpperCase() : "";
+    if (!ibanValide(iban) || iban === notreIban) {
+      iban = ((texte.toUpperCase().match(/\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,4})?\b/g) ?? [])
+        .map((x) => x.replace(/\s/g, "")).find((x) => ibanValide(x) && x !== notreIban)) ?? "";
+    }
+    const nom = iNom >= 0 ? String(l[iNom] ?? "").trim().slice(0, 120) : "";
+    for (const o of ogms) candidats.push({ ogm: o, montant: mnt, iban: iban || null, nom: nom || null });
+  }
+  const r = await rpc("bil_srv_rapprocher", { p_uid: uid, p_tout: treso, p_lignes: candidats }) as any;
+  let mails = 0;
+  const evts: Record<string, Evt> = {};
+  const evt = async (id: string) => evts[id] ?? (evts[id] = await lireEvt(id));
+  for (const id of (r.valides ?? []) as string[]) {
+    try { const i = await lireInsc(id); const e = await evt(i.evenement_id); if (i.email && (await mailBillet(e, i, "Votre paiement a bien été reçu.")).ok) mails++; await pause(); }
+    catch (x) { console.error("rapprocher mail", id, x); }
+  }
+  let demandes = 0;
+  for (const id of (r.rembts ?? []) as string[]) {
+    try {
+      const x = await rpc("bil_srv_rembt_creer", { p_id: id }) as any;
+      if (x?.etat === "demande") demandes++;
+      else if (x?.etat === "iban_attendu") { const i = await lireInsc(id); const e = await evt(i.evenement_id); if (i.email && !i.annule_mail_le) { await mailAnnulation(e, i, x); await db.from("bil_inscriptions").update({ annule_mail_le: new Date().toISOString() }).eq("id", id); } }
+    } catch (x) { console.error("rapprocher rembt", id, x); }
+  }
+  const titres: Record<string, string> = {};
+  for (const x of (r.rapport ?? []) as any[]) { try { titres[x.evenement_id] = titres[x.evenement_id] ?? (await evt(x.evenement_id)).titre; } catch (_) { /* */ } }
+  return { ok: true, lignes: lignes.length, ignorees, reconnues: (r.rapport ?? []).length, valides: (r.valides ?? []).length, mails, demandes,
+    rapport: ((r.rapport ?? []) as any[]).map((x) => ({ ...x, titre: titres[x.evenement_id] ?? "" })), tresorier: treso };
 }
 
 // ------------------------------------------------------------------ Tâche planifiée

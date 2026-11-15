@@ -183,3 +183,18 @@ SQL : `supabase/sql/2026-11-15_billetterie_liens_scan.sql`.
 ## Journal et Transparence sans le propriétaire (15/11/2026)
 
 SQL : `supabase/sql/2026-11-15_journal_sans_proprietaire.sql`. Les connexions et actions du compte propriétaire (`owner` **et** `proprietaire` après la passation) ne sont plus enregistrées (`audit_ecrire`, `audit_trigger`, `audit_est_owner`), ni lisibles par l'Admin (politique `ca_audit_lecture` + `audit_proprio_id()`), ni comptées dans `audit_tableau`. Transparence n'affiche plus de liste de connexions (`transparence_etat`). Le mail « 🔐 Nouvelle connexion » au propriétaire est inchangé.
+
+## Billetterie : annulation, remboursements, transfert, rapprochement, messages (15/11/2026)
+
+SQL : `supabase/sql/2026-11-15_billetterie_annulation_transfert.sql` · fonction Edge `billets-mail` (v10).
+
+- **Un seul billet par adresse** et par événement : index unique `bil_insc_un_billet_par_mail` + contrôle dans `bil_insc_controle`. Page publique : « Renvoyer mon billet » (action `renvoyer`, limitée à 3/h par adresse).
+- **Message aux inscrits** (Suivi › « ✉ Écrire aux inscrits ») : action `message` par lots, trace dans `bil_messages`.
+- **Annulation** (Réglages › « Annuler l'événement », motif + ANNULER) : `bil_srv_annuler` → événement et inscriptions `annule` ; action `annuler` par lots : mail à chacun + `bil_srv_rembt_creer`.
+  - Payeur avec IBAN connu → demande **directe** dans la Caisse (`requests`, kind `direct`, catégorie « Billetterie », demandeur = qui a annulé).
+  - Sinon lien `billets/?r=JETON` (page publique) → IBAN + titulaire → `bil_srv_rembt_iban` → demande créée.
+  - Suivi dans l'onglet Inscriptions de l'événement annulé (`bil_rembt_etats` : « remboursé » quand la demande est payée).
+  - `depot_autorise` : le serveur (sans utilisateur) n'est pas soumis aux horaires de dépôt.
+- **Rapprochement des virements** : action `rapprocher` (responsable : ses événements ; trésorier : tous). Import CSV dans la Billetterie (onglet Inscriptions) **et** dans la Caisse (Extraits › « Paiements de billets reçus »). Communication structurée + montant → validation + billet ; IBAN du payeur gardé pour un remboursement.
+- **Preuve de paiement facultative** : sans preuve, l'inscription attend le virement (« Attend le virement »).
+- **Transfert** : billet public › « Céder ma place » jusqu'au début de l'événement (`bil_srv_transferer`) : nouveau code, nouveau lien, mail aux deux personnes.
