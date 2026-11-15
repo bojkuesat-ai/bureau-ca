@@ -100,6 +100,10 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - **Toute nouvelle table de réglages à garder doit être ajoutée à `fin_mandat_garder`**, sinon elle sera vidée.
 - À faire par Esat : cliquer « Aperçu » pour vérifier le contenu des zips (pas encore testé en réel).
 
+## 10 bis. Billetterie : liens de scan (15/11)
+
+- Le code bénévole est supprimé. À la place : **📲 Liens de scan** (un par personne, 24 h, événements du jour ; « tous » réservé à l'Admin/propriétaire). Le lien ne permet que scanner + chercher un nom. Table `bil_scan_liens`, fonctions `bil_scan_lien_*`.
+
 ## 11. Idées restantes (pas demandées pour l'instant)
 
 - Bloquer les mots de passe ayant fuité (réglage Auth de Supabase).
