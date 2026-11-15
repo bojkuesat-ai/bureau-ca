@@ -131,3 +131,20 @@ avec son mot de passe (+ code si double authentification), et il part par mail �
   `ca_est_tresorier()`), code au registre (type `courrier`). Table `ca_courriers` en lecture seule.
 - Texte → PDF du courrier ; PDF joint → PDF + page de signature ; Word/PPT → fichier tel quel +
   page de signature PDF (empreinte SHA-256). `courrier_finaliser` enregistre le PDF puis l'envoi.
+
+## Double authentification OBLIGATOIRE le 19/11/2026 (décidé le 15/11/2026)
+`sql/2026-11-15_mfa_obligatoire_19_11.sql` (migration `mfa_obligatoire_19_11`).
+- Concernés : membres actifs du CA (membre, owner, proprietaire), **pas les coopté·es** (`mfa_concerne`).
+- Date limite : mercredi 18/11/2026 23:59 ; blocage dès `proprio_config.mfa_obligatoire_le` (jeudi 19/11 00:00 Bruxelles).
+- Serveur : `mfa_ok()` = `mfa_ok_base()` (ancien) **et** `not mfa_exige_moi()` → les 81 politiques restrictives
+  `mfa_aal2` refusent tout sans code validé, même une session restée ouverte. `ca_membres` / `profiles` :
+  seule sa propre ligne reste lisible (écran d'activation). `app_refus_motif` bloque aussi les écritures des
+  fonctions serveur ; `ca_pv_signatures` et `ca_courriers` ont reçu la politique `mfa_aal2`.
+- Pages (CA + Caisse, même module) : bandeau avec compte à rebours, puis écran d'activation guidé
+  (QR, clé à copier, astuce 2e appareil, aide). Vérifié au chargement, au retour sur l'onglet, à l'heure pile.
+- Mails « Sécurité-BE » : annonce **lundi 16/11 10:00** (`mfa_annonce_1611`, une fois, table `mfa_annonces`),
+  point **mercredi 18/11 18:00** à l'Admin et au propriétaire (`mfa_point_1811`), confirmation / alerte à chaque
+  activation ou retrait (`mfa-suivi`, toutes les 5 min, table `mfa_suivi_etat`). Pas de rappel aux membres.
+- Admin › Double authentification (et espace Propriétaire) : liste, « Relancer » (`mfa_relancer`, 6 h mini),
+  « Remettre à zéro » (`mfa_reinitialiser` : supprime les facteurs, déconnecte, Journal, mail).
+- Pour décaler la date : `update proprio_config set mfa_obligatoire_le = '…' where id = 1;`

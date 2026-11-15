@@ -1,6 +1,6 @@
 # CONTEXTE — à lire en premier (nouvelle conversation)
 
-Dernière mise à jour : 14/11/2026. Ce fichier résume l'état des apps et les règles de travail.
+Dernière mise à jour : 15/11/2026. Ce fichier résume l'état des apps et les règles de travail.
 Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de passe).
 
 ## 1. Règles de travail (préférences du propriétaire, Esat)
@@ -78,13 +78,14 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Envoi depuis une fonction SQL : `net.http_post` vers `/functions/v1/send-email` avec `x-cron-secret` (modèle : `licence_mail`).
 - Expéditeurs utilisés : « Sécurité-BE », « Licence-BE », « Bureau étudiant ». Adresse : `noreply@bureauetuidant.xyz`.
 
-## 7. Double authentification (facultative)
+## 7. Double authentification (OBLIGATOIRE au 19/11/2026)
 
-- **Facultative** : rendue obligatoire le 13/11, puis retirée à la demande d'Esat le 14/11.
-- Bandeau 🔐 « Activer » dans l'Espace CA (`bandeauMfa`, `carteMfaCA`, action `mfa-activer`) et dans la Caisse (`inviterMfaCaisse`, `mfaExigerEnrolement`). Il s'affiche uniquement pour les membres du CA (membre ou owner, pas les cooptés) et disparaît une fois la double authentification activée.
-- Popup une seule fois par compte et par appareil (`localStorage` `be:mfa-popup:<id>`).
-- À la connexion, le code est demandé si un facteur est activé (garde au chargement des deux apps).
-- Mail d'invitation unique « Sécurité-BE » envoyé le 14/11/2026 à 10 h aux 18 membres concernés (`mfa_invitation_envoyer()`, table `mfa_invitations`). Fait. La tâche planifiée s'est supprimée.
+- Décidé le 15/11 : obligatoire pour **tous les membres du CA** (pas les cooptés), Espace CA **et** Caisse.
+- À activer au plus tard le **mercredi 18/11/2026 à 23 h 59** ; blocage le **jeudi 19/11 à 00 h** (`proprio_config.mfa_obligatoire_le`).
+- Annonce unique « Sécurité-BE » le **lundi 16/11 à 10 h** (pas de rappel). Point le mercredi 18/11 à 18 h à l'Admin et au propriétaire.
+- Bandeau avec compte à rebours, puis écran d'activation guidé. Contrôle serveur (`mfa_ok`, `mfa_exige_moi`) : une session restée ouverte est refusée aussi.
+- Téléphone perdu : remise à zéro par l'Admin (onglet Admin) ou le propriétaire (espace Propriétaire). Mail de confirmation à chaque activation / retrait.
+- Détails : `supabase/README.md`.
 
 ## 8. Caisse : points notables
 

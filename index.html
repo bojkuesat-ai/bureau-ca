@@ -546,7 +546,7 @@ const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createC
       +'<p id="mfaErr" style="color:#f2645f;font-size:13px;min-height:18px;margin:10px 0 0"></p>'
       +'<button id="mfaOk" style="width:100%;margin-top:8px;border:none;border-radius:11px;padding:13px;font-size:15px;font-weight:700;background:linear-gradient(150deg,#e8b04b,#9c7628);color:#241100;cursor:pointer">Valider</button>'
       +'<button id="mfaOut" style="margin-top:14px;background:none;border:none;color:#a49dc6;text-decoration:underline;font-size:13px;cursor:pointer">Se déconnecter</button>'
-      +'<p style="font-size:11.5px;color:#a49dc6;margin:16px 0 0;line-height:1.5">Téléphone perdu ? Le facteur se supprime dans Supabase › Authentication › Users › votre compte.</p></div>';
+      +'<p style="font-size:11.5px;color:#a49dc6;margin:16px 0 0;line-height:1.5">Téléphone perdu ou changé ? Demandez à l\'Admin du CA de remettre votre double authentification à zéro.</p></div>';
     (document.body||document.documentElement).appendChild(d);
     document.documentElement.style.visibility="";
     var champ=d.querySelector("#mfaCode"), err=d.querySelector("#mfaErr"), ok=d.querySelector("#mfaOk");
@@ -573,6 +573,146 @@ const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createC
   setTimeout(garde,0);
   /* Pas d'appel Supabase directement dans l'écouteur (risque de blocage) : on diffère. */
   sb.auth.onAuthStateChange(function(evt){ if(evt==="SIGNED_IN"||evt==="INITIAL_SESSION"||evt==="TOKEN_REFRESHED"||evt==="MFA_CHALLENGE_VERIFIED") setTimeout(garde,60); });
+})();
+/* =====================================================================
+   DOUBLE AUTHENTIFICATION OBLIGATOIRE (15/11/2026) — même code dans l'Espace CA et la Caisse.
+   Membres du CA (pas les coopté·es) : à activer au plus tard le mercredi 18/11/2026 23:59.
+   - Avant : bandeau avec compte à rebours (« Activer maintenant »).
+   - Après (proprio_config.mfa_obligatoire_le) : écran d'activation à la place de l'app.
+   Vérifié au chargement, au retour sur l'onglet et à l'heure pile. Le serveur refuse de
+   toute façon les données (mfa_ok / app_refus_motif) : cet écran n'est que la porte.
+   ===================================================================== */
+(function(){
+  if(typeof sb==="undefined" || !sb || !sb.auth || !sb.auth.mfa || !sb.rpc) return;
+  var etat=null, minuterie=null, horloge=null, dernier=0, enCours=false, ecart=0;
+  function e2(x){ return String(x==null?"":x).replace(/[&<>"']/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function limiteTxt(){ try{ var d=new Date(new Date(etat.exige_le).getTime()-60000);
+    return d.toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long"})+" à "+d.toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"}).replace(":"," h "); }catch(e){ return "mercredi 18 novembre à 23 h 59"; } }
+  function reste(){ var ms=new Date(etat.exige_le).getTime()-(Date.now()+ecart); if(ms<=0) return "";
+    var j=Math.floor(ms/86400000), h=Math.floor(ms%86400000/3600000), m=Math.floor(ms%3600000/60000);
+    return j>0?(j+" j "+h+" h"):h>0?(h+" h "+m+" min"):(m+" min"); }
+  function retirer(id){ var x=document.getElementById(id); if(x) x.remove(); }
+
+  var AIDE='<details style="text-align:left;margin:14px 0 0;background:rgba(255,255,255,.05);border:1px solid #3b3170;border-radius:10px;padding:8px 12px">'
+    +'<summary style="cursor:pointer;font-size:13px;color:#e8d9b0;font-weight:600">Besoin d\'aide ?</summary>'
+    +'<ul style="font-size:12.5px;color:#c9c3e4;line-height:1.55;padding-left:18px;margin:8px 0 2px">'
+    +'<li><b>Quelle application ?</b> Google Authenticator ou Microsoft Authenticator, gratuites sur l\'App Store et Google Play.</li>'
+    +'<li><b>Vous êtes sur votre téléphone ?</b> Copiez la clé ci-dessus, ouvrez l\'application, « + » › « Saisir une clé », collez-la, puis revenez ici taper le code.</li>'
+    +'<li><b>Code refusé ?</b> Il change toutes les 30 secondes : tapez celui affiché maintenant. Vérifiez aussi que l\'heure du téléphone est réglée automatiquement.</li>'
+    +'<li><b>Secours :</b> scannez le même QR code avec un 2e appareil (tablette, ancien téléphone) : les deux afficheront le même code.</li>'
+    +'<li><b>Téléphone perdu ou changé plus tard ?</b> L\'Admin du CA remet votre double authentification à zéro ; vous la réactivez ensuite ici.</li>'
+    +'<li><b>Pas de smartphone ?</b> Contactez l\'Admin du CA.</li></ul></details>';
+
+  /* Écran d'activation (obligatoire : pas de « Plus tard »). */
+  async function activer(obligatoire){
+    if(document.getElementById("mfaOblig")) return;
+    var d=document.createElement("div"); d.id="mfaOblig";
+    d.style.cssText="position:fixed;inset:0;z-index:2147481500;background:#0b0816;color:#fff;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto";
+    d.innerHTML='<div style="width:100%;max-width:440px;margin:auto;background:#241c46;border:1px solid #3b3170;border-radius:16px;padding:22px;text-align:center"><p style="color:#c9c3e4">Préparation…</p></div>';
+    (document.body||document.documentElement).appendChild(d);
+    document.documentElement.style.visibility="";
+    var fid=null;
+    try{
+      var f=await sb.auth.mfa.listFactors();
+      if(f && f.data && f.data.totp && f.data.totp.length){ d.remove(); location.reload(); return; }
+      var brouillons=((f&&f.data&&f.data.all)||[]).filter(function(x){ return x.status!=="verified"; });
+      for(var i=0;i<brouillons.length;i++){ try{ await sb.auth.mfa.unenroll({factorId:brouillons[i].id}); }catch(e){} }
+      var r=await sb.auth.mfa.enroll({factorType:"totp", friendlyName:"Bureau étudiant "+new Date().toLocaleDateString("fr-BE")+" "+Math.random().toString(36).slice(2,5)});
+      if(r.error) throw r.error;
+      fid=r.data.id;
+      var qr=r.data.totp.qr_code, secret=r.data.totp.secret;
+      var etape=function(n,t){ return '<div style="display:flex;gap:10px;text-align:left;margin:10px 0"><span style="flex:0 0 26px;height:26px;border-radius:50%;background:#e8b04b;color:#241100;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:13px">'+n+'</span><div style="font-size:13.5px;line-height:1.5;color:#e9e5f7">'+t+'</div></div>'; };
+      d.innerHTML='<div style="width:100%;max-width:440px;margin:auto;background:#241c46;border:1px solid #3b3170;border-radius:16px;padding:22px;text-align:center">'
+        +'<div style="font-size:38px;line-height:1">🔐</div>'
+        +'<h2 style="font-family:Fraunces,Georgia,serif;font-weight:500;font-size:21px;margin:8px 0 6px">Activer la double authentification</h2>'
+        +(obligatoire?'<p style="font-size:13.5px;color:#f5c542;margin:0 0 6px"><b>Obligatoire</b> pour entrer dans l\'Espace CA et la Caisse.</p>'
+                     :'<p style="font-size:13.5px;color:#f5c542;margin:0 0 6px">Obligatoire à partir du '+e2(limiteTxt().replace(/ à .*/,""))+' soir.</p>')
+        +'<p style="font-size:12.5px;color:#c9c3e4;margin:0 0 4px">Une minute suffit. Une seule activation vaut pour l\'Espace CA <b>et</b> la Caisse.</p>'
+        +etape(1,'Sur votre <b>téléphone</b>, installez <b>Google Authenticator</b> ou <b>Microsoft Authenticator</b> (gratuit).')
+        +etape(2,'Dans l\'application : <b>« + »</b> (ou « Ajouter un compte ») › <b>« Scanner un QR code »</b>, et scannez ce carré :')
+        +'<div style="background:#fff;border-radius:12px;padding:10px;width:fit-content;margin:4px auto 6px"><img src="'+e2(qr)+'" alt="QR code" width="190" height="190" style="display:block"></div>'
+        +'<p style="font-size:11.5px;color:#a49dc6;word-break:break-all;margin:0 0 4px">Pas de caméra, ou vous êtes sur le téléphone ? « Saisir une clé » :<br><b id="mfaObCle" style="font-family:monospace;color:#fff;font-size:13px">'+e2(secret)+'</b> '
+        +'<button type="button" id="mfaObCopie" style="background:none;border:1px solid #3b3170;color:#e8d9b0;border-radius:6px;padding:2px 8px;font-size:11.5px;cursor:pointer">Copier</button></p>'
+        +'<p style="font-size:11.5px;color:#a49dc6;margin:0 0 4px">💡 Secours : scannez aussi ce QR code avec un 2e appareil (tablette, ancien téléphone).</p>'
+        +etape(3,'Tapez le <b>code à 6 chiffres</b> affiché par l\'application :')
+        +'<input id="mfaObCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="width:100%;box-sizing:border-box;font-size:26px;letter-spacing:8px;text-align:center;padding:11px;border-radius:10px;border:1px solid #3b3170;background:#0f0b1f;color:#fff;outline:none">'
+        +'<p id="mfaObErr" style="color:#f2645f;font-size:13px;min-height:18px;margin:8px 0 0"></p>'
+        +'<button id="mfaObOk" style="width:100%;margin-top:6px;border:none;border-radius:11px;padding:13px;font-size:15px;font-weight:700;background:linear-gradient(150deg,#e8b04b,#9c7628);color:#241100;cursor:pointer">Activer</button>'
+        +AIDE
+        +'<button id="mfaObOut" style="margin-top:14px;background:none;border:none;color:#a49dc6;text-decoration:underline;font-size:13px;cursor:pointer">'+(obligatoire?"Se déconnecter":"Plus tard")+'</button></div>';
+      var c=d.querySelector("#mfaObCode"), er=d.querySelector("#mfaObErr"), b=d.querySelector("#mfaObOk");
+      d.querySelector("#mfaObCopie").addEventListener("click",function(){ try{ navigator.clipboard.writeText(secret); this.textContent="Copiée ✓"; }catch(e){} });
+      var valider=async function(){
+        var code=String(c.value||"").replace(/\D/g,"");
+        if(code.length!==6){ er.textContent="Le code compte 6 chiffres."; return; }
+        b.disabled=true; b.textContent="Vérification…"; er.textContent="";
+        try{
+          var v=await sb.auth.mfa.challengeAndVerify({factorId:fid, code:code});
+          if(v && v.error){ er.textContent="Code incorrect : tapez le code affiché maintenant dans l'application."; c.value=""; c.focus(); b.disabled=false; b.textContent="Activer"; return; }
+          try{ if(window.auditNoter) window.auditNoter("securite","Double authentification activée"); }catch(e){}
+          d.querySelector("div").innerHTML='<div style="font-size:42px">✅</div><h2 style="font-family:Fraunces,Georgia,serif;font-weight:500">C\'est activé !</h2><p style="color:#c9c3e4;font-size:14px">À chaque nouvelle connexion, le code de l\'application sera demandé après le mot de passe.</p>';
+          setTimeout(function(){ location.reload(); },1600);
+        }catch(e){ er.textContent=(navigator.onLine===false)?"Pas de connexion internet.":"Le serveur n'a pas répondu. Réessayez."; b.disabled=false; b.textContent="Activer"; }
+      };
+      b.addEventListener("click",valider);
+      c.addEventListener("input",function(){ if(String(c.value).replace(/\D/g,"").length===6) valider(); });
+      c.addEventListener("keydown",function(e){ if(e.key==="Enter") valider(); });
+      d.querySelector("#mfaObOut").addEventListener("click",async function(){
+        try{ if(fid) await sb.auth.mfa.unenroll({factorId:fid}); }catch(e){}
+        if(obligatoire){ try{ await sb.auth.signOut({scope:"local"}); }catch(e){} location.reload(); }
+        else d.remove();
+      });
+      setTimeout(function(){ try{ c.focus(); }catch(e){} },60);
+    }catch(e){
+      d.innerHTML='<div style="width:100%;max-width:420px;margin:auto;background:#241c46;border:1px solid #3b3170;border-radius:16px;padding:22px;text-align:center"><div style="font-size:38px">🔐</div>'
+        +'<p style="color:#f2645f">Activation impossible pour le moment : '+e2(e&&e.message||e)+'</p>'
+        +'<button id="mfaObRe" style="border:none;border-radius:10px;padding:11px 18px;font-weight:700;background:#e8b04b;color:#241100;cursor:pointer">Réessayer</button> '
+        +'<button id="mfaObOut2" style="background:none;border:none;color:#a49dc6;text-decoration:underline;cursor:pointer">'+(obligatoire?"Se déconnecter":"Fermer")+'</button></div>';
+      d.querySelector("#mfaObRe").addEventListener("click",function(){ d.remove(); activer(obligatoire); });
+      d.querySelector("#mfaObOut2").addEventListener("click",async function(){ if(obligatoire){ try{ await sb.auth.signOut({scope:"local"}); }catch(x){} location.reload(); } else d.remove(); });
+    }
+  }
+  window.mfaActiverObligatoire=function(){ activer(!!(etat&&etat.bloque)); };
+
+  function bandeau(){
+    var t=reste(); if(!t){ verifier(true); return; }
+    var b=document.getElementById("mfaObBande");
+    if(!b){
+      b=document.createElement("div"); b.id="mfaObBande";
+      b.style.cssText="position:fixed;left:50%;transform:translateX(-50%);bottom:12px;z-index:2147480000;max-width:min(680px,calc(100% - 20px));width:max-content;box-sizing:border-box;background:#241c46;color:#fff;border:1px solid #e8b04b;border-radius:12px;padding:10px 12px;font:13.5px/1.4 Inter,system-ui,-apple-system,Segoe UI,sans-serif;display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-shadow:0 10px 30px rgba(0,0,0,.45)";
+      b.innerHTML='<span id="mfaObTxt"></span><button type="button" style="border:none;border-radius:9px;padding:7px 12px;font-weight:700;background:#e8b04b;color:#241100;cursor:pointer;white-space:nowrap">Activer maintenant</button>';
+      b.querySelector("button").addEventListener("click",function(){ activer(false); });
+      (document.body||document.documentElement).appendChild(b);
+    }
+    b.querySelector("#mfaObTxt").innerHTML='🔐 <b>Double authentification obligatoire</b> — à activer avant le <b>'+e2(limiteTxt())+'</b> <span style="color:#f5c542">(reste '+e2(t)+')</span>';
+  }
+
+  async function verifier(force){
+    if(enCours) return; if(!force && Date.now()-dernier<15000) return;
+    enCours=true; dernier=Date.now();
+    try{
+      var s=await sb.auth.getSession(); if(!(s&&s.data&&s.data.session)){ retirer("mfaObBande"); etat=null; return; }
+      var n=null; try{ var r0=await sb.auth.mfa.getAuthenticatorAssuranceLevel(); n=r0&&r0.data; }catch(e){}
+      if(n && n.nextLevel==="aal2" && n.currentLevel!=="aal2") return;     // code demandé par l'écran habituel
+      var r=await sb.rpc("mfa_statut"); if(r.error || !r.data) return;
+      etat=r.data; window.__mfaOblig=etat;
+      try{ ecart=new Date(etat.maintenant).getTime()-Date.now(); }catch(e){ ecart=0; }
+      if(!etat.concerne || etat.a_mfa || !etat.exige_le){ retirer("mfaObBande"); return; }
+      if(etat.bloque){ retirer("mfaObBande"); activer(true); return; }
+      bandeau();
+      if(!horloge) horloge=setInterval(function(){ if(document.getElementById("mfaObBande")) bandeau(); },60000);
+      clearTimeout(minuterie);
+      var ms=new Date(etat.exige_le).getTime()-(Date.now()+ecart)+2000;
+      if(ms>0 && ms<2147000000) minuterie=setTimeout(function(){ verifier(true); },ms);
+    }catch(e){}
+    finally{ enCours=false; }
+  }
+  window.mfaObligVerifier=verifier;
+  document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible") verifier(false); });
+  sb.auth.onAuthStateChange(function(evt){
+    if(evt==="SIGNED_OUT"){ retirer("mfaObBande"); retirer("mfaOblig"); etat=null; return; }
+    if(evt==="SIGNED_IN"||evt==="INITIAL_SESSION"||evt==="MFA_CHALLENGE_VERIFIED") setTimeout(function(){ verifier(true); },500);
+  });
 })();
 const AUDIT_APP="ca";
 /* =====================================================================
@@ -724,7 +864,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-14 · courriers signés";
+const CA_VERSION="2026-11-15 · double authentification obligatoire le 19/11";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1933,6 +2073,7 @@ function viewProprio(){
 
     <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Réglages techniques</h2><span class="l"></span></div>
     ${typeof carteMfaCA==="function"?carteMfaCA():""}
+    ${typeof carteMfaSuivi==="function"?carteMfaSuivi():""}
     ${!estProprioRetire()&&typeof carteAmeliorations==="function"?carteAmeliorations():""}
     ${typeof carteErreurCA==="function"?carteErreurCA():""}
     ${estProprioCA()?`<div class="card2"><h3 class="serif">Onglets</h3>
@@ -2143,6 +2284,8 @@ function viewAdmin(){
     ${revoques.length?`<div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Comptes révoqués</h2><span class="c">${revoques.length}</span><span class="l"></span></div>
     <p style="color:var(--ink-soft);font-size:13px;margin:0 0 10px">Ces personnes n'ont plus accès à l'espace et ne reçoivent aucun e-mail. Leurs votes et présences passés sont conservés.</p>
     ${revHtml}`:""}
+    <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Double authentification</h2><span class="l"></span></div>
+    ${carteMfaSuivi()}
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Bilans moraux</h2><span class="l"></span></div>
     <div class="compose"><h3 class="serif">${bilanEtat()==="ouvert"?"Collecte en cours":(bilanEtat()==="cloture"?"Campagne clôturée":"Fermé")}</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Chaque membre dépose un bilan <b>anonyme</b> sur les autres (ce qui a fonctionné / à améliorer). <b>Pendant la collecte, personne ne lit rien.</b> Après la clôture, seul le secrétariat lit les retours, prépare le texte et le publie aux membres.</p>
@@ -9224,6 +9367,8 @@ document.addEventListener("click", async e=>{
 /* Double authentification : facultative depuis le 14/11/2026 (doitMfa n'est plus utilisé). */
 function doitMfa(){ return !!(S.session && (estAdminCA() || (S.appEtat && S.appEtat.tresorier) || (S.tresoCA && S.tresoCA.id===S.session.id) || (S.session.admin && S.session.statut==="actif" && S.session.role!=="proprietaire"))); }
 function bandeauMfa(){
+  /* 15/11/2026 : remplacé par le bandeau « obligatoire » commun (compte à rebours). */
+  return "";
   /* Facultative : bandeau pour les membres du CA tant qu'elle n'est pas activée,
      plus un popup affiché une seule fois (par compte, sur cet appareil). */
   if(!(S.session && S.session.statut==="actif" && (S.session.role==="membre" || S.session.role==="owner"))) return "";
@@ -9253,7 +9398,7 @@ function carteMfaCA(){
     <p class="du">${M.actif
       ?`Votre compte demande un code à 6 chiffres (application d'authentification « ${esc(M.nom||"")} ») après le mot de passe, sur le CA, la Caisse et la Billetterie. Sans ce code, le serveur ne donne accès à aucune donnée.`
       :`Protégez le compte propriétaire : après le mot de passe, un code à 6 chiffres de votre téléphone (Google Authenticator, Microsoft Authenticator, Authy…) sera demandé sur le CA, la Caisse et la Billetterie.`}</p>
-    <div class="row-btn">${M.actif?`<button class="btn ghost sm" style="border-color:var(--red);color:var(--red)" data-action="mfa-desactiver">Désactiver</button>`:`<button class="btn sm" data-action="mfa-activer">Activer la double authentification</button>`}</div></div>`;
+    <div class="row-btn">${M.actif?(window.__mfaOblig&&window.__mfaOblig.concerne?`<span class="du">Obligatoire pour les membres du CA : elle ne peut plus être désactivée (téléphone perdu : remise à zéro par l'Admin).</span>`:`<button class="btn ghost sm" style="border-color:var(--red);color:var(--red)" data-action="mfa-desactiver">Désactiver</button>`):`<button class="btn sm" data-action="mfa-activer">Activer la double authentification</button>`}</div></div>`;
 }
 async function chargerMfaCA(){
   try{
@@ -9267,6 +9412,7 @@ document.addEventListener("click", async e=>{
   const el=e.target.closest("[data-action^='mfa-']"); if(!el||!sb) return;
   if(!S.session) return;
   try{
+    if(el.dataset.action==="mfa-activer" && window.mfaActiverObligatoire){ window.mfaActiverObligatoire(); return; }
     if(el.dataset.action==="mfa-activer"){
       await chargerMfaCA();
       for(const id of (S.mfa.brouillons||[])){ try{ await sb.auth.mfa.unenroll({factorId:id}); }catch(_){ } }
@@ -9315,6 +9461,59 @@ document.addEventListener("click", async e=>{
   }catch(err){ modaleInfo(String(err&&err.message||err)); }
 });
 
+
+/* =====================================================================
+   DOUBLE AUTHENTIFICATION — suivi pour l'Admin et le propriétaire (15/11/2026).
+   Liste des membres du CA (pas les coopté·es) : activée ou non, relance par mail,
+   remise à zéro (téléphone perdu). Tout passe par le serveur (mfa_suivi,
+   mfa_relancer, mfa_reinitialiser), qui note au Journal et prévient la personne.
+   ===================================================================== */
+async function chargerMfaSuivi(){
+  try{ const r=await sb.rpc("mfa_suivi"); if(r.error) throw r.error; S.mfaSuivi={data:r.data}; }
+  catch(e){ S.mfaSuivi={err:String(e&&e.message||e)}; }
+}
+function carteMfaSuivi(){
+  const M=S.mfaSuivi;
+  if(!M){ if(!S.mfaSuiviCharge){ S.mfaSuiviCharge=true; chargerMfaSuivi().then(()=>rendreEnPreservant()); }
+    return `<div class="card2"><h3 class="serif">🔐 Double authentification</h3><p class="du">Chargement…</p></div>`; }
+  if(M.err) return `<div class="card2"><h3 class="serif">🔐 Double authentification</h3><p class="du" style="color:var(--red)">${esc(M.err)}</p></div>`;
+  const L=(M.data&&M.data.membres)||[], ok=L.filter(m=>m.a_mfa).length, lim=M.data&&M.data.exige_le;
+  const apres=lim && Date.now()>=new Date(lim).getTime();
+  const limTxt=lim?new Date(new Date(lim).getTime()-60000).toLocaleString("fr-BE",{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"}):"";
+  const moi=S.session&&S.session.id;
+  const lignes=L.map(m=>`<div class="doc" style="cursor:default">
+      <span class="ic">${m.a_mfa?"✅":"⏳"}</span>
+      <span class="meta"><p class="dt">${esc(m.nom||"")}${m.id===moi?" (vous)":""}</p>
+        <p class="du">${esc(m.fonction||"")}${m.a_mfa?" · activée le "+esc(fmtQuand(m.active_le)):" · pas encore activée"}${!m.a_mfa&&m.relance_le?" · relancé·e le "+esc(fmtQuand(m.relance_le)):""}</p></span>
+      ${!m.a_mfa?`<button class="chip" data-action="mfas-relancer" data-id="${esc(m.id)}">✉ Relancer</button>`:""}
+      ${m.a_mfa&&m.id!==moi?`<button class="link" style="color:var(--red)" data-action="mfas-reset" data-id="${esc(m.id)}" data-nom="${esc(m.nom||"")}">Remettre à zéro</button>`:""}
+    </div>`).join("");
+  return `<div class="card2" style="border-left:4px solid var(--gold-dim)">
+    <h3 class="serif" style="margin-top:0">🔐 Double authentification <span class="badge ${ok===L.length?"ok":"open"}">${ok}/${L.length} activée${ok>1?"s":""}</span></h3>
+    <p class="du" style="margin:0 0 6px">${lim?(apres?"<b>Obligatoire</b> depuis le "+esc(limTxt.replace(/ \d.*$/,""))+" à minuit : sans elle, l'Espace CA et la Caisse affichent l'écran d'activation."
+      :"Obligatoire à partir de jeudi 00 h : à activer au plus tard le <b>"+esc(limTxt)+"</b>."):""}
+      « Relancer » envoie le guide par mail (une fois toutes les 6 h au plus). « Remettre à zéro » (téléphone perdu ou changé) supprime sa double authentification et déconnecte ses appareils : la personne la réactive à sa prochaine connexion. Tout est noté au Journal et la personne est prévenue par mail.</p>
+    <div class="row-btn" style="margin:4px 0 8px"><button class="btn ghost sm" data-action="mfas-maj">↻ Actualiser</button></div>
+    ${lignes||`<div class="empty">Aucun membre.</div>`}</div>`;
+}
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-action^='mfas-']"); if(!el || !sb || !S.session) return;
+  const a=el.dataset.action, id=el.dataset.id;
+  try{
+    if(a==="mfas-maj"){ await chargerMfaSuivi(); rendreEnPreservant(); return; }
+    if(a==="mfas-relancer"){
+      const r=await sb.rpc("mfa_relancer",{p_membre:id});
+      if(r.error){ modaleInfo("Relance non envoyée : "+r.error.message,"Double authentification"); return; }
+      await chargerMfaSuivi(); rendreEnPreservant(); modaleInfo("✓ Le guide d'activation a été envoyé par e-mail.","Relance envoyée"); return;
+    }
+    if(a==="mfas-reset"){
+      if(!(await modaleConfirm("Remettre à zéro la double authentification de "+(el.dataset.nom||"cette personne")+" ?\n\nÀ utiliser si elle a perdu ou changé de téléphone. Ses appareils seront déconnectés ; elle la réactivera à sa prochaine connexion. Elle sera prévenue par e-mail.","Remettre à zéro"))) return;
+      const r=await sb.rpc("mfa_reinitialiser",{p_membre:id});
+      if(r.error){ modaleInfo("Non effectué : "+r.error.message,"Double authentification"); return; }
+      await chargerMfaSuivi(); rendreEnPreservant(); modaleInfo("✓ Double authentification remise à zéro. La personne a été prévenue par e-mail.","Fait"); return;
+    }
+  }catch(err){ modaleInfo(String(err&&err.message||err),"Double authentification"); }
+});
 /* =====================================================================
    JOURNAL DE SÉCURITÉ — onglet du propriétaire (Admin › Journal).
    Lecture seule ; les lignes sont écrites par le serveur (script journal.sql).
