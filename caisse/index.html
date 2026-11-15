@@ -8866,7 +8866,7 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       requester_name: (pour ? pour.name : state.profile.name) || "",
       requester_position: (pour ? pour.position : state.profile.position) || "",
       expense_date: dateDem,
-      amount, object, category: "Paiement direct",
+      amount, object, category: catDirect(benef, object),
       kind: "direct", beneficiary: benef, pay_mode: mode,
       beneficiary_iban: (mode==="virement" && iban) ? iban : null,
       communication:    mode==="virement" ? comm : null,
@@ -10159,7 +10159,7 @@ async function fePayer(f, n, carte, b){
   const noteRef = ["Facture à échéance du " + fdate(e.date), f.reference ? "réf. " + f.reference : ""].filter(Boolean).join(" · ");
   const ligne = {
     user_id: f.member_id, requester_name: m.name || f.member_name || "", requester_position: m.position || "",
-    expense_date: datePaie, amount: feRond(e.montant), object: objet, category: "Paiement direct",
+    expense_date: datePaie, amount: feRond(e.montant), object: objet, category: catDirect(f.fournisseur, objet),
     kind: "direct", beneficiary: f.fournisseur || "", pay_mode: c.mode || "virement",
     communication: f.reference || null, note: noteRef,
     vat_rate: "NA", supplier_vat: "", tva_affectation: "taxable",
@@ -10599,6 +10599,11 @@ function soldeOuverture(an){
 }
 
 // ---- calculs de l'état des recettes et dépenses (regroupés au schéma normalisé) ----
+/* 15/11/2026 : factures de codes et syllabus (éditeurs juridiques, Presses universitaires) */
+const RE_CODES_SYLLABUS = /kluwer|die\s*keure|larcier|\bpub\b|presses\s+universitaires/i;
+const CAT_CODES = "Codes & syllabus";
+function estCodesSyllabus(i){ return i.category === CAT_CODES || RE_CODES_SYLLABUS.test(String(i.beneficiary||"") + " " + String(i.object||"")); }
+const catDirect = (benef, objet) => RE_CODES_SYLLABUS.test(String(benef||"") + " " + String(objet||"")) ? CAT_CODES : "Paiement direct";
 function comptaRD(an){
   const recs = (state.incomes||[]).filter(i => dansExercice(i.income_date, an) && !estOuverture(i));
   const recRub = {}; RUB_REC.forEach(r=>recRub[r]=0);
@@ -10613,8 +10618,14 @@ function comptaRD(an){
   const depDet = {}; RUB_DEP.forEach(r=>depDet[r]={});
   exps.forEach(e => { const r=rubDep(e.category); const m=Number(e.amount||0);
     depRub[r]+=m; const c=String(e.category||"Autre").trim()||"Autre"; depDet[r][c]=(depDet[r][c]||0)+m; });
-  if(rembs.length){ const r="Marchandises, services et biens divers"; const m=rembs.reduce((s,i)=>s+Number(i.amount||0),0);
-    depRub[r]+=m; depDet[r]["Remboursements aux membres / paiements directs"]=(depDet[r]["Remboursements aux membres / paiements directs"]||0)+m; }
+  // trois lignes, sans aucun nom : frais des membres, codes et syllabus, autres factures
+  if(rembs.length){ const r="Marchandises, services et biens divers";
+    const groupes = [
+      ["Remboursements aux membres (frais d'événements)", rembs.filter(i => i.kind !== "direct")],
+      ["Factures : codes et syllabus", rembs.filter(i => i.kind === "direct" && estCodesSyllabus(i))],
+      ["Factures : fonctionnement et activités", rembs.filter(i => i.kind === "direct" && !estCodesSyllabus(i))] ];
+    for(const [lib, l] of groupes){ if(!l.length) continue; const m=l.reduce((s,i)=>s+Number(i.amount||0),0);
+      depRub[r]+=m; depDet[r][lib]=(depDet[r][lib]||0)+m; } }
   const totDep = RUB_DEP.reduce((s,r)=>s+depRub[r],0);
 
   return { recRub, recDet, totRec, depRub, depDet, totDep, resultat: totRec-totDep, ouverture: soldeOuverture(an) };
