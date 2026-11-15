@@ -1279,7 +1279,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
       <div class="kpi done"><div class="eyebrow">Codes et syllabus</div><div class="n" id="o_codes">0 €</div></div>
       <div class="kpi done"><div class="eyebrow">Fonctionnement</div><div class="n" id="o_fonct">0 €</div></div>
       <div class="kpi done"><div class="eyebrow">Événements annulés</div><div class="n" id="o_annul">0 €</div></div>
-      <div class="kpi"><div class="eyebrow">Dépenses directes</div><div class="n" id="o_depenses">0 €</div></div>
+      <div class="kpi"><div class="eyebrow">Autres dépenses</div><div class="n" id="o_depenses">0 €</div></div>
       <div class="kpi" id="o_repriseCard"><div class="eyebrow">Dépense CA sortant</div><div class="n" id="o_reprise">0 €</div></div>
       <div class="kpi" id="o_sortiesCard"><div class="eyebrow">Total des sorties</div><div class="n" id="o_sorties">0 €</div></div>
       <div class="kpi"><div class="eyebrow">Solde initial</div><div class="n" id="o_initial">0 €</div></div>
@@ -1571,7 +1571,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
   <!-- dépenses directes -->
   <section id="viewExpenses" class="stack" hidden>
     <div class="kpis">
-      <div class="kpi"><div class="eyebrow">Dépenses directes</div><div class="n" id="e_count">0</div></div>
+      <div class="kpi"><div class="eyebrow">Autres dépenses</div><div class="n" id="e_count">0</div></div>
       <div class="kpi"><div class="eyebrow">Montant total</div><div class="n" id="e_total">0 €</div></div>
       <div class="kpi done"><div class="eyebrow">Cette année</div><div class="n" id="e_year">0 €</div></div>
       <div class="kpi done"><div class="eyebrow">Tout confondu avec remboursements</div><div class="n" id="e_grand">0 €</div></div>
@@ -4675,6 +4675,11 @@ const CAT_CA_SORTANT_OK = "Dépense CA sortant remboursée";
 const estReprise = e => { const c = String(e.category||"").trim();
   return c === CAT_CA_SORTANT || c === CAT_CA_SORTANT_OK; };
 const estRepriseDue = e => String(e.category||"").trim() === CAT_CA_SORTANT;
+/* 15/11/2026 : un prêt remboursé (ex. avance à la délégation) et les dépenses du CA sortant
+   remboursées ne sont ni des dépenses ni des recettes : hors résultat, mais toujours dans le solde. */
+const CAT_PRET = "Prêt", CAT_PRET_REMB = "Remboursement de prêt", CAT_REMB_RECU = "Remboursement reçu";
+const estPret = e => String(e.category||"").trim() === CAT_PRET;
+const estRecNeutre = i => { const c = String(i.category||"").trim(); return c === CAT_PRET_REMB || c === CAT_REMB_RECU; };
 // La carte est rangée dans le champ « moyen de paiement » : aucune colonne à ajouter en base.
 const CARTES_REPRISE = ["Sans carte", "Carte …0065", "Carte …1142"];
 const carteDe = e => {
@@ -7059,6 +7064,10 @@ function renderOverview(){
   const versTiers  = payes.filter(i => i.kind === "direct").reduce((s,i)=>s+Number(i.amount||0),0);
   const depAn = (state.expenses||[]).filter(e => dansAnnee(e.expense_date, an));
   const depDirectes = depAn.filter(e => !estReprise(e)).reduce((s,e)=>s+Number(e.amount||0),0);
+  const depAutres   = depAn.filter(e => !estReprise(e) && !estPret(e)).reduce((s,e)=>s+Number(e.amount||0),0);
+  // prêts et dépenses du CA sortant remboursés : sortis puis revenus, ni sortie ni recette affichée
+  const neutreSort  = depAn.filter(e => estPret(e) || String(e.category||"").trim() === CAT_CA_SORTANT_OK).reduce((s,e)=>s+Number(e.amount||0),0);
+  const neutreRec   = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && estRecNeutre(i)).reduce((s,i)=>s+Number(i.amount||0),0);
   const depReprise  = depAn.filter(estReprise).reduce((s,e)=>s+Number(e.amount||0),0);
   // reste dû par le CA sortant : les remboursements reçus ne comptent plus ici
   const depRepriseDue = depAn.filter(estRepriseDue).reduce((s,e)=>s+Number(e.amount||0),0);
@@ -7067,14 +7076,14 @@ function renderOverview(){
   // le report de l'exercice précédent n'est pas une recette de l'année : on l'isole
   const soldeInitial = (state.incomes||[]).filter(i => dansAnnee(i.income_date, an) && estOuverture(i))
                         .reduce((s,i)=>s+Number(i.amount||0),0);
-  const recettesAn  = totalRec - soldeInitial;
+  const recettesAn  = totalRec - soldeInitial - neutreRec;
 
   afficherLignesCompta("o", payes);
-  $("#o_depenses").textContent = euro(depDirectes);
+  $("#o_depenses").textContent = euro(depAutres);
   if($("#o_reprise")) $("#o_reprise").textContent = euro(depRepriseDue);
   // plus rien à rembourser : la carte disparaît du bilan
   if($("#o_repriseCard")) $("#o_repriseCard").hidden = !(depRepriseDue > 0);
-  $("#o_sorties").textContent  = euro(totalSort);
+  $("#o_sorties").textContent  = euro(totalSort - neutreSort);
   $("#o_initial").textContent  = euro(soldeInitial);
   $("#o_recettes").textContent = euro(recettesAn);
   if($("#o_sortiesCard")) $("#o_sortiesCard").style.borderTopColor = "var(--red)";
@@ -7116,7 +7125,7 @@ function renderOverview(){
   const du = som(list,"Validée") + som(list,"En attente");
   $("#o_info").textContent = (du ? "Reste à verser : " + euro(du) + " · " : "")
     + "Solde = " + euro(soldeInitial) + " (initial) + " + euro(recettesAn) + " (recettes) − "
-    + euro(totalSort) + " (sorties" + (depRepriseDue ? ", dont " + euro(depRepriseDue) + " restant dus par le CA sortant" : "") + ")";
+    + euro(totalSort - neutreSort) + " (sorties" + (depRepriseDue ? ", dont " + euro(depRepriseDue) + " restant dus par le CA sortant" : "") + ")";
   renderHoraires();
   const _solde = totalRec - totalSort;
   if($("#o_soldeLbl")) $("#o_soldeLbl").textContent = an === "all" ? "Solde de la caisse" : "Solde " + an + " (recettes − sorties)";
@@ -10550,7 +10559,7 @@ const rubRec = cat => {
 const RUB_DEP = ["Marchandises, services et biens divers","Rémunérations","Autres dépenses"];
 const rubDep = cat => {
   const c = String(cat||"").trim();
-  if(c==="Frais bancaires" || c==="Taxes & cotisations") return "Autres dépenses";
+  if(c==="Don" || c==="Dons" || c==="Taxes & cotisations") return "Autres dépenses";
   return "Marchandises, services et biens divers";
 };
 const SEUIL_TAXE_PATRIMONIALE = 50000;
@@ -10646,7 +10655,7 @@ async function demanderCategorie(benef, objet, montant, choixInitial){
   return ok ? (dlgSelectVal || null) : null;
 }
 function comptaRD(an){
-  const recs = (state.incomes||[]).filter(i => dansExercice(i.income_date, an) && !estOuverture(i));
+  const recs = (state.incomes||[]).filter(i => dansExercice(i.income_date, an) && !estOuverture(i) && !estRecNeutre(i));
   const recRub = {}; RUB_REC.forEach(r=>recRub[r]=0);
   const recDet = {}; RUB_REC.forEach(r=>recDet[r]={});
   recs.forEach(i => { const r=rubRec(i.category); const m=Number(i.amount||0);
@@ -10655,7 +10664,7 @@ function comptaRD(an){
     recDet[r][c]=(recDet[r][c]||0)+m; });
   const totRec = RUB_REC.reduce((s,r)=>s+recRub[r],0);
 
-  const exps = (state.expenses||[]).filter(e => dansExercice(e.expense_date, an));
+  const exps = (state.expenses||[]).filter(e => dansExercice(e.expense_date, an) && !estReprise(e) && !estPret(e));
   const rembs = (state.items||[]).filter(i => i.status==="Remboursée" && dansExercice(i.expense_date, an));
   const depRub = {}; RUB_DEP.forEach(r=>depRub[r]=0);
   const depDet = {}; RUB_DEP.forEach(r=>depDet[r]={});
