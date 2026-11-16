@@ -1066,6 +1066,16 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     </div>
 
     <div id="fe_tresoZone" class="stack" hidden>
+      <div class="card pad">
+        <div class="eyebrow">Pièces</div>
+        <h2 style="font-size:20px;margin:6px 0 10px">Joindre des factures (PDF)</h2>
+        <p class="hint" style="margin:0 0 12px">Sélectionnez tous les PDF d'un coup : chacun est lu et rattaché à la facture encodée
+        qui porte le même numéro, ou à défaut le même montant. Vérifiez l'aperçu, puis cliquez sur « Joindre ».</p>
+        <div class="attach">
+          <input type="file" id="fe_bulkFiles" multiple accept="application/pdf,.pdf">
+        </div>
+        <div id="fe_bulk" style="margin-top:12px" hidden></div>
+      </div>
       <details class="pliable" id="fe_commBox">
         <summary><div><b style="font-family:'Fraunces',serif;font-size:17px">Commission codes &amp; syllabus</b>
           <div class="resume" data-fe-commnoms></div></div></summary>
@@ -10166,6 +10176,111 @@ async function feLirePdf(plan){
 }
 $("#fe_f_pdf").addEventListener("change", () => feLirePdf(false));
 $("#fe_p_pdf").addEventListener("change", () => feLirePdf(true));
+
+/* ---------- joindre plusieurs PDF d'un coup (16/11/2026) ----------
+   Chaque PDF est lu (même lecteur que l'encodage) puis rattaché à une facture encodée :
+   1) même numéro de facture (chiffres identiques, ex. « FACT 39.390 » ↔ « 39390 ») ;
+   2) sinon même montant, s'il n'y a qu'une seule facture possible.
+   Rien n'est joint avant le clic sur « Joindre ». */
+let feBulk = [];
+const feChiffres = x => String(x || "").replace(/\D/g, "");
+function feRefDuPdf(lignes, r){
+  const txt = lignes.join("\n");
+  const m = /\b(?:FACT(?:URE)?|INV(?:OICE)?|FACTUUR)\.?\s*(?:N[°ºo]\.?\s*)?[:.]?\s*(\d[\d.\/\-]{2,}\d)/i.exec(txt);
+  return m ? m[0].replace(/\s+/g, " ").trim() : (r.reference || "");
+}
+function feAssocier(){
+  const dispo = state.factures || [];
+  const pris = new Set();
+  // 1) par numéro
+  feBulk.forEach(b => {
+    b.choix = "";
+    const jetons = new Set(b.lignes.join(" ").split(/\s+/).map(feChiffres).filter(x => x.length >= 4));
+    const f = dispo.find(f => !pris.has(f.id) && feChiffres(f.reference).length >= 4 && jetons.has(feChiffres(f.reference)));
+    if(f){ b.choix = f.id; b.par = "numéro"; pris.add(f.id); }
+  });
+  // 2) par montant, si une seule facture possible (de préférence sans PDF)
+  feBulk.forEach(b => {
+    if(b.choix || !b.montant) return;
+    let c = dispo.filter(f => !pris.has(f.id) && Math.abs(feTotal(f) - b.montant) < 0.005);
+    const sansPdf = c.filter(f => !(f.attachments || []).length);
+    if(sansPdf.length) c = sansPdf;
+    if(c.length === 1){ b.choix = c[0].id; b.par = "montant"; pris.add(c[0].id); }
+  });
+}
+function feBulkRender(){
+  const z = $("#fe_bulk"); if(!z) return;
+  if(!feBulk.length){ z.hidden = true; z.innerHTML = ""; return; }
+  const fs = (state.factures || []).slice().sort((a,b) => String(a.fournisseur||"").localeCompare(String(b.fournisseur||""), "fr") || feTotal(a) - feTotal(b));
+  const opt = sel => `<option value="">— ne pas joindre —</option>` + fs.map(f =>
+    `<option value="${esc(f.id)}"${f.id === sel ? " selected" : ""}>${esc([f.fournisseur, f.objet, f.reference, euro(feTotal(f))].filter(Boolean).join(" · "))}${(f.attachments || []).length ? " (PDF déjà joint)" : ""}</option>`).join("");
+  z.hidden = false;
+  z.innerHTML = `<div class="card" style="overflow:auto">` + feBulk.map((b, k) => {
+    const f = (state.factures || []).find(x => x.id === b.choix);
+    const ecart = f && b.montant && Math.abs(feTotal(f) - b.montant) >= 0.005;
+    return `<div class="row" style="cursor:default;align-items:center;grid-template-columns:1.2fr 1fr 2fr">
+      <div><div class="obj">${esc(b.nom)}</div><div class="meta">${b.erreur ? esc(b.erreur) : esc([b.ref || "n° non lu", b.montant ? euro(b.montant) : "montant non lu"].join(" · "))}</div></div>
+      <div class="meta" style="margin:0">${b.choix ? "Reconnue par " + esc(b.par || "choix") : "À choisir"}</div>
+      <div><select data-febulk="${k}" style="width:100%">${opt(b.choix)}</select>
+        ${ecart ? `<div class="hint" style="color:var(--red);margin-top:4px">Montant différent : PDF ${esc(euro(b.montant))}, facture encodée ${esc(euro(feTotal(f)))}. Corrigez la facture après l'avoir jointe.</div>` : ""}</div>
+    </div>`; }).join("") + `</div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="btn sm" id="fe_bulkGo">Joindre</button>
+    <button type="button" class="btn ghost sm" id="fe_bulkAnnuler">Annuler</button></div>`;
+}
+if($("#fe_bulkFiles")) $("#fe_bulkFiles").addEventListener("change", async e => {
+  const files = [...(e.target.files || [])];
+  if(!files.length) return;
+  const z = $("#fe_bulk"); z.hidden = false; z.innerHTML = `<p class="hint">Lecture de ${files.length} PDF…</p>`;
+  feBulk = [];
+  let lib = null;
+  try{ lib = await fePdfLib(); }catch(err){ z.innerHTML = `<p class="hint">Lecteur PDF indisponible : ${esc(err.message || err)}</p>`; return; }
+  for(const file of files){
+    const b = { file, nom: file.name, lignes: [], montant: null, ref: "", choix: "" };
+    try{
+      b.lignes = await feLignesDepuis(lib, new Uint8Array(await file.arrayBuffer()));
+      const r = feAnalyser(b.lignes, []);
+      if(!r.texte) b.erreur = "PDF sans texte lisible (scan) : choisissez la facture";
+      b.montant = r.montant ? feRond(r.montant) : null;
+      b.ref = feRefDuPdf(b.lignes, r);
+    }catch(err){ b.erreur = "Lecture impossible : choisissez la facture"; }
+    feBulk.push(b);
+  }
+  feAssocier();
+  feBulkRender();
+});
+if($("#fe_bulk")) $("#fe_bulk").addEventListener("change", e => {
+  const s = e.target.closest("[data-febulk]"); if(!s) return;
+  const b = feBulk[Number(s.dataset.febulk)]; if(!b) return;
+  b.choix = s.value; b.par = s.value ? "choix" : "";
+  feBulkRender();
+});
+if($("#fe_bulk")) $("#fe_bulk").addEventListener("click", async e => {
+  if(e.target.closest("#fe_bulkAnnuler")){ feBulk = []; $("#fe_bulkFiles").value = ""; return feBulkRender(); }
+  const go = e.target.closest("#fe_bulkGo"); if(!go || !isTreso()) return;
+  const lot = feBulk.filter(b => b.choix);
+  if(!lot.length) return toast("Aucune facture choisie.");
+  const ids = lot.map(b => b.choix);
+  if(new Set(ids).size !== ids.length) return toast("Deux PDF sont rattachés à la même facture : corrigez l'aperçu.");
+  go.disabled = true; go.textContent = "Envoi…";
+  let ok = 0; const echecs = [];
+  const utilises = new Set((state.items || []).flatMap(i => piecesDe(i).map(p => p.path)));
+  for(const b of lot){
+    const f = (state.factures || []).find(x => x.id === b.choix); if(!f) continue;
+    try{
+      const pieces = await feTeleverser(b.file, f.type === "plan" ? "Plan de paiement" : "Facture");
+      const maj = { attachments: pieces };
+      if(!f.reference && b.ref) maj.reference = b.ref.slice(0, 60);
+      const { error } = await sb.from(FE_TABLE).update(maj).eq("id", f.id);
+      if(error){ try{ await sb.storage.from("justificatifs").remove(pieces.map(p => p.path)); }catch(_){ __errSilence(_); } throw error; }
+      const aRetirer = (f.attachments || []).map(p => p.path).filter(p => !utilises.has(p));
+      if(aRetirer.length){ try{ await sb.storage.from("justificatifs").remove(aRetirer); }catch(_){ __errSilence(_); } }
+      ok++;
+    }catch(err){ echecs.push(b.nom + " (" + (err.message || err) + ")"); }
+  }
+  feBulk = []; $("#fe_bulkFiles").value = "";
+  await refresh(); feBulkRender();
+  toast(ok + " PDF joint(s)" + (echecs.length ? ", " + echecs.length + " en échec : " + echecs.slice(0,2).join(" · ") : "."));
+});
 
 /* ---------- actions sur une fiche ---------- */
 const feDe = el => { const c = el.closest("[data-fe-id]"); return c ? (state.factures || []).find(f => f.id === c.dataset.feId) : null; };
