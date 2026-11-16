@@ -1076,6 +1076,20 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
         </div>
         <div id="fe_bulk" style="margin-top:12px" hidden></div>
       </div>
+      <details class="pliable" id="fe_sepaBox">
+        <summary><div><b style="font-family:'Fraunces',serif;font-size:17px">Fichier de paiement (SEPA)</b>
+          <div class="resume">Payer plusieurs factures en une fois : fichier à importer dans la banque</div></div></summary>
+        <div class="stack" style="gap:12px;margin-top:14px">
+          <p class="hint" style="margin:0">Cochez les échéances à payer. Le fichier crée un virement par échéance vers l'IBAN du fournisseur,
+          avec le n° de facture en communication. Après le virement, marquez chaque échéance « payée » dans sa facture.</p>
+          <div id="fe_sepaListe"></div>
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+            <div class="field" style="margin:0"><label for="fe_sepaDate">Date d'exécution</label><input type="date" id="fe_sepaDate"></div>
+            <button type="button" class="btn sm" id="fe_sepaGo">Télécharger le fichier SEPA</button>
+            <span class="hint" id="fe_sepaTotal"></span>
+          </div>
+        </div>
+      </details>
       <details class="pliable" id="fe_commBox">
         <summary><div><b style="font-family:'Fraunces',serif;font-size:17px">Commission codes &amp; syllabus</b>
           <div class="resume" data-fe-commnoms></div></div></summary>
@@ -1102,6 +1116,8 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
           <div class="grid2">
             <div class="field"><label for="fe_f_fourn">Fournisseur</label>
               <input type="text" id="fe_f_fourn" maxlength="80" placeholder="Ex. Kluwer" required></div>
+            <div class="field"><label for="fe_f_iban">IBAN du fournisseur</label>
+              <input type="text" id="fe_f_iban" maxlength="42" placeholder="BE00 0000 0000 0000" autocomplete="off"></div>
           </div>
           <div class="grid2">
             <div class="field"><label for="fe_f_objet">Objet</label>
@@ -1139,6 +1155,8 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
           <div class="grid2">
             <div class="field"><label for="fe_p_fourn">Fournisseur</label>
               <input type="text" id="fe_p_fourn" maxlength="80" placeholder="Ex. Larcier" required></div>
+            <div class="field"><label for="fe_p_iban">IBAN du fournisseur</label>
+              <input type="text" id="fe_p_iban" maxlength="42" placeholder="BE00 0000 0000 0000" autocomplete="off"></div>
           </div>
           <div class="grid2">
             <div class="field"><label for="fe_p_objet">Objet</label>
@@ -9440,6 +9458,7 @@ function feCorps(f){
       <span style="display:inline-flex;gap:6px;margin-left:6px"><select data-fe-cosel style="width:auto;padding:4px 8px"><option value="">+ Ajouter un membre</option>${(state.members || []).filter(m => m.approved !== false && !feConcernes(f).includes(m.id)).sort((a,b) => String(a.name||"").localeCompare(String(b.name||""), "fr")).map(m => `<option value="${esc(m.id)}">${esc(m.name || m.email || "Membre")}</option>`).join("")}</select><button type="button" class="btn ghost sm" data-fe-coadd>Ajouter</button></span></div>`
       : (feConcernes(f).length > 1 ? `<div><span>Commission partagée</span>${feConcernes(f).map(id => esc(feNomDe(id))).join(", ")}</div>` : "")}
     <div><span>Fournisseur</span>${esc(f.fournisseur || "—")}</div>
+    ${T ? `<div><span>IBAN du fournisseur</span>${f.fournisseur_iban ? esc(ibanFormate(f.fournisseur_iban)) : "à compléter (bouton « Modifier »)"}</div>` : ""}
     ${f.reference ? `<div><span>N° / référence</span>${esc(f.reference)}</div>` : ""}
     <div><span>Montant total</span>${euro(total)}</div>
     ${T ? `<div><span>E-mail au membre</span>${f.sent_at ? "envoyé le " + fdate(String(f.sent_at).slice(0,10)) + (f.reminded_at ? " · rappel le " + fdate(String(f.reminded_at).slice(0,10)) : "") : "pas encore envoyé"}</div>` : ""}
@@ -9475,6 +9494,7 @@ function feCorps(f){
 }
 
 function renderFactures(){
+  try{ if($("#fe_sepaBox") && $("#fe_sepaBox").open) setTimeout(feSepaRender, 0); }catch(_){ __errSilence(_); }
   const tab = $("#tabFactures");
   if(!tab || !state.profile) return;
   const liste = feVisibles();
@@ -9712,7 +9732,7 @@ function feModifierInfos(f){
     const champ = (k, l, v, max) => `<div class="field" style="margin-bottom:10px"><label>${l}</label><input type="text" data-fm="${k}" maxlength="${max}" value="${esc(v || "")}"></div>`;
     ov.innerHTML = `<div class="sheetd" style="max-width:480px"><div class="sb" style="padding:24px">
       <h2 style="font-size:20px;margin:0 0 12px">Modifier ${f.estimation ? "l'estimation" : "la facture"}</h2>
-      ${champ("fournisseur", "Fournisseur", f.fournisseur, 80)}${champ("objet", "Objet", f.objet, 80)}${champ("reference", "N° / référence", f.reference, 60)}
+      ${champ("fournisseur", "Fournisseur", f.fournisseur, 80)}${champ("objet", "Objet", f.objet, 80)}${champ("reference", "N° / référence", f.reference, 60)}${champ("iban", "IBAN du fournisseur", f.fournisseur_iban, 42)}
       <div class="field" style="margin-bottom:10px"><label>Message au membre</label><textarea data-fm="note" maxlength="400" rows="3">${esc(f.note || "")}</textarea></div>
       <p class="hint" style="margin:0 0 10px">Dates et montants : directement dans les lignes de la facture.</p>
       <div class="err" data-fm-err hidden></div>
@@ -9724,8 +9744,11 @@ function feModifierInfos(f){
       if(e.target === ov || e.target.closest("[data-fm-non]")) return fin(null);
       if(!e.target.closest("[data-fm-oui]")) return;
       const v = k => ov.querySelector(`[data-fm="${k}"]`).value.trim();
-      if(!v("fournisseur")){ const er = ov.querySelector("[data-fm-err]"); er.textContent = "Indiquez le fournisseur."; er.hidden = false; return; }
-      fin({ fournisseur: v("fournisseur"), objet: v("objet") || null, reference: v("reference") || null, note: v("note") || null });
+      const er = ov.querySelector("[data-fm-err]");
+      if(!v("fournisseur")){ er.textContent = "Indiquez le fournisseur."; er.hidden = false; return; }
+      const iban = ibanPropre(v("iban"));
+      if(iban && !ibanValide(iban)){ er.textContent = "L'IBAN du fournisseur n'est pas valide."; er.hidden = false; return; }
+      fin({ fournisseur: v("fournisseur"), objet: v("objet") || null, reference: v("reference") || null, fournisseur_iban: iban || null, note: v("note") || null });
     };
   });
 }
@@ -9800,11 +9823,13 @@ $("#fe_factForm").addEventListener("submit", async e => {
   if(!fourn) return erreurForm("#fe_f_err", "Indiquez le fournisseur.");
   if(!(montant > 0)) return erreurForm("#fe_f_err", "Indiquez un montant" + (estim ? " estimé" : "") + " supérieur à 0.");
   if(!date) return erreurForm("#fe_f_err", "Indiquez la date limite de paiement.");
+  const ibanF = ibanPropre($("#fe_f_iban").value);
+  if(ibanF && !ibanValide(ibanF)) return erreurForm("#fe_f_err", "L'IBAN du fournisseur n'est pas valide.");
   const qui = await feResoudreMembres("f"); if(!qui) return;
   if(qui.err) return erreurForm("#fe_f_err", qui.err);
   await feCreer({
     type: "facture", membre: qui.membre, co: qui.co, fournisseur: fourn, estimation: !!($("#fe_f_estim") && $("#fe_f_estim").checked),
-    objet: $("#fe_f_objet").value.trim(), reference: $("#fe_f_ref").value.trim(),
+    objet: $("#fe_f_objet").value.trim(), reference: $("#fe_f_ref").value.trim(), iban: ibanF,
     note: $("#fe_f_note").value.trim(), echeances: [{ date, montant }],
     fichier: $("#fe_f_pdf").files[0], envoyer: $("#fe_f_envoyer").checked,
     btn, errSel: "#fe_f_err", form: $("#fe_factForm"), boite: $("#fe_factBox")
@@ -9886,11 +9911,13 @@ $("#fe_planForm").addEventListener("submit", async e => {
   const n = ech.findIndex(l => !l.date || !(l.montant > 0));
   if(n >= 0) return erreurForm("#fe_p_err", `Échéance ${n+1} : indiquez une date et un montant supérieur à 0.`);
   ech.sort((a,b) => a.date.localeCompare(b.date));
+  const ibanP = ibanPropre($("#fe_p_iban").value);
+  if(ibanP && !ibanValide(ibanP)) return erreurForm("#fe_p_err", "L'IBAN du fournisseur n'est pas valide.");
   const qui = await feResoudreMembres("p"); if(!qui) return;
   if(qui.err) return erreurForm("#fe_p_err", qui.err);
   const ok = await feCreer({
     type: "plan", membre: qui.membre, co: qui.co, fournisseur: fourn,
-    objet: $("#fe_p_objet").value.trim(), reference: $("#fe_p_ref").value.trim(),
+    objet: $("#fe_p_objet").value.trim(), reference: $("#fe_p_ref").value.trim(), iban: ibanP,
     note: $("#fe_p_note").value.trim(), echeances: ech,
     fichier: $("#fe_p_pdf").files[0], envoyer: $("#fe_p_envoyer").checked,
     btn, errSel: "#fe_p_err", form: $("#fe_planForm"), boite: $("#fe_planBox")
@@ -9908,6 +9935,7 @@ async function feCreer(o){
     const ligne = {
       type: o.type, member_id: o.membre.id, member_name: o.membre.name || "",
       fournisseur: o.fournisseur, objet: o.objet || null, reference: o.reference || null,
+      fournisseur_iban: o.iban || null,
       montant: feRond(o.echeances.reduce((s,x) => s + x.montant, 0)),
       echeances: o.echeances.map(x => ({ date: x.date, montant: feRond(x.montant), paid_at: null, request_id: null })),
       attachments: pieces, note: o.note || null, created_by: state.profile.id
@@ -10048,6 +10076,10 @@ function feAnalyser(lignes, connus){
     }
     if(res.reference) break;
   }
+  // IBAN du fournisseur (jamais celui du BE)
+  const ibans = (txt.toUpperCase().match(/\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,4})?\b/g) || [])
+    .map(x => x.replace(/\s/g, "")).filter(x => x !== DBTR_IBAN && ibanValide(x));
+  if(ibans.length) res.iban = ibans[0];
   const cs = /(?:\+{3}|\*{3})\s*(\d{3})\s*\/\s*(\d{4})\s*\/\s*(\d{5})\s*(?:\+{3}|\*{3})/.exec(txt);
   if(cs) res.communication = `+++${cs[1]}/${cs[2]}/${cs[3]}+++`;
 
@@ -10146,6 +10178,8 @@ async function feLirePdf(plan){
   if(ref) feRemplir(P + "ref", ref);
   note(!!r.reference, "N°", r.reference, "n° de facture");
   if(r.communication) trouve.push("communication <b>" + esc(r.communication) + "</b>");
+  if(r.iban){ feRemplir(P + "iban", ibanFormate(r.iban)); trouve.push("IBAN <b>" + esc(ibanFormate(r.iban)) + "</b>"); }
+  else if(!$(P + "iban").value) feIbanConnu(P);
 
   if(plan){
     const ech = r.echeances && r.echeances.length >= 2 ? r.echeances : null;
@@ -10176,6 +10210,116 @@ async function feLirePdf(plan){
 }
 $("#fe_f_pdf").addEventListener("change", () => feLirePdf(false));
 $("#fe_p_pdf").addEventListener("change", () => feLirePdf(true));
+
+/* ---------- IBAN du fournisseur (16/11/2026) ---------- */
+// IBAN déjà connu pour ce fournisseur : autre facture, ou paiement direct passé au même nom
+function feIbanDe(fourn){
+  const n = slug(String(fourn || "").trim()); if(!n) return "";
+  const f = (state.factures || []).find(x => slug(String(x.fournisseur || "").trim()) === n && ibanValide(x.fournisseur_iban));
+  if(f) return ibanPropre(f.fournisseur_iban);
+  const r = (state.items || []).find(i => i.kind === "direct" && slug(String(i.beneficiary || "").trim()) === n && ibanValide(i.beneficiary_iban));
+  return r ? ibanPropre(r.beneficiary_iban) : "";
+}
+function feIbanConnu(P){
+  const el = $(P + "iban"); if(!el || el.value) return;
+  const i = feIbanDe($(P + "fourn").value);
+  if(i){ el.value = ibanFormate(i); el.classList.add("fe-auto"); }
+}
+["#fe_f_", "#fe_p_"].forEach(P => { const el = $(P + "fourn"); if(el) el.addEventListener("change", () => feIbanConnu(P)); });
+
+/* ---------- fichier de paiement SEPA des factures à échéance (16/11/2026) ----------
+   Liste les échéances à payer, le trésorier coche, choisit la date d'exécution et télécharge
+   un fichier pain.001.001.03 à importer dans la banque. Une ligne par échéance sur l'extrait.
+   L'échéance garde la date d'export (« exporte_le ») pour éviter un double paiement.
+   Le paiement reste à marquer « payé » dans la facture une fois le virement passé. */
+const commStructuree = v => { const m = /(\d{3})\D?(\d{4})\D?(\d{5})/.exec(String(v || "").includes("+++") || String(v || "").includes("***") ? v : "");
+  return m ? m[1] + m[2] + m[3] : ""; };
+function feSepaLignes(){
+  const out = [];
+  (state.factures || []).filter(f => !f.estimation).forEach(f => {
+    feEchs(f).forEach((e, n) => { if(!e.paid_at) out.push({ f, e, n, cle: f.id + "#" + n,
+      iban: ibanPropre(f.fournisseur_iban || feIbanDe(f.fournisseur)) }); });
+  });
+  return out.sort((a,b) => String(a.e.date).localeCompare(String(b.e.date)));
+}
+state.feSepaCoche = state.feSepaCoche || null;
+function feSepaRender(){
+  const z = $("#fe_sepaListe"); if(!z) return;
+  const l = feSepaLignes();
+  if(state.feSepaCoche === null) state.feSepaCoche = new Set(l.filter(x => ibanValide(x.iban) && !x.e.exporte_le).map(x => x.cle));
+  if(!l.length){ z.innerHTML = `<p class="hint" style="margin:0">Aucune échéance à payer.</p>`; $("#fe_sepaTotal").textContent = ""; return; }
+  z.innerHTML = `<div class="card" style="overflow:auto;max-height:360px">` + l.map(x => {
+    const ok = ibanValide(x.iban);
+    return `<label class="row" style="cursor:pointer;align-items:center;grid-template-columns:28px 1fr auto auto">
+      <input type="checkbox" data-fesepa="${esc(x.cle)}"${state.feSepaCoche.has(x.cle) && ok ? " checked" : ""}${ok ? "" : " disabled"}>
+      <div><div class="obj">${esc([x.f.fournisseur, x.f.objet].filter(Boolean).join(" — "))}${x.f.reference ? " · " + esc(x.f.reference) : ""}</div>
+        <div class="meta">avant le ${fdate(x.e.date)} · ${ok ? esc(ibanFormate(x.iban)) : "<b style='color:var(--red)'>IBAN manquant : « Modifier » la facture</b>"}${x.e.exporte_le ? ` · <span style="color:#c47f17">⚠ déjà dans un fichier le ${esc(fdate(String(x.e.exporte_le).slice(0,10)))}</span>` : ""}</div></div>
+      <div></div><div class="amt">${euro(x.e.montant)}</div></label>`; }).join("") + `</div>`;
+  const sel = l.filter(x => state.feSepaCoche.has(x.cle) && ibanValide(x.iban));
+  $("#fe_sepaTotal").textContent = sel.length ? sel.length + " virement(s) · " + euro(sel.reduce((s,x) => s + Number(x.e.montant || 0), 0)) : "";
+}
+function feSepaXml(lignes, dateExec){
+  const now = new Date(), p = n => String(n).padStart(2,"0");
+  const dttm = now.getFullYear()+"-"+p(now.getMonth()+1)+"-"+p(now.getDate())+"T"+p(now.getHours())+":"+p(now.getMinutes())+":"+p(now.getSeconds());
+  const msgId = "BEFACT" + now.getTime();
+  const ctrl = (lignes.reduce((s,x) => s + cents(x.e.montant), 0) / 100).toFixed(2);
+  const tx = lignes.map((x, n) => {
+    const ref = x.f.reference || x.f.objet || x.f.fournisseur || "Facture";
+    const scor = commStructuree(x.f.reference);
+    const e2e = (sepaTxt(ref).replace(/\s/g,"") || "FACT").slice(0, 30) + (feEchs(x.f).length > 1 ? "-" + (x.n + 1) : "");
+    const rmt = scor
+      ? "        <RmtInf><Strd><CdtrRefInf><Tp><CdOrPrtry><Cd>SCOR</Cd></CdOrPrtry><Issr>BBA</Issr></Tp><Ref>" + scor + "</Ref></CdtrRefInf></Strd></RmtInf>\n"
+      : "        <RmtInf><Ustrd>" + xmlEsc(sepaTxt(ref + (feEchs(x.f).length > 1 ? " echeance " + (x.n + 1) : "")).slice(0, 140)) + "</Ustrd></RmtInf>\n";
+    return "      <CdtTrfTxInf>\n"
+      + "        <PmtId><EndToEndId>" + xmlEsc(e2e.slice(0, 35)) + "</EndToEndId></PmtId>\n"
+      + "        <Amt><InstdAmt Ccy=\"EUR\">" + montantSepa(x.e.montant) + "</InstdAmt></Amt>\n"
+      + "        <Cdtr><Nm>" + xmlEsc(nomClean(x.f.fournisseur || "Fournisseur")) + "</Nm></Cdtr>\n"
+      + "        <CdtrAcct><Id><IBAN>" + xmlEsc(x.iban) + "</IBAN></Id></CdtrAcct>\n"
+      + rmt + "      </CdtTrfTxInf>";
+  }).join("\n");
+  return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    + "<Document xmlns=\"urn:iso:std:iso:20022:tech:xsd:pain.001.001.03\">\n  <CstmrCdtTrfInitn>\n    <GrpHdr>\n"
+    + "      <MsgId>" + msgId + "</MsgId>\n      <CreDtTm>" + dttm + "</CreDtTm>\n"
+    + "      <NbOfTxs>" + lignes.length + "</NbOfTxs>\n      <CtrlSum>" + ctrl + "</CtrlSum>\n"
+    + "      <InitgPty><Nm>" + xmlEsc(sepaTxt(DBTR_NAME)) + "</Nm></InitgPty>\n    </GrpHdr>\n    <PmtInf>\n"
+    + "      <PmtInfId>" + msgId + "</PmtInfId>\n      <PmtMtd>TRF</PmtMtd>\n      <BtchBookg>false</BtchBookg>\n"
+    + "      <NbOfTxs>" + lignes.length + "</NbOfTxs>\n      <CtrlSum>" + ctrl + "</CtrlSum>\n"
+    + "      <PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>\n      <ReqdExctnDt>" + dateExec + "</ReqdExctnDt>\n"
+    + "      <Dbtr><Nm>" + xmlEsc(sepaTxt(DBTR_NAME)) + "</Nm></Dbtr>\n"
+    + "      <DbtrAcct><Id><IBAN>" + DBTR_IBAN + "</IBAN></Id></DbtrAcct>\n"
+    + "      <DbtrAgt><FinInstnId><Othr><Id>NOTPROVIDED</Id></Othr></FinInstnId></DbtrAgt>\n      <ChrgBr>SLEV</ChrgBr>\n"
+    + tx + "\n    </PmtInf>\n  </CstmrCdtTrfInitn>\n</Document>\n";
+}
+if($("#fe_sepaBox")) $("#fe_sepaBox").addEventListener("toggle", () => { if($("#fe_sepaBox").open){ state.feSepaCoche = null; if(!$("#fe_sepaDate").value) $("#fe_sepaDate").value = dateLocale(); feSepaRender(); } });
+if($("#fe_sepaListe")) $("#fe_sepaListe").addEventListener("change", e => {
+  const c = e.target.closest("[data-fesepa]"); if(!c) return;
+  if(c.checked) state.feSepaCoche.add(c.dataset.fesepa); else state.feSepaCoche.delete(c.dataset.fesepa);
+  feSepaRender();
+});
+if($("#fe_sepaGo")) $("#fe_sepaGo").onclick = async () => {
+  if(!isTreso()) return;
+  const sel = feSepaLignes().filter(x => state.feSepaCoche && state.feSepaCoche.has(x.cle) && ibanValide(x.iban));
+  if(!sel.length) return toast("Cochez au moins une échéance avec un IBAN valide.");
+  const dateExec = $("#fe_sepaDate").value || dateLocale();
+  if(dateExec < dateLocale()) return toast("La date d'exécution ne peut pas être passée.");
+  const deja = sel.filter(x => x.e.exporte_le);
+  if(deja.length && !await demander("Déjà dans un fichier", deja.length + " échéance(s) figurent déjà dans un fichier de paiement. "
+    + "Si ce fichier a été importé dans la banque, vous risquez un double paiement.", { bouton: "Générer quand même" })) return;
+  telechargerFichier("virements-factures-" + dateLocale() + ".xml", feSepaXml(sel, dateExec), "application/xml");
+  // trace de l'export sur chaque échéance
+  const maintenant = new Date().toISOString(); let rates = 0;
+  const parFacture = new Map(); sel.forEach(x => { if(!parFacture.has(x.f.id)) parFacture.set(x.f.id, { f: x.f, n: [] }); parFacture.get(x.f.id).n.push(x.n); });
+  for(const { f, n } of parFacture.values()){
+    const ech = feEchs(f).map((e, k) => n.includes(k) ? { ...e, exporte_le: maintenant } : e);
+    const { error } = await sb.from(FE_TABLE).update({ echeances: ech }).eq("id", f.id);
+    if(error) rates++; else f.echeances = ech;
+  }
+  state.feSepaCoche = null; feSepaRender();
+  dire("Fichier de paiement créé ✓", sel.length + " virement(s), " + euro(sel.reduce((s,x) => s + Number(x.e.montant || 0), 0))
+    + ", exécution le " + fdate(dateExec) + ".\n\nImportez le fichier dans la banque (ING : Virements › Importer un fichier), signez, "
+    + "puis marquez chaque échéance « payée » dans sa facture une fois le virement passé."
+    + (rates ? "\n\n⚠ " + rates + " facture(s) n'ont pas pu garder la trace de l'export." : ""));
+};
 
 /* ---------- joindre plusieurs PDF d'un coup (16/11/2026) ----------
    Chaque PDF est lu (même lecteur que l'encodage) puis rattaché à une facture encodée :
@@ -10345,7 +10489,7 @@ $("#fe_lists").addEventListener("click", async e => {
     const { error } = await sb.from(FE_TABLE).update(rep).eq("id", f.id);
     if(error) return dire("Modification impossible", "Erreur : " + error.message);
     Object.assign(f, rep); renderFactures();
-    return dire("Modifications enregistrées ✓", "Fournisseur, objet, référence et message mis à jour. Les dates et montants se modifient directement dans les lignes de la facture.");
+    return dire("Modifications enregistrées ✓", "Fournisseur, objet, référence, IBAN et message mis à jour. Les dates et montants se modifient directement dans les lignes de la facture.");
   }
   if(b.hasAttribute("data-fe-coadd") || b.hasAttribute("data-fe-codel")){
     const ajout = b.hasAttribute("data-fe-coadd");
@@ -10448,7 +10592,7 @@ async function fePayer(f, n, carte, b){
   const ligne = {
     user_id: f.member_id, requester_name: m.name || f.member_name || "", requester_position: m.position || "",
     expense_date: datePaie, amount: feRond(e.montant), object: objet, category: catF,
-    kind: "direct", beneficiary: f.fournisseur || "", pay_mode: c.mode || "virement",
+    kind: "direct", beneficiary: f.fournisseur || "", beneficiary_iban: f.fournisseur_iban || null, pay_mode: c.mode || "virement",
     communication: f.reference || null, note: noteRef,
     vat_rate: "NA", supplier_vat: "", tva_affectation: "taxable",
     attachments: Array.isArray(f.attachments) ? f.attachments : [],
