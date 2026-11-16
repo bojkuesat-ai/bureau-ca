@@ -1,6 +1,6 @@
 # CONTEXTE — à lire en premier (nouvelle conversation)
 
-Dernière mise à jour : 15/11/2026 (16 h 30). Ce fichier résume l'état des apps et les règles de travail.
+Dernière mise à jour : 16/11/2026 (19 h 30). Ce fichier résume l'état des apps et les règles de travail.
 Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de passe).
 
 ## 1. Règles de travail (préférences du propriétaire, Esat)
@@ -33,7 +33,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 
 - **Supabase** : projet `mlgzdfyqjhvyubrywuim` (base, Auth, fonctions Edge, `pg_cron`, `pg_net`).
 - **Publication** : GitHub Pages (`https://bojkuesat-ai.github.io/bureau-ca/`). Cache d'environ 10 minutes ; en cas de doute, ajouter `?v=…`.
-- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-15 · fin de mandat programmée »).
+- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-16 · simulation budget »).
 
 ## 3. Rôles et droits
 
@@ -105,6 +105,12 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - **Onglets désactivables** dans Admin (`ONGLETS_OPTIONNELS`, `ca_meta.onglets_off`) : Organigramme et Contacts **désactivés**.
 - Le regroupement des onglets CA en rubriques a été **écarté** par Esat.
 - **✒ Courriers signés** (activé par défaut, coupable dans Admin) : tout membre du CA (pas les cooptés) tape un courrier ou joint un PDF/Word/PPT, le signe (mot de passe + code), envoi à tout le CA. Qualité lue sur le serveur (fonction CA + « Trésorerie de la Caisse » si trésorier). Table `ca_courriers`, `courrier_signer`, `courrier_finaliser`, code au registre (type `courrier`).
+
+## 9 bis. Simulation budget (16/11)
+
+- Onglet **€ Simulation budget** de l'Espace CA, **désactivé par défaut** : Admin › Simulation budget (`ca_meta.simu_budget_actif`, fonction `simu_budget_activer`).
+- Calcul serveur `simu_budget_calcul(p_montant)` : trésorerie libre = solde de la caisse (ASBL, hors Novelles) − factures à échéance non payées − estimations − reste des budgets approuvés ouverts − remboursements en cours hors budget. Budgets **clôturés ou gelés** (réserve suspensive non levée) : seules les demandes déjà en cours comptent.
+- Faisable si montant ≤ **20 %** de la trésorerie libre. Faisable : PDF aux membres du CA (Budget-BE). Pas faisable : mail au trésorier uniquement (`caisse_config.treso_email`). Envoi après confirmation.
 
 ## 10. Fin de mandat programmée — 01/07/2027
 

@@ -864,7 +864,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-15 · fin de mandat programmée";
+const CA_VERSION="2026-11-16 · simulation budget";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1532,7 +1532,7 @@ function ongletActif(k){ return ongletsOff().indexOf(k)<0; }
 function ongletsOff(){ return (S.meta&&Array.isArray(S.meta.ongletsOff))?S.meta.ongletsOff:[]; }
 /* Notes d'un point : le secrétariat partout, chaque membre seulement sous son propre point. */
 function peutNoterPoint(pt){ const me=S.session; if(!me||!pt) return false; return estSecretaire() || (!!pt.parId && pt.parId===me.id); }
-async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; S.meta.ongletsOff=Array.isArray(data.onglets_off)?data.onglets_off:[]; S.meta.cesActif=(data.ces_actif!==false); S.meta.erreurCa=data.erreur_ca||""; S.meta.salleResp=Array.isArray(data.salle_resp)?data.salle_resp:[]; S.meta.salleCharte=Array.isArray(data.salle_charte)?data.salle_charte:null; S.meta.salleFermetures=Array.isArray(data.salle_fermetures)?data.salle_fermetures:[]; S.meta.erreurCaisse=data.erreur_caisse||""; S.meta.erreurBillets=data.erreur_billets||""; } }catch(e){} }
+async function loadMeta(){ try{ const {data}=await sb.from("ca_meta").select("*").eq("id",1).maybeSingle(); if(data){ S.meta.bilanActif=!!data.bilan_actif; S.meta.bilanEtat=data.bilan_etat||(data.bilan_actif?"ouvert":"ferme"); S.meta.bilanPublie=data.bilan_publie||""; S.meta.bilanPublieLe=data.bilan_publie_le||null; if(data.nom) S.meta.nom=data.nom; S.meta.secretaires=Array.isArray(data.secretaires)?data.secretaires:[]; S.meta.direction=Array.isArray(data.direction)?data.direction:[]; S.meta.bilanRelanceLe=data.bilan_relance_le||null; S.meta.clotureOdj=data.cloture_odj||0; S.meta.modeleOdj=Array.isArray(data.modele_odj)?data.modele_odj:[]; S.meta.codeCoopte=data.code_coopte||""; S.meta.ongletsOff=Array.isArray(data.onglets_off)?data.onglets_off:[]; S.meta.cesActif=(data.ces_actif!==false); S.meta.simuActif=(data.simu_budget_actif===true); S.meta.erreurCa=data.erreur_ca||""; S.meta.salleResp=Array.isArray(data.salle_resp)?data.salle_resp:[]; S.meta.salleCharte=Array.isArray(data.salle_charte)?data.salle_charte:null; S.meta.salleFermetures=Array.isArray(data.salle_fermetures)?data.salle_fermetures:[]; S.meta.erreurCaisse=data.erreur_caisse||""; S.meta.erreurBillets=data.erreur_billets||""; } }catch(e){} }
 async function loadBilans(){
   /* Aucun tri : l'ordre de lecture ne doit rien laisser deviner de l'ordre de dépôt.
      La base ne renvoie ces lignes qu'au secrétariat, et seulement après clôture. */
@@ -2285,6 +2285,8 @@ function viewAdmin(){
     ${revHtml}`:""}
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Double authentification</h2><span class="l"></span></div>
     ${carteMfaSuivi()}
+    <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Simulation budget</h2><span class="l"></span></div>
+    ${carteSimuAdmin()}
     <div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Bilans moraux</h2><span class="l"></span></div>
     <div class="compose"><h3 class="serif">${bilanEtat()==="ouvert"?"Collecte en cours":(bilanEtat()==="cloture"?"Campagne clôturée":"Fermé")}</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Chaque membre dépose un bilan <b>anonyme</b> sur les autres (ce qui a fonctionné / à améliorer). <b>Pendant la collecte, personne ne lit rien.</b> Après la clôture, seul le secrétariat lit les retours, prépare le texte et le publie aux membres.</p>
@@ -3043,9 +3045,9 @@ document.addEventListener("click", async e=>{
 });
 
 /* ---- DASHBOARD ---- */
-const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["verifsig","\ud83d\udd0e","V\u00e9rifier une signature"],["courriers","\u2712","Courriers sign\u00e9s"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
+const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["verifsig","\ud83d\udd0e","V\u00e9rifier une signature"],["courriers","\u2712","Courriers sign\u00e9s"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["simulation","€","Simulation budget"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,proprio:viewProprio,licence:tabLicence,transparence:tabTransparence,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,courriers:tabCourriers,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
+  const map={admin:viewAdmin,proprio:viewProprio,licence:tabLicence,transparence:tabTransparence,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,courriers:tabCourriers,simulation:tabSimulation,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
@@ -3086,7 +3088,8 @@ function viewDash(){
   if(!estCoopte()){ const OFF=ongletsOff();
     for(let i=tabs.length-1;i>=0;i--){ if(OFF.indexOf(tabs[i][0])>=0) tabs.splice(i,1); }
     if(OFF.indexOf(S.tab)>=0) S.tab="accueil";
-    if(!courPeut()){ for(let i=tabs.length-1;i>=0;i--) if(tabs[i][0]==="courriers") tabs.splice(i,1); if(S.tab==="courriers") S.tab="accueil"; } }
+    if(!courPeut()){ for(let i=tabs.length-1;i>=0;i--) if(tabs[i][0]==="courriers") tabs.splice(i,1); if(S.tab==="courriers") S.tab="accueil"; }
+    if(!simuVisible()){ for(let i=tabs.length-1;i>=0;i--) if(tabs[i][0]==="simulation") tabs.splice(i,1); if(S.tab==="simulation") S.tab="accueil"; } }
   /* Modules en option coupés par le propriétaire ou absents de la licence (le propriétaire les voit). */
   if(S.appEtat && S.appEtat.modules && !estProprioCA()){
     const MODS={salle:["salle"],billetterie:["billetterie"],ces:["soutien_ces"],soutien:["soutien_etu","soutien"],mediation:["conflits"]};
@@ -4482,6 +4485,152 @@ const VS_TYPES={procuration:"Procuration",procuration_annulation:"Annulation de 
   decision_corriger:"Caisse — décision du trésorier : renvoi pour correction",decision_payee:"Caisse — décision du trésorier : paiement effectué",
   decision_rouverte:"Caisse — décision du trésorier : remise en attente",decision_rejet:"Caisse — décision du trésorier : virement rejeté",
   gj_tresorier:"Caisse — gestion journalière (trésorier)",gj_presidente:"Caisse — gestion journalière (présidente)",courrier:"Courrier signé"};
+/* ---- SIMULATION BUDGET (16/11/2026) ----
+   Un membre du CA tape le montant d'un budget à faire voter. Le serveur (simu_budget_calcul)
+   calcule la trésorerie libre : solde de la caisse − factures à payer − estimations
+   − reste des budgets ouverts (les budgets clôturés ou gelés ne comptent pas)
+   − remboursements en cours hors budget. Faisable si le montant ≤ 20 % de la trésorerie libre.
+   Faisable : PDF envoyé aux membres du CA. Pas faisable : mail au trésorier uniquement.
+   Onglet désactivé par défaut : Admin › Simulation budget (ca_meta.simu_budget_actif). */
+function simuEtat(){ return S.simuUI||(S.simuUI={titre:"",montant:"",res:null,err:"",busy:false,envoi:""}); }
+function simuVisible(){ return !!(S.meta&&S.meta.simuActif) && !estCoopte() && courPeut(); }
+function simuPct(x){ return Math.round(Number(x||0)*100)+" %"; }
+function simuLignesCalcul(r){
+  return [
+    ["Solde de la caisse (ASBL, hors Novelles)", eur(r.solde), ""],
+    ["Factures à payer", "− "+eur(r.factures), ""],
+    ["Estimations de factures", "− "+eur(r.estimations), ""],
+    ["Reste des budgets votés encore ouverts", "− "+eur(r.budgets), "budgets clôturés ou gelés non comptés"],
+    ...(Number(r.hors_budget)>0?[["Remboursements en cours hors budget", "− "+eur(r.hors_budget), ""]]:[]),
+    ["Trésorerie libre", eur(r.libre), ""],
+    ["Maximum possible ("+simuPct(r.seuil)+" de la trésorerie libre)", eur(r.max), ""]
+  ];
+}
+function simuVerdictTxt(r){
+  if(r.faisable) return "Faisable : "+eur(r.montant)+" ne dépasse pas le maximum de "+eur(r.max)+" ("+simuPct(r.seuil)+" de la trésorerie libre).";
+  if(Number(r.libre)<=0) return "Pas faisable : la trésorerie libre est négative ("+eur(r.libre)+"). Aucun nouveau budget n'est possible pour le moment.";
+  return "Pas faisable : "+eur(r.montant)+" dépasse "+simuPct(r.seuil)+" de la trésorerie libre (maximum "+eur(r.max)+").";
+}
+function simuBudgetEtat(b){ return b.gele?"Gelé, non compté":b.cloture?"Clôturé, non compté":Number(b.reste)>0?"Reste à dépenser":"Entièrement dépensé"; }
+function tabSimulation(){
+  if(!simuVisible()) return `<div class="empty">La simulation budget est désactivée.</div>`;
+  const U=simuEtat(), r=U.res;
+  let out="";
+  if(U.err) out=`<div class="empty" style="color:var(--red)">${esc(U.err)}</div>`;
+  else if(r){
+    const ok=!!r.faisable;
+    const lignes=simuLignesCalcul(r).map(([k,v,n],i,a)=>`<tr${i>=a.length-2?' style="font-weight:700"':""}><th style="text-align:left;padding:4px 12px 4px 0;font-weight:inherit">${esc(k)}${n?`<br><span class="du" style="display:inline">${esc(n)}</span>`:""}</th><td style="text-align:right;padding:4px 0;white-space:nowrap">${esc(v)}</td></tr>`).join("");
+    const fact=(r.detail_factures||[]).map(f=>`<tr><td style="padding:3px 10px 3px 0">${esc([f.fournisseur,f.objet].filter(Boolean).join(" — ")||"Facture")}${f.estimation?' <span class="badge">Estimation</span>':""}</td><td style="text-align:right;white-space:nowrap">${esc(eur(f.reste))}</td></tr>`).join("");
+    const bud=(r.detail_budgets||[]).map(b=>`<tr><td style="padding:3px 10px 3px 0">${esc(b.titre)}<br><span class="du" style="display:inline">${esc(simuBudgetEtat(b))} · voté ${esc(eur(b.cout))}, déjà payé ${esc(eur(b.paye))}</span></td><td style="text-align:right;white-space:nowrap">${esc(eur(b.reste))}</td></tr>`).join("");
+    out=`<div class="vote" style="border-left:4px solid ${ok?"var(--green,#2e7d32)":"var(--red)"}">
+      <div class="vote-h"><h4 class="serif">${ok?"✅ Faisable":"❌ Pas faisable"}${U.titre?" — "+esc(U.titre):""}</h4><span class="badge ${ok?"ok":"no"}">${ok?"Faisable":"Pas faisable"}</span></div>
+      <p class="b-desc" style="margin:6px 0 10px">${esc(simuVerdictTxt(r))}</p>
+      <table style="width:100%;font-size:13.5px"><tbody>${lignes}</tbody></table>
+      <p class="du" style="margin:8px 0 0">Calcul fait le ${esc(fmtQuand(r.le))} avec les chiffres de la Caisse.</p>
+      <div class="row-btn" style="margin-top:12px">
+        <button class="btn" data-action="simu-envoyer" ${U.busy?"disabled":""}>${ok?"Envoyer le PDF aux membres du CA":"Prévenir le trésorier"}</button>
+      </div>
+      ${U.envoi?`<p class="du" style="margin:8px 0 0">${esc(U.envoi)}</p>`:""}
+    </div>
+    <details class="card2" style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">Détail des factures (${(r.detail_factures||[]).length})</summary>
+      ${fact?`<table style="width:100%;font-size:13px;margin-top:8px"><tbody>${fact}</tbody></table>`:`<p class="du">Aucune facture à payer.</p>`}</details>
+    <details class="card2" style="margin-top:8px"><summary style="cursor:pointer;font-weight:700">Détail des budgets votés (${(r.detail_budgets||[]).length})</summary>
+      ${bud?`<table style="width:100%;font-size:13px;margin-top:8px"><tbody>${bud}</tbody></table>`:`<p class="du">Aucun budget voté.</p>`}</details>`;
+  }
+  return `<div class="compose">
+    <h3 class="serif" style="margin-top:0">€ Simulation budget</h3>
+    <p class="du" style="margin:0 0 10px">Tapez le budget que vous voulez faire voter. L'app reprend les chiffres de la Caisse : solde, factures à payer, estimations et ce qui reste à dépenser sur les budgets déjà votés. Un budget clôturé ou gelé ne compte pas. Le budget est faisable s'il ne dépasse pas 20 % de la trésorerie libre.</p>
+    <div class="row-btn" style="align-items:center;flex-wrap:wrap">
+      <input class="f" id="simu_titre" value="${esc(U.titre)}" placeholder="Objet du budget" maxlength="200" style="flex:2 1 220px">
+      <input class="f" id="simu_montant" type="number" min="0" step="0.01" value="${esc(U.montant)}" placeholder="Montant (€)" style="flex:1 1 120px">
+      <button class="btn" data-action="simu-calculer" ${U.busy?"disabled":""}>${U.busy?"Calcul…":"Simuler"}</button>
+    </div>
+  </div>${out}`;
+}
+async function simuCalculer(){
+  const U=simuEtat(); U.titre=String(val("simu_titre")||"").trim(); U.montant=String(val("simu_montant")||"").trim();
+  U.err=""; U.res=null; U.envoi="";
+  const m=Number(String(U.montant).replace(",","."));
+  if(!U.titre){ U.err="Tapez l'objet du budget."; render(); return; }
+  if(!isFinite(m)||m<=0){ U.err="Tapez un montant supérieur à 0 €."; render(); return; }
+  if(!sb||!S.session){ U.err="Connexion au serveur indisponible."; render(); return; }
+  U.busy=true; render();
+  try{
+    const r=await sb.rpc("simu_budget_calcul",{p_montant:Math.round(m*100)/100});
+    if(r.error) U.err="Calcul impossible : "+r.error.message; else U.res=r.data;
+  }catch(e){ U.err="Calcul impossible : "+(e&&e.message||e); }
+  U.busy=false; render();
+}
+function simuCorpsPDF(r, titre, qui){
+  const lignes=simuLignesCalcul(r).map(([k,v,n])=>`<tr><th>${esc(k)}${n?`<br><span style="font-weight:400;color:#6a7182">${esc(n)}</span>`:""}</th><td style="text-align:right">${esc(v)}</td></tr>`).join("");
+  const fact=(r.detail_factures||[]).map(f=>`<tr><td>${esc([f.fournisseur,f.objet].filter(Boolean).join(" — ")||"Facture")}${f.estimation?" (estimation)":""}</td><td style="text-align:right">${esc(eur(f.reste))}</td></tr>`).join("");
+  const bud=(r.detail_budgets||[]).map(b=>`<tr><td>${esc(b.titre)}</td><td>${esc(simuBudgetEtat(b))}</td><td style="text-align:right">${esc(eur(b.cout))}</td><td style="text-align:right">${esc(eur(b.paye))}</td><td style="text-align:right">${esc(eur(b.reste))}</td></tr>`).join("");
+  return `<h1>Simulation budget</h1>
+    <p class="d">${esc(titre)} — ${esc(eur(r.montant))} · simulé par ${esc(qui)} le ${esc(fmtQuand(r.le))}</p>
+    <h2>Résultat</h2>
+    <p style="font-size:15px"><b>${r.faisable?"✅ Faisable":"❌ Pas faisable"}</b> — ${esc(simuVerdictTxt(r))}</p>
+    <h2>Calcul</h2>
+    <table><tbody>${lignes}</tbody></table>
+    <h2>Factures à payer</h2>
+    ${fact?`<table><thead><tr><th>Facture</th><th style="text-align:right">Reste à payer</th></tr></thead><tbody>${fact}</tbody></table>`:"<p>Aucune facture à payer.</p>"}
+    <h2>Budgets votés</h2>
+    ${bud?`<table><thead><tr><th>Budget</th><th>État</th><th style="text-align:right">Voté</th><th style="text-align:right">Payé</th><th style="text-align:right">Compté</th></tr></thead><tbody>${bud}</tbody></table>`:"<p>Aucun budget voté.</p>"}
+    <p class="d" style="margin-top:24px">Simulation indicative : elle ne vaut pas décision. Le budget doit encore être voté par le CA (articles 16.2 et 16.3 des statuts).</p>`;
+}
+async function simuEnvoyer(){
+  const U=simuEtat(); if(!U.res||U.busy) return;
+  if(!sb||!S.session){ modaleInfo("Connexion au serveur indisponible."); return; }
+  const titre=U.titre, qui=String((S.session&&S.session.sig)||"Un membre du CA");
+  U.busy=true; U.envoi=""; render();
+  try{
+    /* Recalcul juste avant l'envoi : les chiffres envoyés sont ceux du moment. */
+    const rr=await sb.rpc("simu_budget_calcul",{p_montant:Number(U.res.montant)});
+    if(rr.error){ U.busy=false; render(); modaleInfo("Envoi impossible : "+rr.error.message,"Simulation budget"); return; }
+    const r=rr.data; U.res=r;
+    if(r.faisable){
+      const dest=[...new Set(membresActifs().map(a=>String(a.email||"").toLowerCase().trim()).filter(Boolean))];
+      if(!dest.length){ U.busy=false; render(); modaleInfo("Aucun membre du CA avec une adresse e-mail.","Simulation budget"); return; }
+      U.busy=false; render();
+      if(!await modaleConfirm("Le budget « "+titre+" » ("+eur(r.montant)+") est faisable.\n\nLe PDF de la simulation sera envoyé aux "+dest.length+" membres du CA.","Envoyer le PDF")) return;
+      U.busy=true; render();
+      const nom=nomPDF("simulation-budget-"+titre);
+      let blob=null; try{ blob=await telechargerPDF(nom, cssDocImprimable(), simuCorpsPDF(r, titre, qui), null, "blob"); }catch(_){ blob=null; }
+      if(!blob){ U.busy=false; render(); modaleInfo("Le PDF n'a pas pu être généré. Aucun mail n'a été envoyé.","Simulation budget"); return; }
+      let piece=null; try{ const b64=await blobEnBase64(blob); if(b64.length<4500000) piece={filename:nom, content:b64, contentType:"application/pdf"}; }catch(_){ piece=null; }
+      const corps=`<h2 style="margin:0 0 10px">Simulation budget : faisable</h2>`
+        +`<p style="font-size:16px"><b>${caMailEsc(titre)}</b> — ${caMailEsc(eur(r.montant))}</p>`
+        +`<p>${caMailEsc(qui)} a fait une simulation dans l'Espace CA. ${caMailEsc(simuVerdictTxt(r))}</p>`
+        +`<p>Trésorerie libre : <b>${caMailEsc(eur(r.libre))}</b> · maximum possible : <b>${caMailEsc(eur(r.max))}</b>.</p>`
+        +`<p>Le détail du calcul figure dans le PDF joint. Cette simulation ne vaut pas décision : le budget doit encore être voté par le CA.</p>`;
+      const res=await envoyerAvecPiece(dest, "Simulation budget faisable — "+titre, corps, piece, {exp:EXP_BUDGET, tous:true, sansInvitation:true});
+      U.envoi="PDF envoyé à "+res.ok+"/"+res.total+" membre(s) du CA"+(res.err?", "+res.err+" échec(s)":"")+(res.sansPiece&&res.ok?" (sans pièce jointe : refusée par le serveur)":"")+".";
+      logAct("Simulation budget faisable envoyée au CA — "+titre+" — "+eur(r.montant));
+    } else {
+      const to=String(r.treso_email||"").trim();
+      if(!to){ U.busy=false; render(); modaleInfo("Aucune adresse du trésorier n'est enregistrée dans la Caisse.","Simulation budget"); return; }
+      U.busy=false; render();
+      if(!await modaleConfirm("Le budget « "+titre+" » ("+eur(r.montant)+") n'est pas faisable.\n\nUn mail sera envoyé au trésorier uniquement.","Prévenir le trésorier")) return;
+      U.busy=true; render();
+      const tab=simuLignesCalcul(r).map(([k,v])=>`<tr><td style="padding:4px 12px 4px 0;color:#555">${caMailEsc(k)}</td><td style="padding:4px 0;text-align:right"><b>${caMailEsc(v)}</b></td></tr>`).join("");
+      const corps=`<h2 style="margin:0 0 10px">Simulation budget : pas faisable</h2>`
+        +`<p style="font-size:16px"><b>${caMailEsc(titre)}</b> — ${caMailEsc(eur(r.montant))}</p>`
+        +`<p>${caMailEsc(qui)} a fait une simulation dans l'Espace CA. ${caMailEsc(simuVerdictTxt(r))}</p>`
+        +`<table style="border-collapse:collapse;font-size:14px;margin:10px 0">${tab}</table>`;
+      const res=await envoyerAvecPiece([to], "Simulation budget non faisable — "+titre, corps, null, {exp:EXP_BUDGET, tous:true, sansInvitation:true});
+      U.envoi=res.ok?"Le trésorier a été prévenu.":"Le mail au trésorier n'est pas parti. Réessayez.";
+      logAct("Simulation budget non faisable signalée au trésorier — "+titre+" — "+eur(r.montant));
+    }
+  }catch(e){ U.envoi="Envoi impossible : "+(e&&e.message||e); }
+  U.busy=false; render();
+}
+function carteSimuAdmin(){
+  const on=!!(S.meta&&S.meta.simuActif);
+  return `<div class="card2"><h3 class="serif">Simulation budget</h3>
+    <p class="du">Onglet où un membre du CA tape un budget à faire voter et voit s'il est faisable (20 % maximum de la trésorerie libre). Faisable : PDF envoyé aux membres du CA. Pas faisable : mail au trésorier uniquement.</p>
+    <label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:15px;font-weight:700;cursor:pointer">
+      <input type="checkbox" class="sw" role="switch" id="simu_actif_chk" ${on?"checked":""}> ${on?"Simulation budget activée":"Simulation budget désactivée"} <span class="du">(état enregistré)</span></label>
+    <div class="row-btn"><button class="btn sm" data-action="save-simu-actif">Enregistrer</button></div></div>`;
+}
 function vsEtat(){ return S.vsUI||(S.vsUI={code:"",res:null,err:"",busy:false}); }
 function tabVerifSig(){
   const V=vsEtat();
@@ -6313,6 +6462,17 @@ ${sections||"<p>Aucun retour.</p>"}
     case "pr-annuler": { await prAnnuler(id); break; }
     case "pr-pdf": { await prOuvrirPDF(id); break; }
     case "vs-verifier": { await vsVerifier(); break; }
+    case "simu-calculer": { await simuCalculer(); break; }
+    case "simu-envoyer": { await simuEnvoyer(); break; }
+    case "save-simu-actif": { if(!estAdminCA()||!sb) break;
+      const chk=document.getElementById("simu_actif_chk"); const voulu=!!(chk&&chk.checked);
+      let r; try{ r=await sb.rpc("simu_budget_activer",{p_actif:voulu}); }catch(e){ r={error:{message:String(e&&e.message||e)}}; }
+      if(r&&r.error){ modaleInfo("Le réglage n'a PAS été enregistré.\n\nErreur : "+r.error.message,"Erreur"); render(); break; }
+      S.meta.simuActif=(r&&r.data===true); logAct("Simulation budget "+(S.meta.simuActif?"activée":"désactivée"));
+      render();
+      modaleInfo(S.meta.simuActif?"✅ Enregistré : la simulation budget est ACTIVÉE. L'onglet « Simulation budget » apparaît pour les membres du CA."
+                              :"✅ Enregistré : la simulation budget est DÉSACTIVÉE. L'onglet a disparu.","Simulation budget");
+      break; }
     case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break;
       if(monVoteBudget(b)){ modaleInfo("Vous avez déjà voté pour ce budget. Votre vote est définitif."); break; }
       { const lib=(CHOIX.find(c=>c.id===el.dataset.choix)||{}).label||el.dataset.choix;
