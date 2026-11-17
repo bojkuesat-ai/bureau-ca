@@ -865,7 +865,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-17 · demandes de budget vérifiées";
+const CA_VERSION="2026-11-17 · simulation : résultat envoyé au CA";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -4589,7 +4589,7 @@ const VS_TYPES={procuration:"Procuration",procuration_annulation:"Annulation de 
    calcule la trésorerie libre : solde de la caisse − factures à payer − estimations
    − reste des budgets ouverts (les budgets clôturés ou gelés ne comptent pas)
    − remboursements en cours hors budget. Faisable si le montant ≤ 20 % de la trésorerie libre.
-   Faisable : PDF envoyé aux membres du CA. Pas faisable : mail au trésorier uniquement.
+   Le résultat (PDF) est envoyé aux membres du CA, faisable ou non.
    Onglet désactivé par défaut : Admin › Simulation budget (ca_meta.simu_budget_actif). */
 function simuEtat(){ return S.simuUI||(S.simuUI={titre:"",montant:"",res:null,err:"",busy:false,envoi:""}); }
 function simuVisible(){ return !!(S.meta&&S.meta.simuActif) && !estCoopte() && courPeut(); }
@@ -4628,7 +4628,7 @@ function tabSimulation(){
       <table style="width:100%;font-size:13.5px"><tbody>${lignes}</tbody></table>
       <p class="du" style="margin:8px 0 0">Calcul fait le ${esc(fmtQuand(r.le))} avec les chiffres de la Caisse.</p>
       <div class="row-btn" style="margin-top:12px">
-        <button class="btn" data-action="simu-envoyer" ${U.busy?"disabled":""}>${ok?"Envoyer le PDF aux membres du CA":"Prévenir le trésorier"}</button>
+        <button class="btn" data-action="simu-envoyer" ${U.busy?"disabled":""}>Envoyer le PDF aux membres du CA</button>
       </div>
       ${U.envoi?`<p class="du" style="margin:8px 0 0">${esc(U.envoi)}</p>`:""}
     </div>
@@ -4678,6 +4678,8 @@ function simuCorpsPDF(r, titre, qui){
     <p class="d" style="margin-top:24px">Simulation indicative : elle ne vaut pas décision. Le budget doit encore être voté par le CA (articles 16.2 et 16.3 des statuts).</p>`;
 }
 async function simuEnvoyer(){
+  /* 17/11/2026 : faisable ou non, le résultat (PDF) part à tous les membres du CA.
+     Pas faisable : le mail et le PDF indiquent le montant maximum qu'on peut demander. */
   const U=simuEtat(); if(!U.res||U.busy) return;
   if(!sb||!S.session){ modaleInfo("Connexion au serveur indisponible."); return; }
   const titre=U.titre, qui=String((S.session&&S.session.sig)||"Un membre du CA");
@@ -4686,40 +4688,24 @@ async function simuEnvoyer(){
     /* Recalcul juste avant l'envoi : les chiffres envoyés sont ceux du moment. */
     const rr=await sb.rpc("simu_budget_calcul",{p_montant:Number(U.res.montant)});
     if(rr.error){ U.busy=false; render(); modaleInfo("Envoi impossible : "+rr.error.message,"Simulation budget"); return; }
-    const r=rr.data; U.res=r;
-    if(r.faisable){
-      const dest=[...new Set(membresActifs().map(a=>String(a.email||"").toLowerCase().trim()).filter(Boolean))];
-      if(!dest.length){ U.busy=false; render(); modaleInfo("Aucun membre du CA avec une adresse e-mail.","Simulation budget"); return; }
-      U.busy=false; render();
-      if(!await modaleConfirm("Le budget « "+titre+" » ("+eur(r.montant)+") est faisable.\n\nLe PDF de la simulation sera envoyé aux "+dest.length+" membres du CA.","Envoyer le PDF")) return;
-      U.busy=true; render();
-      const nom=nomPDF("simulation-budget-"+titre);
-      let blob=null; try{ blob=await telechargerPDF(nom, cssDocImprimable(), simuCorpsPDF(r, titre, qui), null, "blob"); }catch(_){ blob=null; }
-      if(!blob){ U.busy=false; render(); modaleInfo("Le PDF n'a pas pu être généré. Aucun mail n'a été envoyé.","Simulation budget"); return; }
-      let piece=null; try{ const b64=await blobEnBase64(blob); if(b64.length<4500000) piece={filename:nom, content:b64, contentType:"application/pdf"}; }catch(_){ piece=null; }
-      const corps=`<h2 style="margin:0 0 10px">Simulation budget : faisable</h2>`
-        +`<p style="font-size:16px"><b>${caMailEsc(titre)}</b> — ${caMailEsc(eur(r.montant))}</p>`
-        +`<p>${caMailEsc(qui)} a fait une simulation dans l'Espace CA. ${caMailEsc(simuVerdictTxt(r))}</p>`
-
-        +`<p>Le détail du calcul figure dans le PDF joint. Cette simulation ne vaut pas décision : le budget doit encore être voté par le CA.</p>`;
-      const res=await envoyerAvecPiece(dest, "Simulation budget faisable — "+titre, corps, piece, {exp:EXP_BUDGET, tous:true, sansInvitation:true});
-      U.envoi="PDF envoyé à "+res.ok+"/"+res.total+" membre(s) du CA"+(res.err?", "+res.err+" échec(s)":"")+(res.sansPiece&&res.ok?" (sans pièce jointe : refusée par le serveur)":"")+".";
-      logAct("Simulation budget faisable envoyée au CA — "+titre+" — "+eur(r.montant));
-    } else {
-      const to=String(r.treso_email||"").trim();
-      if(!to){ U.busy=false; render(); modaleInfo("Aucune adresse du trésorier n'est enregistrée dans la Caisse.","Simulation budget"); return; }
-      U.busy=false; render();
-      if(!await modaleConfirm("Le budget « "+titre+" » ("+eur(r.montant)+") n'est pas faisable.\n\nUn mail sera envoyé au trésorier uniquement.","Prévenir le trésorier")) return;
-      U.busy=true; render();
-      const tab=simuLignesCalcul(r).map(([k,v])=>`<tr><td style="padding:4px 12px 4px 0;color:#555">${caMailEsc(k)}</td><td style="padding:4px 0;text-align:right"><b>${caMailEsc(v)}</b></td></tr>`).join("");
-      const corps=`<h2 style="margin:0 0 10px">Simulation budget : pas faisable</h2>`
-        +`<p style="font-size:16px"><b>${caMailEsc(titre)}</b> — ${caMailEsc(eur(r.montant))}</p>`
-        +`<p>${caMailEsc(qui)} a fait une simulation dans l'Espace CA. ${caMailEsc(simuVerdictTxt(r))}</p>`
-        +`<table style="border-collapse:collapse;font-size:14px;margin:10px 0">${tab}</table>`;
-      const res=await envoyerAvecPiece([to], "Simulation budget non faisable — "+titre, corps, null, {exp:EXP_BUDGET, tous:true, sansInvitation:true});
-      U.envoi=res.ok?"Le trésorier a été prévenu.":"Le mail au trésorier n'est pas parti. Réessayez.";
-      logAct("Simulation budget non faisable signalée au trésorier — "+titre+" — "+eur(r.montant));
-    }
+    const r=rr.data; U.res=r; const ok=!!r.faisable;
+    const dest=[...new Set(membresActifs().map(a=>String(a.email||"").toLowerCase().trim()).filter(Boolean))];
+    if(!dest.length){ U.busy=false; render(); modaleInfo("Aucun membre du CA avec une adresse e-mail.","Simulation budget"); return; }
+    U.busy=false; render();
+    if(!await modaleConfirm("Le budget « "+titre+" » ("+eur(r.montant)+") "+(ok?"est faisable.":"n'est pas faisable"+(Number(r.max)>0?" (maximum : "+eur(r.max)+").":"."))
+        +"\n\nLe PDF de la simulation sera envoyé aux "+dest.length+" membres du CA.","Envoyer le PDF")) return;
+    U.busy=true; render();
+    const nom=nomPDF("simulation-budget-"+titre);
+    let blob=null; try{ blob=await telechargerPDF(nom, cssDocImprimable(), simuCorpsPDF(r, titre, qui), null, "blob"); }catch(_){ blob=null; }
+    if(!blob){ U.busy=false; render(); modaleInfo("Le PDF n'a pas pu être généré. Aucun mail n'a été envoyé.","Simulation budget"); return; }
+    let piece=null; try{ const b64=await blobEnBase64(blob); if(b64.length<4500000) piece={filename:nom, content:b64, contentType:"application/pdf"}; }catch(_){ piece=null; }
+    const corps=`<h2 style="margin:0 0 10px">Simulation budget : ${ok?"faisable":"pas faisable"}</h2>`
+      +`<p style="font-size:16px"><b>${caMailEsc(titre)}</b> — ${caMailEsc(eur(r.montant))}</p>`
+      +`<p>${caMailEsc(qui)} a fait une simulation dans l'Espace CA. ${caMailEsc(simuVerdictTxt(r))}</p>`
+      +`<p>Le détail du calcul figure dans le PDF joint. Cette simulation ne vaut pas décision : un budget doit toujours être voté par le CA.</p>`;
+    const res=await envoyerAvecPiece(dest, "Simulation budget "+(ok?"faisable":"non faisable")+" — "+titre, corps, piece, {exp:EXP_BUDGET, tous:true, sansInvitation:true});
+    U.envoi="PDF envoyé à "+res.ok+"/"+res.total+" membre(s) du CA"+(res.err?", "+res.err+" échec(s)":"")+(res.sansPiece&&res.ok?" (sans pièce jointe : refusée par le serveur)":"")+".";
+    logAct("Simulation budget "+(ok?"faisable":"non faisable")+" envoyée au CA — "+titre+" — "+eur(r.montant));
   }catch(e){ U.envoi="Envoi impossible : "+(e&&e.message||e); }
   U.busy=false; render();
 }

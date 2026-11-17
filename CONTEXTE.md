@@ -33,7 +33,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 
 - **Supabase** : projet `mlgzdfyqjhvyubrywuim` (base, Auth, fonctions Edge, `pg_cron`, `pg_net`).
 - **Publication** : GitHub Pages (`https://bojkuesat-ai.github.io/bureau-ca/`). Cache d'environ 10 minutes ; en cas de doute, ajouter `?v=…`.
-- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-17 · demandes de budget vérifiées »).
+- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-17 · simulation : résultat envoyé au CA »).
 
 ## 3. Rôles et droits
 
@@ -111,7 +111,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Onglet **€ Simulation budget** de l'Espace CA, **désactivé par défaut** : Admin › Simulation budget (`ca_meta.simu_budget_actif`, fonction `simu_budget_activer`).
 - Calcul serveur `simu_budget_calcul(p_montant)` : trésorerie libre = solde de la caisse (ASBL, hors Novelles) − factures à échéance non payées − estimations − reste des budgets approuvés ouverts − remboursements en cours hors budget. Budgets **clôturés ou gelés** (réserve suspensive non levée) : seules les demandes déjà en cours comptent.
 - Faisable si montant ≤ **20 %** de la trésorerie libre. **Dérogation (17/11)** : Admin › « Autoriser quand même… » (`ca_meta.simu_derog`) → limite = plafond saisi (`simu_plafond`) sinon 20 % de (solde − budgets en cours, hors factures). Calcul commun : `simu_budget_chiffres()`. Le maximum n'est affiché que si ce n'est pas faisable.
-- **ODJ** : simulation activée → chaque demande de budget est vérifiée (`reu_budget_controle` dans `ca_reunions_garde`) ; faisable = point ajouté + « Simulation du … : faisable » dans la note ; pas faisable = refusé avec le maximum. Faisable : PDF aux membres du CA (Budget-BE). Pas faisable : mail au trésorier uniquement (`caisse_config.treso_email`). Envoi après confirmation.
+- **ODJ** : simulation activée → chaque demande de budget est vérifiée (`reu_budget_controle` dans `ca_reunions_garde`) ; faisable = point ajouté + « Simulation du … : faisable » dans la note ; pas faisable = refusé avec le maximum. Faisable ou non : PDF à tous les membres du CA (Budget-BE) ; pas faisable = le maximum est indiqué. Envoi après confirmation.
 
 ## 9 ter. Réunions : sujets, ODJ et signature du PV (17/11)
 
