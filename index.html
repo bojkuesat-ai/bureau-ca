@@ -798,7 +798,8 @@ async function loadMailing(){ try{ const {data}=await sb.from("ca_mailing").sele
 const CA_SEND_FN = SB_URL + "/functions/v1/send-email";
 /* Nom affiché de l'expéditeur selon le type de mail (l'adresse d'envoi reste celle du bureau) */
 const EXP_BUDGET = "Budget-BE <noreply@bureauetuidant.xyz>", EXP_ANNONCE = "Annonces-BE <noreply@bureauetuidant.xyz>",
-      EXP_DOCS = "Documents-BE <noreply@bureauetuidant.xyz>", EXP_MEDIATION = "Médiation-BE <noreply@bureauetuidant.xyz>";
+      EXP_DOCS = "Documents-BE <noreply@bureauetuidant.xyz>", EXP_MEDIATION = "Médiation-BE <noreply@bureauetuidant.xyz>",
+      EXP_REU = "Réu-BE <noreply@bureauetuidant.xyz>", EXP_PVSIGN = "Signature PV du BE <noreply@bureauetuidant.xyz>";
 /* Relance des bilans : la liste des retardataires est calculée côté serveur et n'arrive jamais ici. */
 const CA_RELANCE_FN = SB_URL + "/functions/v1/relance-bilans";
 /* En dessous de ce nombre de manquants, relancer reviendrait à désigner les personnes. */
@@ -864,7 +865,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-16 · simulation budget";
+const CA_VERSION="2026-11-17 · réunions : sujets, ODJ et signature du PV";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1041,12 +1042,24 @@ function secretairesExtra(){ return (S.meta && Array.isArray(S.meta.secretaires)
 function estPresidente(){ const u=S.session; if(!u) return false; return String(u.fonction||"").toLowerCase().indexOf("pr\u00e9sident")===0 || String(u.fonction||"").toLowerCase().indexOf("president")===0; }
 function estDirection(){ const u=S.session; if(!u) return false; return directionExtra().indexOf(u.id)>=0; }
 function peutVoirRapports(){ return estPresidente()||estSecretaire()||(S.session&&S.session.role==="owner"); }
-function ordreFerme(m){
-  if(!m||!m.date) return false;
-  const h=(S.meta&&S.meta.clotureOdj)||0; if(!h) return false;
-  const t=new Date(m.date+"T00:00:00").getTime()-h*3600000;
-  return Date.now()>t;
-}
+/* 17/11/2026 — Ordre du jour : on ajoute un point en choisissant un sujet (+ une note facultative).
+   Demande de budget : objet et montant obligatoires. Autre : titre obligatoire.
+   Clôture fixe : la veille de la réunion à 23 h 59 (le secrétariat peut encore ajouter).
+   La même règle est vérifiée par le serveur (ca_reunions_garde). */
+const REU_SUJETS=[["odj","Approbation de l'ordre du jour"],["pv","Approbation du PV de la réunion précédente"],["suivi","Suivi des décisions et des tâches"],
+  ["tresorerie","État de la trésorerie"],["budget","Demande de budget"],["budgets_cours","Suivi des budgets en cours"],["evenements","Événements à venir"],
+  ["retour","Retour sur un événement passé"],["communication","Communication et réseaux sociaux"],["partenariats","Partenariats et sponsors"],
+  ["faculte","Relations avec la faculté et l'université"],["commission","Point d'une commission"],["cooptation","Cooptation ou démission d'un administrateur"],
+  ["courriers","Courriers reçus et à envoyer"],["ag","Préparation de l'assemblée générale"],["divers","Divers"],["autre","Autre"]];
+function reuSujetLib(c){ const x=REU_SUJETS.find(s=>s[0]===c); return x?x[1]:""; }
+function ordreFerme(m){ if(!m||!m.date) return false; return Date.now() >= new Date(String(m.date).slice(0,10)+"T00:00:00").getTime(); }
+function reuLien(m){ return caAppUrl()+"?go=reunion&r="+encodeURIComponent(m.id); }
+function reuHeure(m){ return m&&m.heure?String(m.heure).slice(0,5).replace(":","h"):""; }
+function reuQuand(m){ return (m.date?fmtDateLong(m.date):"date à préciser")+(m.heure?" à "+reuHeure(m):""); }
+/* État de signature du PV (lisible par tous les membres du CA via reu_pv_etats). */
+function reuPvEtat(m){ return (S.reuPv||{})[String(m&&m.id)]||null; }
+function reuVerrou(m){ const e=reuPvEtat(m); return !!(e&&(e.statut==="attente"||e.statut==="valide")); }
+async function loadReuPv(){ if(!sb) return; try{ const r=await sb.rpc("reu_pv_etats"); if(r&&!r.error){ const o={}; (r.data||[]).forEach(x=>{ o[String(x.reunion_id)]=x; }); S.reuPv=o; } }catch(_){ } }
 /* Les droits viennent de listes que le propriétaire coche, pas de la fonction
    déclarée à l'inscription : celle-ci ne prouve rien. Ces deux fonctions
    reproduisent exactement ce que la base autorise (ca_est_secretaire,
@@ -1359,11 +1372,12 @@ async function rappelReunionCA(id){
   if(!(await modaleConfirm(q,"Rappeler la réunion"))) return;
   const pts=(m.ordre||[]).map(p=>`<li>${caMailEsc(p.texte)}</li>`).join("");
   const corps=`<h2 style="margin:0 0 10px">Rappel \u2014 ${caMailEsc(m.titre)}</h2>`
-    +`<p><b>Date :</b> ${m.date?caMailEsc(fmtDateLong(m.date)):"\u00e0 pr\u00e9ciser"}</p>`
+    +`<p><b>Date :</b> ${caMailEsc(reuQuand(m))}</p>`
     +(m.lieu?`<p><b>Lieu :</b> ${caMailEsc(m.lieu)}</p>`:"")
     +(pts?`<p><b>Ordre du jour :</b></p><ul>${pts}</ul>`:"")
-    +`<p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
-  const res=await envoyerNotifCAListe(dest, "Rappel \u2014 "+(m.titre||"réunion")+(m.date?" ("+fmtDateLong(m.date)+")":""), corps, false, undefined, "reunion", true);
+    +(ordreFerme(m)?"":`<p>Vous pouvez ajouter un point à l'ordre du jour jusqu'à la veille de la réunion à 23 h 59.</p>`)
+    +`<p><a href="${reuLien(m)}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">${ordreFerme(m)?"Ouvrir la réunion":"Ajouter un point à l'ordre du jour"}</a></p>`;
+  const res=await envoyerNotifCAListe(dest, "Rappel \u2014 "+(m.titre||"réunion")+" ("+reuQuand(m)+")", corps, false, EXP_REU, "reunion", true);
   const quand=new Date().toISOString();
   try{ await sb.from("ca_rappels_envoyes").insert({cle:"reunion-rappel:"+id+":"+quand}); }catch(_){ }
   S.reuRappelLe=S.reuRappelLe||{}; S.reuRappelLe[id]=quand;
@@ -1374,13 +1388,14 @@ async function rappelReunionCA(id){
 function convocationCA(m, urgent){
   const pts=(m.ordre||[]).map((p,i)=>`<li>${caMailEsc(p.texte)}</li>`).join("");
   const corps=`<h2 style="margin:0 0 10px">Convocation \u2014 ${caMailEsc(m.titre)}</h2>`
-    +`<p><b>Date :</b> ${m.date?caMailEsc(fmtDateLong(m.date)):"\u00e0 pr\u00e9ciser"}</p>`
+    +`<p><b>Date :</b> ${caMailEsc(reuQuand(m))}</p>`
     +(m.lieu?`<p><b>Lieu :</b> ${caMailEsc(m.lieu)}</p>`:"")
-    +(pts?`<p><b>Ordre du jour :</b></p><ul>${pts}</ul>`:`<p>L'ordre du jour sera compl\u00e9t\u00e9 prochainement. Vous pouvez proposer un point dans l'application.</p>`)
-    +`<p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`;
+    +(pts?`<p><b>Ordre du jour :</b></p><ul>${pts}</ul>`:"")
+    +`<p>Ajoutez vos points à l'ordre du jour avec le bouton ci-dessous : choisissez un sujet et écrivez votre note (pour une demande de budget, l'objet et le montant sont obligatoires). Les points peuvent être ajoutés jusqu'à la veille de la réunion à 23 h 59. L'ordre du jour définitif est envoyé 1 h avant la réunion.</p>`
+    +`<p><a href="${reuLien(m)}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ajouter un point à l'ordre du jour</a></p>`;
   /* Urgente si la réunion a lieu aujourd'hui ou demain : elle n'attend pas le résumé de 18 h. */
   const proche=!!urgent || !m.date || (new Date(String(m.date).slice(0,10)+"T23:59").getTime()-Date.now()) < 2*86400000;
-  return envoyerNotifCAListe(destinatairesMembres(), "Convocation \u2014 "+m.titre, corps, false, undefined, "reunion", proche);
+  return envoyerNotifCAListe(destinatairesMembres(), "Convocation \u2014 "+m.titre+" ("+reuQuand(m)+")", corps, false, EXP_REU, "reunion", proche);
 }
 async function notifEvenementCA(titre, quand, urgent){
   const corps='<h2 style="margin:0 0 10px">Nouvel evenement</h2>'
@@ -1546,7 +1561,7 @@ async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("
   try{ const rr=await sb.from("ca_budget_reserves").select("*").order("created_at",{ascending:true}); S.resBud=(rr&&!rr.error&&rr.data)||[]; S.resBudErr=(rr&&rr.error)?rr.error.message:null; }catch(e){ S.resBud=[]; S.resBudErr=String(e); } }
 async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,rappelLe:v.rappel_le,rappelProg:v.rappel_prog_at,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
 async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
-async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,lieu:m.lieu||"",ordre:m.ordre||[],presences:m.presences||{},pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } }
+async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,heure:m.heure||"",lieu:m.lieu||"",ordre:m.ordre||[],presences:m.presences||{},odjEnvoyeLe:m.odj_envoye_at||null,pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } await loadReuPv(); }
 async function loadCreneaux(){ try{ const c=await sb.from("ca_creneaux").select("*").order("date",{ascending:true}); const d=await sb.from("ca_dispos").select("*"); const dl=(d&&d.data)||[]; S.creneaux=(((c&&c.data))||[]).map(x=>({id:x.id,titre:x.titre,date:x.date,lieu:x.lieu,creePar:x.cree_par,dispos:dl.filter(y=>y.creneau_id===x.id).map(y=>({nom:y.nom,statut:y.statut,membreId:y.membre_id}))})); }catch(e){ S.creneaux=[]; } }
 async function loadOrg(){ try{ const {data}=await sb.from("ca_org").select("*"); const o={}; (data||[]).forEach(r=>{ o[r.poste_id]={missions:r.missions,contact:r.contact,qui:r.qui||""}; }); S.org=o; }catch(e){} }
 async function loadTaches(){ try{ const {data}=await sb.from("ca_taches").select("*").order("created_at",{ascending:false}); S.taches=(data||[]).map(t=>({id:t.id,titre:t.titre,posteId:t.poste_id,statut:t.statut,echeance:t.echeance,priorite:t.priorite,creePar:t.cree_par})); }catch(e){ S.taches=[]; } }
@@ -2305,8 +2320,8 @@ function viewAdmin(){
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Avant de tout réinitialiser pour l'équipe suivante : un document imprimable (composition, PV, votes, synthèse des bilans) et une sauvegarde complète en fichier. <b style="color:var(--ink)">À faire avant tout effacement.</b></p>
       <div class="row-btn"><button class="btn" data-action="archiver-mandat">Générer l'archive de mandat</button></div></div>
     ${estSecretaire()?`<div class="card2"><h3 class="serif">R\u00e9glages du secr\u00e9tariat</h3>
-      <label class="fld">Cl\u00f4ture de l'ordre du jour (heures avant la r\u00e9union — 0 = jamais)</label>
-      <input class="f" id="cfg_cloture" type="number" min="0" value="${(S.meta.clotureOdj||0)}">
+      <p class="du" style="margin:0 0 6px">Clôture de l'ordre du jour : la veille de la réunion à 23 h 59 (règle fixe). L'ordre du jour part automatiquement 1 h avant la réunion.</p>
+      <input type="hidden" id="cfg_cloture" value="${(S.meta.clotureOdj||0)}">
       <label class="fld" style="margin-top:10px">Points r\u00e9currents (un par ligne) \u2014 pr\u00e9-remplissage des nouvelles r\u00e9unions</label>
       <textarea id="cfg_modele" placeholder="Ex. Approbation du PV pr\u00e9c\u00e9dent">${esc((S.meta.modeleOdj||[]).join("\n"))}</textarea>
       <div class="row-btn"><button class="btn" data-action="save-secr-cfg">Enregistrer</button></div></div>`:""}
@@ -2500,7 +2515,7 @@ async function pvsRappels(){
 }
 async function pvsMail(to, sujet, corps, piece){
   if(!to) return false;
-  try{ const r=await envoyerAvecPiece([to], sujet, corps, piece, {tous:true, sansInvitation:true, exp:EXP_DOCS}); return r.ok>0; }catch(_){ return false; }
+  try{ const r=await envoyerAvecPiece([to], sujet, corps, piece, {tous:true, sansInvitation:true, exp:EXP_PVSIGN}); return r.ok>0; }catch(_){ return false; }
 }
 
 /* ---------- affichage ---------- */
@@ -2960,7 +2975,7 @@ async function pvsFinaliser(p){
     <p>Il est rangé dans l'onglet <b>Documents</b> (catégorie « PV &amp; CR »).</p>
     ${lien?`<p><a href="${lien}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Télécharger le PV signé (PDF)</a></p>`:""}`;
   const dest=[...new Set([pvsEmail(p.secretaire_id), pvsEmail(p.signataire_id)].filter(Boolean))];
-  const res=await envoyerAvecPiece(dest, "PV signé — "+p.titre, corps, piece, {tous:true, sansInvitation:true, exp:EXP_DOCS});
+  const res=await envoyerAvecPiece(dest, "PV signé — "+p.titre, corps, piece, {tous:true, sansInvitation:true, exp:EXP_PVSIGN});
   try{ logAct("PV signé et rangé dans Documents : "+p.titre); }catch(_){ }
   return res;
 }
@@ -3051,6 +3066,7 @@ function viewDash(){
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
+  if(S.goto==="reunion"){ if(!estCoopte()){ S.tab="reunions"; S.reuUI={sel:S.gotoRes||null}; } S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   /* Les cooptes n'ont acces qu'a leur espace de contribution et aux annonces. */
   /* Les coopte·es ont acces a la mediation : c'est meme la raison pour laquelle
      leur espace existe. Ils y deposent un signalement et suivent leur fil,
@@ -4010,20 +4026,39 @@ function tabMessages(){
 /* ---- Approbation formelle du PV : un PV n'a de valeur qu'une fois approuvé
        par le CA, en général à la réunion suivante. ---- */
 function pvApprouve(m){ return m && m.pvStatut==="approuve"; }
-function blocApprobationPV(m){
-  const ok=pvApprouve(m);
-  const badge = ok
-    ? `<p style="margin:0;font-size:13px;font-weight:600;color:var(--green)">✓ PV approuvé${m.pvApprouveLe?" le "+esc(fmtQuand(m.pvApprouveLe)):""}${m.pvApprouveNote?` — ${esc(m.pvApprouveNote)}`:""}</p>`
-    : `<p style="margin:0;font-size:13px;color:var(--stamp);font-weight:600">Projet de PV — non encore approuvé par le CA.</p>`;
-  const boutons = estSecretaire()
-    ? `<div class="row-btn" style="margin-top:8px">${ok
-        ? `<button class="btn ghost sm" data-action="reu-pv-brouillon" data-id="${m.id}">Repasser en projet</button>`
-        : `<button class="btn sm" data-action="reu-pv-approuver" data-id="${m.id}">Marquer le PV comme approuvé</button>`}</div>`
-    : "";
+function blocApprobationPV(m){ return blocSignaturePV(m); }
+/* 17/11/2026 — Le PV affiche les signatures (secrétaire, puis présidente ou vice-président).
+   La secrétaire signe et l'envoie depuis la réunion ; pendant la signature et après, la réunion
+   est verrouillée (règle serveur). « Retirer de la signature » la rouvre pour correction. */
+function blocSignaturePV(m){
+  const e=reuPvEtat(m), secr=estSecretaire();
+  const role=f=>f==="vice"?"le vice-président":"la présidente";
+  const ligne=(ok,txt)=>`<p style="margin:4px 0;font-size:13.5px">${ok?"✓":"⏳"} ${txt}</p>`;
+  let etat;
+  if(!e) etat=`<p style="margin:0;font-size:13px;color:var(--stamp);font-weight:600">📝 Projet de PV, non signé.</p>`;
+  else if(e.statut==="refuse"){
+    const retire=/^Retiré de la signature/.test(String(e.motif||""));
+    etat=`<p style="margin:0;font-size:13.5px;color:var(--red);font-weight:600">✗ ${retire?"Retiré de la signature pour correction":"Refusé par "+esc(e.signataire_nom||role(e.signataire_fonction))}${e.refus_at?" le "+esc(fmtQuand(e.refus_at)):""}</p>`
+      +(e.motif&&!retire?`<p class="du" style="margin:4px 0 0">Motif : ${esc(e.motif)}</p>`:"");
+  } else {
+    etat=ligne(true,`Signé par la secrétaire — <b>${esc(e.secretaire_nom||"")}</b>${e.sig_secr_at?", le "+esc(fmtQuand(e.sig_secr_at)):""}`)
+      +(e.statut==="valide"
+        ? ligne(true,`Signé par ${role(e.signataire_fonction)} — <b>${esc(e.signataire_nom||"")}</b>${e.sig_sign_at?", le "+esc(fmtQuand(e.sig_sign_at)):""}`)
+        : ligne(false,`En attente de ${role(e.signataire_fonction)} — <b>${esc(e.signataire_nom||"")}</b>`));
+  }
+  const btn=[];
+  if(secr && (!e || e.statut==="refuse")){
+    const sigs=pvsSignataires();
+    if(sigs.length) sigs.forEach(a=>{ const vice=pvsFonctionDe(a.fonction)==="vice";
+      btn.push(`<button class="btn sm" data-action="reu-pv-signer" data-id="${m.id}" data-sig="${esc(a.id)}">✍ Signer le PV et l'envoyer ${vice?"au vice-président":"à la présidente"} (${esc(((a.prenom||"")+" "+(a.nom||"")).trim())})</button>`); });
+    else btn.push(`<p class="du" style="color:var(--red);margin:0">Aucune présidente ni aucun vice-président actif n'est inscrit.</p>`);
+  }
+  if(secr && e && e.statut==="attente") btn.push(`<button class="btn ghost sm" data-action="reu-pv-retirer" data-id="${m.id}" data-pv="${esc(e.id)}">Retirer de la signature</button>`);
+  if(e && e.statut==="valide") btn.push(secr&&e.signe?`<button class="chip" data-action="pvs-final" data-id="${esc(e.id)}">✅ PV signé</button>`:`<span class="du">Le PV signé est rangé dans Documents (catégorie « PV &amp; CR »).</span>`);
   return `<div class="grp-h" style="margin-top:26px"><h2 class="serif">Procès-verbal</h2><span class="l"></span></div>
-    <div class="card2">${badge}
-      <p class="du" style="margin:8px 0 0">Tant qu'il n'est pas approuvé, le texte reste un projet : il peut être corrigé, et il n'engage pas le CA.</p>
-      ${boutons}</div>`;
+    <div class="card2">${etat}
+      <p class="du" style="margin:8px 0 0">${reuVerrou(m)?"🔒 La réunion est verrouillée pendant la signature et une fois le PV signé.":"Tant qu'il n'est pas envoyé à la signature, le PV peut être corrigé."}</p>
+      ${btn.length?`<div class="row-btn" style="margin-top:10px;flex-wrap:wrap">${btn.join("")}</div>`:""}</div>`;
 }
 
 /* ---- onglet IDEES & AVIS : espace de contribution des coopte-es.
@@ -4139,53 +4174,117 @@ function tabAvis(){
   return compose+list;
 }
 
+function reuPvDoc(m){
+      const pres=m.presences||{};
+      const nomDeCle=k=>{ const a=(S.admins||[]).find(x=>x.id===k); if(a) return ((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||k; const p=PERSONNES.find(x=>x.id===k); return p?(p.prenom+" "+p.nom):k; };
+      const names=v=>Object.keys(pres).filter(k=>pres[k]===v).map(k=>esc(nomDeCle(k)));
+      const pts=(m.ordre||[]).map((p,i)=>`<div class="pt"><h3>${i+1}. ${esc(p.texte)} ${p.fait?"<span class='ok'>✓ traité</span>":""}</h3>${p.par?`<p class='muted' style='font-size:12px;margin:0 0 4px'>Proposé par ${esc(p.par)}</p>`:""}${p.sujet==="budget"&&p.budgetMontant?`<p><b>Montant demandé :</b> ${esc(eur(p.budgetMontant))}</p>`:""}${p.note?`<p style='white-space:pre-wrap'>${esc(p.note)}</p>`:""}${p.notes?`<p>${esc(p.notes)}</p>`:"<p class='muted'>—</p>"}</div>`).join("");
+      const cssPV=`body{font-family:Georgia,serif;color:#1b2338;line-height:1.55}
+h1{font-size:24px;margin:0 0 2px}.d{color:#6a7182;font-size:13px;margin:0 0 20px}
+h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bottom:4px}
+.pt h3{font-size:14px;margin:12px 0 2px}.pt p{margin:0 0 6px}.muted{color:#9aa1ad}.ok{color:#3c7a58;font-size:12px}`;
+      const corpsPV=`<h1>Procès-verbal — ${esc(m.titre)}</h1><p class="d">${esc(reuQuand(m))}${m.lieu?" · "+esc(m.lieu):""}</p>
+<h2>Présences</h2>
+<p><b>Présents :</b> ${names('present').join(", ")||"—"}</p>
+<p><b>Excusés :</b> ${names('excuse').join(", ")||"—"}</p>
+<p><b>Absents :</b> ${names('absent').join(", ")||"—"}</p>
+<h2>Ordre du jour</h2>${pts||"<p class='muted'>—</p>"}
+<p class="d" style="margin-top:30px">Document généré automatiquement.</p>`;
+      return {nom:nomPDF("PV "+(m.titre||"")), css:cssPV, corps:corpsPV};
+}
+/* Signer le PV depuis la réunion et l'envoyer à la présidente ou au vice-président.
+   Même circuit que l'onglet « PV à signer » (pvs_envoyer), avec le PV généré ici :
+   mot de passe puis, si elle est activée, double authentification. */
+async function reuPvSigner(reuId, sigId){
+  if(!estSecretaire()||!sb) return;
+  const m=(S.reunions||[]).find(x=>x.id===reuId); if(!m) return;
+  const a=pvsMembre(sigId); if(!a||!pvsFonctionDe(a.fonction)){ modaleInfo("Choisissez la présidente ou le vice-président.","PV"); return; }
+  await loadReuPv(); const e=reuPvEtat(m);
+  if(e&&e.statut!=="refuse"){ render(); modaleInfo("Ce PV est déjà en signature ou signé.","PV"); return; }
+  const nomSig=((a.prenom||"")+" "+(a.nom||"")).trim(), vers=pvsFonctionDe(a.fonction)==="vice"?"au vice-président":"à la présidente";
+  if(!(await modaleConfirm("Signer le PV de « "+(m.titre||"la réunion")+" » et l'envoyer "+vers+" ("+nomSig+") ?\n\nPendant la signature, la réunion sera verrouillée.","Signer et envoyer"))) return;
+  if(!(await pvsAuthentifier("Signer le PV et l'envoyer à "+nomSig))) return;
+  const d=reuPvDoc(m); let blob=null; try{ blob=await telechargerPDF(d.nom, d.css, d.corps, null, "blob"); }catch(_){ blob=null; }
+  if(!blob){ modaleInfo("Le PV n'a pas pu être généré. Rien n'a été signé ni envoyé.","Erreur"); return; }
+  const hash=await pvsHash(await blob.arrayBuffer());
+  const fname=pvsNomFichier("pv-"+(m.titre||"reunion")+"-"+(m.date||""))+".pdf", chemin="pv-"+uid()+"-"+fname;
+  const up=await sb.storage.from("ca-documents").upload(chemin, blob, {contentType:"application/pdf", upsert:false});
+  if(up&&up.error){ modaleInfo("Envoi du PDF impossible : "+up.error.message,"Erreur"); return; }
+  const titre="PV — "+(m.titre||"Réunion")+(m.date?" du "+new Date(String(m.date).slice(0,10)+"T12:00").toLocaleDateString("fr-BE"):"");
+  const r=await sb.rpc("pvs_envoyer",{p_id:(e&&e.statut==="refuse")?e.id:null, p_titre:titre, p_reunion:String(m.id), p_date_reunion:null,
+    p_fichier:{path:chemin, name:fname, hash:hash}, p_signataire:sigId, p_date_mode:"electronique", p_date_manuelle:null});
+  if(r.error){ modaleInfo("Le PV n'a pas été envoyé. Erreur : "+r.error.message,"Erreur"); return; }
+  await loadReuPv(); try{ await loadPvSign(); }catch(_){ }
+  const corps=`<h2 style="margin:0 0 10px">PV à signer ✍</h2>
+    <p><b>${caMailEsc(S.session.nom||"La secrétaire")}</b> a signé le PV <b>${caMailEsc(titre)}</b>. Il attend maintenant votre signature.</p>
+    <p><a href="${caAppUrl()}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'onglet « PV à signer »</a></p>`;
+  const ok=await pvsMail(pvsEmail(sigId), (e?"PV corrigé à signer — ":"PV à signer — ")+titre, corps, null);
+  try{ logAct("PV signé par la secrétaire et envoyé à la signature ("+nomSig+") : "+titre); }catch(_){ }
+  render();
+  modaleInfo("✓ Votre signature est enregistrée et la réunion est verrouillée. "+(ok?nomSig+" vient d'être prévenu(e) par e-mail.":"⚠ Le mail n'est pas parti : prévenez "+nomSig+" vous-même."),"PV envoyé à la signature");
+}
+document.addEventListener("change", e=>{
+  const el=e.target; if(!el||el.id!=="reu_sujet") return;
+  const a=document.getElementById("reu_autre_box"), b=document.getElementById("reu_budget_box");
+  if(a) a.style.display=el.value==="autre"?"":"none";
+  if(b) b.style.display=el.value==="budget"?"":"none";
+});
 /* ---- onglet RÉUNIONS (ordre du jour, présences, PV) ---- */
 function tabReunions(){
   if(!S.reuUI) S.reuUI={sel:null};
   const R=S.reunions||[];
   if(!S.reuUI.sel){
-    const list=R.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map(m=>`<button class="msg-row" data-action="reu-open" data-id="${m.id}"><span class="msg-av">${esc((m.date||"").slice(8,10)||"·")}</span><span><span class="nm">${esc(m.titre)}</span><br><span class="fn">${m.date?fmtDateLong(m.date):"date ?"} · ${(m.ordre||[]).length} point(s)</span></span></button>`).join("");
+    const list=R.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map(m=>`<button class="msg-row" data-action="reu-open" data-id="${m.id}"><span class="msg-av">${esc((m.date||"").slice(8,10)||"·")}</span><span><span class="nm">${esc(m.titre)}</span><br><span class="fn">${m.date?esc(reuQuand(m)):"date ?"} · ${(m.ordre||[]).length} point(s)</span></span></button>`).join("");
     return `${estSecretaire()?`<div class="compose"><h3 class="serif">Nouvelle réunion</h3>
       <input class="f" id="reu_titre" placeholder="Ex. Réunion du bureau">
       <input class="f" id="reu_date" type="date">
+      <input class="f" id="reu_heure" type="time" title="Heure de la réunion (l'ordre du jour part 1 h avant)">
       <input class="f" id="reu_lieu" placeholder="Lieu (facultatif)">
       <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="reu_modele" checked> Pr\u00e9-remplir avec les points r\u00e9currents</label>
-      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="reu_notify"> Prévenir les membres par e-mail</label>
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="reu_notify" checked> Prévenir les membres du CA par e-mail (avec le lien pour ajouter un point)</label>
     <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px" title="Part tout de suite, même chez ceux qui ont choisi le résumé de 18 h. Ceux qui ont coupé cette notification ne la reçoivent pas."><input type="checkbox" class="sw" role="switch" id="reu_urgent"> ⚡ Urgent : envoyer tout de suite, sans attendre le résumé de 18 h</label>
       <div class="row-btn"><button class="btn" data-action="reu-create">Créer la réunion</button></div></div>`:`<p class="du" style="margin-bottom:12px">Les réunions sont créées par le secrétariat. Vous pouvez les consulter et proposer des points à l'ordre du jour.</p>`}
       <div class="row-btn" style="margin-bottom:12px"><button class="btn ghost" data-action="registre-pv">Registre des PV</button>${peutVoirRapports()?`<button class="btn ghost" data-action="rapport-activite">Rapport d'activit\u00e9</button><button class="btn ghost" data-action="suivi-presence">Suivi de pr\u00e9sence</button>`:""}</div>
       ${R.length?`<div class="msg-list">${list}</div>`:`<div class="empty">Aucune réunion pour l'instant.</div>`}`;
   }
   const m=R.find(x=>x.id===S.reuUI.sel); if(!m){ S.reuUI.sel=null; return tabReunions(); }
-  const ordre=m.ordre||[]; const pres=m.presences||{};
+  const ordre=m.ordre||[]; const pres=m.presences||{}; const verrou=reuVerrou(m);
   const cnt=v=>Object.keys(pres).filter(k=>pres[k]===v).length;
   const points=ordre.length?ordre.map(pt=>`<div class="vote">
       <div class="vote-h" style="align-items:flex-start;gap:8px">
-        <button class="link" ${estSecretaire()?"":"disabled style=\"opacity:.5;cursor:default\""} data-action="reu-togglepoint" data-pt="${pt.id}" style="font-size:17px;text-decoration:none">${pt.fait?"☑":"☐"}</button>
-        <span style="flex:1"><span class="serif" style="font-size:15px;display:block;${pt.fait?"opacity:.55;text-decoration:line-through":""}">${esc(pt.texte)}</span>${pt.par?`<span class="du" style="font-size:11.5px;color:var(--slate)">proposé par ${esc(pt.par)}</span>`:""}</span>
-        ${(!pt.parId || (S.session && (S.session.id===pt.parId || S.session.role==="owner"))) ? `<button class="link" data-action="reu-delpoint" data-pt="${pt.id}">✕</button>` : ""}</div>
+        <button class="link" ${(estSecretaire()&&!verrou)?"":"disabled style=\"opacity:.5;cursor:default\""} data-action="reu-togglepoint" data-pt="${pt.id}" style="font-size:17px;text-decoration:none">${pt.fait?"☑":"☐"}</button>
+        <span style="flex:1"><span class="serif" style="font-size:15px;display:block;${pt.fait?"opacity:.55;text-decoration:line-through":""}">${esc(pt.texte)}</span>${pt.sujet==="budget"&&pt.budgetMontant?`<span style="display:block;font-size:13px;font-weight:600">Montant demandé : ${esc(eur(pt.budgetMontant))}</span>`:""}${pt.note?`<span style="display:block;font-size:13px;white-space:pre-wrap;margin-top:2px">${esc(pt.note)}</span>`:""}${pt.par?`<span class="du" style="font-size:11.5px;color:var(--slate)">proposé par ${esc(pt.par)}</span>`:""}</span>
+        ${(!verrou && (!ordreFerme(m)||estSecretaire()) && (!pt.parId || (S.session && (S.session.id===pt.parId || S.session.role==="owner")))) ? `<button class="link" data-action="reu-delpoint" data-pt="${pt.id}">✕</button>` : ""}</div>
       ${(estSecretaire()&&ongletActif("taches")&&pt.fait&&pt.notes)?`<button class="link" data-action="pt-tache" data-pt="${pt.id}" style="font-size:12px">➕ Cr\u00e9er une t\u00e2che depuis cette d\u00e9cision</button>`:""}
-      <textarea id="reunote_${pt.id}" data-change="reunote" data-pt="${pt.id}" ${peutNoterPoint(pt)?"":"readonly style=\"opacity:.75\""} placeholder="${estSecretaire()?"Notes / décisions (pour le PV)…":peutNoterPoint(pt)?"Vos notes sur ce point…":"Notes réservées à l'auteur du point et au secrétariat"}">${esc(pt.notes||"")}</textarea>
-      ${peutNoterPoint(pt)?`<div class="row-btn" style="align-items:center;margin-top:4px"><button class="btn sm" data-action="reu-savenote" data-pt="${pt.id}">💾 Enregistrer</button><span class="du" id="reunote_st_${pt.id}"></span></div>`:""}</div>`).join(""):`<div class="empty">Aucun point à l'ordre du jour.</div>`;
+      <textarea id="reunote_${pt.id}" data-change="reunote" data-pt="${pt.id}" ${(peutNoterPoint(pt)&&!verrou)?"":"readonly style=\"opacity:.75\""} placeholder="${estSecretaire()?"Notes / décisions (pour le PV)…":peutNoterPoint(pt)?"Vos notes sur ce point…":"Notes réservées à l'auteur du point et au secrétariat"}">${esc(pt.notes||"")}</textarea>
+      ${(peutNoterPoint(pt)&&!verrou)?`<div class="row-btn" style="align-items:center;margin-top:4px"><button class="btn sm" data-action="reu-savenote" data-pt="${pt.id}">💾 Enregistrer</button><span class="du" id="reunote_st_${pt.id}"></span></div>`:""}</div>`).join(""):`<div class="empty">Aucun point à l'ordre du jour.</div>`;
   const presRows=membresActifs().map(a=>{const v=pres[a.id]; const nom=((a.prenom||"")+" "+(a.nom||"")).trim()||a.email;
     return `<div class="doc" style="cursor:default;padding:9px 13px">
       <span class="meta"><p class="dt" style="font-size:13.5px">${esc(nom)}</p><p class="du">${esc(a.fonction||"")}</p></span>
       <div class="mini">
-        <button aria-pressed="${v==='present'}" ${estSecretaire()?"":"disabled"} data-action="reu-pres" data-person="${esc(a.id)}" data-val="present">Présent</button>
-        <button aria-pressed="${v==='absent'}" ${estSecretaire()?"":"disabled"} data-action="reu-pres" data-person="${esc(a.id)}" data-val="absent">Absent</button>
-        <button aria-pressed="${v==='excuse'}" ${estSecretaire()?"":"disabled"} data-action="reu-pres" data-person="${esc(a.id)}" data-val="excuse">Excusé</button>
+        <button aria-pressed="${v==='present'}" ${(estSecretaire()&&!verrou)?"":"disabled"} data-action="reu-pres" data-person="${esc(a.id)}" data-val="present">Présent</button>
+        <button aria-pressed="${v==='absent'}" ${(estSecretaire()&&!verrou)?"":"disabled"} data-action="reu-pres" data-person="${esc(a.id)}" data-val="absent">Absent</button>
+        <button aria-pressed="${v==='excuse'}" ${(estSecretaire()&&!verrou)?"":"disabled"} data-action="reu-pres" data-person="${esc(a.id)}" data-val="excuse">Excusé</button>
       </div></div>`;}).join("")||`<div class="empty">Aucun membre validé à pointer.</div>`;
   return `<div class="msg-head"><button class="btn ghost sm" data-action="reu-back">← Réunions</button>
-      <span><span class="u-nom">${esc(m.titre)}</span> <span class="u-id">${m.date?fmtDateLong(m.date):""}</span></span>
-      ${estSecretaire()?`<button class="link" data-action="reu-del" data-id="${m.id}" style="margin-left:auto">Supprimer</button>`:""}</div>
+      <span><span class="u-nom">${esc(m.titre)}</span> <span class="u-id">${esc(reuQuand(m))}${m.lieu?" · "+esc(m.lieu):""}</span></span>
+      ${(estSecretaire()&&!verrou)?`<button class="link" data-action="reu-del" data-id="${m.id}" style="margin-left:auto">Supprimer</button>`:""}</div>
     ${(peutRappelerReunion() && (!m.date || String(m.date).slice(0,10)>=todayISO()))?`<div class="row-btn" style="margin:0 0 12px;align-items:center"><button class="btn sm" data-action="reu-rappel" data-id="${m.id}">🔔 Rappeler la réunion aux membres</button>${(S.reuRappelLe&&S.reuRappelLe[m.id])?`<span class="du">Dernier rappel : ${esc(fmtQuand(S.reuRappelLe[m.id]))}</span>`:""}</div>`:""}
     <div class="grp-h"><h2 class="serif">Ordre du jour</h2><span class="c">${ordre.length}</span><span class="l"></span></div>
-    ${(ordreFerme(m)&&!estSecretaire())?`<p class="du">L'ordre du jour est cl\u00f4tur\u00e9 (les propositions ferment ${(S.meta.clotureOdj||0)}h avant la r\u00e9union).</p>`:`<div class="compose"><input class="f" id="reu_point" placeholder="Ajouter un point…"><div class="row-btn"><button class="btn sm" data-action="reu-addpoint">Ajouter</button></div></div>`}
+    ${verrou?`<p class="du">🔒 Le PV est en signature ou signé : l'ordre du jour est verrouillé.</p>`
+      :(ordreFerme(m)&&!estSecretaire())?`<p class="du">L'ordre du jour est clôturé : on pouvait ajouter des points jusqu'à la veille de la réunion à 23 h 59.</p>`
+      :`<div class="compose"><h3 class="serif" style="margin-top:0">Ajouter un point</h3>
+        <select class="f" id="reu_sujet"><option value="">— Choisir un sujet —</option>${REU_SUJETS.map(x=>`<option value="${x[0]}">${esc(x[1])}</option>`).join("")}</select>
+        <div id="reu_autre_box" style="display:none"><input class="f" id="reu_autre" placeholder="Titre du point (obligatoire)" maxlength="200"></div>
+        <div id="reu_budget_box" style="display:none"><input class="f" id="reu_bobjet" placeholder="Objet du budget (obligatoire)" maxlength="200"><input class="f" id="reu_bmontant" type="number" min="0" step="0.01" placeholder="Montant en € (obligatoire)"></div>
+        <textarea class="f" id="reu_note" placeholder="Votre note (facultatif)" maxlength="2000"></textarea>
+        <p class="du" style="margin:4px 0 0">${estSecretaire()?"Secrétariat : vous pouvez ajouter des points à tout moment.":"Vous pouvez ajouter des points jusqu'à la veille de la réunion à 23 h 59."}</p>
+        <div class="row-btn"><button class="btn sm" data-action="reu-addpoint">Ajouter le point</button></div></div>`}
     ${points}
     <div class="grp-h" style="margin-top:26px"><h2 class="serif">Présences</h2><span class="c">${cnt('present')} prés. · ${cnt('excuse')} exc. · ${cnt('absent')} abs.</span><span class="l"></span></div>
     ${presRows}
     ${blocApprobationPV(m)}
-    ${estSecretaire()?`<div class="row-btn" style="margin-top:16px"><button class="btn" data-action="reu-gen">Générer le PV</button></div>`:`<p class="du" style="margin-top:16px">Le PV est rédigé et diffusé par le secrétariat.</p>`}`;
+    ${estSecretaire()?`<div class="row-btn" style="margin-top:16px;flex-wrap:wrap"><button class="btn ghost" data-action="reu-gen">Aperçu du PV (PDF)</button><button class="btn ghost" data-action="reu-lien" data-id="${m.id}">🔗 Copier le lien de la réunion</button></div>`:`<p class="du" style="margin-top:16px">Le PV est rédigé et diffusé par le secrétariat.</p>`}`;
 }
 
 /* ---- onglet ÉVÉNEMENTS (fiche : budget, checklist, notes) ---- */
@@ -5737,14 +5836,36 @@ document.addEventListener("click", async e=>{
       render();
       break; }
     case "contact-del": { if(!sb) break; if(!(await modaleConfirm("Supprimer définitivement ce contact et ses données ?"))) break; await sb.from("ca_contacts").delete().eq("id",el.dataset.id); logAct("Contact supprimé (RGPD)"); await loadContacts(); render(); break; }
-    case "reu-create": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut créer une réunion."); break; } const t=val("reu_titre").trim(), dt=val("reu_date"); if(!t||!sb) break; const lieu=val("reu_lieu")||null;
+    case "reu-create": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut créer une réunion."); break; } const t=val("reu_titre").trim(), dt=val("reu_date"), hr=val("reu_heure"); if(!t||!sb) break; const lieu=val("reu_lieu")||null;
+      if(!dt||!hr){ modaleInfo("Indiquez la date et l'heure de la réunion : l'ordre du jour est envoyé automatiquement 1 h avant.","Nouvelle réunion"); break; }
       const mod=document.getElementById("reu_modele");
       const base=(mod&&mod.checked&&Array.isArray(S.meta.modeleOdj))?S.meta.modeleOdj.map(x=>({id:uid(),texte:x,fait:false,notes:"",parId:null,par:"Mod\u00e8le"})):[];
-      const {data,error}=await sb.from("ca_reunions").insert({titre:t,date:dt||null,lieu:lieu,ordre:base,presences:{}}).select().single(); if(error||!data) break; await loadReunions(); { const n=document.getElementById("reu_notify"); if(n&&n.checked) convocationCA(data, !!(document.getElementById("reu_urgent")||{}).checked); } S.reuUI={sel:data.id}; render(); break; }
-    case "reu-open": S.reuUI={sel:el.dataset.id}; render(); break;
+      const {data,error}=await sb.from("ca_reunions").insert({titre:t,date:dt||null,heure:hr||null,lieu:lieu,ordre:base,presences:{}}).select().single(); if(error||!data) break; await loadReunions(); { const n=document.getElementById("reu_notify"); if(n&&n.checked) convocationCA(data, !!(document.getElementById("reu_urgent")||{}).checked); } S.reuUI={sel:data.id}; render(); break; }
+    case "reu-open": S.reuUI={sel:el.dataset.id}; render(); await loadReuPv(); if(estSecretaire()){ try{ await loadPvSign(); }catch(_){ } } render(); break;
     case "reu-back": S.reuUI={sel:null}; render(); break;
     case "reu-del": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut supprimer une réunion."); break; } if(!sb) break; if(!(await modaleConfirm("Supprimer cette réunion ?"))) break; await sb.from("ca_reunions").delete().eq("id",el.dataset.id); await loadReunions(); S.reuUI={sel:null}; render(); break; }
-    case "reu-addpoint": { const t=val("reu_point").trim(); if(!t||!sb) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break; if(ordreFerme(m)&&!estSecretaire()){ if(window.alert) window.alert("L'ordre du jour est cl\u00f4tur\u00e9 pour cette r\u00e9union."); break; } await majReunion(m.id, f=>({ordre:[...f.ordre,{id:uid(),texte:t,fait:false,notes:"",parId:(me&&me.id)||null,par:(me&&me.sig)||""}]})); render(); break; }
+    case "reu-addpoint": { if(!sb) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
+      if(reuVerrou(m)){ modaleInfo("Le PV de cette réunion est en signature ou signé : l'ordre du jour est verrouillé.","Ajouter un point"); break; }
+      if(ordreFerme(m)&&!estSecretaire()){ modaleInfo("L'ordre du jour est clôturé : on peut ajouter des points jusqu'à la veille de la réunion à 23 h 59.","Ajouter un point"); break; }
+      const sj=val("reu_sujet"); if(!sj){ modaleInfo("Choisissez un sujet dans la liste.","Ajouter un point"); break; }
+      const note=String(val("reu_note")||"").trim(); let texte=reuSujetLib(sj), bo="", bm=null;
+      if(sj==="autre"){ texte=String(val("reu_autre")||"").trim(); if(!texte){ modaleInfo("Sujet « Autre » : écrivez le titre du point.","Ajouter un point"); break; } }
+      if(sj==="budget"){ bo=String(val("reu_bobjet")||"").trim(); bm=Math.round(Number(String(val("reu_bmontant")||"").replace(",","."))*100)/100;
+        if(!bo||!isFinite(bm)||bm<=0){ modaleInfo("Demande de budget : l'objet et le montant sont obligatoires.","Ajouter un point"); break; }
+        texte="Demande de budget — "+bo; }
+      const pt={id:uid(),texte:texte,sujet:sj,note:note,fait:false,notes:"",parId:(me&&me.id)||null,par:(me&&me.sig)||""};
+      if(sj==="budget"){ pt.budgetObjet=bo; pt.budgetMontant=bm; }
+      if(await majReunion(m.id, f=>({ordre:[...f.ordre,pt]}))){ try{ logAct("Point ajouté à l'ordre du jour : "+texte); }catch(_){ } }
+      render(); break; }
+    case "reu-lien": { const m=(S.reunions||[]).find(x=>x.id===el.dataset.id); if(!m) break; const l=reuLien(m);
+      try{ await navigator.clipboard.writeText(l); modaleInfo("Lien copié :\n"+l+"\n\nIl ouvre cette réunion dans l'app CA (membres du CA connectés).","Lien de la réunion"); }
+      catch(_){ modaleInfo("Lien de la réunion :\n"+l,"Lien de la réunion"); } break; }
+    case "reu-pv-retirer": { if(!estSecretaire()||!sb) break;
+      if(!(await modaleConfirm("Retirer le PV de la signature ?\n\nLa réunion redevient modifiable. Vous pourrez corriger le PV puis le signer et le renvoyer.","Retirer de la signature"))) break;
+      const r=await sb.rpc("pvs_retirer",{p_id:el.dataset.pv}); if(r.error){ modaleInfo("Impossible : "+r.error.message,"Erreur"); break; }
+      await loadReuPv(); try{ await loadPvSign(); }catch(_){ } try{ logAct("PV retiré de la signature"); }catch(_){ } render();
+      modaleInfo("✓ Le PV est retiré de la signature. La réunion est de nouveau modifiable.","PV"); break; }
+    case "reu-pv-signer": { await reuPvSigner(el.dataset.id, el.dataset.sig); break; }
     case "pt-tache": { if(!estSecretaire()||!sb) break;
       const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
       const pt=(m.ordre||[]).find(p=>p.id===el.dataset.pt); if(!pt) break;
@@ -5776,22 +5897,7 @@ document.addEventListener("click", async e=>{
     case "reu-rappel": { await rappelReunionCA(id); break; }
     case "reu-gen": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut générer le PV."); break; }
       const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
-      const pres=m.presences||{};
-      const nomDeCle=k=>{ const a=(S.admins||[]).find(x=>x.id===k); if(a) return ((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||k; const p=PERSONNES.find(x=>x.id===k); return p?(p.prenom+" "+p.nom):k; };
-      const names=v=>Object.keys(pres).filter(k=>pres[k]===v).map(k=>esc(nomDeCle(k)));
-      const pts=(m.ordre||[]).map((p,i)=>`<div class="pt"><h3>${i+1}. ${esc(p.texte)} ${p.fait?"<span class='ok'>✓ traité</span>":""}</h3>${p.par?`<p class='muted' style='font-size:12px;margin:0 0 4px'>Proposé par ${esc(p.par)}</p>`:""}${p.notes?`<p>${esc(p.notes)}</p>`:"<p class='muted'>—</p>"}</div>`).join("");
-      const cssPV=`body{font-family:Georgia,serif;color:#1b2338;line-height:1.55}
-h1{font-size:24px;margin:0 0 2px}.d{color:#6a7182;font-size:13px;margin:0 0 20px}
-h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bottom:4px}
-.pt h3{font-size:14px;margin:12px 0 2px}.pt p{margin:0 0 6px}.muted{color:#9aa1ad}.ok{color:#3c7a58;font-size:12px}`;
-      const corpsPV=`<h1>Procès-verbal — ${esc(m.titre)}</h1><p class="d">${m.date?fmtDateLong(m.date):""}</p>
-<h2>Présences</h2>
-<p><b>Présents :</b> ${names('present').join(", ")||"—"}</p>
-<p><b>Excusés :</b> ${names('excuse').join(", ")||"—"}</p>
-<p><b>Absents :</b> ${names('absent').join(", ")||"—"}</p>
-<h2>Ordre du jour</h2>${pts||"<p class='muted'>—</p>"}
-<p class="d" style="margin-top:30px">Document généré automatiquement.</p>`;
-      telechargerPDF(nomPDF("PV "+(m.titre||"")), cssPV, corpsPV);
+      const d=reuPvDoc(m); telechargerPDF(d.nom, d.css, d.corps);
       break;
     }
     case "msg-open": S.msgUI={sel:el.dataset.id,draft:"",file:null}; if(sb){ await loadMessages(); } render(); break;
@@ -6661,8 +6767,8 @@ async function boot(){
       try{ const m=sessionStorage.getItem("ca:goto"); if(m){ S.goto=m; S.view="ca"; } }catch(_){ }
     }
     if(g==="coopte"){ S.authMode="signup"; }
-    if(g==="salle"){ S.gotoRes=params.get("r")||""; try{ sessionStorage.setItem("ca:r",S.gotoRes); }catch(_){ } }
-    else if(retourAuth && S.goto==="salle"){ try{ S.gotoRes=sessionStorage.getItem("ca:r")||""; }catch(_){ } }
+    if(g==="salle"||g==="reunion"){ S.gotoRes=params.get("r")||""; try{ sessionStorage.setItem("ca:r",S.gotoRes); }catch(_){ } }
+    else if(retourAuth && (S.goto==="salle"||S.goto==="reunion")){ try{ S.gotoRes=sessionStorage.getItem("ca:r")||""; }catch(_){ } }
     if(c){ S.viaCode=c; try{ sessionStorage.setItem("ca:c",c); }catch(_){ } }
     else if(retourAuth){ try{ const m=sessionStorage.getItem("ca:c"); if(m) S.viaCode=m; }catch(_){ } }
   }catch(e){}

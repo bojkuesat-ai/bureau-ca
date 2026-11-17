@@ -1,6 +1,6 @@
 # CONTEXTE — à lire en premier (nouvelle conversation)
 
-Dernière mise à jour : 16/11/2026 (19 h 30). Ce fichier résume l'état des apps et les règles de travail.
+Dernière mise à jour : 17/11/2026 (22 h 30).
 Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de passe).
 
 ## 1. Règles de travail (préférences du propriétaire, Esat)
@@ -33,7 +33,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 
 - **Supabase** : projet `mlgzdfyqjhvyubrywuim` (base, Auth, fonctions Edge, `pg_cron`, `pg_net`).
 - **Publication** : GitHub Pages (`https://bojkuesat-ai.github.io/bureau-ca/`). Cache d'environ 10 minutes ; en cas de doute, ajouter `?v=…`.
-- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-16 · simulation budget »).
+- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-17 · réunions : sujets, ODJ et signature du PV »).
 
 ## 3. Rôles et droits
 
@@ -111,6 +111,14 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Onglet **€ Simulation budget** de l'Espace CA, **désactivé par défaut** : Admin › Simulation budget (`ca_meta.simu_budget_actif`, fonction `simu_budget_activer`).
 - Calcul serveur `simu_budget_calcul(p_montant)` : trésorerie libre = solde de la caisse (ASBL, hors Novelles) − factures à échéance non payées − estimations − reste des budgets approuvés ouverts − remboursements en cours hors budget. Budgets **clôturés ou gelés** (réserve suspensive non levée) : seules les demandes déjà en cours comptent.
 - Faisable si montant ≤ **20 %** de la trésorerie libre. Faisable : PDF aux membres du CA (Budget-BE). Pas faisable : mail au trésorier uniquement (`caisse_config.treso_email`). Envoi après confirmation.
+
+## 9 ter. Réunions : sujets, ODJ et signature du PV (17/11)
+
+- **Ajouter un point** : choisir un sujet (`REU_SUJETS` / `reu_sujets()`), note facultative. Demande de budget : objet + montant obligatoires. Autre : titre obligatoire. Clôture **la veille à 23 h 59** (heure de Bruxelles), sauf secrétariat. Règles vérifiées par `ca_reunions_garde`. Cooptés : aucun accès (règle `pas_les_cooptes`).
+- Réunion : **date + heure** obligatoires (`ca_reunions.heure`). Lien `?go=reunion&r=<id>` dans la convocation et les rappels (expéditeur **Réu-BE**). Aucun rappel automatique : bouton manuel du secrétariat.
+- **ODJ 1 h avant** : cron `reunion-odj` (toutes les 5 min) → `reu_odj_envoyer()`, une fois par réunion (`odj_envoye_at`), aux membres du CA actifs (pas cooptés, pas hors CA, pas désabonnés), expéditeur **ODJ Réu-BE**.
+- **PV** : plus de bouton « approuvé ». La secrétaire clique « ✍ Signer le PV et l'envoyer à la présidente / au vice-président » (mot de passe puis MFA, `pvs_envoyer` avec le PV généré). Affichage des signatures via `reu_pv_etats()`. Pendant la signature et après : réunion **verrouillée** (`reu_pv_verrouille`). « Retirer de la signature » = `pvs_retirer` (passe en refusé, motif « Retiré… »). PV signé → Documents « PV & CR ».
+- Tous les mails de signature de PV : expéditeur **Signature PV du BE** (`EXP_PVSIGN`).
 
 ## 10. Fin de mandat programmée — 01/07/2027
 
