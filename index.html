@@ -865,7 +865,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-17 · simulation : résultat envoyé au CA";
+const CA_VERSION="2026-11-17 · simulation : annonce à l'activation";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -4718,6 +4718,7 @@ function carteSimuAdmin(){
     <p class="du">Onglet où un membre du CA tape un budget à faire voter et voit s'il est faisable. Quand elle est activée, les demandes de budget de l'ordre du jour sont aussi vérifiées : faisable, le point est ajouté ; pas faisable, il est refusé.</p>
     <label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:15px;font-weight:700;cursor:pointer">
       <input type="checkbox" class="sw" role="switch" id="simu_actif_chk" ${on?"checked":""}> ${on?"Simulation budget activée":"Simulation budget désactivée"} <span class="du">(état enregistré)</span></label>
+    <p class="du" style="margin:4px 0 8px">À la première activation, un mail d'annonce part automatiquement aux membres du CA (sauf vous), une seule fois.</p>
     <div class="row-btn"><button class="btn sm" data-action="save-simu-actif">Enregistrer</button></div></div>
   <div class="card2"><h3 class="serif">Autoriser quand même les demandes</h3>
     <label style="display:flex;align-items:flex-start;gap:9px;margin:7px 0;font-size:14.5px;cursor:pointer">
@@ -6595,9 +6596,10 @@ ${sections||"<p>Aucun retour.</p>"}
       const chk=document.getElementById("simu_actif_chk"); const voulu=!!(chk&&chk.checked);
       let r; try{ r=await sb.rpc("simu_budget_activer",{p_actif:voulu}); }catch(e){ r={error:{message:String(e&&e.message||e)}}; }
       if(r&&r.error){ modaleInfo("Le réglage n'a PAS été enregistré.\n\nErreur : "+r.error.message,"Erreur"); render(); break; }
-      S.meta.simuActif=(r&&r.data===true); logAct("Simulation budget "+(S.meta.simuActif?"activée":"désactivée"));
+      const d=(r&&r.data)||{}; S.meta.simuActif=(d.actif===true); logAct("Simulation budget "+(S.meta.simuActif?"activée":"désactivée")+(d.annonce_envoyee!=null?" — annonce envoyée à "+d.annonce_envoyee+" membre(s)":""));
       render();
       modaleInfo(S.meta.simuActif?"✅ Enregistré : la simulation budget est ACTIVÉE. L'onglet « Simulation budget » apparaît pour les membres du CA."
+          +(d.annonce_envoyee!=null?"\n\n📧 Le mail d'annonce vient d'être envoyé à "+d.annonce_envoyee+" membre(s) du CA (une seule fois, vous n'êtes pas dans les destinataires).":"\n\n(Le mail d'annonce avait déjà été envoyé le "+fmtQuand(d.annonce_deja)+" : il ne repart pas.)")
                               :"✅ Enregistré : la simulation budget est DÉSACTIVÉE. L'onglet a disparu.","Simulation budget");
       break; }
     case "bvote": { if(!sb) break; const b=(S.budgets||[]).find(x=>x.id===id); if(!b||b.statut!=="vote") break;
