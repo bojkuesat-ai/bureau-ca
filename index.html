@@ -498,7 +498,8 @@ function fmtDateLong(d){ try{ return new Date(d+"T00:00").toLocaleDateString("fr
 function fmtQuand(ts){ try{ return new Date(ts).toLocaleString("fr-BE",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
 function todayISO(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
 function dShort(d){ try{ return new Date(d+"T00:00").toLocaleDateString("fr-BE",{day:"2-digit",month:"short"}); }catch(e){ return d; } }
-function logAct(txt,who){ const w=who||((S.session&&S.session.sig)||"\u2014"); try{ if(typeof sb!=="undefined" && sb) sb.from("ca_journal").insert({who:w,txt:txt}).then(function(){},function(){}); }catch(e){}   /* .then() : sans lui, la requête Supabase n'est jamais envoyée */ const j=(S.journal||[]).slice(); j.unshift({ts:new Date().toISOString(),who:w,txt:txt}); S.journal=j.slice(0,200); }
+/* Journal retiré : plus aucune trace des actions n'est conservée dans l'app. */
+function logAct(txt,who){}
 const eur = n => new Intl.NumberFormat("fr-BE",{style:"currency",currency:"EUR"}).format(n||0);
 const normId = s => s.trim().toLowerCase();
 const initials = name => (name||"?").split(/[ &-]/).filter(Boolean).slice(0,2).map(w=>w[0]).join("").toUpperCase();
@@ -1556,7 +1557,7 @@ async function loadBilans(){
      total passe par une fonction qui ne renvoie qu'un compteur, jamais la liste. */
   try{ const f=await sb.from("ca_bilan_faits").select("membre_id"); S.meta.bilanSubmitters=(((f&&f.data))||[]).map(r=>r.membre_id); }catch(e){ S.meta.bilanSubmitters=[]; }
   try{ const c=await sb.rpc("ca_bilans_nb_deposes"); S.meta.bilanNbDeposes=(c&&typeof c.data==="number")?c.data:(S.meta.bilanSubmitters||[]).length; }catch(e){ S.meta.bilanNbDeposes=(S.meta.bilanSubmitters||[]).length; } }
-async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").select("*").order("created_at",{ascending:false}); S.journal=(data||[]).map(j=>({ts:j.created_at,who:j.who,txt:j.txt})); }catch(e){} }
+async function loadJournal(){ S.journal=[]; }
 async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,pdfPath:b.pdf_path||"",reserve:(b.reserve_tresorier==null?null:String(b.reserve_tresorier)),motifForce:String(b.motif_force||""),certifiePar:String(b.certifie_par||""),certifieId:b.certifie_id||null,certifieLe:b.certifie_le||null,seanceLe:b.seance_le||null,origineCertif:String(b.origine_certif||""),certifCode:b.certif_code||"",confirmCode:b.confirm_code||"",parent:b.parent_budget_id||null,creeLe:b.created_at||null,votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id,le:v.created_at||null}))})); }catch(e){ S.budgets=[]; }
   try{ const rr=await sb.from("ca_budget_reserves").select("*").order("created_at",{ascending:true}); S.resBud=(rr&&!rr.error&&rr.data)||[]; S.resBudErr=(rr&&rr.error)?rr.error.message:null; }catch(e){ S.resBud=[]; S.resBudErr=String(e); } }
 async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,rappelLe:v.rappel_le,rappelProg:v.rappel_prog_at,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
@@ -2112,12 +2113,11 @@ function viewProprio(){
       <p class="err" id="reset_err" style="display:none"></p>
       <div class="row-btn"><button class="btn" style="background:var(--red);border-color:var(--red);color:#fff" data-action="reset-data">Réinitialiser toutes les données</button></div>
     </div>
-    ${estProprioRetire()?"":`<div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Sauvegarde & journal</h2><span class="l"></span></div>
+    ${estProprioRetire()?"":`<div class="grp-h" style="margin:30px 0 12px"><h2 class="serif">Sauvegarde</h2><span class="l"></span></div>
     <div class="compose"><h3 class="serif">Données</h3>
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Exportez une sauvegarde de toutes les données (recommandé avant la bascule Supabase), ou réimportez-la.</p>
       <div class="row-btn"><button class="btn sm" data-action="export-data">Exporter (JSON)</button>
-        <label class="btn ghost sm" style="cursor:pointer">Importer<input type="file" accept="application/json" data-change="importfile" style="display:none"></label></div></div>
-    <p class="du" style="margin:14px 0 0">Le journal des connexions et des actions des membres est dans l'onglet <b>📜 Journal</b>.</p>`}
+        <label class="btn ghost sm" style="cursor:pointer">Importer<input type="file" accept="application/json" data-change="importfile" style="display:none"></label></div></div>`}
   </div>`;
 }
 document.addEventListener("click", async e=>{
@@ -3062,7 +3062,7 @@ document.addEventListener("click", async e=>{
 /* ---- DASHBOARD ---- */
 const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["verifsig","\ud83d\udd0e","V\u00e9rifier une signature"],["courriers","\u2712","Courriers sign\u00e9s"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["simulation","€","Simulation budget"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,proprio:viewProprio,licence:tabLicence,transparence:tabTransparence,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,courriers:tabCourriers,simulation:tabSimulation,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
+  const map={admin:viewAdmin,proprio:viewProprio,licence:tabLicence,transparence:tabTransparence,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,courriers:tabCourriers,simulation:tabSimulation,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
@@ -3084,13 +3084,12 @@ function viewDash(){
   if(estAdminCA() && !estCoopte()) tabs.push(["admin","\u2699","Admin"]);
   /* Espace Propriétaire, Journal et Registre : seulement après le lien secret. */
   if(proprioOuvert()) tabs.push(["proprio","\ud83d\udd11","Propri\u00e9taire"]);
-  if(voitJournalCA()) tabs.push(["journal","\ud83d\udcdc","Journal"]);
   if(voitJournalCA()) tabs.push(["registre","\ud83d\uddf3","Registre des votes"]);
   if(S.appEtat && S.appEtat.mode_licence && !estCoopte() && (S.appEtat.peut_demander || estAdminCA() || (S.appEtat.demande && S.appEtat.demande.moi)))
     tabs.push(["licence","\ud83d\udcc4","Licence"]);
   if(!estCoopte()) tabs.push(["transparence","\ud83d\udd0d","Transparence"]);
   if(S.tab==="admin" && !estAdminCA()) S.tab="accueil";
-  if((S.tab==="journal"||S.tab==="registre") && !voitJournalCA()) S.tab="accueil";
+  if((S.tab==="journal"||S.tab==="registre") && (S.tab==="journal"||!voitJournalCA())) S.tab="accueil";
   if(S.tab==="proprio" && !proprioOuvert()) S.tab="accueil";
   /* Propriétaire retiré : rien d'autre que son espace. */
   if(estProprioRetire()){ tabs.length=0; if(proprioOuvert()){ tabs.push(["proprio","\ud83d\udd11","Propri\u00e9taire"]); S.tab="proprio"; } }
@@ -4480,12 +4479,7 @@ function tabMail(){
         <button class="link" data-action="mail-prog-cancel" data-id="${esc(p.id)}" style="color:var(--red)">${p.statut==="en_attente"?"annuler":"retirer"}</button></div>`; }).join("")}</div>` : ""; })()}
   </div>
 
-  ${(()=>{ const h=(S.journal||[]).filter(j=>String(j.txt||"").indexOf("Mail envoyé")===0).slice(0,20);
-    return `<div class="compose">
-      <h3 class="serif">Historique des envois</h3>
-      ${h.length? `<div class="mail-hist">${h.map(j=>`<div class="mail-hist-row"><span class="mail-hist-txt">${esc(j.txt)}</span><span class="mail-hist-meta">${esc(j.who||"—")} · ${esc(fmtQuand(j.ts))}</span></div>`).join("")}</div>`
-        : `<div class="empty">Aucun mail envoyé pour l'instant.</div>`}
-    </div>`; })()}`;
+`;
 }
 
 
