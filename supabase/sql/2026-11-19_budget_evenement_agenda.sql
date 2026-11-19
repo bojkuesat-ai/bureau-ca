@@ -1,0 +1,10 @@
+-- Budget : événement lié (date, heure, titre), saisi à l'introduction (facultatif mais conseillé).
+-- Appliqué sur Supabase via apply_migration « budget_evenement_agenda_mail_events_be ».
+--  * ca_budgets : evt_titre, evt_date, evt_heure, evt_mail_at ; ca_evenements : heure, budget_id (unique).
+--  * Trigger zz_budget_evenement (ca_budget_sync_evenement) :
+--      budget « approuve » (physique confirmé par le trésorier, ou vote en ligne clôturé à la majorité)
+--        -> l'événement entre dans l'agenda ; un seul mail « Events-BE » aux cooptés actifs non désabonnés ;
+--      budget refusé / rouvert -> l'événement disparaît (le mail déjà envoyé n'est jamais renvoyé).
+--  * RPC ca_budget_evenement(p_id, p_titre, p_date, p_heure) : associe l'événement à un budget non décidé
+--    (introducteur, certificateur, trésorier, présidente ou propriétaire).
+-- Voir la définition exacte dans la base (pg_get_functiondef).
