@@ -1401,7 +1401,7 @@ function convocationCA(m, urgent){
     +`<p><b>Date :</b> ${caMailEsc(reuQuand(m))}</p>`
     +(m.lieu?`<p><b>Lieu :</b> ${caMailEsc(m.lieu)}</p>`:"")
     +(pts?`<p><b>Ordre du jour :</b></p><ul>${pts}</ul>`:"")
-    +`<p>Ajoutez vos points à l'ordre du jour avec le bouton ci-dessous : choisissez un sujet et écrivez votre note (pour une demande de budget, l'objet et le montant sont obligatoires). Les points peuvent être ajoutés jusqu'à la limite fixée par le secrétariat (par défaut : 1 minute avant la réunion). L'ordre du jour définitif est envoyé 1 h avant la réunion.</p>`
+    +`<p>Ajoutez vos points à l'ordre du jour avec le bouton ci-dessous : choisissez un sujet et écrivez votre note (pour une demande de budget, l'objet et le montant sont obligatoires). Les points peuvent être ajoutés jusqu'à la limite fixée par le secrétariat (par défaut : 1 minute avant la réunion). L'ordre du jour définitif est envoyé par mail 1 minute après le début de la réunion.</p>`
     +`<p><a href="${reuLien(m)}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ajouter un point à l'ordre du jour</a></p>`;
   /* Urgente si la réunion a lieu aujourd'hui ou demain : elle n'attend pas le résumé de 18 h. */
   const proche=!!urgent || !m.date || (new Date(String(m.date).slice(0,10)+"T23:59").getTime()-Date.now()) < 2*86400000;
