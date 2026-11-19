@@ -4184,6 +4184,31 @@ function tabAvis(){
   return compose+list;
 }
 
+/* Budgets votés en ligne et approuvés, repris automatiquement dans le PV d'une réunion.
+   Chaque budget figure dans UN seul PV : celui de la première réunion dont la date est postérieure
+   à sa décision (les budgets décidés avant le 19/11/2026 vont dans la première réunion à partir de cette date).
+   Les budgets certifiés en CA physique n'en font pas partie (déjà traités en séance). */
+const PV_BUDGETS_DEPUIS = "2026-11-19";
+function dateLocaleISO(v){ const d=new Date(v); if(isNaN(d)) return ""; const z=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate()); }
+function budgetsEnLignePourPV(m){
+  if(!m||!m.id) return [];
+  const dates=(S.reunions||[]).filter(r=>r.date).map(r=>({id:r.id,date:String(r.date).slice(0,10)})).sort((a,b)=>a.date.localeCompare(b.date));
+  return (S.budgets||[]).filter(b=>{
+    if(b.statut!=="approuve" || !b.decideLe) return false;
+    if(b.origineCertif || b.certifieId || /^CA physique/i.test(String(b.decidePar||""))) return false;
+    const dec=dateLocaleISO(b.decideLe); if(!dec) return false;
+    const seuil = dec>PV_BUDGETS_DEPUIS ? dec : PV_BUDGETS_DEPUIS;
+    const cible=dates.find(r=>r.date>=seuil);
+    return !!cible && cible.id===m.id;
+  }).sort((a,b)=>String(a.decideLe).localeCompare(String(b.decideLe)));
+}
+function reuPvBudgetsHtml(m){
+  const L=budgetsEnLignePourPV(m); if(!L.length) return "";
+  const lignes=L.map(b=>{ const v=b.votes||[], c=ch=>v.filter(x=>x.choix===ch).length;
+    return `<tr><td>${esc(b.titre||"")}</td><td style="text-align:right;white-space:nowrap">${b.cout>0?esc(eur(b.cout)):"—"}</td><td style="white-space:nowrap">${esc(fmtDateLong(dateLocaleISO(b.decideLe)))}</td><td>Approuvé — ${c("pour")} pour, ${c("contre")} contre, ${c("abst")} abstention(s)</td></tr>`; }).join("");
+  return `<h2>Budgets votés en ligne</h2><p class="muted" style="font-size:12px;margin:0 0 6px">Budgets approuvés par vote en ligne, repris automatiquement.</p>
+<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;border-bottom:1px solid #c9cdd6"><th>Budget</th><th style="text-align:right">Montant</th><th>Date</th><th>Résultat</th></tr></thead><tbody>${lignes}</tbody></table>`;
+}
 function reuPvDoc(m){
       const pres=m.presences||{};
       const nomDeCle=k=>{ const a=(S.admins||[]).find(x=>x.id===k); if(a) return ((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||k; const p=PERSONNES.find(x=>x.id===k); return p?(p.prenom+" "+p.nom):k; };
@@ -4199,6 +4224,7 @@ h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bott
 <p><b>Excusés :</b> ${names('excuse').join(", ")||"—"}</p>
 <p><b>Absents :</b> ${names('absent').join(", ")||"—"}</p>
 <h2>Ordre du jour</h2>${pts||"<p class='muted'>—</p>"}
+${reuPvBudgetsHtml(m)}
 <p class="d" style="margin-top:30px">Document généré automatiquement.</p>`;
       return {nom:nomPDF("PV "+(m.titre||"")), css:cssPV, corps:corpsPV};
 }
