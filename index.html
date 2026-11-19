@@ -1044,7 +1044,7 @@ function estDirection(){ const u=S.session; if(!u) return false; return directio
 function peutVoirRapports(){ return estPresidente()||estSecretaire()||(S.session&&S.session.role==="owner"); }
 /* 17/11/2026 — Ordre du jour : on ajoute un point en choisissant un sujet (+ une note facultative).
    Demande de budget : objet et montant obligatoires. Autre : titre obligatoire.
-   Clôture fixe : à l'heure de la réunion (le secrétariat peut encore ajouter).
+   Clôture par défaut : 1 minute avant la réunion (le secrétariat peut encore ajouter).
    La même règle est vérifiée par le serveur (ca_reunions_garde). */
 const REU_SUJETS=[["odj","Approbation de l'ordre du jour"],["pv","Approbation du PV de la réunion précédente"],["suivi","Suivi des décisions et des tâches"],
   ["tresorerie","État de la trésorerie"],["budget","Demande de budget"],["budgets_cours","Suivi des budgets en cours"],["evenements","Événements à venir"],
@@ -1052,14 +1052,15 @@ const REU_SUJETS=[["odj","Approbation de l'ordre du jour"],["pv","Approbation du
   ["faculte","Relations avec la faculté et l'université"],["commission","Point d'une commission"],["cooptation","Cooptation ou démission d'un administrateur"],
   ["courriers","Courriers reçus et à envoyer"],["ag","Préparation de l'assemblée générale"],["divers","Divers"],["autre","Autre"]];
 function reuSujetLib(c){ const x=REU_SUJETS.find(s=>s[0]===c); return x?x[1]:""; }
-function ordreFerme(m){ if(!m) return false;
-  /* Limite fixée par le secrétariat (date et heure libres) ; sinon heure de la réunion,
-     ou fin du jour si pas d'heure (comme la base). */
-  if(m.odjCloture) return Date.now() >= new Date(m.odjCloture).getTime();
-  if(!m.date) return false; const j=String(m.date).slice(0,10);
+/* Limite d'ajout des points : fixée par le secrétariat, sinon 1 minute avant le début de la réunion
+   (sans heure encodée : 23 h 59 le jour de la réunion) — identique à reu_odj_ferme côté base. */
+function odjLimiteTs(m){ if(!m) return null;
+  if(m.odjCloture){ const t=new Date(m.odjCloture).getTime(); return isNaN(t)?null:t; }
+  if(!m.date) return null; const j=String(m.date).slice(0,10);
   const t = m.heure ? new Date(j+"T"+String(m.heure).slice(0,5)+":00").getTime() : new Date(j+"T00:00:00").getTime()+86400000;
-  return Date.now() >= t; }
-function odjLimiteTexte(m){ return (m&&m.odjCloture) ? "jusqu'au "+fmtQuand(m.odjCloture) : "jusqu'à l'heure de la réunion"; }
+  return isNaN(t)?null:t-60000; }
+function ordreFerme(m){ const t=odjLimiteTs(m); return t!==null && Date.now() >= t; }
+function odjLimiteTexte(m){ const t=odjLimiteTs(m); return t!==null ? "jusqu'au "+fmtQuand(new Date(t).toISOString()) : "jusqu'à 1 minute avant la réunion"; }
 function odjLimiteInput(m){ if(!m||!m.odjCloture) return ""; const d=new Date(m.odjCloture); if(isNaN(d)) return "";
   const z=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate())+"T"+z(d.getHours())+":"+z(d.getMinutes()); }
 function reuLien(m){ return caAppUrl()+"?go=reunion&r="+encodeURIComponent(m.id); }
@@ -1400,7 +1401,7 @@ function convocationCA(m, urgent){
     +`<p><b>Date :</b> ${caMailEsc(reuQuand(m))}</p>`
     +(m.lieu?`<p><b>Lieu :</b> ${caMailEsc(m.lieu)}</p>`:"")
     +(pts?`<p><b>Ordre du jour :</b></p><ul>${pts}</ul>`:"")
-    +`<p>Ajoutez vos points à l'ordre du jour avec le bouton ci-dessous : choisissez un sujet et écrivez votre note (pour une demande de budget, l'objet et le montant sont obligatoires). Les points peuvent être ajoutés jusqu'à la limite fixée par le secrétariat (par défaut : l'heure de la réunion). L'ordre du jour définitif est envoyé 1 h avant la réunion.</p>`
+    +`<p>Ajoutez vos points à l'ordre du jour avec le bouton ci-dessous : choisissez un sujet et écrivez votre note (pour une demande de budget, l'objet et le montant sont obligatoires). Les points peuvent être ajoutés jusqu'à la limite fixée par le secrétariat (par défaut : 1 minute avant la réunion). L'ordre du jour définitif est envoyé 1 h avant la réunion.</p>`
     +`<p><a href="${reuLien(m)}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ajouter un point à l'ordre du jour</a></p>`;
   /* Urgente si la réunion a lieu aujourd'hui ou demain : elle n'attend pas le résumé de 18 h. */
   const proche=!!urgent || !m.date || (new Date(String(m.date).slice(0,10)+"T23:59").getTime()-Date.now()) < 2*86400000;
@@ -2329,7 +2330,7 @@ function viewAdmin(){
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Avant de tout réinitialiser pour l'équipe suivante : un document imprimable (composition, PV, votes, synthèse des bilans) et une sauvegarde complète en fichier. <b style="color:var(--ink)">À faire avant tout effacement.</b></p>
       <div class="row-btn"><button class="btn" data-action="archiver-mandat">Générer l'archive de mandat</button></div></div>
     ${estSecretaire()?`<div class="card2"><h3 class="serif">R\u00e9glages du secr\u00e9tariat</h3>
-      <p class="du" style="margin:0 0 6px">Clôture de l'ordre du jour : à l'heure de la réunion par défaut ; le secrétariat peut fixer une autre limite dans chaque réunion. L'ordre du jour part automatiquement 1 h avant la réunion : les points ajoutés après l'envoi n'y figurent pas.</p>
+      <p class="du" style="margin:0 0 6px">Clôture de l'ordre du jour : 1 minute avant le début de la réunion par défaut ; le secrétariat peut fixer une autre limite dans chaque réunion. Le mail de l'ordre du jour part automatiquement 1 minute après la clôture (donc 1 minute après le début de la réunion par défaut).</p>
       <input type="hidden" id="cfg_cloture" value="${(S.meta.clotureOdj||0)}">
       <label class="fld" style="margin-top:10px">Points r\u00e9currents (un par ligne) \u2014 pr\u00e9-remplissage des nouvelles r\u00e9unions</label>
       <textarea id="cfg_modele" placeholder="Ex. Approbation du PV pr\u00e9c\u00e9dent">${esc((S.meta.modeleOdj||[]).join("\n"))}</textarea>
@@ -4247,7 +4248,7 @@ function tabReunions(){
     return `${estSecretaire()?`<div class="compose"><h3 class="serif">Nouvelle réunion</h3>
       <input class="f" id="reu_titre" placeholder="Ex. Réunion du bureau">
       <input class="f" id="reu_date" type="date">
-      <input class="f" id="reu_heure" type="time" title="Heure de la réunion (l'ordre du jour part 1 h avant)">
+      <input class="f" id="reu_heure" type="time" title="Heure de la réunion (l'ordre du jour part 1 minute après le début)">
       <input class="f" id="reu_lieu" placeholder="Lieu (facultatif)">
       <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="reu_modele" checked> Pr\u00e9-remplir avec les points r\u00e9currents</label>
       <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="reu_notify" checked> Prévenir les membres du CA par e-mail (avec le lien pour ajouter un point)</label>
@@ -4283,7 +4284,7 @@ function tabReunions(){
     ${(estSecretaire()&&!verrou)?`<div class="compose" style="margin-bottom:10px"><h3 class="serif" style="margin-top:0">Limite pour remplir l'ordre du jour</h3>
       <p class="du" style="margin:0 0 6px">Les membres peuvent ajouter leurs points ${esc(odjLimiteTexte(m))}.</p>
       <input class="f" type="datetime-local" id="reu_cloture" value="${esc(odjLimiteInput(m))}">
-      <div class="row-btn"><button class="btn sm" data-action="reu-cloture-save">Enregistrer la limite</button>${m.odjCloture?`<button class="btn ghost sm" data-action="reu-cloture-reset">Revenir à l'heure de la réunion</button>`:""}</div></div>`:""}
+      <div class="row-btn"><button class="btn sm" data-action="reu-cloture-save">Enregistrer la limite</button>${m.odjCloture?`<button class="btn ghost sm" data-action="reu-cloture-reset">Revenir à la limite par défaut</button>`:""}</div></div>`:""}
     ${verrou?`<p class="du">🔒 Le PV est en signature ou signé : l'ordre du jour est verrouillé.</p>`
       :(ordreFerme(m)&&!estSecretaire())?`<p class="du">L'ordre du jour est clôturé : on pouvait ajouter des points ${odjLimiteTexte(m)}.</p>`
       :`<div class="compose"><h3 class="serif" style="margin-top:0">Ajouter un point</h3>
@@ -5849,7 +5850,7 @@ document.addEventListener("click", async e=>{
       break; }
     case "contact-del": { if(!sb) break; if(!(await modaleConfirm("Supprimer définitivement ce contact et ses données ?"))) break; await sb.from("ca_contacts").delete().eq("id",el.dataset.id); logAct("Contact supprimé (RGPD)"); await loadContacts(); render(); break; }
     case "reu-create": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut créer une réunion."); break; } const t=val("reu_titre").trim(), dt=val("reu_date"), hr=val("reu_heure"); if(!t||!sb) break; const lieu=val("reu_lieu")||null;
-      if(!dt||!hr){ modaleInfo("Indiquez la date et l'heure de la réunion : l'ordre du jour est envoyé automatiquement 1 h avant.","Nouvelle réunion"); break; }
+      if(!dt||!hr){ modaleInfo("Indiquez la date et l'heure de la réunion : l'ordre du jour est envoyé automatiquement 1 minute après le début.","Nouvelle réunion"); break; }
       const mod=document.getElementById("reu_modele");
       const base=(mod&&mod.checked&&Array.isArray(S.meta.modeleOdj))?S.meta.modeleOdj.map(x=>({id:uid(),texte:x,fait:false,notes:"",parId:null,par:"Mod\u00e8le"})):[];
       const {data,error}=await sb.from("ca_reunions").insert({titre:t,date:dt||null,heure:hr||null,lieu:lieu,ordre:base,presences:{}}).select().single(); if(error||!data) break; await loadReunions(); { const n=document.getElementById("reu_notify"); if(n&&n.checked) convocationCA(data, !!(document.getElementById("reu_urgent")||{}).checked); } S.reuUI={sel:data.id}; render(); break; }

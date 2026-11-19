@@ -9,3 +9,8 @@ create or replace function public.reu_odj_ferme(p_date date, p_heure time, p_clo
 returns boolean language sql stable as $$
   select case when p_cloture is not null then now() >= p_cloture
               else public.reu_odj_ferme(p_date, p_heure) end $$;
+
+-- Appliqué ensuite (migration « odj_cloture_1min_avant_mail_1min_apres ») :
+--  * reu_odj_ferme(date, time) : clôture par défaut = début - 1 minute (sans heure : 23 h 59 le jour même) ;
+--  * reu_odj_envoyer() : le mail part 1 minute après la clôture (début + 1 min par défaut, ou limite
+--    du secrétariat + 1 min), avec 3 h de rattrapage ; cron « reunion-odj » passé à chaque minute.
