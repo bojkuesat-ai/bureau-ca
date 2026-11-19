@@ -896,6 +896,34 @@ function modaleSaisie(texte, titre, placeholder){
   });
 }
 /* Choix d'une date dans une fenetre maison. Renvoie "AAAA-MM-JJ", ou null si annule. */
+/* Popup à l'introduction d'un budget : événement lié (facultatif mais conseillé).
+   Retourne {titre,date,heure} ou null si la personne passe. */
+function modaleEvenementBudget(titreBudget){
+  return new Promise(resolve=>{
+    const anc=document.getElementById("ca_modal_evt"); if(anc) anc.remove();
+    const d=document.createElement("div"); d.id="ca_modal_evt"; d.className="ca-mod";
+    d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true" style="max-width:480px">'
+      +'<h3>Un événement est-il lié à ce budget ?</h3>'
+      +'<p style="color:var(--ink);font-size:14px;line-height:1.55;margin:0 0 10px">💡 <b>Conseillé :</b> indiquez la date, l\'heure et l\'événement concerné. Une fois le budget approuvé, l\'événement apparaîtra directement dans l\'agenda : <b>les cooptés et les autres membres du CA pourront le voir</b>, et les cooptés recevront aussi un mail pour les informer.</p>'
+      +'<p style="color:var(--ink-soft);font-size:12.5px;margin:0 0 10px">Facultatif : vous pouvez passer. Si le budget est refusé, l\'événement n\'apparaît pas.</p>'
+      +'<input class="f" id="ca_evt_titre" maxlength="200" placeholder="Événement (ex. Soirée de rentrée)" value="'+esc(titreBudget||"")+'" style="width:100%;margin:0 0 8px">'
+      +'<div style="display:flex;gap:8px;margin:0 0 12px"><input type="date" class="f" id="ca_evt_date" style="flex:1"><input type="time" class="f" id="ca_evt_heure" style="flex:1"></div>'
+      +'<p id="ca_evt_err" style="color:var(--red);font-size:12.5px;margin:0 0 8px;display:none">Indiquez l\'événement, la date et l\'heure, ou choisissez « Passer ».</p>'
+      +'<div class="ca-mod-btns"><button class="btn ghost sm" id="ca_evt_no">Passer</button><button class="btn sm" id="ca_evt_ok">Ajouter à l\'agenda</button></div></div>';
+    document.body.appendChild(d);
+    let fini=false;
+    const rep=v=>{ if(fini) return; fini=true; d.remove(); document.removeEventListener("keydown",k); resolve(v); };
+    function k(e){ if(e.key==="Escape") rep(null); }
+    document.addEventListener("keydown",k);
+    d.addEventListener("click",e=>{ if(e.target===d) rep(null); });
+    d.querySelector("#ca_evt_no").addEventListener("click",()=>rep(null));
+    d.querySelector("#ca_evt_ok").addEventListener("click",()=>{
+      const t=String(d.querySelector("#ca_evt_titre").value||"").trim(), j=String(d.querySelector("#ca_evt_date").value||""), h=String(d.querySelector("#ca_evt_heure").value||"");
+      if(!t||!/^\d{4}-\d{2}-\d{2}$/.test(j)||!/^\d{2}:\d{2}/.test(h)){ d.querySelector("#ca_evt_err").style.display="block"; return; }
+      rep({titre:t,date:j,heure:h.slice(0,5)}); });
+    try{ d.querySelector("#ca_evt_titre").focus(); }catch(_){ }
+  });
+}
 function modaleDate(texte, titre){
   return new Promise(resolve=>{
     const anc=document.getElementById("ca_modal_date"); if(anc) anc.remove();
@@ -1570,7 +1598,7 @@ async function loadJournal(){ try{ const {data}=await sb.from("ca_journal").sele
 async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("*").order("created_at",{ascending:false}); const bv=await sb.from("ca_budget_votes").select("*"); const vl=(bv&&bv.data)||[]; S.budgets=(((bs&&bs.data))||[]).map(b=>({id:b.id,titre:b.titre,type:b.type,cout:b.cout,desc:b.description,demandeur:b.demandeur,statut:b.statut,creeParId:b.cree_par,rappelLe:b.rappel_le,rappelProg:b.rappel_prog_at,decidePar:b.decide_par,decideLe:b.decide_le,pdfPath:b.pdf_path||"",reserve:(b.reserve_tresorier==null?null:String(b.reserve_tresorier)),motifForce:String(b.motif_force||""),certifiePar:String(b.certifie_par||""),certifieId:b.certifie_id||null,certifieLe:b.certifie_le||null,seanceLe:b.seance_le||null,origineCertif:String(b.origine_certif||""),certifCode:b.certif_code||"",confirmCode:b.confirm_code||"",parent:b.parent_budget_id||null,creeLe:b.created_at||null,votes:vl.filter(v=>v.budget_id===b.id).map(v=>({nom:v.nom,choix:v.choix,membreId:v.membre_id,le:v.created_at||null}))})); }catch(e){ S.budgets=[]; }
   try{ const rr=await sb.from("ca_budget_reserves").select("*").order("created_at",{ascending:true}); S.resBud=(rr&&!rr.error&&rr.data)||[]; S.resBudErr=(rr&&rr.error)?rr.error.message:null; }catch(e){ S.resBud=[]; S.resBudErr=String(e); } }
 async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,rappelLe:v.rappel_le,rappelProg:v.rappel_prog_at,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
-async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
+async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,heure:e.heure||"",responsable:e.responsable,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
 async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,heure:m.heure||"",lieu:m.lieu||"",creeLe:m.created_at||null,odjCloture:m.odj_cloture_at||null,ordre:m.ordre||[],presences:m.presences||{},odjEnvoyeLe:m.odj_envoye_at||null,pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } await loadReuPv(); }
 async function loadCreneaux(){ try{ const c=await sb.from("ca_creneaux").select("*").order("date",{ascending:true}); const d=await sb.from("ca_dispos").select("*"); const dl=(d&&d.data)||[]; S.creneaux=(((c&&c.data))||[]).map(x=>({id:x.id,titre:x.titre,date:x.date,lieu:x.lieu,creePar:x.cree_par,dispos:dl.filter(y=>y.creneau_id===x.id).map(y=>({nom:y.nom,statut:y.statut,membreId:y.membre_id}))})); }catch(e){ S.creneaux=[]; } }
 async function loadOrg(){ try{ const {data}=await sb.from("ca_org").select("*"); const o={}; (data||[]).forEach(r=>{ o[r.poste_id]={missions:r.missions,contact:r.contact,qui:r.qui||""}; }); S.org=o; }catch(e){} }
@@ -4582,7 +4610,7 @@ function tabAgendaCoopte(){
   const auj=todayISO();
   const ev=(S.evenements||[]).filter(e=>e.date && e.date>=auj).sort((a,b)=>(a.date||"").localeCompare(b.date||""));
   const passes=(S.evenements||[]).filter(e=>e.date && e.date<auj).sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,4);
-  const carte=e=>`<div class="vote"><div class="vote-h"><h4 class="serif">${esc(e.titre)}</h4><span class="badge">${e.date?esc(fmtDateLong(e.date)):""}</span></div>
+  const carte=e=>`<div class="vote"><div class="vote-h"><h4 class="serif">${esc(e.titre)}</h4><span class="badge">${e.date?esc(fmtDateLong(e.date)):""}${e.heure?" · "+esc(String(e.heure).slice(0,5).replace(":"," h ")):""}</span></div>
     ${e.lieu?`<p class="du" style="margin:6px 0 0">${esc(e.lieu)}</p>`:""}
     ${e.notes?`<p style="white-space:pre-wrap;margin:8px 0 0;font-size:14px">${esc(e.notes)}</p>`:""}</div>`;
   return `<div class="compose"><h3 class="serif">\u00c9v\u00e9nements \u00e0 venir</h3>
@@ -5442,13 +5470,22 @@ async function certifierPresentiel(id){
   const titre=id?b.titre:donnees.titre;
   const jour=await modaleDate("Date de la séance du CA qui a approuvé « "+(titre||"")+" » à la majorité simple.\n\nVous certifiez, en tant que responsable de ce budget, que c'est exact : votre signature recevra un code de vérification.","Voté en CA physique");
   if(!jour) return;
+  const evtB=await modaleEvenementBudget(titre);
   if(!(await modaleCertif(titre, jour))) return;
   if(!(await certifAuthentifier(S.session.email, titre))) return;
   const r=await sb.rpc("ca_budget_certifier",{p_id:id?String(id):null, p_titre:id?null:donnees.titre, p_type:id?null:donnees.type, p_cout:id?null:donnees.cout, p_desc:id?null:donnees.description, p_seance:jour});
   if(r&&r.error){ modaleInfo("La certification n'a pas pu être enregistrée : "+r.error.message+(/ca_budget_certifier|schema cache/i.test(r.error.message)?"\n\nLe script SQL n'a pas encore été exécuté dans Supabase.":"")); return; }
   logAct("Budget présentiel certifié (séance du "+seanceLongue(jour)+") — en attente du trésorier : "+(titre||""));
   if(!id){ ["b_titre","b_cout","b_desc"].forEach(k=>{ const e=document.getElementById(k); if(e) e.value=""; }); }
-  await loadBudgets(); render();
+  await loadBudgets();
+  /* Événement lié (facultatif) : enregistré sur le budget, il entrera dans l'agenda à l'approbation. */
+  if(evtB){
+    let bid=id||null;
+    if(!bid){ const c=(S.budgets||[]).filter(x=>x.titre===titre && x.creeParId===S.session.id).sort((a,b)=>String(b.creeLe||"").localeCompare(String(a.creeLe||"")))[0]; bid=c&&c.id; }
+    if(bid){ const re=await sb.rpc("ca_budget_evenement",{p_id:String(bid), p_titre:evtB.titre, p_date:evtB.date, p_heure:evtB.heure});
+      if(re&&re.error) modaleInfo("Le budget est enregistré, mais l'événement n'a pas pu être associé : "+re.error.message,"Événement"); }
+  }
+  render();
   /* Mail au trésorier */
   const dest=emailsTresorier(); let okMail=false;
   if(dest.length){
@@ -6599,7 +6636,8 @@ ${sections||"<p>Aucun retour.</p>"}
     case "del-creneau": if(!estSecretaire()){ if(window.alert) window.alert("Seul le secr\u00e9tariat peut retirer un cr\u00e9neau."); break; } if(!sb) break; await sb.from("ca_creneaux").delete().eq("id",id); await loadCreneaux(); render(); break;
     /* budgets */
     case "add-budget": { const t=val("b_titre").trim(); if(!t||!sb) return; const cout=parseFloat(String(val("b_cout")).replace(",","."))||0;
-      const ins=await sb.from("ca_budgets").insert({titre:t,type:val("b_type"),cout:cout,description:val("b_desc").trim(),demandeur:me.sig,statut:"vote",cree_par:S.session.id});
+      const evt=await modaleEvenementBudget(t);
+      const ins=await sb.from("ca_budgets").insert(Object.assign({titre:t,type:val("b_type"),cout:cout,description:val("b_desc").trim(),demandeur:me.sig,statut:"vote",cree_par:S.session.id}, evt?{evt_titre:evt.titre,evt_date:evt.date,evt_heure:evt.heure}:{}));
       if(ins&&ins.error){ modaleInfo("La demande n'a pas pu être enregistrée : "+ins.error.message); break; }
       await loadBudgets(); render();
       /* Un budget soumis au vote est toujours notifié : ce n'est pas une info facultative. */
