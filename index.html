@@ -1571,7 +1571,7 @@ async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("
   try{ const rr=await sb.from("ca_budget_reserves").select("*").order("created_at",{ascending:true}); S.resBud=(rr&&!rr.error&&rr.data)||[]; S.resBudErr=(rr&&rr.error)?rr.error.message:null; }catch(e){ S.resBud=[]; S.resBudErr=String(e); } }
 async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,rappelLe:v.rappel_le,rappelProg:v.rappel_prog_at,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
 async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,responsable:e.responsable,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
-async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,heure:m.heure||"",lieu:m.lieu||"",odjCloture:m.odj_cloture_at||null,ordre:m.ordre||[],presences:m.presences||{},odjEnvoyeLe:m.odj_envoye_at||null,pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } await loadReuPv(); }
+async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,heure:m.heure||"",lieu:m.lieu||"",creeLe:m.created_at||null,odjCloture:m.odj_cloture_at||null,ordre:m.ordre||[],presences:m.presences||{},odjEnvoyeLe:m.odj_envoye_at||null,pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } await loadReuPv(); }
 async function loadCreneaux(){ try{ const c=await sb.from("ca_creneaux").select("*").order("date",{ascending:true}); const d=await sb.from("ca_dispos").select("*"); const dl=(d&&d.data)||[]; S.creneaux=(((c&&c.data))||[]).map(x=>({id:x.id,titre:x.titre,date:x.date,lieu:x.lieu,creePar:x.cree_par,dispos:dl.filter(y=>y.creneau_id===x.id).map(y=>({nom:y.nom,statut:y.statut,membreId:y.membre_id}))})); }catch(e){ S.creneaux=[]; } }
 async function loadOrg(){ try{ const {data}=await sb.from("ca_org").select("*"); const o={}; (data||[]).forEach(r=>{ o[r.poste_id]={missions:r.missions,contact:r.contact,qui:r.qui||""}; }); S.org=o; }catch(e){} }
 async function loadTaches(){ try{ const {data}=await sb.from("ca_taches").select("*").order("created_at",{ascending:false}); S.taches=(data||[]).map(t=>({id:t.id,titre:t.titre,posteId:t.poste_id,statut:t.statut,echeance:t.echeance,priorite:t.priorite,creePar:t.cree_par})); }catch(e){ S.taches=[]; } }
@@ -4185,20 +4185,23 @@ function tabAvis(){
 }
 
 /* Budgets votés en ligne et approuvés, repris automatiquement dans le PV d'une réunion.
-   Chaque budget figure dans UN seul PV : celui de la première réunion dont la date est postérieure
-   à sa décision (le suivi commence avec l'année 2026-27 : un budget décidé avant la première réunion encodée va dans cette réunion).
-   Les budgets certifiés en CA physique n'en font pas partie (déjà traités en séance). */
-const PV_BUDGETS_DEPUIS = "2026-09-01";
+   Chaque budget figure dans UN seul PV :
+   - les budgets décidés avant la mise en place (19/11/2026) vont dans le PV de la PREMIÈRE réunion
+     encodée dans l'app (la première créée), quelle que soit sa date ;
+   - ensuite, un budget va dans le PV de la première réunion dont la date est postérieure ou égale à sa décision.
+   Les budgets refusés et ceux certifiés en CA physique n'en font pas partie. */
+const PV_BUDGETS_DEPUIS = "2026-11-19";
 function dateLocaleISO(v){ const d=new Date(v); if(isNaN(d)) return ""; const z=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate()); }
 function budgetsEnLignePourPV(m){
   if(!m||!m.id) return [];
-  const dates=(S.reunions||[]).filter(r=>r.date).map(r=>({id:r.id,date:String(r.date).slice(0,10)})).sort((a,b)=>a.date.localeCompare(b.date));
+  const R=(S.reunions||[]).filter(r=>r.date).map(r=>({id:r.id,date:String(r.date).slice(0,10),cree:String(r.creeLe||"")}));
+  const premiere=R.slice().sort((a,b)=>(a.cree||"~").localeCompare(b.cree||"~")||a.date.localeCompare(b.date))[0];
+  const parDate=R.slice().sort((a,b)=>a.date.localeCompare(b.date));
   return (S.budgets||[]).filter(b=>{
     if(b.statut!=="approuve" || !b.decideLe) return false;
     if(b.origineCertif || b.certifieId || /^CA physique/i.test(String(b.decidePar||""))) return false;
     const dec=dateLocaleISO(b.decideLe); if(!dec) return false;
-    const seuil = dec>PV_BUDGETS_DEPUIS ? dec : PV_BUDGETS_DEPUIS;
-    const cible=dates.find(r=>r.date>=seuil);
+    const cible = dec<PV_BUDGETS_DEPUIS ? premiere : parDate.find(r=>r.date>=dec);
     return !!cible && cible.id===m.id;
   }).sort((a,b)=>String(a.decideLe).localeCompare(String(b.decideLe)));
 }
