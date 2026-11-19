@@ -1044,7 +1044,7 @@ function estDirection(){ const u=S.session; if(!u) return false; return directio
 function peutVoirRapports(){ return estPresidente()||estSecretaire()||(S.session&&S.session.role==="owner"); }
 /* 17/11/2026 — Ordre du jour : on ajoute un point en choisissant un sujet (+ une note facultative).
    Demande de budget : objet et montant obligatoires. Autre : titre obligatoire.
-   Clôture fixe : la veille de la réunion à 23 h 59 (le secrétariat peut encore ajouter).
+   Clôture fixe : à l'heure de la réunion (le secrétariat peut encore ajouter).
    La même règle est vérifiée par le serveur (ca_reunions_garde). */
 const REU_SUJETS=[["odj","Approbation de l'ordre du jour"],["pv","Approbation du PV de la réunion précédente"],["suivi","Suivi des décisions et des tâches"],
   ["tresorerie","État de la trésorerie"],["budget","Demande de budget"],["budgets_cours","Suivi des budgets en cours"],["evenements","Événements à venir"],
@@ -1052,7 +1052,10 @@ const REU_SUJETS=[["odj","Approbation de l'ordre du jour"],["pv","Approbation du
   ["faculte","Relations avec la faculté et l'université"],["commission","Point d'une commission"],["cooptation","Cooptation ou démission d'un administrateur"],
   ["courriers","Courriers reçus et à envoyer"],["ag","Préparation de l'assemblée générale"],["divers","Divers"],["autre","Autre"]];
 function reuSujetLib(c){ const x=REU_SUJETS.find(s=>s[0]===c); return x?x[1]:""; }
-function ordreFerme(m){ if(!m||!m.date) return false; return Date.now() >= new Date(String(m.date).slice(0,10)+"T00:00:00").getTime(); }
+function ordreFerme(m){ if(!m||!m.date) return false; const j=String(m.date).slice(0,10);
+  /* Clôture à l'heure de la réunion ; sans heure encodée : à la fin du jour (comme la base). */
+  const t = m.heure ? new Date(j+"T"+String(m.heure).slice(0,5)+":00").getTime() : new Date(j+"T00:00:00").getTime()+86400000;
+  return Date.now() >= t; }
 function reuLien(m){ return caAppUrl()+"?go=reunion&r="+encodeURIComponent(m.id); }
 function reuHeure(m){ return m&&m.heure?String(m.heure).slice(0,5).replace(":","h"):""; }
 function reuQuand(m){ return (m.date?fmtDateLong(m.date):"date à préciser")+(m.heure?" à "+reuHeure(m):""); }
@@ -1375,7 +1378,7 @@ async function rappelReunionCA(id){
     +`<p><b>Date :</b> ${caMailEsc(reuQuand(m))}</p>`
     +(m.lieu?`<p><b>Lieu :</b> ${caMailEsc(m.lieu)}</p>`:"")
     +(pts?`<p><b>Ordre du jour :</b></p><ul>${pts}</ul>`:"")
-    +(ordreFerme(m)?"":`<p>Vous pouvez ajouter un point à l'ordre du jour jusqu'à la veille de la réunion à 23 h 59.</p>`)
+    +(ordreFerme(m)?"":`<p>Vous pouvez ajouter un point à l'ordre du jour jusqu'à l'heure de la réunion.</p>`)
     +`<p><a href="${reuLien(m)}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">${ordreFerme(m)?"Ouvrir la réunion":"Ajouter un point à l'ordre du jour"}</a></p>`;
   const res=await envoyerNotifCAListe(dest, "Rappel \u2014 "+(m.titre||"réunion")+" ("+reuQuand(m)+")", corps, false, EXP_REU, "reunion", true);
   const quand=new Date().toISOString();
@@ -1391,7 +1394,7 @@ function convocationCA(m, urgent){
     +`<p><b>Date :</b> ${caMailEsc(reuQuand(m))}</p>`
     +(m.lieu?`<p><b>Lieu :</b> ${caMailEsc(m.lieu)}</p>`:"")
     +(pts?`<p><b>Ordre du jour :</b></p><ul>${pts}</ul>`:"")
-    +`<p>Ajoutez vos points à l'ordre du jour avec le bouton ci-dessous : choisissez un sujet et écrivez votre note (pour une demande de budget, l'objet et le montant sont obligatoires). Les points peuvent être ajoutés jusqu'à la veille de la réunion à 23 h 59. L'ordre du jour définitif est envoyé 1 h avant la réunion.</p>`
+    +`<p>Ajoutez vos points à l'ordre du jour avec le bouton ci-dessous : choisissez un sujet et écrivez votre note (pour une demande de budget, l'objet et le montant sont obligatoires). Les points peuvent être ajoutés jusqu'à l'heure de la réunion. L'ordre du jour définitif est envoyé 1 h avant la réunion.</p>`
     +`<p><a href="${reuLien(m)}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ajouter un point à l'ordre du jour</a></p>`;
   /* Urgente si la réunion a lieu aujourd'hui ou demain : elle n'attend pas le résumé de 18 h. */
   const proche=!!urgent || !m.date || (new Date(String(m.date).slice(0,10)+"T23:59").getTime()-Date.now()) < 2*86400000;
@@ -2320,7 +2323,7 @@ function viewAdmin(){
       <p style="color:var(--ink-soft);font-size:13px;margin:0 0 8px">Avant de tout réinitialiser pour l'équipe suivante : un document imprimable (composition, PV, votes, synthèse des bilans) et une sauvegarde complète en fichier. <b style="color:var(--ink)">À faire avant tout effacement.</b></p>
       <div class="row-btn"><button class="btn" data-action="archiver-mandat">Générer l'archive de mandat</button></div></div>
     ${estSecretaire()?`<div class="card2"><h3 class="serif">R\u00e9glages du secr\u00e9tariat</h3>
-      <p class="du" style="margin:0 0 6px">Clôture de l'ordre du jour : la veille de la réunion à 23 h 59 (règle fixe). L'ordre du jour part automatiquement 1 h avant la réunion.</p>
+      <p class="du" style="margin:0 0 6px">Clôture de l'ordre du jour : à l'heure de la réunion (règle fixe). L'ordre du jour part automatiquement 1 h avant la réunion : les points ajoutés après l'envoi n'y figurent pas.</p>
       <input type="hidden" id="cfg_cloture" value="${(S.meta.clotureOdj||0)}">
       <label class="fld" style="margin-top:10px">Points r\u00e9currents (un par ligne) \u2014 pr\u00e9-remplissage des nouvelles r\u00e9unions</label>
       <textarea id="cfg_modele" placeholder="Ex. Approbation du PV pr\u00e9c\u00e9dent">${esc((S.meta.modeleOdj||[]).join("\n"))}</textarea>
@@ -4272,13 +4275,13 @@ function tabReunions(){
     ${(peutRappelerReunion() && (!m.date || String(m.date).slice(0,10)>=todayISO()))?`<div class="row-btn" style="margin:0 0 12px;align-items:center"><button class="btn sm" data-action="reu-rappel" data-id="${m.id}">🔔 Rappeler la réunion aux membres</button>${(S.reuRappelLe&&S.reuRappelLe[m.id])?`<span class="du">Dernier rappel : ${esc(fmtQuand(S.reuRappelLe[m.id]))}</span>`:""}</div>`:""}
     <div class="grp-h"><h2 class="serif">Ordre du jour</h2><span class="c">${ordre.length}</span><span class="l"></span></div>
     ${verrou?`<p class="du">🔒 Le PV est en signature ou signé : l'ordre du jour est verrouillé.</p>`
-      :(ordreFerme(m)&&!estSecretaire())?`<p class="du">L'ordre du jour est clôturé : on pouvait ajouter des points jusqu'à la veille de la réunion à 23 h 59.</p>`
+      :(ordreFerme(m)&&!estSecretaire())?`<p class="du">L'ordre du jour est clôturé : on pouvait ajouter des points jusqu'à l'heure de la réunion.</p>`
       :`<div class="compose"><h3 class="serif" style="margin-top:0">Ajouter un point</h3>
         <select class="f" id="reu_sujet"><option value="">— Choisir un sujet —</option>${REU_SUJETS.map(x=>`<option value="${x[0]}">${esc(x[1])}</option>`).join("")}</select>
         <div id="reu_autre_box" style="display:none"><input class="f" id="reu_autre" placeholder="Titre du point (obligatoire)" maxlength="200"></div>
         <div id="reu_budget_box" style="display:none"><input class="f" id="reu_bobjet" placeholder="Objet du budget (obligatoire)" maxlength="200"><input class="f" id="reu_bmontant" type="number" min="0" step="0.01" placeholder="Montant en € (obligatoire)"></div>
         <textarea class="f" id="reu_note" placeholder="Votre note (facultatif)" maxlength="2000"></textarea>
-        <p class="du" style="margin:4px 0 0">${estSecretaire()?"Secrétariat : vous pouvez ajouter des points à tout moment.":"Vous pouvez ajouter des points jusqu'à la veille de la réunion à 23 h 59."}</p>
+        <p class="du" style="margin:4px 0 0">${estSecretaire()?"Secrétariat : vous pouvez ajouter des points à tout moment.":"Vous pouvez ajouter des points jusqu'à l'heure de la réunion."}</p>
         <div class="row-btn"><button class="btn sm" data-action="reu-addpoint">Ajouter le point</button></div></div>`}
     ${points}
     <div class="grp-h" style="margin-top:26px"><h2 class="serif">Présences</h2><span class="c">${cnt('present')} prés. · ${cnt('excuse')} exc. · ${cnt('absent')} abs.</span><span class="l"></span></div>
@@ -5845,7 +5848,7 @@ document.addEventListener("click", async e=>{
     case "reu-del": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut supprimer une réunion."); break; } if(!sb) break; if(!(await modaleConfirm("Supprimer cette réunion ?"))) break; await sb.from("ca_reunions").delete().eq("id",el.dataset.id); await loadReunions(); S.reuUI={sel:null}; render(); break; }
     case "reu-addpoint": { if(!sb) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
       if(reuVerrou(m)){ modaleInfo("Le PV de cette réunion est en signature ou signé : l'ordre du jour est verrouillé.","Ajouter un point"); break; }
-      if(ordreFerme(m)&&!estSecretaire()){ modaleInfo("L'ordre du jour est clôturé : on peut ajouter des points jusqu'à la veille de la réunion à 23 h 59.","Ajouter un point"); break; }
+      if(ordreFerme(m)&&!estSecretaire()){ modaleInfo("L'ordre du jour est clôturé : on peut ajouter des points jusqu'à l'heure de la réunion.","Ajouter un point"); break; }
       const sj=val("reu_sujet"); if(!sj){ modaleInfo("Choisissez un sujet dans la liste.","Ajouter un point"); break; }
       const note=String(val("reu_note")||"").trim(); let texte=reuSujetLib(sj), bo="", bm=null;
       if(sj==="autre"){ texte=String(val("reu_autre")||"").trim(); if(!texte){ modaleInfo("Sujet « Autre » : écrivez le titre du point.","Ajouter un point"); break; } }
