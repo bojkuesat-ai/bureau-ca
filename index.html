@@ -4186,9 +4186,9 @@ function tabAvis(){
 
 /* Budgets votés en ligne et approuvés, repris automatiquement dans le PV d'une réunion.
    Chaque budget figure dans UN seul PV : celui de la première réunion dont la date est postérieure
-   à sa décision (les budgets décidés avant le 19/11/2026 vont dans la première réunion à partir de cette date).
+   à sa décision (le suivi commence avec l'année 2026-27 : un budget décidé avant la première réunion encodée va dans cette réunion).
    Les budgets certifiés en CA physique n'en font pas partie (déjà traités en séance). */
-const PV_BUDGETS_DEPUIS = "2026-11-19";
+const PV_BUDGETS_DEPUIS = "2026-09-01";
 function dateLocaleISO(v){ const d=new Date(v); if(isNaN(d)) return ""; const z=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate()); }
 function budgetsEnLignePourPV(m){
   if(!m||!m.id) return [];
