@@ -4327,6 +4327,40 @@ function reuPvBudgetsHtml(m){
   return `<h2>Budgets votés en ligne</h2><p class="muted" style="font-size:12px;margin:0 0 6px">Budgets approuvés par vote en ligne, repris automatiquement.</p>
 <table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;border-bottom:1px solid #c9cdd6"><th>Budget</th><th style="text-align:right">Montant</th><th>Date</th><th>Résultat</th></tr></thead><tbody>${lignes}</tbody></table>`;
 }
+/* ---- Procurations : liste dans le PV + PDF en annexe, figés à la clôture (envoi en signature) ---- */
+function procurationsDuPV(m){
+  if(!m||!m.date) return [];
+  const j=String(m.date).slice(0,10);
+  return (S.procurations||[]).filter(p=>p.statut==="active" && String(p.dateReunion||"").slice(0,10)===j)
+    .sort((a,b)=>String(a.mandantNom||"").localeCompare(String(b.mandantNom||""),"fr"));
+}
+function reuPvProcurationsHtml(m){
+  const L=procurationsDuPV(m); if(!L.length) return "";
+  return `<h2>Procurations</h2><ul>${L.map((p,i)=>{
+    const pts=(p.portee==="points" && (p.points||[]).length) ? "les points suivants : "+p.points.map(esc).join(" ; ") : "l'ensemble des points de l'ordre du jour";
+    const dt=p.signeLe?new Date(p.signeLe).toLocaleDateString("fr-BE"):"";
+    return `<li><b>${esc(p.mandantNom)}</b>${p.mandantFonction?" ("+esc(p.mandantFonction)+")":""} a donné procuration à <b>${esc(p.mandataireNom)}</b> pour ${pts}. <span class="muted" style="font-size:12px">Signée électroniquement${dt?" le "+esc(dt):""}${p.code?", code "+esc(p.code):""} — voir annexe ${i+1}.</span></li>`; }).join("")}</ul>`;
+}
+async function pvAvecAnnexes(m, blob){
+  const L=procurationsDuPV(m); if(!L.length) return {blob, manquantes:[]};
+  const { PDFDocument, StandardFonts, rgb } = await import("./caisse/lib/pdf-lib-1.17.1.js");
+  const out=await PDFDocument.load(await blob.arrayBuffer(), {ignoreEncryption:true});
+  const F=await out.embedFont(StandardFonts.HelveticaBold);
+  const manquantes=[];
+  for(let i=0;i<L.length;i++){
+    const p=L[i]; let bytes=null;
+    try{ if(p.pdfPath){ const d=await sb.storage.from("ca-documents").download(p.pdfPath); if(d&&d.data) bytes=await d.data.arrayBuffer(); } }catch(_){ bytes=null; }
+    if(!bytes){ try{ const b=await prPDFBlob(p); bytes=await b.arrayBuffer(); }catch(_){ bytes=null; } }
+    if(!bytes){ manquantes.push(p); continue; }
+    try{
+      const src=await PDFDocument.load(bytes,{ignoreEncryption:true});
+      const pages=await out.copyPages(src, src.getPageIndices());
+      pages.forEach((pg,k)=>{ out.addPage(pg);
+        if(k===0){ const h=pg.getSize().height; pg.drawText(pvsTxt("Annexe "+(i+1)+" - Procuration de "+(p.mandantNom||"")+" à "+(p.mandataireNom||"")),{x:28,y:h-16,size:8,font:F,color:rgb(.4,.4,.4)}); } });
+    }catch(_){ manquantes.push(p); }
+  }
+  return {blob:new Blob([await out.save()],{type:"application/pdf"}), manquantes};
+}
 function reuPvDoc(m){
       const pvc=m.pvContenu||{};
       const pres=m.presences||{};
@@ -4345,6 +4379,7 @@ ${pvc.intro&&!pvVide(pvc.intro)?`<div class="rt">${pvSanitize(pvc.intro)}</div>`
 <p><b>Absents :</b> ${names('absent').join(", ")||"—"}</p>
 <h2>Ordre du jour</h2>${pts||"<p class='muted'>—</p>"}
 ${reuPvBudgetsHtml(m)}
+${reuPvProcurationsHtml(m)}
 ${pvc.fin&&!pvVide(pvc.fin)?`<div class="rt" style="margin-top:14px">${pvSanitize(pvc.fin)}</div>`:""}
 <p class="d" style="margin-top:30px">Document généré automatiquement.</p>`;
       return {nom:nomPDF("PV "+(m.titre||"")), css:cssPV, corps:corpsPV};
@@ -4361,8 +4396,15 @@ async function reuPvSigner(reuId, sigId){
   const nomSig=((a.prenom||"")+" "+(a.nom||"")).trim(), vers=pvsFonctionDe(a.fonction)==="vice"?"au vice-président":"à la présidente";
   if(!(await modaleConfirm("Signer le PV de « "+(m.titre||"la réunion")+" » et l'envoyer "+vers+" ("+nomSig+") ?\n\nPendant la signature, la réunion sera verrouillée.","Signer et envoyer"))) return;
   if(!(await pvsAuthentifier("Signer le PV et l'envoyer à "+nomSig))) return;
+  try{ await loadProcurations(); }catch(_){ }
   const d=reuPvDoc(m); let blob=null; try{ blob=await telechargerPDF(d.nom, d.css, d.corps, null, "blob"); }catch(_){ blob=null; }
   if(!blob){ modaleInfo("Le PV n'a pas pu être généré. Rien n'a été signé ni envoyé.","Erreur"); return; }
+  /* Procurations émises pour cette réunion : PDF joints en annexe, figés avec le PV. */
+  if(procurationsDuPV(m).length){
+    let r=null; try{ r=await pvAvecAnnexes(m,blob); }catch(_){ r=null; }
+    if(!r || r.manquantes.length){ modaleInfo("Les procurations ne peuvent pas toutes être jointes au PV"+(r&&r.manquantes.length?" ("+r.manquantes.map(x=>x.mandantNom).join(", ")+")":"")+". Rien n'a été signé ni envoyé : réessayez, ou signalez-le à l'Admin.","Procurations"); return; }
+    blob=r.blob;
+  }
   const hash=await pvsHash(await blob.arrayBuffer());
   const fname=pvsNomFichier("pv-"+(m.titre||"reunion")+"-"+(m.date||""))+".pdf", chemin="pv-"+uid()+"-"+fname;
   const up=await sb.storage.from("ca-documents").upload(chemin, blob, {contentType:"application/pdf", upsert:false});
@@ -6105,7 +6147,15 @@ document.addEventListener("click", async e=>{
     case "reu-rappel": { await rappelReunionCA(id); break; }
     case "reu-gen": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut générer le PV."); break; }
       const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
-      const d=reuPvDoc(m); telechargerPDF(d.nom, d.css, d.corps);
+      try{ await loadProcurations(); }catch(_){ }
+      const d=reuPvDoc(m);
+      if(procurationsDuPV(m).length){
+        let b=null; try{ b=await telechargerPDF(d.nom, d.css, d.corps, null, "blob"); }catch(_){ b=null; }
+        if(!b){ modaleInfo("Le PV n'a pas pu être généré.","Aperçu du PV"); break; }
+        const r=await pvAvecAnnexes(m,b);
+        if(r.manquantes.length) modaleInfo("Ces procurations n'ont pas pu être jointes en annexe : "+r.manquantes.map(x=>x.mandantNom).join(", ")+".","Aperçu du PV");
+        const url=URL.createObjectURL(r.blob), a2=document.createElement("a"); a2.href=url; a2.download=pvsNomFichier(d.nom)+".pdf"; document.body.appendChild(a2); a2.click(); a2.remove(); setTimeout(()=>URL.revokeObjectURL(url),30000);
+      } else telechargerPDF(d.nom, d.css, d.corps);
       break;
     }
     case "msg-open": S.msgUI={sel:el.dataset.id,draft:"",file:null}; if(sb){ await loadMessages(); } render(); break;
