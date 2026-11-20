@@ -337,6 +337,7 @@ select.f{width:100%}
 .sout-clause-msg{align-self:center;max-width:92%;background:#2a2150;border:1px solid #b48cf2;border-radius:12px;padding:10px 14px;font-size:13.5px;text-align:center;color:var(--ink)}
 .sout-zone .msg-head .btn{white-space:nowrap;flex:none}
 .sout-proprio{border-color:#1f5a41;background:#0f2a20;color:#c9f2de;font-size:13.5px;line-height:1.6}
+.pv-ed{min-height:54px;border:1px solid var(--line,#555);border-radius:10px;padding:8px 10px;margin:4px 0 10px;line-height:1.5;outline:none;background:rgba(255,255,255,.04)}.pv-ed:focus{border-color:#e8b04b}.pv-ed:empty:before{content:attr(data-ph);opacity:.5}.pv-ed ul,.pv-ed ol{margin:4px 0 4px 22px}
 .sout-bloque{background:#2a1a1f;border:1px solid #6b2333;color:#ffd9dc;border-radius:12px;padding:12px 14px;font-size:13.5px;line-height:1.6;margin-top:8px}
 .sout-fiche{align-self:stretch;background:#1d2a4a;border:1px solid #4a6bb5;color:#e3ebff;border-radius:14px;padding:12px 14px;font-size:13.5px;line-height:1.5}
 .sout-fiche a{color:#fff;font-weight:600}
@@ -1093,7 +1094,8 @@ function odjLimiteInput(m){ if(!m||!m.odjCloture) return ""; const d=new Date(m.
   const z=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate())+"T"+z(d.getHours())+":"+z(d.getMinutes()); }
 function reuLien(m){ return caAppUrl()+"?go=reunion&r="+encodeURIComponent(m.id); }
 function reuHeure(m){ return m&&m.heure?String(m.heure).slice(0,5).replace(":","h"):""; }
-function reuQuand(m){ return (m.date?fmtDateLong(m.date):"date à préciser")+(m.heure?" à "+reuHeure(m):""); }
+function reuHeureFin(m){ return m&&m.heureFin?String(m.heureFin).slice(0,5).replace(":","h"):""; }
+function reuQuand(m){ return (m.date?fmtDateLong(m.date):"date à préciser")+(m.heure?(m.heureFin?" de "+reuHeure(m)+" à "+reuHeureFin(m):" à "+reuHeure(m)):""); }
 /* État de signature du PV (lisible par tous les membres du CA via reu_pv_etats). */
 function reuPvEtat(m){ return (S.reuPv||{})[String(m&&m.id)]||null; }
 function reuVerrou(m){ const e=reuPvEtat(m); return !!(e&&(e.statut==="attente"||e.statut==="valide")); }
@@ -1599,7 +1601,7 @@ async function loadBudgets(){ try{ const bs=await sb.from("ca_budgets").select("
   try{ const rr=await sb.from("ca_budget_reserves").select("*").order("created_at",{ascending:true}); S.resBud=(rr&&!rr.error&&rr.data)||[]; S.resBudErr=(rr&&rr.error)?rr.error.message:null; }catch(e){ S.resBud=[]; S.resBudErr=String(e); } }
 async function loadVotes(){ try{ const vs=await sb.from("ca_votes").select("*").order("created_at",{ascending:false}); const vo=await sb.from("ca_vote_options").select("*"); const vb=await sb.from("ca_vote_ballots").select("*"); const ol=(vo&&vo.data)||[],bl=(vb&&vb.data)||[]; S.votes=(((vs&&vs.data))||[]).map(v=>{ const up=(S.admins||[]).find(a=>a.id===v.cree_par); return {id:v.id,question:v.question,statut:v.statut,docs:Array.isArray(v.docs)?v.docs:[],creeParId:v.cree_par,rappelLe:v.rappel_le,rappelProg:v.rappel_prog_at,creePar:up?((up.prenom||"")+" "+(up.nom||"")).trim():"",options:ol.filter(o=>o.vote_id===v.id).map(o=>({id:o.id,label:o.label})),voters:bl.filter(b=>b.vote_id===v.id).map(b=>({nom:b.nom,optionId:b.option_id,membreId:b.membre_id}))}; }); }catch(e){ S.votes=[]; } }
 async function loadEvenements(){ try{ const {data}=await sb.from("ca_evenements").select("*").order("created_at",{ascending:false}); S.evenements=(data||[]).map(e=>({id:e.id,titre:e.titre,date:e.date,lieu:e.lieu,heure:e.heure||"",responsable:e.responsable,rappelLe:e.rappel_le,rappelProg:e.rappel_prog_at,budgetPrevu:e.budget_prevu,budgetReel:e.budget_reel,checklist:e.checklist||[],notes:e.notes})); }catch(e){ S.evenements=[]; } }
-async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,heure:m.heure||"",lieu:m.lieu||"",creeLe:m.created_at||null,odjCloture:m.odj_cloture_at||null,ordre:m.ordre||[],presences:m.presences||{},odjEnvoyeLe:m.odj_envoye_at||null,pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } await loadReuPv(); }
+async function loadReunions(){ try{ const {data}=await sb.from("ca_reunions").select("*").order("created_at",{ascending:false}); S.reunions=(data||[]).map(m=>({id:m.id,titre:m.titre,date:m.date,heure:m.heure||"",heureFin:m.heure_fin||"",pvContenu:m.pv_contenu||null,lieu:m.lieu||"",creeLe:m.created_at||null,odjCloture:m.odj_cloture_at||null,ordre:m.ordre||[],presences:m.presences||{},odjEnvoyeLe:m.odj_envoye_at||null,pvStatut:m.pv_statut||"brouillon",pvApprouveLe:m.pv_approuve_le||null,pvApprouveNote:m.pv_approuve_note||""})); }catch(e){ S.reunions=[]; } await loadReuPv(); }
 async function loadCreneaux(){ try{ const c=await sb.from("ca_creneaux").select("*").order("date",{ascending:true}); const d=await sb.from("ca_dispos").select("*"); const dl=(d&&d.data)||[]; S.creneaux=(((c&&c.data))||[]).map(x=>({id:x.id,titre:x.titre,date:x.date,lieu:x.lieu,creePar:x.cree_par,dispos:dl.filter(y=>y.creneau_id===x.id).map(y=>({nom:y.nom,statut:y.statut,membreId:y.membre_id}))})); }catch(e){ S.creneaux=[]; } }
 async function loadOrg(){ try{ const {data}=await sb.from("ca_org").select("*"); const o={}; (data||[]).forEach(r=>{ o[r.poste_id]={missions:r.missions,contact:r.contact,qui:r.qui||""}; }); S.org=o; }catch(e){} }
 async function loadTaches(){ try{ const {data}=await sb.from("ca_taches").select("*").order("created_at",{ascending:false}); S.taches=(data||[]).map(t=>({id:t.id,titre:t.titre,posteId:t.poste_id,statut:t.statut,echeance:t.echeance,priorite:t.priorite,creePar:t.cree_par})); }catch(e){ S.taches=[]; } }
@@ -4220,20 +4222,105 @@ function tabAvis(){
    Les budgets refusés et ceux certifiés en CA physique n'en font pas partie. */
 const PV_BUDGETS_DEPUIS = "2026-11-19";
 function dateLocaleISO(v){ const d=new Date(v); if(isNaN(d)) return ""; const z=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate()); }
-function budgetsEnLignePourPV(m){
-  if(!m||!m.id) return [];
-  const R=(S.reunions||[]).filter(r=>r.date).map(r=>({id:r.id,date:String(r.date).slice(0,10),cree:String(r.creeLe||"")}));
+/* Plan d'attribution des budgets : pour chaque réunion, les budgets proposés et ceux retenus.
+   Un budget décoché par la secrétaire dans une réunion est reporté à la réunion suivante (par date). */
+function pvBudgetsPlan(){
+  const R=(S.reunions||[]).filter(r=>r.date).map(r=>({id:r.id,date:String(r.date).slice(0,10),cree:String(r.creeLe||""),ex:new Set((((r.pvContenu||{}).exclus)||[]).map(String))}));
+  const parDate=R.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.cree.localeCompare(b.cree));
   const premiere=R.slice().sort((a,b)=>(a.cree||"~").localeCompare(b.cree||"~")||a.date.localeCompare(b.date))[0];
-  const parDate=R.slice().sort((a,b)=>a.date.localeCompare(b.date));
-  return (S.budgets||[]).filter(b=>{
+  const propose={}, retenus={};
+  (S.budgets||[]).filter(b=>{
     if(b.statut!=="approuve" || !b.decideLe) return false;
-    if(b.origineCertif || b.certifieId || /^CA physique/i.test(String(b.decidePar||""))) return false;
-    const dec=dateLocaleISO(b.decideLe); if(!dec) return false;
-    const cible = dec<PV_BUDGETS_DEPUIS ? premiere : parDate.find(r=>r.date>=dec);
-    return !!cible && cible.id===m.id;
-  }).sort((a,b)=>String(a.decideLe).localeCompare(String(b.decideLe)));
+    return !(b.origineCertif || b.certifieId || /^CA physique/i.test(String(b.decidePar||"")));
+  }).sort((a,b)=>String(a.decideLe).localeCompare(String(b.decideLe))).forEach(b=>{
+    const dec=dateLocaleISO(b.decideLe); if(!dec) return;
+    let idx = dec<PV_BUDGETS_DEPUIS ? (premiere?parDate.indexOf(premiere):-1) : parDate.findIndex(r=>r.date>=dec);
+    while(idx>=0 && idx<parDate.length){
+      const r=parDate[idx], exclu=r.ex.has(String(b.id));
+      (propose[r.id]=propose[r.id]||[]).push(b);
+      if(exclu && idx+1<parDate.length){ idx++; continue; }
+      if(!exclu) (retenus[r.id]=retenus[r.id]||[]).push(b);
+      break;
+    }
+  });
+  return {propose,retenus};
+}
+function budgetsEnLignePourPV(m){ return (pvBudgetsPlan().retenus[m&&m.id])||[]; }
+/* ---- Rédaction du PV : texte enrichi (gras, taille, listes), assaini avant tout affichage ---- */
+function pvSanitize(h){
+  const OK={B:1,STRONG:1,I:1,EM:1,U:1,BR:1,P:1,DIV:1,UL:1,OL:1,LI:1,SPAN:1,FONT:1};
+  const SKIP={SCRIPT:1,STYLE:1,IFRAME:1,OBJECT:1,EMBED:1,TEMPLATE:1,NOSCRIPT:1};
+  let doc; try{ doc=new DOMParser().parseFromString("<body>"+String(h||"").slice(0,40000)+"</body>","text/html"); }catch(_){ return ""; }
+  const out=doc.createElement("div");
+  (function walk(src,dst){
+    Array.prototype.forEach.call(src.childNodes,n=>{
+      if(n.nodeType===3){ dst.appendChild(doc.createTextNode(n.nodeValue)); return; }
+      if(n.nodeType!==1 || SKIP[n.tagName]) return;
+      if(OK[n.tagName]){ const e=doc.createElement(n.tagName.toLowerCase());
+        if(n.tagName==="FONT"){ const z=n.getAttribute("size"); if(/^[1-7]$/.test(z||"")) e.setAttribute("size",z); }
+        walk(n,e); dst.appendChild(e); }
+      else walk(n,dst);
+    });
+  })(doc.body,out);
+  return out.innerHTML;
+}
+function pvVide(h){ return !String(h||"").replace(/<[^>]*>/g,"").replace(/&nbsp;|\s/g,""); }
+function pvTexteEnHtml(t){ return esc(t||"").replace(/\n/g,"<br>"); }
+function pvBudgetsTexteAuto(L){
+  if(!L.length) return "";
+  return "<ul>"+L.map(b=>{ const v=b.votes||[], c=ch=>v.filter(x=>x.choix===ch).length;
+    return "<li><b>"+esc(b.titre||"")+"</b>"+(b.cout>0?" — "+esc(eur(b.cout)):"")+" — décidé le "+esc(fmtDateLong(dateLocaleISO(b.decideLe)))+" — Approuvé ("+c("pour")+" pour, "+c("contre")+" contre, "+c("abst")+" abstention(s))</li>"; }).join("")+"</ul>";
+}
+function pvCollect(m){
+  const old=m.pvContenu||{};
+  const o={intro:"",fin:"",points:{},budgets:(old.budgets==null?null:old.budgets),exclus:(old.exclus||[]).slice()};
+  document.querySelectorAll(".pv-ed").forEach(e=>{ const k=String(e.dataset.pvkey||""), h=pvSanitize(e.innerHTML);
+    if(k==="intro") o.intro=pvVide(h)?"":h;
+    else if(k==="fin") o.fin=pvVide(h)?"":h;
+    else if(k==="budgets"){ if(e.dataset.dirty==="1") o.budgets=h; }
+    else if(k.slice(0,3)==="pt:") o.points[k.slice(3)]=pvVide(h)?"":h; });
+  return o;
+}
+async function pvEnregistrer(m,o){
+  if(!sb||!estSecretaire()) return false;
+  const r=await sb.from("ca_reunions").update({pv_contenu:o}).eq("id",m.id);
+  if(r&&r.error){ modaleInfo("Enregistrement impossible : "+r.error.message,"Rédaction du PV"); return false; }
+  await loadReunions(); return true;
+}
+function blocRedactionPV(m){
+  if(!estSecretaire()||reuVerrou(m)) return "";
+  const pv=m.pvContenu||{}, pts=pv.points||{}, ex=new Set((pv.exclus||[]).map(String));
+  const prop=(pvBudgetsPlan().propose[m.id])||[];
+  const retenus=prop.filter(b=>!ex.has(String(b.id)));
+  const ed=(key,html,ph)=>`<div class="pv-ed" contenteditable="true" role="textbox" aria-multiline="true" data-pvkey="${esc(key)}" data-ph="${esc(ph||"")}">${html||""}</div>`;
+  const tb=(cmd,lib,val,tip)=>`<button type="button" class="btn ghost sm" data-action="pv-fmt" data-cmd="${cmd}"${val?` data-val="${val}"`:""} title="${esc(tip||lib)}">${lib}</button>`;
+  const lignes=(m.ordre||[]).map((p,i)=>`<label class="du" style="display:block;margin-top:8px;font-weight:700">${i+1}. ${esc(p.texte)}</label>`
+      +ed("pt:"+p.id, pts[p.id]!=null?pvSanitize(pts[p.id]):pvTexteEnHtml(p.notes), "Décision / compte rendu de ce point…")).join("");
+  const bud=(prop.length||pv.budgets!=null)?`<label class="du" style="display:block;margin-top:14px;font-weight:700">Budgets votés en ligne</label>
+    <div class="du" style="margin:2px 0 6px">Cochez les budgets à reprendre dans ce PV. Un budget décoché est reporté au PV suivant.</div>
+    ${prop.map(b=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:3px 0;font-size:13px"><input type="checkbox" data-action="pv-bud-toggle" data-id="${esc(String(b.id))}" ${ex.has(String(b.id))?"":"checked"}><span><b>${esc(b.titre||"")}</b>${b.cout>0?" — "+esc(eur(b.cout)):""} — ${esc(fmtDateLong(dateLocaleISO(b.decideLe)))}</span></label>`).join("")}
+    ${ed("budgets", pv.budgets!=null?pvSanitize(pv.budgets):pvBudgetsTexteAuto(retenus), "Aucun budget repris dans ce PV.")}
+    <div class="row-btn"><button class="btn ghost sm" data-action="pv-bud-reset">↺ Régénérer le texte d'après la sélection</button></div>`:"";
+  return `<div class="compose pv-red" style="margin-top:22px"><h3 class="serif" style="margin-top:0">✍️ Rédaction du PV</h3>
+    <p class="du" style="margin:0 0 6px">Sélectionnez du texte puis choisissez la mise en forme. Rien n'est envoyé avant « Enregistrer ».</p>
+    <div class="row-btn" style="flex-wrap:wrap;gap:6px;position:sticky;top:0;z-index:2">${tb("bold","<b>G</b>","","Gras")}${tb("italic","<i>I</i>","","Italique")}${tb("underline","<u>S</u>","","Souligné")}
+      ${tb("fontSize","Petit","2")}${tb("fontSize","Normal","3")}${tb("fontSize","Grand","5")}${tb("fontSize","Très grand","6")}
+      ${tb("insertUnorderedList","• Liste","","Liste à puces")}${tb("insertOrderedList","1. Liste","","Liste numérotée")}${tb("removeFormat","Effacer le style","","Retirer la mise en forme")}</div>
+    <label class="du" style="display:block;margin-top:8px;font-weight:700">Introduction</label>${ed("intro",pvSanitize(pv.intro||""),"Texte d'introduction (facultatif)…")}
+    ${lignes}${bud}
+    <label class="du" style="display:block;margin-top:14px;font-weight:700">Conclusion</label>${ed("fin",pvSanitize(pv.fin||""),"Texte de conclusion (facultatif)…")}
+    <div class="row-btn"><button class="btn" data-action="pv-save">💾 Enregistrer la rédaction</button></div></div>`;
+}
+function blocHorairePV(m){
+  if(!estSecretaire()||reuVerrou(m)) return "";
+  return `<div class="compose" style="margin:0 0 12px"><h3 class="serif" style="margin-top:0">Horaire de la réunion</h3>
+    <div style="display:flex;gap:8px;align-items:center"><input class="f" type="time" id="reu_h_debut" value="${esc(String(m.heure||"").slice(0,5))}" style="flex:1"><span class="du">à</span><input class="f" type="time" id="reu_h_fin" value="${esc(String(m.heureFin||"").slice(0,5))}" style="flex:1"></div>
+    <p class="du" style="margin:4px 0 0">La clôture de l'ordre du jour et l'envoi du mail suivent l'heure de début. L'heure de fin est facultative.</p>
+    <div class="row-btn"><button class="btn sm" data-action="reu-horaire-save">Enregistrer l'horaire</button></div></div>`;
 }
 function reuPvBudgetsHtml(m){
+  const pvb=(m.pvContenu||{}).budgets;
+  if(pvb!=null) return pvVide(pvb)?"":`<h2>Budgets votés en ligne</h2><div class="rt">${pvSanitize(pvb)}</div>`;
   const L=budgetsEnLignePourPV(m); if(!L.length) return "";
   const lignes=L.map(b=>{ const v=b.votes||[], c=ch=>v.filter(x=>x.choix===ch).length;
     return `<tr><td>${esc(b.titre||"")}</td><td style="text-align:right;white-space:nowrap">${b.cout>0?esc(eur(b.cout)):"—"}</td><td style="white-space:nowrap">${esc(fmtDateLong(dateLocaleISO(b.decideLe)))}</td><td>Approuvé — ${c("pour")} pour, ${c("contre")} contre, ${c("abst")} abstention(s)</td></tr>`; }).join("");
@@ -4241,21 +4328,24 @@ function reuPvBudgetsHtml(m){
 <table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;border-bottom:1px solid #c9cdd6"><th>Budget</th><th style="text-align:right">Montant</th><th>Date</th><th>Résultat</th></tr></thead><tbody>${lignes}</tbody></table>`;
 }
 function reuPvDoc(m){
+      const pvc=m.pvContenu||{};
       const pres=m.presences||{};
       const nomDeCle=k=>{ const a=(S.admins||[]).find(x=>x.id===k); if(a) return ((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||k; const p=PERSONNES.find(x=>x.id===k); return p?(p.prenom+" "+p.nom):k; };
       const names=v=>Object.keys(pres).filter(k=>pres[k]===v).map(k=>esc(nomDeCle(k)));
-      const pts=(m.ordre||[]).map((p,i)=>`<div class="pt"><h3>${i+1}. ${esc(p.texte)} ${p.fait?"<span class='ok'>✓ traité</span>":""}</h3>${p.par?`<p class='muted' style='font-size:12px;margin:0 0 4px'>Proposé par ${esc(p.par)}</p>`:""}${p.sujet==="budget"&&p.budgetMontant?`<p><b>Montant demandé :</b> ${esc(eur(p.budgetMontant))}</p>`:""}${p.note?`<p style='white-space:pre-wrap'>${esc(p.note)}</p>`:""}${p.notes?`<p>${esc(p.notes)}</p>`:"<p class='muted'>—</p>"}</div>`).join("");
+      const pts=(m.ordre||[]).map((p,i)=>`<div class="pt"><h3>${i+1}. ${esc(p.texte)} ${p.fait?"<span class='ok'>✓ traité</span>":""}</h3>${p.par?`<p class='muted' style='font-size:12px;margin:0 0 4px'>Proposé par ${esc(p.par)}</p>`:""}${p.sujet==="budget"&&p.budgetMontant?`<p><b>Montant demandé :</b> ${esc(eur(p.budgetMontant))}</p>`:""}${p.note?`<p style='white-space:pre-wrap'>${esc(p.note)}</p>`:""}${(pvc.points&&pvc.points[p.id]!=null)?(pvVide(pvc.points[p.id])?"<p class='muted'>—</p>":`<div class="rt">${pvSanitize(pvc.points[p.id])}</div>`):(p.notes?`<p>${esc(p.notes)}</p>`:"<p class='muted'>—</p>")}</div>`).join("");
       const cssPV=`body{font-family:Georgia,serif;color:#1b2338;line-height:1.55}
 h1{font-size:24px;margin:0 0 2px}.d{color:#6a7182;font-size:13px;margin:0 0 20px}
 h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bottom:4px}
-.pt h3{font-size:14px;margin:12px 0 2px}.pt p{margin:0 0 6px}.muted{color:#9aa1ad}.ok{color:#3c7a58;font-size:12px}`;
+.pt h3{font-size:14px;margin:12px 0 2px}.pt p{margin:0 0 6px}.rt p,.rt div{margin:0 0 6px}.rt ul,.rt ol{margin:4px 0 8px 22px}.muted{color:#9aa1ad}.ok{color:#3c7a58;font-size:12px}`;
       const corpsPV=`<h1>Procès-verbal — ${esc(m.titre)}</h1><p class="d">${esc(reuQuand(m))}${m.lieu?" · "+esc(m.lieu):""}</p>
+${pvc.intro&&!pvVide(pvc.intro)?`<div class="rt">${pvSanitize(pvc.intro)}</div>`:""}
 <h2>Présences</h2>
 <p><b>Présents :</b> ${names('present').join(", ")||"—"}</p>
 <p><b>Excusés :</b> ${names('excuse').join(", ")||"—"}</p>
 <p><b>Absents :</b> ${names('absent').join(", ")||"—"}</p>
 <h2>Ordre du jour</h2>${pts||"<p class='muted'>—</p>"}
 ${reuPvBudgetsHtml(m)}
+${pvc.fin&&!pvVide(pvc.fin)?`<div class="rt" style="margin-top:14px">${pvSanitize(pvc.fin)}</div>`:""}
 <p class="d" style="margin-top:30px">Document généré automatiquement.</p>`;
       return {nom:nomPDF("PV "+(m.titre||"")), css:cssPV, corps:corpsPV};
 }
@@ -4305,7 +4395,7 @@ function tabReunions(){
     return `${estSecretaire()?`<div class="compose"><h3 class="serif">Nouvelle réunion</h3>
       <input class="f" id="reu_titre" placeholder="Ex. Réunion du bureau">
       <input class="f" id="reu_date" type="date">
-      <input class="f" id="reu_heure" type="time" title="Heure de la réunion (l'ordre du jour part 1 minute après le début)">
+      <div style="display:flex;gap:8px;align-items:center"><input class="f" id="reu_heure" type="time" title="Heure de début (l'ordre du jour part 1 minute après le début)" style="flex:1"><span class="du">à</span><input class="f" id="reu_heure_fin" type="time" title="Heure de fin (facultatif)" style="flex:1"></div>
       <input class="f" id="reu_lieu" placeholder="Lieu (facultatif)">
       <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="reu_modele" checked> Pr\u00e9-remplir avec les points r\u00e9currents</label>
       <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px"><input type="checkbox" class="sw" role="switch" id="reu_notify" checked> Prévenir les membres du CA par e-mail (avec le lien pour ajouter un point)</label>
@@ -4336,6 +4426,7 @@ function tabReunions(){
   return `<div class="msg-head"><button class="btn ghost sm" data-action="reu-back">← Réunions</button>
       <span><span class="u-nom">${esc(m.titre)}</span> <span class="u-id">${esc(reuQuand(m))}${m.lieu?" · "+esc(m.lieu):""}</span></span>
       ${(estSecretaire()&&!verrou)?`<button class="link" data-action="reu-del" data-id="${m.id}" style="margin-left:auto">Supprimer</button>`:""}</div>
+    ${blocHorairePV(m)}
     ${(peutRappelerReunion() && (!m.date || String(m.date).slice(0,10)>=todayISO()))?`<div class="row-btn" style="margin:0 0 12px;align-items:center"><button class="btn sm" data-action="reu-rappel" data-id="${m.id}">🔔 Rappeler la réunion aux membres</button>${(S.reuRappelLe&&S.reuRappelLe[m.id])?`<span class="du">Dernier rappel : ${esc(fmtQuand(S.reuRappelLe[m.id]))}</span>`:""}</div>`:""}
     <div class="grp-h"><h2 class="serif">Ordre du jour</h2><span class="c">${ordre.length}</span><span class="l"></span></div>
     ${(estSecretaire()&&!verrou)?`<div class="compose" style="margin-bottom:10px"><h3 class="serif" style="margin-top:0">Limite pour remplir l'ordre du jour</h3>
@@ -4349,14 +4440,21 @@ function tabReunions(){
         <div id="reu_autre_box" style="display:none"><input class="f" id="reu_autre" placeholder="Titre du point (obligatoire)" maxlength="200"></div>
         <div id="reu_budget_box" style="display:none"><input class="f" id="reu_bobjet" placeholder="Objet du budget (obligatoire)" maxlength="200"><input class="f" id="reu_bmontant" type="number" min="0" step="0.01" placeholder="Montant en € (obligatoire)"></div>
         <textarea class="f" id="reu_note" placeholder="Votre note (facultatif)" maxlength="2000"></textarea>
-        <p class="du" style="margin:4px 0 0">${estSecretaire()?"Secrétariat : vous pouvez ajouter des points à tout moment.":"Vous pouvez ajouter des points ${odjLimiteTexte(m)}."}</p>
+        <p class="du" style="margin:4px 0 0">${estSecretaire()?"Secrétariat : vous pouvez ajouter des points à tout moment.":"Vous pouvez ajouter des points "+odjLimiteTexte(m)+"."}</p>
         <div class="row-btn"><button class="btn sm" data-action="reu-addpoint">Ajouter le point</button></div></div>`}
     ${points}
     <div class="grp-h" style="margin-top:26px"><h2 class="serif">Présences</h2><span class="c">${cnt('present')} prés. · ${cnt('excuse')} exc. · ${cnt('absent')} abs.</span><span class="l"></span></div>
     ${presRows}
+    ${blocRedactionPV(m)}
     ${blocApprobationPV(m)}
     ${estSecretaire()?`<div class="row-btn" style="margin-top:16px;flex-wrap:wrap"><button class="btn ghost" data-action="reu-gen">Aperçu du PV (PDF)</button><button class="btn ghost" data-action="reu-lien" data-id="${m.id}">🔗 Copier le lien de la réunion</button></div>`:`<p class="du" style="margin-top:16px">Le PV est rédigé et diffusé par le secrétariat.</p>`}`;
 }
+
+/* Éditeur du PV : la mise en forme ne doit pas faire perdre la sélection ; collage en texte brut. */
+document.addEventListener("mousedown",e=>{ const t=e.target&&e.target.closest&&e.target.closest("[data-action='pv-fmt']"); if(t) e.preventDefault(); });
+document.addEventListener("input",e=>{ const t=e.target&&e.target.closest&&e.target.closest(".pv-ed"); if(t) t.dataset.dirty="1"; });
+document.addEventListener("paste",e=>{ const t=e.target&&e.target.closest&&e.target.closest(".pv-ed"); if(!t) return;
+  e.preventDefault(); const txt=(e.clipboardData&&e.clipboardData.getData("text/plain"))||""; try{ document.execCommand("insertText",false,txt); }catch(_){ } });
 
 /* ---- onglet ÉVÉNEMENTS (fiche : budget, checklist, notes) ---- */
 function tabEvenements(){
@@ -5919,7 +6017,7 @@ document.addEventListener("click", async e=>{
       if(!dt||!hr){ modaleInfo("Indiquez la date et l'heure de la réunion : l'ordre du jour est envoyé automatiquement 1 minute après le début.","Nouvelle réunion"); break; }
       const mod=document.getElementById("reu_modele");
       const base=(mod&&mod.checked&&Array.isArray(S.meta.modeleOdj))?S.meta.modeleOdj.map(x=>({id:uid(),texte:x,fait:false,notes:"",parId:null,par:"Mod\u00e8le"})):[];
-      const {data,error}=await sb.from("ca_reunions").insert({titre:t,date:dt||null,heure:hr||null,lieu:lieu,ordre:base,presences:{}}).select().single(); if(error||!data) break; await loadReunions(); { const n=document.getElementById("reu_notify"); if(n&&n.checked) convocationCA(data, !!(document.getElementById("reu_urgent")||{}).checked); } S.reuUI={sel:data.id}; render(); break; }
+      const {data,error}=await sb.from("ca_reunions").insert({titre:t,date:dt||null,heure:hr||null,heure_fin:val("reu_heure_fin")||null,lieu:lieu,ordre:base,presences:{}}).select().single(); if(error||!data) break; await loadReunions(); { const n=document.getElementById("reu_notify"); if(n&&n.checked) convocationCA(data, !!(document.getElementById("reu_urgent")||{}).checked); } S.reuUI={sel:data.id}; render(); break; }
     case "reu-open": S.reuUI={sel:el.dataset.id}; render(); await loadReuPv(); if(estSecretaire()){ try{ await loadPvSign(); }catch(_){ } } render(); break;
     case "reu-cloture-save": case "reu-cloture-reset": { if(!estSecretaire()||!sb) break; const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(!m) break;
       let v=null;
@@ -5927,6 +6025,22 @@ document.addEventListener("click", async e=>{
       const r=await sb.from("ca_reunions").update({odj_cloture_at:v}).eq("id",m.id);
       if(r&&r.error){ modaleInfo("Enregistrement impossible : "+r.error.message,"Limite de l'ordre du jour"); break; }
       await loadReunions(); render(); break; }
+    case "reu-horaire-save": { if(!estSecretaire()||!sb) break; const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(!m) break;
+      const h1=val("reu_h_debut"), h2=val("reu_h_fin");
+      if(!h1){ modaleInfo("Indiquez l'heure de début de la réunion.","Horaire"); break; }
+      if(h2 && h2<=h1){ modaleInfo("L'heure de fin doit être après l'heure de début.","Horaire"); break; }
+      const r=await sb.from("ca_reunions").update({heure:h1,heure_fin:h2||null}).eq("id",m.id);
+      if(r&&r.error){ modaleInfo("Enregistrement impossible : "+r.error.message,"Horaire"); break; }
+      await loadReunions(); render(); break; }
+    case "pv-fmt": { try{ document.execCommand("styleWithCSS",false,false); document.execCommand(el.dataset.cmd,false,el.dataset.val||null); }catch(_){ } break; }
+    case "pv-save": { if(!estSecretaire()||!sb) break; const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(!m) break;
+      if(await pvEnregistrer(m,pvCollect(m))){ render(); modaleInfo("La rédaction du PV est enregistrée. Utilisez « Aperçu du PV (PDF) » pour voir le résultat.","Rédaction du PV"); } break; }
+    case "pv-bud-toggle": case "pv-bud-reset": { if(!estSecretaire()||!sb) break; const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(!m) break;
+      const o=pvCollect(m);
+      if(a==="pv-bud-toggle"){ const id=String(el.dataset.id), k=o.exclus.map(String).indexOf(id); if(k>=0) o.exclus.splice(k,1); else o.exclus.push(id); }
+      if(o.budgets!==null && !(await modaleConfirm("Le texte des budgets que vous avez modifié sera remplacé par la liste d'après votre sélection. Continuer ?","Budgets du PV"))){ render(); break; }
+      o.budgets=null;
+      if(await pvEnregistrer(m,o)) render(); break; }
     case "reu-back": S.reuUI={sel:null}; render(); break;
     case "reu-del": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut supprimer une réunion."); break; } if(!sb) break; if(!(await modaleConfirm("Supprimer cette réunion ?"))) break; await sb.from("ca_reunions").delete().eq("id",el.dataset.id); await loadReunions(); S.reuUI={sel:null}; render(); break; }
     case "reu-addpoint": { if(!sb) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
