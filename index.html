@@ -4309,7 +4309,7 @@ function blocRedactionPV(m){
     <label class="du" style="display:block;margin-top:8px;font-weight:700">Introduction</label>${ed("intro",pvSanitize(pv.intro||""),"Texte d'introduction (facultatif)…")}
     ${lignes}${bud}
     <label class="du" style="display:block;margin-top:14px;font-weight:700">Conclusion</label>${ed("fin",pvSanitize(pv.fin||""),"Texte de conclusion (facultatif)…")}
-    <div class="row-btn"><button class="btn" data-action="pv-save">💾 Enregistrer la rédaction</button></div></div>`;
+    <div class="row-btn"><button class="btn" data-action="pv-save">💾 Enregistrer la rédaction</button><span class="du" id="pv_auto_etat" style="align-self:center">Enregistrement automatique actif</span></div></div>`;
 }
 function blocHorairePV(m){
   if(!estSecretaire()||reuVerrou(m)) return "";
@@ -4331,6 +4331,10 @@ function reuPvBudgetsHtml(m){
 function procurationsDuPV(m){
   if(!m||!m.date) return [];
   const j=String(m.date).slice(0,10);
+  /* Deux réunions le même jour : les procurations (rattachées à la date) vont à la première seulement (heure, puis création). */
+  const memeJour=(S.reunions||[]).filter(r=>String(r.date||"").slice(0,10)===j)
+    .sort((a,b)=>String(a.heure||"99").localeCompare(String(b.heure||"99"))||String(a.creeLe||"").localeCompare(String(b.creeLe||"")));
+  if(memeJour.length>1 && String(memeJour[0].id)!==String(m.id)) return [];
   return (S.procurations||[]).filter(p=>p.statut==="active" && String(p.dateReunion||"").slice(0,10)===j)
     .sort((a,b)=>String(a.mandantNom||"").localeCompare(String(b.mandantNom||""),"fr"));
 }
@@ -4494,7 +4498,19 @@ function tabReunions(){
 
 /* Éditeur du PV : la mise en forme ne doit pas faire perdre la sélection ; collage en texte brut. */
 document.addEventListener("mousedown",e=>{ const t=e.target&&e.target.closest&&e.target.closest("[data-action='pv-fmt']"); if(t) e.preventDefault(); });
-document.addEventListener("input",e=>{ const t=e.target&&e.target.closest&&e.target.closest(".pv-ed"); if(t) t.dataset.dirty="1"; });
+let _pvAutoT=null;
+function pvAutoEtat(txt){ const s=document.getElementById("pv_auto_etat"); if(s) s.textContent=txt; }
+async function pvAutoSave(){
+  _pvAutoT=null; if(!sb||!estSecretaire()) return;
+  const m=(S.reunions||[]).find(x=>x.id===(S.reuUI&&S.reuUI.sel)); if(!m||reuVerrou(m)||!document.querySelector(".pv-ed")) return;
+  const o=pvCollect(m);
+  try{ const r=await sb.from("ca_reunions").update({pv_contenu:o}).eq("id",m.id);
+    if(r&&r.error){ pvAutoEtat("⚠️ Brouillon non enregistré — utilisez « Enregistrer »"); return; }
+    m.pvContenu=o; const d=new Date(); pvAutoEtat("✓ Brouillon enregistré à "+String(d.getHours()).padStart(2,"0")+"h"+String(d.getMinutes()).padStart(2,"0")); }
+  catch(_){ pvAutoEtat("⚠️ Brouillon non enregistré — utilisez « Enregistrer »"); }
+}
+document.addEventListener("input",e=>{ const t=e.target&&e.target.closest&&e.target.closest(".pv-ed"); if(!t) return; t.dataset.dirty="1";
+  pvAutoEtat("Modifications en cours…"); if(_pvAutoT) clearTimeout(_pvAutoT); _pvAutoT=setTimeout(pvAutoSave,2000); });
 document.addEventListener("paste",e=>{ const t=e.target&&e.target.closest&&e.target.closest(".pv-ed"); if(!t) return;
   e.preventDefault(); const txt=(e.clipboardData&&e.clipboardData.getData("text/plain"))||""; try{ document.execCommand("insertText",false,txt); }catch(_){ } });
 
