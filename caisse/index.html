@@ -1878,24 +1878,17 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     </div>
     <div class="callout" id="doc_anom" hidden style="border-left:4px solid var(--amber)"></div>
 
-    <div class="card pad" id="docPayCard">
-      <div class="eyebrow">Paiements</div>
-      <h2 style="font-size:20px;margin:6px 0 10px">Factures émises payées et à échéance</h2>
-      <p class="hint" style="margin:0 0 14px">Les virements reçus sur les extraits de compte (CSV ING) sont comparés aux factures émises encore ouvertes :
-      d'abord la communication structurée, puis le numéro de facture, puis le nom du client et le montant. Rien n'est enregistré sans votre clic.</p>
-      <div class="attach" style="align-items:center">
-        <button type="button" class="btn sm" id="docPayGo">Comparer avec les extraits déposés</button>
-        <span class="hint">ou un autre fichier CSV :</span>
-        <input type="file" id="docPayCsv" accept=".csv,text/csv,text/plain">
+    <div class="card pad" id="docPayCard" style="padding:12px 18px">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between">
+        <span id="docPayEtat" class="hint">Lecture des extraits de compte…</span>
+        <button type="button" class="btn ghost sm" id="docPayGo" title="Relire les extraits CSV déposés dans Extraits">Actualiser</button>
       </div>
-      <div id="docPayRes" style="margin-top:12px" hidden></div>
+      <div id="docPayRes" hidden></div>
     </div>
 
     <div class="card pad" id="docLotCard">
-      <div class="eyebrow">Factures émises</div>
-      <h2 style="font-size:20px;margin:6px 0 10px">Ajouter plusieurs factures à la fois</h2>
-      <p class="hint" style="margin:0 0 14px">Choisis tous les PDF d'un coup : chaque fichier devient une facture « À encaisser ».
-      Le numéro, le client, les dates, le montant et la communication structurée sont lus dans le PDF. Vérifie le tableau, puis enregistre.</p>
+      <h2 style="font-size:20px;margin:0 0 6px">Ajouter des factures émises</h2>
+      <p class="hint" style="margin:0 0 12px">Un ou plusieurs PDF : tout est lu automatiquement, tu vérifies puis tu enregistres.</p>
       <div class="attach"><input type="file" id="docLotFiles" multiple accept=".pdf,application/pdf"></div>
       <div id="docLotRes" style="margin-top:12px" hidden></div>
     </div>
@@ -5654,6 +5647,7 @@ function docAppliquerMode(v){
   ["#doc_kAenc", "#doc_kRet", "#doc_kEnc"].forEach(id => { const k = $(id) && $(id).closest(".kpi"); if(k) k.hidden = !em; });
   const kb = $("#doc_kBons") && $("#doc_kBons").closest(".kpi"); if(kb) kb.hidden = em;
   ["#docPayCard", "#docLotCard"].forEach(id => { if($(id)) $(id).hidden = !em; });
+  if($("#docFormCard")) $("#docFormCard").hidden = em && !state.docEdit;
   if(em && !state.docPayAuto && isTreso()){ state.docPayAuto = true; docPayCharger(null).then(() => renderDocs()).catch(_ => __errSilence(_)); }
   const VENTE = ["a_encaisser", "retard", "partielle", "payee"];
   const et = $("#docEtat");
@@ -5785,6 +5779,7 @@ function resetDocForm(){
   $("#doc_formEyebrow").textContent = "Classement";
   $("#doc_formTitre").textContent = docTitreForm();
   $("#doc_cat").value = state.docMode;
+  if($("#docFormCard")) $("#docFormCard").hidden = state.docMode === "vente";
   $("#docBtn").textContent = "Enregistrer le document";
   $("#doc_cat").disabled = false;
   erreurForm("#docErr", null);
@@ -5794,6 +5789,7 @@ $("#docCancel").onclick = resetDocForm;
 
 function editerDoc(d){
   state.docEdit = d.id; state.docDrop = new Set();
+  if($("#docFormCard")) $("#docFormCard").hidden = false;
   $("#doc_cat").value = d.cat;
   $("#doc_cat").disabled = d.cat === "vente" && docStatut(d) === "payee";
   $("#doc_date").value = d.date || "";
@@ -6653,10 +6649,15 @@ function docRapprocher(ops){
 const DOC_NIVEAUX = { comm: "communication structurée", numero: "numéro de facture", nom: "nom du client et montant", montant: "montant seul" };
 function docPayRender(){
   const z = $("#docPayRes"); if(!z) return;
-  const P = state.docPay;
-  if(!P){ z.hidden = true; return; }
-  z.hidden = false;
-  if(P.charge){ z.innerHTML = `<p class="hint">${esc(P.charge)}</p>`; return; }
+  const P = state.docPay, etat = $("#docPayEtat");
+  z.hidden = true;
+  if(!P){ if(etat) etat.textContent = "Extraits de compte pas encore lus."; return; }
+  if(P.charge){ if(etat) etat.textContent = P.charge; return; }
+  if(etat){
+    const dates = P.ops.map(o => o.d).sort();
+    etat.innerHTML = `Comparé avec ${esc(P.source)}${dates.length ? ` · virements reçus du <b>${fdate(dates[0])}</b> au <b>${fdate(dates[dates.length-1])}</b>` : ""}`;
+  }
+  return;
   const R = docRapprocher(P.ops);
   z._r = R;
   const recPrises = new Set();
@@ -6737,7 +6738,7 @@ async function docPayCharger(fichier){
   }catch(err){ state.docPay = { charge: "Comparaison impossible : " + (err.message || err) + "." }; }
   docPayRender();
 }
-if($("#docPayGo")) $("#docPayGo").onclick = async () => { const b = $("#docPayGo"); b.disabled = true; try{ await docPayCharger(null); } finally{ b.disabled = false; } };
+if($("#docPayGo")) $("#docPayGo").onclick = async () => { const b = $("#docPayGo"); b.disabled = true; try{ await docPayCharger(null); renderDocs(); } finally{ b.disabled = false; } };
 if($("#docPayCsv")) $("#docPayCsv").onchange = () => { const f = $("#docPayCsv").files && $("#docPayCsv").files[0]; if(f) docPayCharger(f); };
 const docOpsVersPaiement = r => r.ops.map(o => ({ date: o.d, montant: o.c / 100, ref: o.ref || null, cle: o.cle, payeur: o.payeur || null, exist: o.exist || null }));
 if($("#docPayRes")) $("#docPayRes").addEventListener("click", async e => {
