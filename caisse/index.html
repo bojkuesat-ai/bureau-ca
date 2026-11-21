@@ -6144,6 +6144,34 @@ async function docEncaisser(d, ops){
   return true;
 }
 
+// le virement est déjà encodé comme recette : on relie seulement la facture (aucune nouvelle recette)
+async function docRelierRecettes(d, ops, sansQuestion){
+  const lignes = ops.map(o => ({ o, rec: o.exist || docRecetteExistante(o) }));
+  if(lignes.some(x => !x.rec)) return docEncaisser(d, ops);
+  if(new Set(lignes.map(x => x.rec.id)).size < lignes.length) return docEncaisser(d, ops);
+  if(!sansQuestion && !await demander("Relier à la recette existante",
+      (d.numero ? "Facture " + d.numero + " — " : "") + (d.tiers || "") + "\n\n"
+      + lignes.map(x => "Recette du " + fdate(x.rec.income_date) + " « " + (x.rec.object || "") + " » : " + euro(x.rec.amount)).join("\n")
+      + "\n\nLa facture est reliée à cette recette et jointe à ses pièces. Aucune nouvelle recette n'est créée.", { bouton:"Relier" })) return false;
+  const pieces = (d.fichiers || []).map(f => ({ path:f.path, type:f.type || "", kind:"Facture émise", name:f.name || "" }));
+  const paiements = docPaiements(d).slice();
+  for(const { o, rec } of lignes){
+    const deja = new Set(piecesDe(rec).map(p => p.path));
+    const ajout = pieces.filter(p => !deja.has(p.path));
+    if(ajout.length){ try{ await sb.from("incomes").update({ attachments: (rec.attachments || []).concat(ajout) }).eq("id", rec.id); }catch(_){ __errSilence(_); } }
+    paiements.push({ date:o.date, montant:Number(o.montant), ref:o.ref || null, cle:o.cle || null, payeur:o.payeur || null, income_id:rec.id, cree:false });
+  }
+  const recuC = paiements.reduce((s,p) => s + Math.round(Number(p.montant||0)*100), 0);
+  const paye = d.montant == null || recuC >= Math.round(Number(d.montant)*100);
+  const derniere = paiements.reduce((a,p) => p.date > a ? p.date : a, "");
+  const maj = await sb.from(DOC_TABLE).update({ paiements, montant_recu: recuC/100, statut: paye ? "payee" : "a_encaisser",
+    income_id: paiements[0].income_id, paid_at: paye ? derniere : null }).eq("id", d.id).select("id");
+  if(maj.error || !maj.data || !maj.data.length){ toast("Liaison impossible" + (maj.error ? " : " + maj.error.message : ".")); return false; }
+  await refresh();
+  if(!sansQuestion) toast(paye ? "Facture reliée à la recette existante : encaissée." : "Versement relié : reste " + euro((Math.round(Number(d.montant)*100) - recuC)/100) + " à recevoir.");
+  return true;
+}
+
 async function docAnnulerEncaissement(d){
   const pay = docPaiements(d);
   const crees = pay.length ? pay.filter(p => p.cree && p.income_id).map(p => p.income_id)
@@ -6563,6 +6591,15 @@ function docPayRender(){
   if(P.charge){ z.innerHTML = `<p class="hint">${esc(P.charge)}</p>`; return; }
   const R = docRapprocher(P.ops);
   z._r = R;
+  const recPrises = new Set();
+  [...R.payees, ...R.partielles, ...R.verifier].forEach(r => {
+    r.ops.forEach(o => {
+      const e = docRecetteExistante({ date: o.d, montant: o.c / 100, ref: o.ref });
+      o.exist = e && !recPrises.has(e.id) ? e : null;
+      if(o.exist) recPrises.add(o.exist.id);
+    });
+    r.existe = r.ops.length > 0 && r.ops.every(o => o.exist);
+  });
   const tot = a => euro(a.reduce((s,r) => s + (docResteC(r.d) || 0), 0) / 100);
   const titreD = d => `${esc(d.tiers || "—")}${d.numero ? ` · <span class="mono">${esc(d.numero)}</span>` : ""}`;
   const ligne = (r, k, groupe) => {
@@ -6571,11 +6608,14 @@ function docPayRender(){
     meta.push("facture du " + fdate(d.date) + (d.montant != null ? " · " + euro(d.montant) : ""));
     if(d.echeance) meta.push(d.echeance < dateLocale() ? `<b style="color:var(--red)">échéance ${fdate(d.echeance)} (${-feJours(d.echeance)} j de retard)</b>` : "échéance " + fdate(d.echeance));
     if(docRecuC(d)) meta.push("déjà reçu " + euro(docRecuC(d)/100));
-    r.ops.forEach(o => meta.push(`<span style="color:var(--green)">virement du ${fdate(o.d)} : ${euro(o.c/100)}${o.payeur ? " — " + esc(o.payeur) : ""}</span>`));
+    r.ops.forEach(o => meta.push(`<span style="color:var(--green)">virement du ${fdate(o.d)} : ${euro(o.c/100)}${o.payeur ? " — " + esc(o.payeur) : ""}</span>`
+      + (o.exist ? ` · <b>déjà dans la Caisse</b> (recette du ${fdate(o.exist.income_date)} « ${esc(o.exist.object || "")} »)` : "")));
     if(r.ops.length) meta.push("reconnu par : " + DOC_NIVEAUX[r.niveau]);
     if(groupe === "partielles" && reste != null) meta.push(`<b style="color:#c47f17">reste ${euro(Math.max(0, reste - r.total)/100)}</b>`);
     const acts = [];
-    if(r.ops.length) acts.push(`<button type="button" class="btn ${groupe === "verifier" ? "ghost" : "ok"} sm" data-payenc="${k}">${
+    if(r.ops.length && r.existe) acts.push(`<button type="button" class="btn ${groupe === "verifier" ? "ghost" : "ok"} sm" data-payrel="${k}">${
+      groupe === "verifier" ? "C'est ce paiement : relier à la recette" : "Relier à la recette"}</button>`);
+    else if(r.ops.length) acts.push(`<button type="button" class="btn ${groupe === "verifier" ? "ghost" : "ok"} sm" data-payenc="${k}">${
       groupe === "verifier" ? "C'est ce paiement" : groupe === "partielles" ? "Enregistrer le versement" : "Encaisser"}</button>`);
     if(!r.ops.length && d.client_email) acts.push(`<button type="button" class="btn ghost sm" data-payrap="${k}">Rappel au client</button>`);
     if(!r.ops.length && !d.client_email && (groupe === "retard")) acts.push(`<button type="button" class="btn ghost sm" data-payedit="${k}">Ajouter l'e-mail du client</button>`);
@@ -6596,7 +6636,8 @@ function docPayRender(){
   const nbOuv = R.payees.length + R.partielles.length + R.verifier.length + R.retard.length + R.avenir.length;
   let h = `<p style="margin:0">${esc(P.source)} : ${R.nbOps} virement(s) reçu(s)${R.debut ? ` du <b>${fdate(R.debut)}</b> au <b>${fdate(R.fin)}</b>` : ""}.
     ${nbOuv ? nbOuv + " facture(s) émise(s) ouverte(s)." : "<b>Aucune facture émise ouverte ✓</b>"}</p>`;
-  if(R.payees.length > 1) h += `<div style="margin-top:10px"><button type="button" class="btn ok sm" id="docPayTout">Encaisser les ${R.payees.length} factures payées</button></div>`;
+  if(R.payees.length > 1) h += `<div style="margin-top:10px"><button type="button" class="btn ok sm" id="docPayTout">Traiter les ${R.payees.length} factures payées</button>
+    <span class="hint">déjà dans la Caisse : reliées ; sinon : encaissées</span></div>`;
   h += bloc("payees", "Payées", "var(--green)")
      + bloc("partielles", "Payées en partie", "#c47f17")
      + bloc("verifier", "À vérifier : même montant, rien d'autre ne correspond", "#c47f17")
@@ -6630,7 +6671,7 @@ async function docPayCharger(fichier){
 }
 if($("#docPayGo")) $("#docPayGo").onclick = async () => { const b = $("#docPayGo"); b.disabled = true; try{ await docPayCharger(null); } finally{ b.disabled = false; } };
 if($("#docPayCsv")) $("#docPayCsv").onchange = () => { const f = $("#docPayCsv").files && $("#docPayCsv").files[0]; if(f) docPayCharger(f); };
-const docOpsVersPaiement = r => r.ops.map(o => ({ date: o.d, montant: o.c / 100, ref: o.ref || null, cle: o.cle, payeur: o.payeur || null }));
+const docOpsVersPaiement = r => r.ops.map(o => ({ date: o.d, montant: o.c / 100, ref: o.ref || null, cle: o.cle, payeur: o.payeur || null, exist: o.exist || null }));
 if($("#docPayRes")) $("#docPayRes").addEventListener("click", async e => {
   const z = $("#docPayRes");
   const b = e.target.closest("button"); if(!b || !isTreso()) return;
@@ -6641,18 +6682,19 @@ if($("#docPayRes")) $("#docPayRes").addEventListener("click", async e => {
     try{
       for(const r of R.payees.slice()){
         const d = (state.documents || []).find(x => x.id === r.d.id); if(!d || docStatut(d) === "payee") continue;
-        if(await docEncaisser(d, docOpsVersPaiement(r))) n++; else break;
+        if(await (r.existe ? docRelierRecettes(d, docOpsVersPaiement(r), true) : docEncaisser(d, docOpsVersPaiement(r)))) n++; else break;
       }
     } finally{ docPayRender(); }
     if(n) toast(n + " facture(s) encaissée(s).");
     return;
   }
-  const r = (z._tous || [])[Number(b.dataset.payenc ?? b.dataset.payrap ?? b.dataset.payedit)]; if(!r) return;
+  const r = (z._tous || [])[Number(b.dataset.payenc ?? b.dataset.payrel ?? b.dataset.payrap ?? b.dataset.payedit)]; if(!r) return;
   const d = (state.documents || []).find(x => x.id === r.d.id); if(!d) return;
   if(b.dataset.payedit){ editerDoc(d); return; }
   b.disabled = true;
   try{
     if(b.dataset.payenc) await docEncaisser(d, docOpsVersPaiement(r));
+    else if(b.dataset.payrel) await docRelierRecettes(d, docOpsVersPaiement(r));
     else if(b.dataset.payrap) await docRappelClient(d);
   } finally{ docPayRender(); }
 });
