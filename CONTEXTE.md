@@ -172,3 +172,8 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - `envoyerNotifCA`, `envoyerNotifCAListe`, `envoyerAvecPiece`, l'annonce urgente et `notifEvenementCA` appellent la fonction `diffuser` (mode `ca` : destinataires calculés côté serveur ; mode `liste` : 300 adresses max). La boucle d'envoi tourne sur le serveur (EdgeRuntime.waitUntil) : fermer la page n'arrête plus rien. Choix de notifications appliqués côté serveur (`notif_preparer_srv`).
 - Chaque mail passe par `send-email` avec le jeton de la personne (mêmes limites, même journal). Si `diffuser` ne répond pas, repli sur l'ancien envoi navigateur (`…Local`).
 - Reste côté navigateur : la diffusion manuelle (onglet Mailing, lien de désabonnement personnalisé, barre de progression).
+
+## Sécurité et alertes (21/11/2026)
+- `audit_alerte` : le propriétaire ne reçoit plus « Nouvel appareil » ni « Activité nocturne » (choix du propriétaire). Les autres alertes restent.
+- Tâches `rappels-ca` et `envois-auto` : secret lu dans `bil_config.cron_secret` ; les fonctions `rappels` et `envois-auto` l'acceptent (en plus de `CRON_SECRET`, à remplacer par une valeur au hasard).
+- Rapprochement réel (01/07–19/11) : toutes les opérations bancaires ont leur écriture ; les deux virements de l'ancien CA (31/08 : 208,59 € ; 17/09 : 187,50 €) correspondent à la somme de plusieurs recettes « Remboursement du CA sortant ».

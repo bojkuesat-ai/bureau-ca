@@ -6763,7 +6763,6 @@ function docRapprocher(ops){
   out.nbOps = ops.length;
   return out;
 }
-const DOC_NIVEAUX = { comm: "communication structurée", numero: "numéro de facture", nom: "nom du client et montant", montant: "montant seul" };
 function docPayRender(){
   const z = $("#docPayRes"); if(!z) return;
   const P = state.docPay, etat = $("#docPayEtat");
@@ -6774,64 +6773,6 @@ function docPayRender(){
     const dates = P.ops.map(o => o.d).sort();
     etat.innerHTML = `Comparé avec ${esc(P.source)}${dates.length ? ` · virements reçus du <b>${fdate(dates[0])}</b> au <b>${fdate(dates[dates.length-1])}</b>` : ""}`;
   }
-  return;
-  const R = docRapprocher(P.ops);
-  z._r = R;
-  const recPrises = new Set();
-  [...R.payees, ...R.partielles, ...R.verifier].forEach(r => {
-    r.ops.forEach(o => {
-      const e = docRecetteExistante({ date: o.d, montant: o.c / 100, ref: o.ref });
-      o.exist = e && !recPrises.has(e.id) ? e : null;
-      if(o.exist) recPrises.add(o.exist.id);
-    });
-    r.existe = r.ops.length > 0 && r.ops.every(o => o.exist);
-  });
-  const tot = a => euro(a.reduce((s,r) => s + (docResteC(r.d) || 0), 0) / 100);
-  const titreD = d => `${esc(d.tiers || "—")}${d.numero ? ` · <span class="mono">${esc(d.numero)}</span>` : ""}`;
-  const ligne = (r, k, groupe) => {
-    const d = r.d, reste = docResteC(d);
-    const meta = [];
-    meta.push("facture du " + fdate(d.date) + (d.montant != null ? " · " + euro(d.montant) : ""));
-    if(d.echeance) meta.push(d.echeance < dateLocale() ? `<b style="color:var(--red)">échéance ${fdate(d.echeance)} (${-feJours(d.echeance)} j de retard)</b>` : "échéance " + fdate(d.echeance));
-    if(docRecuC(d)) meta.push("déjà reçu " + euro(docRecuC(d)/100));
-    r.ops.forEach(o => meta.push(`<span style="color:var(--green)">virement du ${fdate(o.d)} : ${euro(o.c/100)}${o.payeur ? " — " + esc(o.payeur) : ""}</span>`
-      + (o.exist ? ` · <b>déjà dans la Caisse</b> (recette du ${fdate(o.exist.income_date)} « ${esc(o.exist.object || "")} »)` : "")));
-    if(r.ops.length) meta.push("reconnu par : " + DOC_NIVEAUX[r.niveau]);
-    if(groupe === "partielles" && reste != null) meta.push(`<b style="color:#c47f17">reste ${euro(Math.max(0, reste - r.total)/100)}</b>`);
-    const acts = [];
-    if(r.ops.length && r.existe) acts.push(`<button type="button" class="btn ${groupe === "verifier" ? "ghost" : "ok"} sm" data-payrel="${k}">${
-      groupe === "verifier" ? "C'est ce paiement : relier à la recette" : "Relier à la recette"}</button>`);
-    else if(r.ops.length) acts.push(`<button type="button" class="btn ${groupe === "verifier" ? "ghost" : "ok"} sm" data-payenc="${k}">${
-      groupe === "verifier" ? "C'est ce paiement" : groupe === "partielles" ? "Enregistrer le versement" : "Encaisser"}</button>`);
-    if(!r.ops.length && d.client_email) acts.push(`<button type="button" class="btn ghost sm" data-payrap="${k}">Rappel au client</button>`);
-    if(!r.ops.length && !d.client_email && (groupe === "retard")) acts.push(`<button type="button" class="btn ghost sm" data-payedit="${k}">Ajouter l'e-mail du client</button>`);
-    return `<div class="row" style="cursor:default;align-items:center">
-      <div class="date mono" style="font-size:13px">${fdate(d.echeance || d.date)}</div>
-      <div><div class="obj">${titreD(d)}</div><div class="meta">${meta.join(" · ")}</div>
-        ${acts.length ? `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px">${acts.join("")}</div>` : ""}</div>
-      <div></div><div class="amt">${reste != null ? euro(reste/100) : "—"}</div><div class="chev"></div></div>`;
-  };
-  const tous = [];
-  const bloc = (cle, titre, couleur, aide) => {
-    const a = R[cle]; if(!a.length) return "";
-    const h = `<div style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
-      <b style="color:${couleur}">${titre} (${a.length})</b><span class="hint">${aide || ""} ${tot(a)} à recevoir</span></div>
-      <div class="card" style="overflow:hidden;margin-top:6px">${a.map(r => { tous.push(r); return ligne(r, tous.length - 1, cle); }).join("")}</div></div>`;
-    return h;
-  };
-  const nbOuv = R.payees.length + R.partielles.length + R.verifier.length + R.retard.length + R.avenir.length;
-  let h = `<p style="margin:0">${esc(P.source)} : ${R.nbOps} virement(s) reçu(s)${R.debut ? ` du <b>${fdate(R.debut)}</b> au <b>${fdate(R.fin)}</b>` : ""}.
-    ${nbOuv ? nbOuv + " facture(s) émise(s) ouverte(s)." : "<b>Aucune facture émise ouverte ✓</b>"}</p>`;
-  if(R.payees.length > 1) h += `<div style="margin-top:10px"><button type="button" class="btn ok sm" id="docPayTout">Traiter les ${R.payees.length} factures payées</button>
-    <span class="hint">déjà dans la Caisse : reliées ; sinon : encaissées</span></div>`;
-  h += bloc("payees", "Payées", "var(--green)")
-     + bloc("partielles", "Payées en partie", "#c47f17")
-     + bloc("verifier", "À vérifier : même montant, rien d'autre ne correspond", "#c47f17")
-     + bloc("retard", "Non payées — échéance dépassée", "var(--red)")
-     + bloc("avenir", "Non payées — pas encore échues", "var(--muted, #666)");
-  if(R.fin && nbOuv) h += `<p class="hint" style="margin:12px 0 0">Un virement reçu après le ${fdate(R.fin)} n'apparaît pas : déposez l'extrait suivant dans Extraits.</p>`;
-  z.innerHTML = h;
-  z._tous = tous;
 }
 async function docPayCharger(fichier){
   state.docPay = { charge: "Lecture des extraits…" }; docPayRender();
@@ -6856,34 +6797,7 @@ async function docPayCharger(fichier){
   docPayRender();
 }
 if($("#docPayGo")) $("#docPayGo").onclick = async () => { const b = $("#docPayGo"); b.disabled = true; try{ await docPayCharger(null); renderDocs(); } finally{ b.disabled = false; } };
-if($("#docPayCsv")) $("#docPayCsv").onchange = () => { const f = $("#docPayCsv").files && $("#docPayCsv").files[0]; if(f) docPayCharger(f); };
 const docOpsVersPaiement = r => r.ops.map(o => ({ date: o.d, montant: o.c / 100, ref: o.ref || null, cle: o.cle, payeur: o.payeur || null, exist: o.exist || null }));
-if($("#docPayRes")) $("#docPayRes").addEventListener("click", async e => {
-  const z = $("#docPayRes");
-  const b = e.target.closest("button"); if(!b || !isTreso()) return;
-  if(b.id === "docPayTout"){
-    const R = z._r; if(!R || !R.payees.length) return;
-    b.disabled = true;
-    let n = 0;
-    try{
-      for(const r of R.payees.slice()){
-        const d = (state.documents || []).find(x => x.id === r.d.id); if(!d || docStatut(d) === "payee") continue;
-        if(await (r.existe ? docRelierRecettes(d, docOpsVersPaiement(r), true) : docEncaisser(d, docOpsVersPaiement(r)))) n++; else break;
-      }
-    } finally{ docPayRender(); }
-    if(n) toast(n + " facture(s) encaissée(s).");
-    return;
-  }
-  const r = (z._tous || [])[Number(b.dataset.payenc ?? b.dataset.payrel ?? b.dataset.payrap ?? b.dataset.payedit)]; if(!r) return;
-  const d = (state.documents || []).find(x => x.id === r.d.id); if(!d) return;
-  if(b.dataset.payedit){ editerDoc(d); return; }
-  b.disabled = true;
-  try{
-    if(b.dataset.payenc) await docEncaisser(d, docOpsVersPaiement(r));
-    else if(b.dataset.payrel) await docRelierRecettes(d, docOpsVersPaiement(r));
-    else if(b.dataset.payrap) await docRappelClient(d);
-  } finally{ docPayRender(); }
-});
 
 /* --- exports --- */
 function docLignesCsv(liste){

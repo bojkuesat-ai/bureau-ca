@@ -310,7 +310,13 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { /* cron sans corps */ }
 
   const jeton = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-  const parCron = !!CRON_SECRET && req.headers.get("x-cron-secret") === CRON_SECRET;
+  /* 21/11/2026 : secret de la tâche lu en base (bil_config.cron_secret), comme les autres tâches. */
+  const recu = req.headers.get("x-cron-secret") ?? "";
+  let parCron = !!recu && !!CRON_SECRET && recu === CRON_SECRET;
+  if (!parCron && recu) {
+    try { const { data: cfgS } = await admin.from("bil_config").select("cron_secret").eq("id", 1).maybeSingle(); parCron = !!cfgS?.cron_secret && recu === cfgS.cron_secret; }
+    catch (_) { parCron = false; }
+  }
   const estCron = parCron || jeton === SERVICE || body.cron === true;
 
   /* ---------- MODE CRON : tous les rappels programmés échus ---------- */

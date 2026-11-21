@@ -208,8 +208,18 @@ async function recapIdees(membres: Record<string, unknown>[], cooptes: Record<st
   return 1;
 }
 
+/* 21/11/2026 : le secret de la tâche est lu en base (bil_config.cron_secret, illisible depuis les apps),
+   comme pour les autres tâches ; l'ancien secret écrit en clair dans la tâche planifiée n'est plus utilisé. */
+async function secretOk(req: Request): Promise<boolean> {
+  const recu = req.headers.get("x-cron-secret") ?? "";
+  if (!recu) return false;
+  if (CRON_SECRET && recu === CRON_SECRET) return true;
+  try { const { data } = await sb.from("bil_config").select("cron_secret").eq("id", 1).maybeSingle(); return !!data?.cron_secret && recu === data.cron_secret; }
+  catch (_) { return false; }
+}
+
 Deno.serve(async (req) => {
-  if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) {
+  if (!(await secretOk(req))) {
     return new Response(JSON.stringify({ error: "refusé" }), { status: 401 });
   }
   try {
