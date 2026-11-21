@@ -5388,6 +5388,39 @@ function mouvementsCaisse(){
     out.push({ d: dateBxl(i.paid_at), m: -Math.round(Number(i.amount||0)*100), o: i.object || "", ref: "", pris: false }));
   return out;
 }
+/* 21/11/2026 — un virement peut couvrir PLUSIEURS écritures de la Caisse (ex. l'ancien CA qui rembourse
+   en un virement 8 petites dépenses encodées une par une). sousSomme cherche, parmi des montants de même
+   signe, un groupe dont le total vaut exactement la cible (programmation dynamique sur les centimes).
+   cands : [{c: centimes}], au plus 30, déjà triés par proximité. Renvoie les indices ou null. */
+function sousSomme(cands, cible){
+  const signe = Math.sign(cible), T = Math.abs(cible);
+  if(!T || T > 2000000) return null;
+  const vals = cands.map(x => signe * x.c);
+  if(vals.some(v => v <= 0)) return null;
+  const par = new Int16Array(T + 1).fill(-1), atteint = new Uint8Array(T + 1);
+  atteint[0] = 1;
+  for(let i = 0; i < vals.length && !atteint[T]; i++){
+    const v = vals[i];
+    for(let s2 = T; s2 >= v; s2--) if(!atteint[s2] && atteint[s2 - v]){ atteint[s2] = 1; par[s2] = i; }
+  }
+  if(!atteint[T]) return null;
+  const out = []; let r = T;
+  while(r > 0){ const i = par[r]; out.push(i); r -= vals[i]; }
+  return out.length >= 2 ? out : null;
+}
+/* Second passage : pour chaque opération restée seule, un groupe d'écritures non prises,
+   même sens, à 7 jours au plus. Marque les écritures prises et renvoie le groupe. */
+function groupePourOperation(b, liste, cleMontant, cleDate){
+  const jour = x => Date.parse(String(x).slice(0, 10) + "T00:00:00Z") / 86400000;
+  const cands = liste.filter(c => !c.pris && Math.sign(c[cleMontant]) === Math.sign(b.m) && Math.abs(jour(c[cleDate]) - jour(b.d)) <= 7)
+    .sort((x, y) => Math.abs(jour(x[cleDate]) - jour(b.d)) - Math.abs(jour(y[cleDate]) - jour(b.d))).slice(0, 30);
+  if(cands.length < 2) return null;
+  const idx = sousSomme(cands.map(c => ({ c: c[cleMontant] })), b.m);
+  if(!idx) return null;
+  const groupe = idx.map(i => cands[i]);
+  groupe.forEach(c => { c.pris = true; });
+  return groupe;
+}
 function rapprocherBanque(texte){
   const lignes = lireCSV(texte);
   if(lignes.length < 2) return { erreur: "Le fichier ne contient aucune ligne exploitable." };
@@ -5415,11 +5448,17 @@ function rapprocherBanque(texte){
     }
     if(t) t.pris = true; else manquantes.push(b);
   });
+  // un virement = plusieurs écritures (même sens, 7 jours au plus, total exact)
+  let groupes = 0;
+  for(let k = manquantes.length - 1; k >= 0; k--){
+    const g = groupePourOperation(manquantes[k], caisse, "m", "d");
+    if(g){ manquantes[k].groupe = g; groupes++; manquantes.splice(k, 1); }
+  }
   const debut = banque.reduce((a,b) => b.d < a ? b.d : a, banque[0].d);
   const fin   = banque.reduce((a,b) => b.d > a ? b.d : a, banque[0].d);
   const enTrop = caisse.filter(c => !c.pris && c.d >= debut && c.d <= fin);
   const net = banque.reduce((s,b) => s + b.m, 0) / 100;
-  return { banque, manquantes, enTrop, debut, fin, net };
+  return { banque, manquantes, enTrop, debut, fin, net, groupes };
 }
 function categorieProposee(b){
   if(/D[ée]compte de frais/i.test(b.lib)) return "Frais bancaires";
@@ -5441,6 +5480,7 @@ function afficherRapprochement(){
   let h = `<p style="margin:0 0 10px">Du <b>${fdate(r.debut)}</b> au <b>${fdate(r.fin)}</b> : ${r.banque.length} opération(s) en banque, `
     + `mouvement net <b>${esc(sgn(Math.round(r.net*100)))}</b>.<br>`
     + (r.manquantes.length ? `<b>${r.manquantes.length} opération(s) absente(s) de la Caisse</b>.` : `<b>Toutes les opérations de la banque sont dans la Caisse ✓</b>`)
+    + (r.groupes ? `<br><span class="hint">${r.groupes} virement(s) correspondent chacun à la somme de plusieurs écritures de la Caisse.</span>` : "")
     + `</p>`;
   if(r.manquantes.length){
     h += `<div class="card" style="overflow:auto;max-height:420px">` + r.manquantes.map((b, k) => {
@@ -15507,6 +15547,14 @@ function dosRapprocherOps(ops, cands){
       t = best; }
     if(t) t.pris = true;
     o.caisse = t || null;
+  });
+  // un virement = plusieurs écritures : la fiche les liste toutes, avec toutes leurs pièces
+  ops.filter(o => !o.caisse).forEach(o => {
+    const g = groupePourOperation({ d: o.date, m: Math.round(o.montant * 100) }, cands, "c", "d");
+    if(!g) return;
+    o.caisse = { nature: g.length + " écritures (total exact)", date: g[0].date, c: g.reduce((s, k) => s + k.c, 0),
+      libelle: g.map(k => fdate(k.date) + " " + k.libelle + " (" + dosEur(Math.abs(k.c) / 100) + ")").join(" ; "),
+      pieces: g.flatMap(k => k.pieces) };
   });
 }
 async function dosOctets(path, cache){
