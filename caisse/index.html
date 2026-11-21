@@ -732,6 +732,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     <button id="tabDirect" aria-pressed="false">Paiement direct</button>
     <button id="tabTB" aria-pressed="false" hidden>TB</button>
     <button id="tabFactures" aria-pressed="false">Factures à échéance<span class="pill" id="pillFact" hidden>0</span></button>
+    <button id="tabFactEm" aria-pressed="false" hidden>Factures émises<span class="pill" id="pillFactEm" hidden>0</span></button>
     <button id="tabNovelles" aria-pressed="false" hidden>Novelles</button>
     <button id="tabPres" aria-pressed="false" hidden>Dépenses présidente</button>
     <button id="tabTreso" aria-pressed="false" hidden>À traiter<span class="pill" id="pillReq" hidden>0</span></button>
@@ -3782,6 +3783,7 @@ async function loadProfile(user){
   if($("#tabReprise")) $("#tabReprise").hidden = !isTreso();
   if($("#tabExtraits")) $("#tabExtraits").hidden = !isTreso();
   if($("#tabDocs")) $("#tabDocs").hidden = !isTreso();
+  if($("#tabFactEm")) $("#tabFactEm").hidden = !isTreso();
   if($("#tabPreuves")) $("#tabPreuves").hidden = !isTreso();
   $("#tabIncomes").hidden = !isTreso();
   $("#tabMembers").hidden = !isTreso();
@@ -5637,6 +5639,31 @@ const docPaiements = d => Array.isArray(d.paiements) ? d.paiements : [];
 const docRecuC = d => Math.round(Number(d.montant_recu || 0) * 100);
 const docResteC = d => d.montant == null ? null : Math.max(0, Math.round(Number(d.montant) * 100) - docRecuC(d));
 const docPartielle = d => d.cat === "vente" && docStatut(d) === "a_encaisser" && docRecuC(d) > 0;
+// 21/11/2026 : les factures émises ont leur onglet (à côté de « Factures à échéance ») ;
+// l'onglet Documents ne montre plus que les bons de commande. Même vue, deux modes.
+state.docMode = "vente";
+function docTitreForm(){ return state.docMode === "commande" ? "Déposer un bon de commande" : "Déposer une facture émise"; }
+function docAppliquerMode(v){
+  const em = v === "factem";
+  const change = state.docMode !== (em ? "vente" : "commande");
+  state.docMode = em ? "vente" : "commande";
+  const f = $("#docFiltre"); if(f){ f.value = state.docMode; f.hidden = true; }
+  if(change && state.docEdit) resetDocForm();
+  if(!state.docEdit){ $("#doc_cat").value = state.docMode; majFormDoc(); $("#doc_formTitre").textContent = docTitreForm(); }
+  const champ = $("#doc_cat").closest(".field"); if(champ) champ.hidden = true;
+  ["#doc_kAenc", "#doc_kRet", "#doc_kEnc"].forEach(id => { const k = $(id) && $(id).closest(".kpi"); if(k) k.hidden = !em; });
+  const kb = $("#doc_kBons") && $("#doc_kBons").closest(".kpi"); if(kb) kb.hidden = em;
+  ["#docPayCard", "#docLotCard"].forEach(id => { if($(id)) $(id).hidden = !em; });
+  const VENTE = ["a_encaisser", "retard", "partielle", "payee"];
+  const et = $("#docEtat");
+  if(et){ [...et.options].forEach(o => { if(o.value) o.hidden = em ? !VENTE.includes(o.value) : VENTE.includes(o.value); });
+    if(et.value && et.options[et.selectedIndex].hidden) et.value = ""; }
+}
+function docMajPastille(){
+  const p = $("#pillFactEm"); if(!p) return;
+  const n = (state.documents || []).filter(docEnRetard).length;
+  p.textContent = n; p.hidden = !n;
+}
 const estUuid = v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v||""));
 const emailOk = v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v||"").trim());
 
@@ -5644,6 +5671,7 @@ async function chargerDocuments(){
   const r = await chargerTout(DOC_TABLE, "date", false);
   if(r.error){ state.documents = []; state.docErr = r.error.message || String(r.error); return; }
   state.docErr = null; state.documents = r.data || [];
+  try{ docMajPastille(); }catch(_){ __errSilence(_); }
   const anciens = Array.isArray(comptaCfg().documents) ? comptaCfg().documents : [];
   if(anciens.length && !state.docMigre){
     state.docMigre = true;
@@ -5754,7 +5782,8 @@ function resetDocForm(){
   $("#doc_lu").hidden = true; $("#doc_lu").innerHTML = "";
   $("#doc_date").value = dateLocale();
   $("#doc_formEyebrow").textContent = "Classement";
-  $("#doc_formTitre").textContent = "Déposer une facture émise ou un bon de commande";
+  $("#doc_formTitre").textContent = docTitreForm();
+  $("#doc_cat").value = state.docMode;
   $("#docBtn").textContent = "Enregistrer le document";
   $("#doc_cat").disabled = false;
   erreurForm("#docErr", null);
@@ -5937,7 +5966,7 @@ function renderDocs(){
   $("#doc_kRet").style.color = ret.length ? "var(--red)" : "";
 
   const anom = docAnomalies();
-  $("#doc_anom").hidden = !anom.length;
+  $("#doc_anom").hidden = !anom.length || state.docMode === "commande";
   $("#doc_anom").innerHTML = anom.length ? `<b>Numérotation des factures émises</b><p>${anom.map(esc).join("<br>")}</p>` : "";
 
   // exercices disponibles
@@ -9677,7 +9706,7 @@ function setView(v){
   if(v!=="tb" && state.tbForm){ try{ tbFermerForm(true); }catch(_){ __errSilence(_); } }
   if(v==="tb"){ try{ renderTB(); tbCharger().then(() => { if(state.view==="tb") renderTB(); }); }catch(_){ __errSilence(_); } }
   /* La gestion journalière n'est jamais notée dans le journal. */
-  if(v!=="gj" && v!=="sc") try{ auditNav(({mine:"Mes demandes",treso:"Trésorerie",reexam:"Réexamens",overview:"Vue d'ensemble",horaires:"Horaires",expenses:"Dépenses",incomes:"Recettes",members:"Membres",messages:"Messages",mails:"Mails envoyés",budget:"Budgets",compta:"Comptabilité",tva:"TVA",direct:"Paiement direct",factures:"Factures",novelles:"Novelles",vs:"Vérifier une signature"})[v]||v); }catch(_){ __errSilence(_); }
+  if(v!=="gj" && v!=="sc") try{ auditNav(({mine:"Mes demandes",treso:"Trésorerie",reexam:"Réexamens",overview:"Vue d'ensemble",horaires:"Horaires",expenses:"Dépenses",incomes:"Recettes",members:"Membres",messages:"Messages",mails:"Mails envoyés",budget:"Budgets",compta:"Comptabilité",tva:"TVA",direct:"Paiement direct",factures:"Factures",factem:"Factures émises",novelles:"Novelles",vs:"Vérifier une signature"})[v]||v); }catch(_){ __errSilence(_); }
   $("#tabMine").setAttribute("aria-pressed", v==="mine");
   $("#tabTreso").setAttribute("aria-pressed", v==="treso");
   $("#tabReexam").setAttribute("aria-pressed", v==="reexam");
@@ -9713,8 +9742,9 @@ function setView(v){
   if($("#viewExtraits")) $("#viewExtraits").hidden = v!=="extraits";
   if(v==="extraits") renderExtraits();
   if($("#tabDocs")) $("#tabDocs").setAttribute("aria-pressed", v==="docs");
-  if($("#viewDocs")) $("#viewDocs").hidden = v!=="docs";
-  if(v==="docs"){ if(!$("#doc_date").value) $("#doc_date").value = dateLocale(); renderDocs(); }
+  if($("#tabFactEm")) $("#tabFactEm").setAttribute("aria-pressed", v==="factem");
+  if($("#viewDocs")) $("#viewDocs").hidden = v!=="docs" && v!=="factem";
+  if(v==="docs" || v==="factem"){ docAppliquerMode(v); if(!$("#doc_date").value) $("#doc_date").value = dateLocale(); renderDocs(); }
   if($("#tabPreuves")) $("#tabPreuves").setAttribute("aria-pressed", v==="preuves");
   if($("#viewPreuves")) $("#viewPreuves").hidden = v!=="preuves";
   if(v==="preuves") renderPreuves();
@@ -9759,6 +9789,7 @@ $("#tabIncomes").onclick = () => choisirVue("incomes");
 if($("#tabReprise")) $("#tabReprise").onclick = () => choisirVue("reprise");
 if($("#tabExtraits")) $("#tabExtraits").onclick = () => choisirVue("extraits");
 if($("#tabDocs")) $("#tabDocs").onclick = () => choisirVue("docs");
+if($("#tabFactEm")) $("#tabFactEm").onclick = () => choisirVue("factem");
 if($("#tabPreuves")) $("#tabPreuves").onclick = () => choisirVue("preuves");
 $("#tabMembers").onclick = () => choisirVue("members");
 $("#tabMessages").onclick = () => choisirVue("messages");
@@ -17247,7 +17278,7 @@ if(session) await start();
    ===================================================================== */
 (function(){
   var RUBRIQUES = [
-    { id:"demandes",   nom:"Demandes",           onglets:["tabMine","tabDirect","tabTB","tabFactures","tabPres","tabNovelles"] },
+    { id:"demandes",   nom:"Demandes",           onglets:["tabMine","tabDirect","tabTB","tabFactures","tabFactEm","tabPres","tabNovelles"] },
     { id:"traitement", nom:"Traitement",         onglets:["tabTreso","tabReexam","tabPreuves","tabOverview","tabHoraires"] },
     { id:"comptes",    nom:"Comptes",            onglets:["tabExpenses","tabIncomes","tabReprise","tabExtraits","tabDocs","tabBudget","tabCompta","tabTva"] },
     { id:"membres",    nom:"Membres & messages", onglets:["tabMembers","tabMessages","tabMails"] },

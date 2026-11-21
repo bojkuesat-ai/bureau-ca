@@ -95,7 +95,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Au 15/11 : Événements et activités 4 681,95 € · Codes et syllabus 9 321,83 € · Fonctionnement 1 119,93 € · Événements annulés 0 €.
 - Factures PUB (impressions syllabus, ≈ 7 400 €) et Larcier (estimation 3 000 €) **en attente** dans « Factures à échéance » → iront dans Codes et syllabus une fois payées.
 - Extraits › « Paiements de billets reçus » : import CSV → rapprochement Billetterie.
-- **Factures émises (21/11)** — onglet Documents :
+- **Factures émises (21/11)** — onglet **« Factures émises »** (rubrique Demandes, à côté de « Factures à échéance » ; même vue que Documents en mode `factem`, l'onglet Documents ne garde que les bons de commande ; pastille = factures en retard) :
   - « Ajouter plusieurs factures à la fois » : plusieurs PDF d'un coup, lecture auto (n°, client, TVA client, date, échéance, montant, communication structurée) → tableau à vérifier → enregistrement (`docLireVente`, `docLotRender`).
   - « Paiements » : compare les virements reçus des extraits CSV ING déposés (ou d'un fichier) aux factures ouvertes : communication structurée (+++ ou ***), puis n° de facture, puis nom + montant, puis montant seul (« à vérifier »). Listes : payées, payées en partie, à vérifier, échéance dépassée, pas encore échues (`docRapprocher`, `docPayRender`).
   - Encaissement en plusieurs fois : colonnes `caisse_documents.communication`, `montant_recu`, `paiements` (SQL 2026-11-21). La recette porte « [mouvement N] » ; une recette déjà encodée pour ce virement est reliée, pas doublée.
