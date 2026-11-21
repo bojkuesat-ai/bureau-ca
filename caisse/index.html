@@ -5831,7 +5831,7 @@ $("#doc_files").addEventListener("change", async () => {
   if(!r.texte) return montrer("Ce PDF ne contient pas de texte lisible (scan) : remplis les champs à la main.", false);
   const vente = $("#doc_cat").value === "vente", trouve = [];
   if(vente){
-    const v = docLireVente(lignes);
+    const v = docLireVente(lignes, file.name);
     if(v.date) r.dateFacture = v.date;
     if(v.numero) r.reference = v.numero;
     if(v.montant) r.montant = v.montant;
@@ -6360,7 +6360,7 @@ function docNous(s){
   const noms = [comptaCfg().nomAsbl, "bureau etudiant"].filter(Boolean).map(n => slug(n).replace(/[^a-z0-9]+/g, " ").trim());
   return noms.some(n => n && x.includes(n));
 }
-function docLireVente(lignes){
+function docLireVente(lignes, nomFichier){
   const r = feAnalyser(lignes, []);
   const out = { texte: r.texte, numero: r.reference || "", montant: r.montant || null, echeance: r.echeance || "",
                 communication: r.communication || "", date: r.dateFacture || "", client: "", clientVat: "" };
@@ -6378,6 +6378,20 @@ function docLireVente(lignes){
     const k = parts.findIndex(docNous); if(k < 0) continue;
     const autre = parts.find((p, i) => i !== k && /[a-z]{2,}/i.test(p) && !docNous(p));
     if(autre){ out.client = autre.trim().slice(0, 90); col = k; break; }
+  }
+  // le logiciel de facturation met le nom du client dans le nom du fichier (« Facture_02_NOMCLIENT.pdf ») :
+  // s'il désigne une autre ligne du bloc client, c'est elle qui compte
+  const tag = String(nomFichier || "").replace(/\.pdf$/i, "").replace(/^.*?factur\w*[_\-\s]*[A-Z0-9\-\/]*?\d+[_\-\s]+/i, "");
+  const compact = t => slug(t).replace(/[^a-z0-9]/g, "");
+  const ctag = compact(tag);
+  if(ctag.length >= 4 && col >= 0 && (!out.client || !(compact(out.client).startsWith(ctag.slice(0, 6)) || ctag.startsWith(compact(out.client).slice(0, 6))))){
+    const n0 = lignes.findIndex(l => l.split(/\s{3,}/).some(docNous));
+    for(let n = n0; n >= 0 && n < Math.min(lignes.length, n0 + 6); n++){
+      const parts = lignes[n].split(/\s{3,}/);
+      const cand = parts.length >= 2 ? parts.filter((p, i) => i !== col).join(" ") : (n === n0 ? "" : parts[0]);
+      const c = compact(cand);
+      if(c.length >= 4 && (c.startsWith(ctag.slice(0, 8)) || ctag.startsWith(c.slice(0, 8)))){ out.client = cand.trim().slice(0, 90); break; }
+    }
   }
   if(!out.client){
     for(const l of lignes){
@@ -6454,7 +6468,7 @@ if($("#docLotFiles")) $("#docLotFiles").addEventListener("change", async () => {
   for(const x of L.lignes){
     try{
       if(lib){
-        const v = docLireVente(await feLignesDepuis(lib, new Uint8Array(await x.file.arrayBuffer())));
+        const v = docLireVente(await feLignesDepuis(lib, new Uint8Array(await x.file.arrayBuffer())), x.file.name);
         Object.assign(x, { texte: v.texte, numero: v.numero, client: v.client, date: v.date, echeance: v.echeance,
           montant: v.montant ? v.montant.toFixed(2) : "", communication: v.communication, clientVat: v.clientVat });
         // e-mail déjà connu pour ce client
