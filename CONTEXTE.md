@@ -155,3 +155,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Caisse : relances automatiques des preuves ; alerte en cas de changement d'IBAN ; récapitulatif mensuel ; petite caisse en espèces ; clôture d'exercice.
 - Espace CA : registre des décisions, sondage de disponibilités, assiduité, rapport d'activité, élections du prochain CA, inventaire, partenaires, recherche globale, guide des fonctions.
 - Billetterie : plusieurs tarifs, liste d'invités, codes promo (pas demandés).
+
+## Budgets : annonce par le serveur (21/11/2026)
+- Le mail « Nouveau budget/projet soumis au vote » part de la fonction `rappels` (serveur), plus du navigateur : tous les membres du CA (hors cooptés), expéditeur **« Budget à voter-BE »** (aussi pour les rappels de budget).
+- L'app appelle `rappels` avec `{type:"budget", id, annonce:true}` juste après la création ; le cron `rappels-ca` (15 min) rattrape tout budget « vote » dont `ca_budgets.annonce_le` est vide. Un seul envoi (réservation sur `annonce_le`).

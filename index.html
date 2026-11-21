@@ -6828,19 +6828,23 @@ ${sections||"<p>Aucun retour.</p>"}
     /* budgets */
     case "add-budget": { const t=val("b_titre").trim(); if(!t||!sb) return; const cout=parseFloat(String(val("b_cout")).replace(",","."))||0;
       const evt=await modaleEvenementBudget(t);
-      const ins=await sb.from("ca_budgets").insert(Object.assign({titre:t,type:val("b_type"),cout:cout,description:val("b_desc").trim(),demandeur:me.sig,statut:"vote",cree_par:S.session.id}, evt?{evt_titre:evt.titre,evt_date:evt.date,evt_heure:evt.heure}:{}));
+      const ins=await sb.from("ca_budgets").insert(Object.assign({titre:t,type:val("b_type"),cout:cout,description:val("b_desc").trim(),demandeur:me.sig,statut:"vote",cree_par:S.session.id}, evt?{evt_titre:evt.titre,evt_date:evt.date,evt_heure:evt.heure}:{})).select("id").single();
       if(ins&&ins.error){ modaleInfo("La demande n'a pas pu être enregistrée : "+ins.error.message); break; }
       await loadBudgets(); render();
-      /* Un budget soumis au vote est toujours notifié : ce n'est pas une info facultative. */
-      let res=null;
-      try{ res=await notifCreationCA("Nouveau budget/projet soumis au vote", t, cout?(cout.toFixed(2)+" €"):"", EXP_BUDGET, "budget", true); }
-      catch(e){ res=null; }
-      const exclus = (res&&res.desabonnes)? " "+res.desabonnes+" adresse(s) désabonnée(s) ont été écartées." : "";
-      if(res && res.masque){ modaleInfo("✓ Demande enregistrée et soumise au vote.", "Budget soumis au vote"); break; }
-      if(!res || res.total===0){ modaleInfo("Demande enregistrée, mais aucun e-mail n'a pu être envoyé : aucun destinataire disponible."+exclus, "Budget soumis au vote"); }
-      else if(res.err && !res.ok){ modaleInfo("Demande enregistrée, mais l'envoi des e-mails a échoué. Vérifiez la connexion et prévenez les membres autrement."+exclus, "Budget soumis au vote"); }
-      else if(res.err){ modaleInfo(res.ok+" membre(s) prévenu(s), "+res.err+" échec(s)."+exclus, "Budget soumis au vote"); }
-      else { modaleInfo("✓ "+res.total+" membre(s) prévenu(s) par e-mail."+exclus, "Budget soumis au vote"); }
+      /* 21/11/2026 : le mail « Nouveau budget soumis au vote » part du serveur (fonction « rappels »),
+         à tous les membres du CA, même si cette page est fermée juste après.
+         Si l'appel échoue, le serveur l'envoie de toute façon dans les 15 minutes (cron). */
+      let j=null;
+      try{
+        const r=await fetch(CA_RAPPEL_FN,{method:"POST",headers:await caSendHeaders(),body:JSON.stringify({type:"budget",id:ins.data.id,annonce:true})});
+        try{ j=await r.json(); }catch(_){ j=null; }
+      }catch(_){ j=null; }
+      logAct("Budget soumis au vote : "+t);
+      if(j && !j.error && !j.deja && j.total){
+        modaleInfo(j.echecs ? "✓ Demande enregistrée. "+j.envoyes+" membre(s) prévenu(s) par e-mail, "+j.echecs+" échec(s)." : "✓ Demande enregistrée. "+j.envoyes+" membre(s) prévenu(s) par e-mail.", "Budget soumis au vote");
+      } else {
+        modaleInfo("✓ Demande enregistrée et soumise au vote.\n\nLes membres du CA sont prévenus par e-mail par le serveur (au plus tard dans 15 minutes).", "Budget soumis au vote");
+      }
       break; }
     case "add-budget-ca": { await voteCAPhysique(null); break; }
     case "bca-physique": { await voteCAPhysique(id); break; }

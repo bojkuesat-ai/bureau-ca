@@ -16,6 +16,13 @@
    La liste des retardataires est calculée ici et ne sort jamais :
    la réponse ne contient que des nombres.
 
+   21/11/2026 — ANNONCE D'UN NOUVEAU BUDGET : le mail « Nouveau budget soumis au vote »
+   part d'ici, du serveur, à tous les membres du CA (plus du navigateur, qui s'arrêtait
+   si la page était fermée). Deux déclencheurs, un seul envoi grâce à ca_budgets.annonce_le :
+     - l'app juste après la création : POST { type:"budget", id, annonce:true } ;
+     - le cron (toutes les 15 min) : tout budget « vote » pas encore annoncé.
+   Expéditeur : « Budget à voter-BE » (annonces et rappels de budget).
+
    JWT verify : OFF (les droits sont vérifiés dans le code ci-dessous).
    09/11/2026 : CORS limité aux sites du bureau.
 */
@@ -27,6 +34,7 @@ const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") || "";
 const APP_URL = "https://bojkuesat-ai.github.io/bureau-ca/";
 const DELAI_MIN_H = 12;
+const EXP_BUDGET_VOTE = "Budget à voter-BE <noreply@bureauetuidant.xyz>";
 
 const admin = createClient(SB_URL, SERVICE, { auth: { persistSession: false } });
 
@@ -207,11 +215,11 @@ async function envoyer(type: string, obj: any, modeCron = false) {
       const r = await fetch(`${SB_URL}/functions/v1/send-email`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}`, apikey: SERVICE },
-        body: JSON.stringify({
+        body: JSON.stringify(Object.assign({
           to: d.email,
           subject: "Rappel — " + cfg.titre(obj),
           html: corpsMail(type, obj, d.prenom, d.sansCompte),
-        }),
+        }, type === "budget" ? { from: EXP_BUDGET_VOTE } : {})),
       });
       r.ok ? ok++ : err++;
     } catch { err++; }
@@ -219,6 +227,74 @@ async function envoyer(type: string, obj: any, modeCron = false) {
   }
 
   return { envoyes: ok, echecs: err, restants: dest.length };
+}
+
+/* ---- annonce d'un nouveau budget : tous les membres du CA (hors cooptés), une seule fois ---- */
+async function destinatairesAnnonce() {
+  const { data: membres } = await admin.from("ca_membres")
+    .select("id, prenom, email, email_alt, statut, role, hors_ca").eq("statut", "actif");
+  const { data: diffusion } = await admin.from("ca_mailing").select("email");
+  const { data: desab } = await admin.from("ca_desabonnes").select("email");
+  const bloques = new Set((desab || []).map((d: any) => String(d.email || "").toLowerCase().trim()));
+  const vus = new Set<string>();
+  const out: { email: string; prenom: string; sansCompte: boolean }[] = [];
+  (membres || []).filter((m: any) => m.role !== "coopte" && m.role !== "proprietaire" && !m.hors_ca && m.email)
+    .forEach((m: any) => {
+      const e = String(m.email).toLowerCase().trim();
+      if (!e || vus.has(e) || bloques.has(e)) return;
+      vus.add(e); out.push({ email: e, prenom: String(m.prenom || "").trim(), sansCompte: false });
+    });
+  const couvertes = new Set<string>();
+  (membres || []).forEach((m: any) => {
+    if (m.email) couvertes.add(String(m.email).toLowerCase().trim());
+    if (m.email_alt) couvertes.add(String(m.email_alt).toLowerCase().trim());
+  });
+  (diffusion || []).forEach((d: any) => {
+    const e = String(d.email || "").toLowerCase().trim();
+    if (!e || couvertes.has(e) || vus.has(e) || bloques.has(e)) return;
+    vus.add(e); out.push({ email: e, prenom: "", sansCompte: true });
+  });
+  return out;
+}
+
+function corpsAnnonce(obj: any, prenom: string, sansCompte: boolean) {
+  const limite = obj.date_limite ? fmtQuand(obj.date_limite) : "";
+  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">
+    <h2 style="margin:0 0 10px">Nouveau budget/projet soumis au vote</h2>
+    <p style="margin:0 0 10px">${prenom ? "Bonjour " + esc(prenom) + "," : "Bonjour,"}</p>
+    <p style="background:#f5f4fb;border-left:3px solid #241c46;padding:8px 12px;font-size:13px">En application de l'<b>article 16.3 des statuts</b>, ce budget est soumis à un vote électronique de l'Organe d'Administration, aux conditions de l'article 16.2 : majorité simple des voix, si au moins la moitié des administrateurs votent. En cas d'égalité, la voix de la présidence est prépondérante.</p>
+    <p style="font-size:16px;margin:0 0 6px"><b>${esc(obj.titre)}</b></p>
+    ${obj.cout ? `<p style="margin:0 0 6px;color:#3a3a5a">Montant demandé : <b>${esc(Number(obj.cout).toFixed(2))} €</b></p>` : ""}
+    ${obj.demandeur ? `<p style="margin:0 0 6px;color:#3a3a5a">Demandé par : ${esc(obj.demandeur)}</p>` : ""}
+    ${limite ? `<p style="margin:10px 0;padding:10px 12px;background:#fff7e6;border:1px solid #e8d9a8;border-radius:8px;font-size:13px;color:#5a4a1a">⏳ À voter avant le <b>${esc(limite)}</b>.</p>` : ""}
+    ${sansCompte ? `<p style="margin:12px 0;font-size:14px;color:#3a3a5a">Vous n'avez pas encore de compte sur l'espace CA : créez-le avec votre adresse ULB, puis votez.</p>` : ""}
+    <p style="margin:14px 0"><a href="${APP_URL}" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA pour voter</a></p>
+    <p style="color:#999;font-size:12px;margin-top:18px">Envoi automatique — merci de ne pas répondre.<br>Le bureau étudiant — Espace CA</p>
+  </div>`;
+}
+
+async function annoncerBudget(obj: any) {
+  /* Réserve l'annonce : si l'app et le cron arrivent en même temps, un seul envoie. */
+  const { data: pris } = await admin.from("ca_budgets")
+    .update({ annonce_le: new Date().toISOString() })
+    .eq("id", obj.id).is("annonce_le", null).eq("statut", "vote").select("id");
+  if (!pris || !pris.length) return { deja: true, envoyes: 0, echecs: 0, total: 0 };
+  const dest = await destinatairesAnnonce();
+  let ok = 0, err = 0;
+  for (const d of dest) {
+    try {
+      const r = await fetch(`${SB_URL}/functions/v1/send-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}`, apikey: SERVICE },
+        body: JSON.stringify({ to: d.email, from: EXP_BUDGET_VOTE,
+          subject: "Nouveau budget/projet soumis au vote — " + String(obj.titre || ""),
+          html: corpsAnnonce(obj, d.prenom, d.sansCompte) }),
+      });
+      r.ok ? ok++ : err++;
+    } catch { err++; }
+    await new Promise((res) => setTimeout(res, 120));
+  }
+  return { deja: false, envoyes: ok, echecs: err, total: dest.length };
 }
 
 Deno.serve(async (req) => {
@@ -241,7 +317,14 @@ Deno.serve(async (req) => {
   if (estCron) {
     if (!parCron && jeton !== SERVICE) return json({ error: "Non autorisé." }, 401);
     const maintenant = new Date().toISOString();
-    let total = 0, objets = 0;
+    let total = 0, objets = 0, annonces = 0;
+
+    const { data: aAnnoncer } = await admin.from("ca_budgets").select("*")
+      .eq("statut", "vote").is("annonce_le", null);
+    for (const obj of aAnnoncer || []) {
+      const res = await annoncerBudget(obj);
+      if (!res.deja) { annonces++; total += res.envoyes; }
+    }
 
     for (const [type, cfg] of Object.entries(TYPES)) {
       const { data } = await admin.from(cfg.table).select("*")
@@ -257,7 +340,7 @@ Deno.serve(async (req) => {
         total += res.envoyes; objets++;
       }
     }
-    return json({ objets, envoyes: total });
+    return json({ objets, annonces, envoyes: total });
   }
 
   /* ---------- MODE APP : rappel immédiat déclenché par une personne ---------- */
@@ -279,6 +362,13 @@ Deno.serve(async (req) => {
   const { data: obj } = await admin.from(cfg.table).select("*").eq("id", id).maybeSingle();
   if (!obj) return json({ error: "Objet introuvable." }, 404);
   if (!cfg.ouvert(obj)) return json({ error: "Cet objet n'est plus ouvert." }, 400);
+
+  if (body.annonce === true) {
+    if (type !== "budget") return json({ error: "Annonce réservée aux budgets." }, 400);
+    const res = await annoncerBudget(obj);
+    if (res.deja) return json({ deja: true, message: "Ce budget a déjà été annoncé." });
+    return json(res);
+  }
 
   const fonction = String(moi.fonction || "").toLowerCase();
   const { data: meta } = await admin.from("ca_meta").select("secretaires").eq("id", 1).maybeSingle();
