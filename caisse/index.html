@@ -6007,8 +6007,11 @@ function renderDocs(){
     meta.push(fic.length + " fichier(s)");
     const actions = fic.map((x, n) => `<button class="btn ghost sm" data-docopen="${esc(d.id)}" data-n="${n}" title="${esc(x.name)}">${fic.length > 1 ? "Fichier " + (n+1) : "Ouvrir"}</button>`);
     actions.push(`<button class="btn ghost sm" data-docedit="${esc(d.id)}">Modifier</button>`);
+    const dejaRec = d.cat === "vente" && st === "a_encaisser" ? docRecetteProbable(d) : null;
+    if(dejaRec) meta.push(`<b style="color:var(--green)">déjà dans la Caisse : recette du ${fdate(dejaRec.income_date)} « ${esc(dejaRec.object || "")} »${dejaRec.source ? " (" + esc(dejaRec.source) + ")" : ""}</b>`);
     if(d.cat === "vente" && st === "a_encaisser"){
-      actions.push(`<button class="btn ok sm" data-docenc="${esc(d.id)}">Encaisser</button>`);
+      actions.push(dejaRec ? `<button class="btn ok sm" data-docrel="${esc(d.id)}">Relier à la recette</button>`
+                           : `<button class="btn ok sm" data-docenc="${esc(d.id)}">Encaisser</button>`);
       if(d.client_email) actions.push(`<button class="btn ghost sm" data-docrap="${esc(d.id)}">Rappel au client</button>`);
     }
     if(d.cat === "vente" && (st === "payee" || docPartielle(d))) actions.push(`<button class="btn ghost sm" data-docannenc="${esc(d.id)}">Annuler l'encaissement</button>`);
@@ -6043,6 +6046,21 @@ function docRecetteExistante(op){
   let best = null, ecart = 8;
   cands.forEach(i => { const e = Math.abs(jour(i.income_date) - jour(op.date)); if(e < ecart){ ecart = e; best = i; } });
   return best;
+}
+// recette déjà encodée qui correspond à une facture ouverte : même montant que le reste à recevoir,
+// datée après la facture, pas encore reliée ; d'abord celle au nom du client, sinon la seule au même montant
+function docRecetteProbable(d){
+  const reste = docResteC(d); if(!reste) return null;
+  const liees = new Set((state.documents||[]).flatMap(x => [x.income_id, ...docPaiements(x).map(p => p.income_id)]).filter(Boolean));
+  const jour = x => Date.parse(x + "T00:00:00Z") / 86400000;
+  const cands = (state.incomes||[]).filter(i => !liees.has(i.id) && !estOuverture(i)
+    && Math.round(Number(i.amount||0)*100) === reste && (!d.date || jour(i.income_date) >= jour(d.date) - 3));
+  const cs = csChiffres(d.communication);
+  const parComm = cs ? cands.find(i => String(i.note||"").replace(/\D/g, "").includes(cs)) : null;
+  if(parComm) return parComm;
+  const parNom = cands.filter(i => docNomProche(d.tiers, (i.source || "") + " " + (i.object || "")));
+  if(parNom.length) return parNom.sort((a,b) => jour(a.income_date) - jour(b.income_date))[0];
+  return cands.length === 1 ? cands[0] : null;
 }
 async function docEncaisser(d, ops){
   const cats = [...new Set(["Ventes","Sponsoring","Événements","Cotisations","Subsides","Dons",
@@ -6278,13 +6296,17 @@ $("#docList").addEventListener("click", async e => {
     return;
   }
   const b = e.target.closest("button"); if(!b) return;
-  const id = b.dataset.docedit || b.dataset.docenc || b.dataset.docrap || b.dataset.docannenc
+  const id = b.dataset.docedit || b.dataset.docenc || b.dataset.docrel || b.dataset.docrap || b.dataset.docannenc
           || b.dataset.doclier || b.dataset.docdelier || b.dataset.docdel;
   const d = id && (state.documents||[]).find(x => x.id === id); if(!d) return;
   if(b.dataset.docedit) return editerDoc(d);
   b.disabled = true;
   try{
     if(b.dataset.docenc) await docEncaisser(d);
+    else if(b.dataset.docrel){
+      const rec = docRecetteProbable(d);
+      if(rec) await docRelierRecettes(d, [{ date: rec.income_date, montant: Number(rec.amount), ref: null, cle: null, payeur: rec.source || null, exist: rec }]);
+    }
     else if(b.dataset.docannenc) await docAnnulerEncaissement(d);
     else if(b.dataset.docrap) await docRappelClient(d);
     else if(b.dataset.doclier) await docLier(d);
