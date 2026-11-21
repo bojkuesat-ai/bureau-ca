@@ -15568,6 +15568,98 @@ async function dosFicheOperation(o, compte){
   return await pdf.save();
 }
 
+/* Option 2 (21/11/2026) : même fiche, rapprochée d'une écriture de la Caisse (n° de mouvement noté
+   « [mouvement N] », sinon même montant signé à 7 jours près ; une écriture ne sert qu'une fois),
+   suivie de ses justificatifs. Sans correspondance : mention rouge et « _SANS-ECRITURE » dans le nom. */
+function dosCandidatsCaisse(){
+  const ref = n => (String(n || "").match(/\[mouvement ([^\]]+)\]/) || [])[1] || "";
+  const out = [];
+  (state.incomes || []).filter(i => !estOuverture(i)).forEach(i => out.push({ d: i.income_date, c: Math.round(Number(i.amount || 0) * 100),
+    ref: ref(i.note), nature: "Recette", libelle: (i.source ? i.source + " — " : "") + (i.object || ""), date: i.income_date, pieces: piecesDe(i), pris: false }));
+  (state.expenses || []).forEach(e => out.push({ d: e.expense_date, c: -Math.round(Number(e.amount || 0) * 100),
+    ref: ref(e.note), nature: "Dépense", libelle: (e.payee ? e.payee + " — " : "") + (e.object || ""), date: e.expense_date, pieces: piecesDe(e), pris: false }));
+  (state.items || []).filter(i => i.status === "Remboursée" && i.paid_at).forEach(i => out.push({ d: dateBxl(i.paid_at), c: -Math.round(Number(i.amount || 0) * 100),
+    ref: "", nature: (i.kind === "direct" ? "Paiement direct " : "Remboursement ") + refOf(i),
+    libelle: ((i.kind === "direct" ? i.beneficiary : i.requester_name) || "") + " — " + (i.object || ""), date: i.expense_date, pieces: piecesDe(i), pris: false }));
+  return out;
+}
+function dosRapprocherOps(ops, cands){
+  const jour = x => Date.parse(x + "T00:00:00Z") / 86400000;
+  ops.forEach(o => {
+    const c = Math.round(o.montant * 100);
+    let t = o.ref ? cands.find(k => !k.pris && k.ref === o.ref && k.c === c) : null;
+    if(!t){ let best = null, ecart = 8;
+      cands.forEach(k => { if(k.pris || k.c !== c) return; const e = Math.abs(jour(k.d) - jour(o.date)); if(e < ecart){ ecart = e; best = k; } });
+      t = best; }
+    if(t) t.pris = true;
+    o.caisse = t || null;
+  });
+}
+async function dosOctets(path, cache){
+  if(!path) return null;
+  if(cache.has(path)) return cache.get(path);
+  let b = null;
+  try{
+    const { data } = await sb.storage.from("justificatifs").createSignedUrl(path, 3600);
+    if(data && data.signedUrl){ const r = await fetch(data.signedUrl); if(r.ok) b = new Uint8Array(await r.arrayBuffer()); }
+  }catch(_){ b = null; }
+  cache.set(path, b); return b;
+}
+async function dosFicheOperationJustif(o, compte, cache){
+  const { PDFDocument, StandardFonts, rgb } = await import("./lib/pdf-lib-1.17.1.js");
+  const pdf = await PDFDocument.create();
+  const F = await pdf.embedFont(StandardFonts.Helvetica), FB = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const W = 595.28, H = 841.89, M = 45, LARG = W - 2 * M, GRIS = rgb(0.42, 0.42, 0.42), NOIR = rgb(0.1, 0.1, 0.1), ROUGE = rgb(0.75, 0.25, 0.25), VERT = rgb(0.1, 0.45, 0.2);
+  let page = pdf.addPage([W, H]), y = H - M;
+  const ecrire = (t, opt) => { opt = opt || {}; const s = opt.size || 10, f = opt.gras ? FB : F;
+    let cur = "";
+    const lignes = [];
+    for(const mot of dosTxt(t).split(/\s+/)){ const e = cur ? cur + " " + mot : mot; if(cur && f.widthOfTextAtSize(e, s) > LARG){ lignes.push(cur); cur = mot; } else cur = e; }
+    if(cur) lignes.push(cur);
+    for(const l of (lignes.length ? lignes : [""])){ page.drawText(l, { x: M, y: y - s, size: s, font: f, color: opt.couleur || NOIR }); y -= s + (opt.saut == null ? 4 : opt.saut); } };
+  page.drawRectangle({ x: M, y: y - 28, width: LARG, height: 28, color: rgb(0.94, 0.94, 0.94) });
+  page.drawText(dosTxt("Mouvement bancaire" + (o.ref ? " n° " + o.ref : "") + "   —   " + fdate(o.date)), { x: M + 8, y: y - 18, size: 11, font: FB, color: NOIR });
+  const mt = dosTxt((o.montant > 0 ? "+ " : "") + dosEur(o.montant));
+  page.drawText(mt, { x: W - M - 8 - FB.widthOfTextAtSize(mt, 12), y: y - 19, size: 12, font: FB, color: o.montant < 0 ? ROUGE : VERT });
+  y -= 44;
+  const kv = (a, b) => { if(!b) return; ecrire(a, { size: 8.5, gras: true, couleur: GRIS, saut: 1 }); ecrire(b, { size: 10.5, saut: 9 }); };
+  kv("Compte", compte); kv("Date comptable", fdate(o.date)); kv("Sens", o.montant < 0 ? "Sortie d'argent" : "Entrée d'argent");
+  kv("Contrepartie", o.tiers); kv("Compte de la contrepartie", o.iban); kv("Communication", o.comm); kv("Libellé complet (banque)", o.libelle);
+  y -= 4; page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.6, color: rgb(0.78, 0.78, 0.78) }); y -= 12;
+  const k = o.caisse;
+  if(!k){
+    ecrire("AUCUNE ÉCRITURE CORRESPONDANTE TROUVÉE DANS LA CAISSE", { size: 11, gras: true, couleur: ROUGE, saut: 6 });
+    ecrire("Même montant cherché à 7 jours près, et par n° de mouvement. À encoder ou à justifier.", { size: 9.5, couleur: GRIS });
+  } else {
+    ecrire("Écriture correspondante dans la Caisse", { size: 11, gras: true, saut: 8 });
+    kv("Nature", k.nature); kv("Date", fdate(k.date)); kv("Objet", k.libelle); kv("Montant", dosEur(Math.abs(k.c) / 100));
+    ecrire(k.pieces.length ? "Justificatifs : " + k.pieces.length + " — page(s) suivante(s)" : "AUCUNE PIÈCE JUSTIFICATIVE JOINTE À CETTE ÉCRITURE",
+      { size: 10, gras: true, couleur: k.pieces.length ? GRIS : ROUGE });
+    for(let n = 0; n < k.pieces.length; n++){
+      const pc = k.pieces[n], bytes = await dosOctets(pc.path, cache);
+      const etiq = "Mouvement " + (o.ref || fdate(o.date)) + "   —   pièce " + (n + 1) + "/" + k.pieces.length + "   —   " + (pc.kind || "Pièce") + (pc.name ? "   —   " + pc.name : "");
+      try{
+        if(!bytes) throw new Error("absent");
+        if(bytes[0] === 0x25 && bytes[1] === 0x50){
+          const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+          (await pdf.copyPages(src, src.getPageIndices())).forEach(pg => { const a = pdf.addPage(pg);
+            a.drawText(dosTxt(etiq), { x: 14, y: a.getHeight() - 12, size: 6.5, font: F, color: GRIS }); });
+        } else {
+          const img = bytes[0] === 0x89 ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
+          const pg = pdf.addPage([W, H]), maxH = H - 2 * M - 18, r = Math.min(LARG / img.width, maxH / img.height);
+          pg.drawText(dosTxt(etiq), { x: M, y: H - M + 6, size: 7.5, font: F, color: GRIS });
+          pg.drawImage(img, { x: M + (LARG - img.width * r) / 2, y: M + (maxH - img.height * r) / 2, width: img.width * r, height: img.height * r });
+        }
+      }catch(_){
+        page = pdf.addPage([W, H]); y = H - M;
+        ecrire(etiq, { size: 8, couleur: GRIS, saut: 14 });
+        ecrire(bytes ? "Pièce non intégrable (fichier protégé ou illisible) : voir le dossier de l'écriture dans le ZIP." : "Fichier introuvable dans le stockage.", { size: 11, gras: true, couleur: ROUGE });
+      }
+    }
+  }
+  return await pdf.save();
+}
+
 async function dosZip(ecr, per, cache, pdfBytes, prog, docs, extra){
   extra = extra || {};
   prog("Préparation du ZIP…");
@@ -15645,6 +15737,18 @@ async function dosZip(ecr, per, cache, pdfBytes, prog, docs, extra){
       catch(err){ console.error("fiche opération", o, err); }
       lo.push([o.date, o.ref, String(o.montant.toFixed(2)).replace(".", ","), o.tiers, o.iban, o.comm, nom]);
     }
+    // option 2 : chaque opération avec l'écriture de la Caisse et ses justificatifs
+    dosRapprocherOps(opsBanque, dosCandidatsCaisse());
+    const lj = [["Date", "N° mouvement", "Montant", "Contrepartie", "Communication", "Ecriture Caisse", "Pieces", "Fichier"]];
+    for(const [n, o] of opsBanque.entries()){
+      prog("Fiches avec justificatifs " + (n + 1) + "/" + opsBanque.length + "…");
+      const nom = `${o.date}_${dosNom(o.ref || String(n + 1))}_${o.montant < 0 ? "sortie" : "entree"}_${String(Math.abs(o.montant).toFixed(2)).replace(".", ",")}_${dosNom(o.tiers || o.comm).slice(0, 40)}${o.caisse ? "" : "_SANS-ECRITURE"}.pdf`;
+      try{ zip.file("Extraits-de-compte/operations-avec-justificatifs/" + nom, await dosFicheOperationJustif(o, o.compte, cache)); }
+      catch(err){ console.error("fiche opération justifiée", o, err); }
+      lj.push([o.date, o.ref, String(o.montant.toFixed(2)).replace(".", ","), o.tiers, o.comm,
+        o.caisse ? o.caisse.nature + " — " + o.caisse.libelle : "AUCUNE", o.caisse ? String(o.caisse.pieces.length) : "", nom]);
+    }
+    zip.file("Extraits-de-compte/operations-avec-justificatifs.csv", "\uFEFF" + lj.map(l => l.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(";")).join("\n"));
     zip.file("Extraits-de-compte/operations.csv", "\uFEFF" + lo.map(l => l.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(";")).join("\n"));
   }
   zip.file("recapitulatif.csv", "\uFEFF" + lignes.map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n"));
