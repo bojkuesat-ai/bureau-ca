@@ -184,3 +184,5 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Espace CA et Caisse : bouton `[data-theme-toggle]` (barre de l'utilisateur dans le CA, en-tête de la Caisse). Sombre par défaut.
 - Choix mémorisé sur l'appareil (`localStorage["be-theme"] = "clair" | "sombre"`), commun aux deux apps ; appliqué dans <head> avant l'affichage (pas de flash).
 - Thème clair = surcharge des variables CSS sous `html[data-theme="clair"]` + quelques corrections ciblées. Les fenêtres de sécurité (MFA) restent sombres, et les mails/PDF ne changent pas.
+
+- 22/11/2026 : dispense de double authentification ajoutée pour Anais Dethy, Sidi Ahmed Youra et Amandine Culot Verboekhoven (table `mfa_dispenses`, comme Najwa Hit).
