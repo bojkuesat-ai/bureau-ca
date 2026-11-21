@@ -159,3 +159,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 ## Budgets : annonce par le serveur (21/11/2026)
 - Le mail « Nouveau budget/projet soumis au vote » part de la fonction `rappels` (serveur), plus du navigateur : tous les membres du CA (hors cooptés), expéditeur **« Budget à voter-BE »** (aussi pour les rappels de budget).
 - L'app appelle `rappels` avec `{type:"budget", id, annonce:true}` juste après la création ; le cron `rappels-ca` (15 min) rattrape tout budget « vote » dont `ca_budgets.annonce_le` est vide. Un seul envoi (réservation sur `annonce_le`).
+
+## Dossier de contrôle complet (21/11/2026)
+- PDF + ZIP : remboursements, paiements directs, dépenses **et recettes** (REC-xxx, avec la facture émise liée), chacune avec toutes ses pièces (factures, preuves de paiement…). Totaux séparés sorties / entrées.
+- ZIP en plus : `Factures-emises/`, `Bons-de-commande/`, `Factures-a-echeance/` (+ `factures-a-echeance.csv`), `Extraits-de-compte/` (extraits déposés couvrant la période), `recapitulatif.csv`, `documents.csv`, `dossier-de-controle.pdf`.

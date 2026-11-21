@@ -2173,7 +2173,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     <div class="sh"><strong>Dossier de contrôle</strong><div class="spacer"></div>
       <button class="btn ghost sm" id="closeDossier">Fermer</button></div>
     <div class="sb">
-      <p class="hint" style="margin:0 0 16px">Chaque demande de remboursement, chaque paiement direct et chaque dépense de la période, présenté sur une fiche suivie de ses pièces justificatives. Les recettes n'y figurent pas.</p>
+      <p class="hint" style="margin:0 0 16px">Toutes les écritures de la période (remboursements, paiements directs, dépenses et recettes), chacune sur une fiche suivie de ses pièces justificatives : factures, preuves de paiement, tickets…</p>
       <div class="field"><label for="dos_ex">Période</label><select id="dos_ex"></select></div>
       <div class="bline" id="dos_libre" hidden style="margin-top:10px">
         <div class="field"><label for="dos_from">Du</label><input type="date" id="dos_from"></div>
@@ -2185,7 +2185,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
         <button class="btn ghost" id="dosZipBtn" style="flex:1;min-width:150px">Télécharger le ZIP</button>
       </div>
       <p class="hint" id="dos_prog" style="margin:10px 0 0"></p>
-      <p class="hint" style="margin:10px 0 0">Le PDF est un document relié, prêt à imprimer ou à remettre tel quel. Le ZIP contient les fichiers d'origine rangés par nature, un récapitulatif CSV et le même PDF.</p>
+      <p class="hint" style="margin:10px 0 0">Le PDF est un document relié, prêt à imprimer ou à remettre tel quel. Le ZIP contient tous les fichiers d'origine rangés par dossier (dépenses, recettes, factures émises, bons de commande, factures à échéance, extraits de compte), les tableaux CSV et le même PDF.</p>
     </div>
   </div>
 </div>
@@ -15136,30 +15136,64 @@ function dosEcritures(){
       objet: e.object || "", categorie: e.category || "", montant: Number(e.amount || 0),
       statut: "Payée", pieces: piecesDe(e), infos });
   });
+  // 21/11/2026 : les recettes entrent aussi dans le dossier (factures émises encaissées, preuves de paiement…)
+  (state.incomes || []).filter(r => dans(r.income_date) && !estOuverture(r)).forEach(r => {
+    const infos = [
+      ["Nature", "Recette (entrée d'argent)"],
+      ["Payé par", r.source || "-"],
+      ["Date de l'encaissement", fdate(r.income_date)],
+      ["Catégorie", r.category || "-"],
+      ["Mode d'encaissement", r.method || "-"]
+    ];
+    if(r.vat_rate && r.vat_rate !== "NA"){
+      const v = ventile(Number(r.amount || 0), r.vat_rate);
+      infos.push(["TVA", "HT " + dosEur(v.ht) + "   —   TVA " + dosEur(v.tva) + "  (" + r.vat_rate + " %)"]);
+    }
+    if(r.client_vat) infos.push(["N° TVA du client", r.client_vat]);
+    const fac = (state.documents || []).find(d => d.cat === "vente" && (d.income_id === r.id || docPaiements(d).some(x => x.income_id === r.id)));
+    if(fac) infos.push(["Facture émise", (fac.numero ? "n° " + fac.numero + " — " : "") + (fac.tiers || "") + (fac.montant != null ? " — " + dosEur(fac.montant) : "")]);
+    if(r.author_name) infos.push(["Enregistrée par", r.author_name]);
+    if(r.note) infos.push(["Commentaire", String(r.note)]);
+    arr.push({ nature: "Recette", entree: true, dossier: "Recettes", ref: "",
+      date: String(r.income_date || "").slice(0, 10), tiers: r.source || "-",
+      objet: r.object || "", categorie: r.category || "", montant: Number(r.amount || 0),
+      statut: "Encaissée", pieces: piecesDe(r), infos });
+  });
   arr.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.ref).localeCompare(String(b.ref)));
-  arr.forEach((e, n) => { e.no = n + 1; if(!e.ref) e.ref = "DEP-" + String(n + 1).padStart(3, "0"); });
+  let nRec = 0, nDep = 0;
+  arr.forEach((e, n) => { e.no = n + 1;
+    if(!e.ref) e.ref = e.entree ? "REC-" + String(++nRec).padStart(3, "0") : "DEP-" + String(++nDep).padStart(3, "0"); });
   const docs = (state.documents || []).filter(d => dans(d.date))
     .sort((a,b) => String(a.date).localeCompare(String(b.date)));
-  return { per: p, ecr: arr, docs };
+  // factures à échéance (reçues) : créées sur la période ou avec une échéance dans la période
+  const fe = (state.factures || []).filter(f => dans(f.created_at) || feEchs(f).some(e => dans(e.date) || dans(e.paid_at)))
+    .sort((a,b) => String(a.created_at).localeCompare(String(b.created_at)));
+  return { per: p, ecr: arr, docs, fe };
 }
 
 function dosMajResume(){
   const el = $("#dos_resume"); if(!el) return;
-  const { ecr, docs } = dosEcritures();
-  const tot = ecr.reduce((s, e) => s + e.montant, 0);
+  const { ecr, docs, fe } = dosEcritures();
+  const sorties = ecr.filter(e => !e.entree).reduce((s, e) => s + e.montant, 0);
+  const entrees = ecr.filter(e => e.entree).reduce((s, e) => s + e.montant, 0);
   const pj  = ecr.reduce((s, e) => s + e.pieces.length, 0);
   const sans = ecr.filter(e => !e.pieces.length).length;
   el.textContent = (ecr.length
-    ? `${ecr.length} écriture(s) · ${euro(tot)} · ${pj} pièce(s) jointe(s)` + (sans ? ` · ${sans} sans pièce` : "")
+    ? `${ecr.length} écriture(s) · sorties ${euro(sorties)} · entrées ${euro(entrees)} · ${pj} pièce(s) jointe(s)` + (sans ? ` · ${sans} sans pièce` : "")
     : "Aucune écriture sur cette période.")
-    + (docs.length ? ` · ${docs.length} facture(s) émise(s) / bon(s) de commande en annexe` : "");
+    + (docs.length ? ` · ${docs.length} facture(s) émise(s) / bon(s) de commande` : "")
+    + (fe.length ? ` · ${fe.length} facture(s) à échéance` : "")
+    + " · extraits de compte (ZIP)";
 }
 
 /* Les fichiers sont téléchargés une seule fois et partagés par le PDF et le ZIP. */
-async function dosCharger(ecr, prog, docs){
+async function dosCharger(ecr, prog, docs, extra){
   const cache = new Map();
+  extra = extra || {};
   const chemins = [...new Set(ecr.flatMap(e => e.pieces.map(p => p.path))
-    .concat((docs || []).flatMap(d => (d.fichiers || []).map(f => f.path))).filter(Boolean))];
+    .concat((docs || []).flatMap(d => (d.fichiers || []).map(f => f.path)))
+    .concat((extra.fe || []).flatMap(f => piecesDe(f).map(p => p.path)))
+    .concat((extra.extraits || []).map(x => x.path)).filter(Boolean))];
   let n = 0;
   for(const path of chemins){
     n++; prog("Téléchargement des pièces " + n + "/" + chemins.length + "…");
@@ -15205,7 +15239,8 @@ async function dosPDF(ecr, per, cache, prog, docs){
     { x: xFin - f.widthOfTextAtSize(dosTxt(t), s), y: y - s, size: s, font: f, color: couleur || NOIR });
   const trait = () => { page.drawLine({ start:{x:M, y}, end:{x:W-M, y}, thickness:0.6, color:TRAIT }); y -= 10; };
 
-  const total = ecr.reduce((s, e) => s + e.montant, 0);
+  const total = ecr.filter(e => !e.entree).reduce((s, e) => s + e.montant, 0);
+  const totalEntrees = ecr.filter(e => e.entree).reduce((s, e) => s + e.montant, 0);
   const nbPJ  = ecr.reduce((s, e) => s + e.pieces.length, 0);
   const sansPJ = ecr.filter(e => !e.pieces.length).length;
 
@@ -15218,13 +15253,15 @@ async function dosPDF(ecr, per, cache, prog, docs){
   ecrire(per.titre, { size: 12, couleur: GRIS, saut: 24 });
   trait();
   const kv = (a, b) => { ecrire(a, { size: 9, gras: true, couleur: GRIS, saut: 1 }); ecrire(b, { size: 12, saut: 12 }); };
-  kv("Écritures présentées", ecr.length + " (remboursements, paiements directs et dépenses)");
-  kv("Montant total", dosEur(total));
+  kv("Écritures présentées", ecr.length + " (remboursements, paiements directs, dépenses et recettes)");
+  kv("Sorties d'argent", dosEur(total));
+  kv("Entrées d'argent (recettes)", dosEur(totalEntrees));
   kv("Pièces justificatives jointes", nbPJ + " pièce(s)" + (sansPJ ? "   —   " + sansPJ + " écriture(s) sans aucune pièce" : ""));
   kv("Document édité le", fdate(dateLocale()) + (state.profile && state.profile.name ? "   —   par " + state.profile.name : ""));
   y -= 6; trait();
   ecrire("Chaque écriture est présentée sur une fiche, suivie immédiatement de ses pièces justificatives "
-       + "(photos et documents scannés). Les recettes ne figurent pas dans ce dossier : il justifie les sorties d'argent. "
+       + "(photos et documents scannés). Les sorties et les recettes y figurent ; le ZIP contient en plus les factures émises, "
+       + "les bons de commande, les factures à échéance et les extraits de compte. "
        + "Les montants sont ceux enregistrés dans la caisse au jour de l'édition.",
        { size: 9.5, couleur: GRIS, saut: 5 });
 
@@ -15253,14 +15290,15 @@ async function dosPDF(ecr, per, cache, prog, docs){
     page.drawText(tronque(e.ref, F, 8.5, 70), { x: COL[1], y: y - 9, size: 8.5, font: F, color: NOIR });
     page.drawText(tronque(e.tiers, F, 8.5, 96), { x: COL[2], y: y - 9, size: 8.5, font: F, color: NOIR });
     page.drawText(tronque(e.objet, F, 8.5, 136), { x: COL[3], y: y - 9, size: 8.5, font: F, color: NOIR });
-    y -= 0; droite(dosEur(e.montant), COL[5] - 10, 8.5, F);
+    y -= 0; droite((e.entree ? "+ " : "") + dosEur(e.montant), COL[5] - 10, 8.5, F);
     page.drawText(e.pieces.length ? String(e.pieces.length) : "-",
       { x: COL[5] + 12, y: y - 9, size: 8.5, font: F, color: e.pieces.length ? NOIR : rgb(0.75, 0.3, 0.3) });
     y -= 13;
   }
   y -= 4; trait();
-  droite("Total : " + dosEur(total), W - M, 10, FB);
+  droite("Total des sorties : " + dosEur(total), W - M, 10, FB);
   y -= 16;
+  if(totalEntrees){ droite("Total des entrées : + " + dosEur(totalEntrees), W - M, 10, FB); y -= 16; }
 
   // ---- une fiche par écriture, puis ses pièces ----
   const soucis = [];
@@ -15271,7 +15309,7 @@ async function dosPDF(ecr, per, cache, prog, docs){
     page.drawRectangle({ x: M, y: y - 26, width: LARG, height: 26, color: rgb(0.94, 0.94, 0.94) });
     page.drawText(dosTxt("Écriture " + e.no + " / " + ecr.length + "   —   " + e.nature + "   —   " + e.ref),
       { x: M + 8, y: y - 17, size: 10, font: FB, color: NOIR });
-    const mt = dosEur(e.montant);
+    const mt = (e.entree ? "+ " : "") + dosEur(e.montant);
     page.drawText(mt, { x: W - M - 8 - FB.widthOfTextAtSize(mt, 11), y: y - 18, size: 11, font: FB, color: NOIR });
     y -= 40;
     ecrire(e.objet || "(sans objet)", { size: 16, gras: true, saut: 14 });
@@ -15384,7 +15422,8 @@ async function dosPDF(ecr, per, cache, prog, docs){
   return await pdf.save();
 }
 
-async function dosZip(ecr, per, cache, pdfBytes, prog, docs){
+async function dosZip(ecr, per, cache, pdfBytes, prog, docs, extra){
+  extra = extra || {};
   prog("Préparation du ZIP…");
   const { default: JSZip } = await import("./lib/jszip-3.10.1.js");
   const zip = new JSZip();
@@ -15411,6 +15450,29 @@ async function dosZip(ecr, per, cache, pdfBytes, prog, docs){
     });
   }
   if(docs && docs.length) zip.file("documents.csv", docLignesCsv(docs));
+  // factures à échéance (reçues) : leurs PDF + un tableau des échéances
+  const fe = extra.fe || [];
+  if(fe.length){
+    const lf = [["Fournisseur", "Objet", "Reference", "Total", "Echeance", "Montant echeance", "Payee le", "Fichiers"]];
+    for(const f of fe){
+      const noms = [];
+      piecesDe(f).forEach((pc, k) => {
+        const b = pc.path ? cache.get(pc.path) : null; if(!b) return;
+        const ext = (b[0] === 0x25) ? "pdf" : (b[0] === 0x89 ? "png" : "jpg");
+        const nom = `${String(f.created_at || "").slice(0, 10)}_${dosNom(f.fournisseur)}_${dosNom(f.objet)}_${k + 1}.${ext}`;
+        zip.file("Factures-a-echeance/" + nom, b); noms.push(nom);
+      });
+      const echs = feEchs(f).length ? feEchs(f) : [{}];
+      echs.forEach(e => lf.push([f.fournisseur || "", f.objet || "", f.reference || "", String(feTotal(f).toFixed(2)).replace(".", ","),
+        e.date || "", e.montant != null ? String(Number(e.montant).toFixed(2)).replace(".", ",") : "", e.paid_at ? String(e.paid_at).slice(0, 10) : "", noms.join(" | ")]));
+    }
+    zip.file("factures-a-echeance.csv", "\uFEFF" + lf.map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n"));
+  }
+  // extraits de compte déposés (CSV / PDF de la banque)
+  for(const x of (extra.extraits || [])){
+    const b = cache.get(x.path); if(!b) continue;
+    zip.file("Extraits-de-compte/" + x.nom, b);
+  }
   zip.file("recapitulatif.csv", "\uFEFF" + lignes.map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n"));
   if(pdfBytes) zip.file("dossier-de-controle.pdf", pdfBytes);
   return await zip.generateAsync({ type: "blob" });
@@ -15424,17 +15486,28 @@ function dosTelecharger(blob, nom){
 
 async function dosLancer(avecZip){
   if(!isTreso()) return toast("Réservé au trésorier.");
-  const { per, ecr, docs } = dosEcritures();
-  if(!ecr.length && !docs.length) return toast("Aucune écriture ni document sur cette période.");
+  const { per, ecr, docs, fe } = dosEcritures();
+  if(!ecr.length && !docs.length && !fe.length) return toast("Aucune écriture ni document sur cette période.");
   const btns = [$("#dosPdfBtn"), $("#dosZipBtn")];
   const prog = t => { const el = $("#dos_prog"); if(el) el.textContent = t; };
   btns.forEach(b => b && (b.disabled = true));
   try{
-    const cache = await dosCharger(ecr, prog, docs);
+    let extraits = [];
+    if(avecZip){
+      // extraits de compte qui couvrent la période (dates lues dans le nom ING : _AAAAMMJJ_-_AAAAMMJJ) ; sans dates : inclus
+      const iso = t => t.slice(0, 4) + "-" + t.slice(4, 6) + "-" + t.slice(6, 8);
+      extraits = (await chargerExtraits()).map(f => {
+        const m = /(20\d{6})\D+(20\d{6})/.exec(f.name);
+        return { path: DOSSIER_EXTRAITS + "/" + f.name, nom: f.name.replace(/^\d{10,}-\d+-/, ""),
+          du: m ? iso(m[1]) : null, au: m ? iso(m[2]) : null };
+      }).filter(x => !x.du || (x.du <= per.to && x.au >= per.from));
+    }
+    const extra = { fe: avecZip ? fe : [], extraits };
+    const cache = await dosCharger(ecr, prog, docs, extra);
     prog("Assemblage du PDF…");
     const pdfBytes = await dosPDF(ecr, per, cache, prog, docs);
     if(avecZip){
-      const blob = await dosZip(ecr, per, cache, pdfBytes, prog, docs);
+      const blob = await dosZip(ecr, per, cache, pdfBytes, prog, docs, extra);
       dosTelecharger(blob, "dossier-controle-" + per.nom + ".zip");
     }else{
       dosTelecharger(new Blob([pdfBytes], { type: "application/pdf" }), "dossier-controle-" + per.nom + ".pdf");
