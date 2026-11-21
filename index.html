@@ -1301,7 +1301,45 @@ const MAIL_TEMPLATES = [
   { nom:"Demande / partenariat", objet:"Demande — [objet]",
     corps:"Bonjour,\n\nDans le cadre de nos activités, nous nous permettons de vous contacter concernant [objet de la demande].\n\n[Présentation de la demande / proposition de partenariat.]\n\nNous restons à votre disposition pour en discuter.\n\nBien à vous," },
 ];
+/* ============ ENVOIS GROUPÉS PAR LE SERVEUR (21/11/2026) ============
+   Avant, le navigateur envoyait les mails un par un : si la personne fermait la page ou
+   changeait d'onglet, le reste ne partait jamais. Désormais la fonction « diffuser » envoie
+   depuis le serveur, jusqu'au bout. Si elle ne répond pas (pas encore installée, réseau),
+   on revient à l'ancien envoi depuis le navigateur (fonctions « …Local »). */
+const CA_DIFFUSER_FN = SB_URL + "/functions/v1/diffuser";
+async function diffuserServeur(corps){
+  const r=await fetch(CA_DIFFUSER_FN,{method:"POST",headers:await caSendHeaders(),body:JSON.stringify(corps)});
+  let j=null; try{ j=await r.json(); }catch(_){ j=null; }
+  if(!j) throw new Error("diffuser : pas de réponse ("+r.status+")");
+  if(j.error){ const e=new Error(j.error); e.refus=r.status===400||r.status===401||r.status===403; throw e; }
+  return j;
+}
+const enveloppeCA=(corpsHtml, invitation, avecCaisse)=>`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corpsHtml}${invitation?blocInvitationCA():""}${avecCaisse?blocCaisseCA():""}${blocNoReplyCA()}</div>`;
 async function envoyerNotifCA(subject, corpsHtml, avecCaisse, exp, cat, urgent){
+  try{
+    const j=await diffuserServeur({mode:"ca", subject, html:enveloppeCA(corpsHtml,true,avecCaisse), from:exp||undefined, cat:cat||undefined, urgent:!!urgent});
+    return {ok:j.ok, err:j.err, total:j.total, desabonnes:j.desabonnes||0, masque:!!j.masque};
+  }catch(e){ if(e.refus) return {ok:0, err:1, total:1, desabonnes:0}; return envoyerNotifCALocal(subject, corpsHtml, avecCaisse, exp, cat, urgent); }
+}
+async function envoyerNotifCAListe(dest, subject, corpsHtml, sansInvitation, exp, cat, urgent){
+  const liste=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))].filter(e=>!estDesabonne(e));
+  if(!liste.length) return {ok:0,err:0};
+  try{
+    const j=await diffuserServeur({mode:"liste", dest:liste, subject, html:enveloppeCA(corpsHtml,!sansInvitation,false), from:exp||undefined, cat:cat||undefined, urgent:!!urgent});
+    return j.masque?{ok:0,err:0,masque:true}:{ok:j.ok, err:j.err};
+  }catch(e){ if(e.refus) return {ok:0,err:liste.length}; return envoyerNotifCAListeLocal(dest, subject, corpsHtml, sansInvitation, exp, cat, urgent); }
+}
+async function envoyerAvecPiece(dest, subject, corpsHtml, piece, opts){
+  opts=opts||{};
+  const liste=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))].filter(e=>opts.tous||!estDesabonne(e));
+  if(!liste.length) return {ok:0,err:0,total:0,sansPiece:false};
+  try{
+    const j=await diffuserServeur({mode:"liste", dest:liste, subject, html:enveloppeCA(corpsHtml,!opts.sansInvitation,false), from:opts.exp||undefined,
+      tous:!!opts.tous, attachments:piece?(Array.isArray(piece)?piece:[piece]):undefined});
+    return {ok:j.ok, err:j.err, total:j.total, sansPiece:!!j.sansPiece};
+  }catch(e){ if(e.refus) return {ok:0,err:liste.length,total:liste.length,sansPiece:false}; return envoyerAvecPieceLocal(dest, subject, corpsHtml, piece, opts); }
+}
+async function envoyerNotifCALocal(subject, corpsHtml, avecCaisse, exp, cat, urgent){
   /* Liste brute (membres actifs + diffusion externe) avant filtrage des désabonnés,
      pour pouvoir dire à l'expéditeur combien d'adresses ont été écartées. */
   const brut=new Set();
@@ -1322,7 +1360,7 @@ async function envoyerNotifCA(subject, corpsHtml, avecCaisse, exp, cat, urgent){
   }
   return {ok, err, total:dest.length, desabonnes:nbDesab};
 }
-async function envoyerNotifCAListe(dest, subject, corpsHtml, sansInvitation, exp, cat, urgent){
+async function envoyerNotifCAListeLocal(dest, subject, corpsHtml, sansInvitation, exp, cat, urgent){
   let liste=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))].filter(e=>!estDesabonne(e));
   if(!liste.length) return {ok:0,err:0};
   liste=await notifFiltre(cat, liste, subject, corpsHtml, urgent);
@@ -1367,12 +1405,19 @@ async function envoyerAnnonceUrgenteCA(texte){
     +`<p><a href="${caAppUrl()}" style="background:#b3261e;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Ouvrir l'espace CA</a></p>`
     +`<p style="font-size:12px;color:#888">Ce message est marqué urgent par la présidence du bureau : il est envoyé à tous les membres, y compris à ceux qui ont coupé les annonces.</p>`;
   const html=`<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">${corps}${blocInvitationCA()}${blocNoReplyCA()}</div>`;
-  const headers=await caSendHeaders();
-  const reussis=new Set(), rates=[];
-  for(const to of dest){
-    try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html,from:EXP_ANNONCE})});
-      if(r&&r.ok===false) rates.push(to); else reussis.add(to); }catch(e){ rates.push(to); }
-    await new Promise(r=>setTimeout(r,120));
+  const reussis=new Set(); let rates=[];
+  try{
+    /* 21/11/2026 : envoyé par le serveur (fonction « diffuser »), jusqu'au bout même si la page est fermée. */
+    const j=await diffuserServeur({mode:"liste", dest, subject, html, from:EXP_ANNONCE, urgent:true});
+    rates=(j.echecs||[]).map(e=>String(e).toLowerCase().trim());
+    dest.forEach(e=>{ if(rates.indexOf(e)<0) reussis.add(e); });
+  }catch(_){
+    const headers=await caSendHeaders();
+    for(const to of dest){
+      try{ const r=await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject,html,from:EXP_ANNONCE})});
+        if(r&&r.ok===false) rates.push(to); else reussis.add(to); }catch(e){ rates.push(to); }
+      await new Promise(r=>setTimeout(r,120));
+    }
   }
   return {total:dest.length, ok:reussis.size, rates, bloqueurs:bloqueurs===null?null:bloqueurs.map(b=>{
     const vises=b.emails.filter(e=>dest.indexOf(e)>=0);
@@ -1442,13 +1487,8 @@ async function notifEvenementCA(titre, quand, urgent){
     +"<p>Le bureau organise : <b>"+caMailEsc(titre)+"</b>"+(quand?" \u2014 "+caMailEsc(quand):"")+".</p>"
     +'<p>Rendez-vous sur l\'espace CA pour le detail.</p>'
     +'<p><a href="'+caAppUrl()+'" style="background:#241c46;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;display:inline-block">Ouvrir l\'espace CA</a></p>';
-  const dest=await notifFiltre("evenement", destinatairesEvenements(), "Evenement \u2014 "+titre, corps, urgent); if(!dest.length) return;
-  const html='<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">'+corps+blocNoReplyCA()+'</div>';
-  const headers=await caSendHeaders();
-  for(const to of dest){
-    try{ await fetch(CA_SEND_FN,{method:"POST",headers:headers,body:JSON.stringify({to,subject:"Evenement \u2014 "+titre,html})}); }catch(e){}
-    await new Promise(r=>setTimeout(r,120));
-  }
+  /* 21/11/2026 : envoyé par le serveur (fonction « diffuser »), même si la page est fermée. */
+  return envoyerNotifCAListe(destinatairesEvenements(), "Evenement \u2014 "+titre, corps, true, undefined, "evenement", urgent);
 }
 function notifCreationCA(type, titre, extra, exp, cat, urgent){
   const art163 = cat==="budget" ? `<p style="background:#f5f4fb;border-left:3px solid #241c46;padding:8px 12px;font-size:13px">En application de l'<b>article 16.3 des statuts</b>, ce budget est soumis à un vote électronique de l'Organe d'Administration, aux conditions de l'article 16.2 : majorité simple des voix, si au moins la moitié des administrateurs votent. En cas d'égalité, la voix de la présidence est prépondérante.</p>` : "";
@@ -5432,7 +5472,7 @@ function blobEnBase64(blob){
 }
 /* Envoi avec pièce jointe réelle. Le lien signé est TOUJOURS dans le corps :
    si la pièce jointe est refusée par le serveur, le mail reste utilisable. */
-async function envoyerAvecPiece(dest, subject, corpsHtml, piece, opts){
+async function envoyerAvecPieceLocal(dest, subject, corpsHtml, piece, opts){
   opts=opts||{};
   /* opts.tous : document officiel (procuration) — envoyé même aux adresses désabonnées des annonces. */
   const liste=[...new Set((dest||[]).map(x=>String(x||"").toLowerCase().trim()).filter(Boolean))].filter(e=>opts.tous||!estDesabonne(e));

@@ -167,3 +167,8 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - ZIP : `Extraits-de-compte/operations/` = **une fiche PDF par opération bancaire** de la période, rapprochée d'une écriture de la Caisse (n° de mouvement puis même montant à 7 j près, `dosRapprocherOps`), suivie de ses justificatifs ; sans correspondance : nom de fichier `_SANS-ECRITURE` et mention rouge. Tableau `operations.csv`.
 - ZIP : `Extraits-de-compte/operations/` = **une fiche PDF par opération bancaire** de la période (date, n°, montant, contrepartie, compte, communication, libellé) — `dosFicheOperation` ; tableau `operations.csv`. Pas de rapprochement avec la Caisse dans ces fiches (choix du 21/11).
 - ZIP : en plus, `Extraits-de-compte/operations-avec-justificatifs/` = la même fiche rapprochée d'une écriture de la Caisse (n° de mouvement, sinon même montant à 7 j près — `dosRapprocherOps`) et suivie de ses justificatifs ; `_SANS-ECRITURE` si rien trouvé ; tableau `operations-avec-justificatifs.csv`.
+
+## Envois groupés par le serveur : fonction `diffuser` (21/11/2026)
+- `envoyerNotifCA`, `envoyerNotifCAListe`, `envoyerAvecPiece`, l'annonce urgente et `notifEvenementCA` appellent la fonction `diffuser` (mode `ca` : destinataires calculés côté serveur ; mode `liste` : 300 adresses max). La boucle d'envoi tourne sur le serveur (EdgeRuntime.waitUntil) : fermer la page n'arrête plus rien. Choix de notifications appliqués côté serveur (`notif_preparer_srv`).
+- Chaque mail passe par `send-email` avec le jeton de la personne (mêmes limites, même journal). Si `diffuser` ne répond pas, repli sur l'ancien envoi navigateur (`…Local`).
+- Reste côté navigateur : la diffusion manuelle (onglet Mailing, lien de désabonnement personnalisé, barre de progression).
