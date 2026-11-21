@@ -1863,7 +1863,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     </details>
   </section>
 
-  <!-- documents : factures de vente et bons de commande -->
+  <!-- documents : factures émises et bons de commande -->
   <section id="viewDocs" class="stack" hidden>
     <div class="callout" id="doc_sqlErr" hidden style="border-left:4px solid var(--red)">
       <b>La table des documents n'existe pas encore</b>
@@ -1901,8 +1901,8 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 
     <div class="card pad" id="docFormCard">
       <div class="eyebrow" id="doc_formEyebrow">Classement</div>
-      <h2 style="font-size:20px;margin:6px 0 10px" id="doc_formTitre">Déposer une facture de vente ou un bon de commande</h2>
-      <p class="hint" style="margin:0 0 14px">Facture de vente : quand le client paie, clique « Encaisser » — la recette est créée avec la facture en pièce jointe et compte alors dans le solde, la compta et le listing TVA. Bon de commande : quand la facture arrive, lie-le à la dépense correspondante.</p>
+      <h2 style="font-size:20px;margin:6px 0 10px" id="doc_formTitre">Déposer une facture émise ou un bon de commande</h2>
+      <p class="hint" style="margin:0 0 14px">Facture émise : quand le client paie, clique « Encaisser » — la recette est créée avec la facture en pièce jointe et compte alors dans le solde, la compta et le listing TVA. Bon de commande : quand la facture arrive, lie-le à la dépense correspondante.</p>
       <form id="docForm" class="stack" style="gap:14px">
         <div class="field fe-depot"><label for="doc_files">Fichier(s)</label>
           <input type="file" id="doc_files" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.xml,.doc,.docx,.xls,.xlsx">
@@ -1910,7 +1910,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
           <div class="fe-lu" id="doc_lu" hidden></div>
           <div id="doc_exist" class="staged"></div></div>
         <div class="field"><label for="doc_cat">Type de document</label>
-          <select id="doc_cat"><option value="vente">Facture de vente</option><option value="commande">Bon de commande</option></select></div>
+          <select id="doc_cat"><option value="vente">Facture émise</option><option value="commande">Bon de commande</option></select></div>
         <div class="grid2">
           <div class="field"><label for="doc_date">Date du document</label><input type="date" id="doc_date" required></div>
           <div class="field"><label for="doc_num">Numéro</label>
@@ -1947,7 +1947,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
 
     <div>
       <div class="toolbar">
-        <select id="docFiltre"><option value="tous">Tous les documents</option><option value="vente">Factures de vente</option><option value="commande">Bons de commande</option></select>
+        <select id="docFiltre"><option value="tous">Tous les documents</option><option value="vente">Factures émises</option><option value="commande">Bons de commande</option></select>
         <select id="docEtat"><option value="">Tous les statuts</option><option value="a_encaisser">À encaisser</option><option value="retard">En retard</option><option value="partielle">Payées en partie</option><option value="payee">Encaissées</option><option value="ouverts">Bons ouverts</option><option value="facture">Bons facturés</option></select>
         <select id="docEx"></select>
         <input type="text" id="docSearch" placeholder="Client, fournisseur, numéro, montant…">
@@ -5618,8 +5618,8 @@ const optsHtml = (liste, choisi) => liste.map(o => {
 }).join("");
 
 /* ============================================================
-   DOCUMENTS : factures de vente et bons de commande
-   Table caisse_documents (trésorier uniquement). Une facture de vente « Encaisser »
+   DOCUMENTS : factures émises et bons de commande
+   Table caisse_documents (trésorier uniquement). Une facture émise « Encaisser »
    crée la recette avec la facture en pièce jointe ; un bon de commande se lie à la
    dépense qui le règle. Les anciens documents rangés dans la configuration sont
    migrés automatiquement vers la table au premier chargement.
@@ -5627,7 +5627,7 @@ const optsHtml = (liste, choisi) => liste.map(o => {
 const DOC_TABLE = "caisse_documents";
 const DOSSIER_DOCS = "documents";
 state.documents = []; state.docErr = null; state.docEdit = null; state.docDrop = new Set();
-const docLib = c => c === "commande" ? "Bon de commande" : "Facture de vente";
+const docLib = c => c === "commande" ? "Bon de commande" : "Facture émise";
 const DOC_STATUTS = { a_encaisser:["À encaisser","t-attente"], payee:["Encaissée","t-paye"],
   commande:["Commandé","t-attente"], recu:["Reçu","t-valide"], facture:["Facturé","t-paye"] };
 const docStatut = d => d.statut || (d.cat === "commande" ? "commande" : "a_encaisser");
@@ -5669,7 +5669,7 @@ async function chargerDocuments(){
   }
 }
 
-/* --- numérotation des factures de vente --- */
+/* --- numérotation des factures émises --- */
 function docNumeros(){
   const groupes = {};
   (state.documents || []).filter(d => d.cat === "vente" && d.numero).forEach(d => {
@@ -5754,7 +5754,7 @@ function resetDocForm(){
   $("#doc_lu").hidden = true; $("#doc_lu").innerHTML = "";
   $("#doc_date").value = dateLocale();
   $("#doc_formEyebrow").textContent = "Classement";
-  $("#doc_formTitre").textContent = "Déposer une facture de vente ou un bon de commande";
+  $("#doc_formTitre").textContent = "Déposer une facture émise ou un bon de commande";
   $("#docBtn").textContent = "Enregistrer le document";
   $("#doc_cat").disabled = false;
   erreurForm("#docErr", null);
@@ -5938,7 +5938,7 @@ function renderDocs(){
 
   const anom = docAnomalies();
   $("#doc_anom").hidden = !anom.length;
-  $("#doc_anom").innerHTML = anom.length ? `<b>Numérotation des factures de vente</b><p>${anom.map(esc).join("<br>")}</p>` : "";
+  $("#doc_anom").innerHTML = anom.length ? `<b>Numérotation des factures émises</b><p>${anom.map(esc).join("<br>")}</p>` : "";
 
   // exercices disponibles
   const sel = $("#docEx"), cur = sel.value || "all";
@@ -5996,12 +5996,12 @@ function renderDocs(){
         <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;align-items:center">${actions.join("")}</div></div>
       <div><span class="tag ${cls}">${esc(lib)}</span></div>
       <div class="amt">${d.montant != null ? euro(d.montant) : "—"}</div><div class="chev"></div></div>`;
-  }).join("") : emptyHTML("Aucun document", all.length ? "Rien ne correspond à ces filtres." : "Déposez ci-dessus vos factures de vente et vos bons de commande.");
+  }).join("") : emptyHTML("Aucun document", all.length ? "Rien ne correspond à ces filtres." : "Déposez ci-dessus vos factures émises et vos bons de commande.");
 }
 ["#docFiltre", "#docEtat", "#docEx"].forEach(s => { if($(s)) $(s).onchange = renderDocs; });
 $("#docSearch").oninput = renderDocs;
 
-/* --- encaisser une facture de vente, en une ou plusieurs fois (21/11/2026) ---
+/* --- encaisser une facture émise, en une ou plusieurs fois (21/11/2026) ---
    Chaque versement est noté dans « paiements » (date, montant, n° de mouvement, recette).
    Venu d'un extrait, la recette créée garde « [mouvement N] » dans sa note : le rapprochement
    banque ↔ Caisse la reconnaît. Une recette déjà encodée pour ce virement est reliée, pas doublée. */
@@ -6088,7 +6088,7 @@ async function docEncaisser(d, ops){
         vat_rate: taxable ? v.taux : "NA", tva_regime: v.reg,
         client_type: taxable ? (v.vat ? "professionnel" : "particulier") : "non",
         client_vat: taxable ? v.vat : "",
-        note: ([x.ref ? "[mouvement " + x.ref + "]" : "", "Facture de vente" + (d.numero ? " n° " + d.numero : "") + " (onglet Documents)",
+        note: ([x.ref ? "[mouvement " + x.ref + "]" : "", "Facture émise" + (d.numero ? " n° " + d.numero : "") + " (onglet Documents)",
           d.note || ""].filter(Boolean).join(" · ")).slice(0, 400)
       }).select("id").single();
       if(error){
@@ -15183,11 +15183,11 @@ async function dosPDF(ecr, per, cache, prog, docs){
     }
   }
 
-  // ---- annexe : factures de vente et bons de commande ----
+  // ---- annexe : factures émises et bons de commande ----
   if(docs && docs.length){
     prog("Annexe des documents…");
     nouvelle();
-    ecrire("Annexe — factures de vente et bons de commande", { size: 15, gras: true, saut: 10 });
+    ecrire("Annexe — factures émises et bons de commande", { size: 15, gras: true, saut: 10 });
     ecrire("Documents classés dans la caisse pour la période. Ce ne sont pas des écritures : leurs montants ne sont pas repris dans le total du dossier.",
       { size: 9.5, couleur: GRIS, saut: 12 });
     for(const d of docs){
