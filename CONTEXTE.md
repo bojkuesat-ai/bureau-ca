@@ -175,5 +175,5 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 
 ## Sécurité et alertes (21/11/2026)
 - `audit_alerte` : le propriétaire ne reçoit plus « Nouvel appareil » ni « Activité nocturne » (choix du propriétaire). Les autres alertes restent.
-- Tâches `rappels-ca` et `envois-auto` : secret lu dans `bil_config.cron_secret` ; les fonctions `rappels` et `envois-auto` l'acceptent (en plus de `CRON_SECRET`, à remplacer par une valeur au hasard).
+- Tâches `rappels-ca` et `envois-auto` : secret lu dans `bil_config.cron_secret` ; les fonctions `rappels` et `envois-auto` n'acceptent plus que lui (la variable `CRON_SECRET`, exposée, est ignorée).
 - Rapprochement réel (01/07–19/11) : toutes les opérations bancaires ont leur écriture ; les deux virements de l'ancien CA (31/08 : 208,59 € ; 17/09 : 187,50 €) correspondent à la somme de plusieurs recettes « Remboursement du CA sortant ».

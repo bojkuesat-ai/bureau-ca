@@ -4,7 +4,6 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SRK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const CRON_SECRET = Deno.env.get("CRON_SECRET") || "";
 const APP = "https://bojkuesat-ai.github.io/bureau-ca/";
 const sb = createClient(SB_URL, SRK, { auth: { persistSession: false } });
 
@@ -213,7 +212,7 @@ async function recapIdees(membres: Record<string, unknown>[], cooptes: Record<st
 async function secretOk(req: Request): Promise<boolean> {
   const recu = req.headers.get("x-cron-secret") ?? "";
   if (!recu) return false;
-  if (CRON_SECRET && recu === CRON_SECRET) return true;
+  /* 21/11/2026 : la variable CRON_SECRET n'est plus acceptée (l'ancienne valeur avait circulé en clair). */
   try { const { data } = await sb.from("bil_config").select("cron_secret").eq("id", 1).maybeSingle(); return !!data?.cron_secret && recu === data.cron_secret; }
   catch (_) { return false; }
 }

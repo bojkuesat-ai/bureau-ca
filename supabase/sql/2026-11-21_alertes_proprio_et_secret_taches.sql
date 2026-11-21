@@ -17,5 +17,5 @@ select cron.alter_job(job_id := (select jobid from cron.job where jobname='envoi
     headers := jsonb_build_object('Content-Type','application/json','x-cron-secret',(select cron_secret from public.bil_config where id = 1)),
     body := '{}'::jsonb, timeout_milliseconds := 60000);
 $c$);
--- 3) À faire dans Supabase : remplacer la valeur de la variable CRON_SECRET des fonctions
---    (l'ancienne figurait en clair dans les tâches) par une valeur au hasard.
+-- 3) rappels et envois-auto n'acceptent plus la variable CRON_SECRET (ancienne valeur exposée) :
+--    seul bil_config.cron_secret ouvre la porte. Vérifié : l'ancienne clé est refusée.

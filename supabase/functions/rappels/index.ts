@@ -9,7 +9,7 @@
      1) depuis l'app  : POST { type, id }  + jeton de l'utilisateur connecté.
         Droits vérifiés ici : propriétaire, secrétariat, présidence,
         ou la personne qui a déposé l'objet.
-     2) depuis le cron : POST {} + en-tête x-cron-secret (secret CRON_SECRET).
+     2) depuis le cron : POST {} + en-tête x-cron-secret (bil_config.cron_secret).
         Traite tous les rappels programmés (rappel_prog_at échu).
 
    Garde-fou : un rappel maximum toutes les 12 h par objet.
@@ -31,7 +31,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const CRON_SECRET = Deno.env.get("CRON_SECRET") || "";
 const APP_URL = "https://bojkuesat-ai.github.io/bureau-ca/";
 const DELAI_MIN_H = 12;
 const EXP_BUDGET_VOTE = "Budget à voter-BE <noreply@bureauetuidant.xyz>";
@@ -312,8 +311,9 @@ Deno.serve(async (req) => {
   const jeton = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
   /* 21/11/2026 : secret de la tâche lu en base (bil_config.cron_secret), comme les autres tâches. */
   const recu = req.headers.get("x-cron-secret") ?? "";
-  let parCron = !!recu && !!CRON_SECRET && recu === CRON_SECRET;
-  if (!parCron && recu) {
+  /* La variable CRON_SECRET n'est plus acceptée (l'ancienne valeur avait circulé en clair). */
+  let parCron = false;
+  if (recu) {
     try { const { data: cfgS } = await admin.from("bil_config").select("cron_secret").eq("id", 1).maybeSingle(); parCron = !!cfgS?.cron_secret && recu === cfgS.cron_secret; }
     catch (_) { parCron = false; }
   }
