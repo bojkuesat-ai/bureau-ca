@@ -5654,6 +5654,7 @@ function docAppliquerMode(v){
   ["#doc_kAenc", "#doc_kRet", "#doc_kEnc"].forEach(id => { const k = $(id) && $(id).closest(".kpi"); if(k) k.hidden = !em; });
   const kb = $("#doc_kBons") && $("#doc_kBons").closest(".kpi"); if(kb) kb.hidden = em;
   ["#docPayCard", "#docLotCard"].forEach(id => { if($(id)) $(id).hidden = !em; });
+  if(em && !state.docPayAuto && isTreso()){ state.docPayAuto = true; docPayCharger(null).then(() => renderDocs()).catch(_ => __errSilence(_)); }
   const VENTE = ["a_encaisser", "retard", "partielle", "payee"];
   const et = $("#docEtat");
   if(et){ [...et.options].forEach(o => { if(o.value) o.hidden = em ? !VENTE.includes(o.value) : VENTE.includes(o.value); });
@@ -5977,8 +5978,15 @@ function renderDocs(){
   sel.value = [...sel.options].some(o => o.value === cur) ? cur : "all";
 
   const liste = docFiltres();
-  $("#docList").innerHTML = liste.length ? liste.map(d => {
-    const st = docStatut(d), [lib, cls] = docPartielle(d) ? ["Payée en partie", "t-attente"] : (DOC_STATUTS[st] || [st, "t-neutre"]);
+  // paiements trouvés dans les extraits (chargés automatiquement à l'ouverture de l'onglet)
+  const banque = new Map();
+  if(state.docMode === "vente" && state.docPay && state.docPay.ops){
+    try{ const R = docRapprocher(state.docPay.ops);
+      [...R.payees, ...R.partielles].forEach(r => { if(r.ops.length) banque.set(r.d.id, r); }); }catch(_){ __errSilence(_); }
+  }
+  state.docBanque = banque;
+  const ligneDoc = d => {
+    const st = docStatut(d); let [lib, cls] = docPartielle(d) ? ["Payée en partie", "t-attente"] : (DOC_STATUTS[st] || [st, "t-neutre"]);
     const fic = d.fichiers || [];
     const meta = [];
     if(d.note) meta.push(esc(d.note));
@@ -6008,10 +6016,14 @@ function renderDocs(){
     const actions = fic.map((x, n) => `<button class="btn ghost sm" data-docopen="${esc(d.id)}" data-n="${n}" title="${esc(x.name)}">${fic.length > 1 ? "Fichier " + (n+1) : "Ouvrir"}</button>`);
     actions.push(`<button class="btn ghost sm" data-docedit="${esc(d.id)}">Modifier</button>`);
     const dejaRec = d.cat === "vente" && st === "a_encaisser" ? docRecetteProbable(d) : null;
+    const bq = !dejaRec && d.cat === "vente" && st === "a_encaisser" ? banque.get(d.id) : null;
+    if(bq) meta.push(`<b style="color:var(--green)">payée selon l'extrait : ${bq.ops.map(o => "virement du " + fdate(o.d) + " " + euro(o.c/100)).join(", ")}</b>`);
+    if(dejaRec || (bq && (docResteC(d) == null || bq.total >= docResteC(d)))) [lib, cls] = ["Payée · à confirmer", "t-valide"];
     if(dejaRec) meta.push(`<b style="color:var(--green)">déjà dans la Caisse : recette du ${fdate(dejaRec.income_date)} « ${esc(dejaRec.object || "")} »${dejaRec.source ? " (" + esc(dejaRec.source) + ")" : ""}</b>`);
     if(d.cat === "vente" && st === "a_encaisser"){
       actions.push(dejaRec ? `<button class="btn ok sm" data-docrel="${esc(d.id)}">Relier à la recette</button>`
-                           : `<button class="btn ok sm" data-docenc="${esc(d.id)}">Encaisser</button>`);
+                 : bq ? `<button class="btn ok sm" data-docencb="${esc(d.id)}">${docResteC(d) != null && bq.total < docResteC(d) ? "Enregistrer le versement" : "Encaisser"}</button>`
+                      : `<button class="btn ok sm" data-docenc="${esc(d.id)}">Encaisser</button>`);
       if(d.client_email) actions.push(`<button class="btn ghost sm" data-docrap="${esc(d.id)}">Rappel au client</button>`);
     }
     if(d.cat === "vente" && (st === "payee" || docPartielle(d))) actions.push(`<button class="btn ghost sm" data-docannenc="${esc(d.id)}">Annuler l'encaissement</button>`);
@@ -6028,7 +6040,23 @@ function renderDocs(){
         <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;align-items:center">${actions.join("")}</div></div>
       <div><span class="tag ${cls}">${esc(lib)}</span></div>
       <div class="amt">${d.montant != null ? euro(d.montant) : "—"}</div><div class="chev"></div></div>`;
-  }).join("") : emptyHTML("Aucun document", all.length ? "Rien ne correspond à ces filtres." : "Déposez ci-dessus vos factures émises et vos bons de commande.");
+  };
+  const vide = emptyHTML("Aucun document", all.length ? "Rien ne correspond à ces filtres."
+    : state.docMode === "commande" ? "Déposez ci-dessus vos bons de commande." : "Déposez ci-dessus vos factures émises.");
+  if(state.docMode !== "vente"){ $("#docList").innerHTML = liste.length ? liste.map(ligneDoc).join("") : vide; return; }
+  // factures émises : deux groupes — déjà encaissées (ou payées selon la Caisse / les extraits) et pas encore encaissées
+  const payeeTotal = d => { const r = banque.get(d.id); return r && (docResteC(d) == null || r.total >= docResteC(d)); };
+  const encaissee = d => docStatut(d) === "payee" || !!docRecetteProbable(d) || payeeTotal(d);
+  const pasEnc = liste.filter(d => !encaissee(d))
+    .sort((a,b) => (docEnRetard(b) - docEnRetard(a)) || String(a.echeance || "9999").localeCompare(String(b.echeance || "9999")) || String(a.date).localeCompare(String(b.date)));
+  const dejaEnc = liste.filter(encaissee);
+  const sommeReste = a => euro(a.reduce((s,d) => s + (docResteC(d) ?? 0), 0) / 100);
+  const titreG = (t, n, aide, coul) => `<div style="padding:12px 16px;background:var(--bg2, rgba(127,127,127,.08));border-top:1px solid var(--line, #ddd);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+    <b style="color:${coul}">${t} (${n})</b><span class="hint">${aide}</span></div>`;
+  const aRelier = dejaEnc.filter(d => docStatut(d) !== "payee").length;
+  $("#docList").innerHTML = !liste.length ? vide
+    : (pasEnc.length ? titreG("Pas encore encaissées", pasEnc.length, sommeReste(pasEnc) + " à recevoir", "var(--red)") + pasEnc.map(ligneDoc).join("") : "")
+    + (dejaEnc.length ? titreG("Déjà encaissées", dejaEnc.length, aRelier ? aRelier + " paiement(s) trouvé(s) à confirmer d'un clic" : "", "var(--green)") + dejaEnc.map(ligneDoc).join("") : "");
 }
 ["#docFiltre", "#docEtat", "#docEx"].forEach(s => { if($(s)) $(s).onchange = renderDocs; });
 $("#docSearch").oninput = renderDocs;
@@ -6296,13 +6324,17 @@ $("#docList").addEventListener("click", async e => {
     return;
   }
   const b = e.target.closest("button"); if(!b) return;
-  const id = b.dataset.docedit || b.dataset.docenc || b.dataset.docrel || b.dataset.docrap || b.dataset.docannenc
+  const id = b.dataset.docedit || b.dataset.docenc || b.dataset.docencb || b.dataset.docrel || b.dataset.docrap || b.dataset.docannenc
           || b.dataset.doclier || b.dataset.docdelier || b.dataset.docdel;
   const d = id && (state.documents||[]).find(x => x.id === id); if(!d) return;
   if(b.dataset.docedit) return editerDoc(d);
   b.disabled = true;
   try{
     if(b.dataset.docenc) await docEncaisser(d);
+    else if(b.dataset.docencb){
+      const r = state.docBanque && state.docBanque.get(d.id);
+      if(r) await docEncaisser(d, docOpsVersPaiement(r)); else await docEncaisser(d);
+    }
     else if(b.dataset.docrel){
       const rec = docRecetteProbable(d);
       if(rec) await docRelierRecettes(d, [{ date: rec.income_date, montant: Number(rec.amount), ref: null, cle: null, payeur: rec.source || null, exist: rec }]);

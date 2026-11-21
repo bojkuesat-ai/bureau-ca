@@ -98,6 +98,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - **Factures émises (21/11)** — onglet **« Factures émises »** (rubrique Demandes, à côté de « Factures à échéance » ; même vue que Documents en mode `factem`, l'onglet Documents ne garde que les bons de commande ; pastille = factures en retard) :
   - « Ajouter plusieurs factures à la fois » : plusieurs PDF d'un coup, lecture auto (n°, client, TVA client, date, échéance, montant, communication structurée) → tableau à vérifier → enregistrement (`docLireVente`, `docLotRender`).
   - « Paiements » : compare les virements reçus des extraits CSV ING déposés (ou d'un fichier) aux factures ouvertes : communication structurée (+++ ou ***), puis n° de facture, puis nom + montant, puis montant seul (« à vérifier »). Listes : payées, payées en partie, à vérifier, échéance dépassée, pas encore échues (`docRapprocher`, `docPayRender`).
+  - Liste en deux groupes : « Pas encore encaissées » (retards d'abord) et « Déjà encaissées » (encaissées + payées trouvées dans la Caisse ou les extraits, tag « Payée · à confirmer », bouton « Relier à la recette » / « Encaisser »). Les extraits CSV déposés sont lus automatiquement à l'ouverture de l'onglet.
   - Encaissement en plusieurs fois : colonnes `caisse_documents.communication`, `montant_recu`, `paiements` (SQL 2026-11-21). La recette porte « [mouvement N] » ; une recette déjà encodée pour ce virement est reliée, pas doublée.
 
 - Décision en une étape côté serveur (`deciderServeur`), code de vérification sur les décisions du trésorier.
