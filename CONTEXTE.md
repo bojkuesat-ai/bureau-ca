@@ -163,3 +163,4 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 ## Dossier de contrôle complet (21/11/2026)
 - PDF + ZIP : remboursements, paiements directs, dépenses **et recettes** (REC-xxx, avec la facture émise liée), chacune avec toutes ses pièces (factures, preuves de paiement…). Totaux séparés sorties / entrées.
 - ZIP en plus : `Factures-emises/`, `Bons-de-commande/`, `Factures-a-echeance/` (+ `factures-a-echeance.csv`), `Extraits-de-compte/` (extraits déposés couvrant la période), `recapitulatif.csv`, `documents.csv`, `dossier-de-controle.pdf`.
+- Extraits : chaque CSV déposé a des boutons **Excel** et **PDF** (fabriqués dans le navigateur depuis le CSV ING : `exOperations`, `exVersXlsx`, `exVersPdf`). Dans le ZIP, `Extraits-de-compte/` contient le CSV + son .xlsx + son .pdf.

@@ -5360,7 +5360,8 @@ async function renderExtraits(){
       <div class="date mono" style="font-size:13px">${esc(fdate(String(f.created_at||"").slice(0,10)))}</div>
       <div><div class="obj">${esc(f.name)}</div></div>
       <div>${esc(poidsLisible(Number(f.metadata?.size || 0)))}</div>
-      <div class="amt"><button class="btn ghost sm" data-exopen="${esc(f.name)}">Ouvrir</button></div>
+      <div class="amt" style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">${/\.csv$/i.test(f.name)
+        ? `<button class="btn ghost sm" data-exconv="xlsx" data-exnom="${esc(f.name)}">Excel</button><button class="btn ghost sm" data-exconv="pdf" data-exnom="${esc(f.name)}">PDF</button>` : ""}<button class="btn ghost sm" data-exopen="${esc(f.name)}">Ouvrir</button></div>
       <div class="chev"><button class="btn no sm" data-exdel="${esc(f.name)}" title="Supprimer">×</button></div>
     </div>`).join("")
     : emptyHTML("Aucun extrait", q ? "Aucun fichier ne correspond à cette recherche."
@@ -5555,6 +5556,8 @@ if($("#ex_send")) $("#ex_send").onclick = async () => {
 };
 
 if($("#exList")) $("#exList").addEventListener("click", async e => {
+  const conv = e.target.closest("[data-exconv]");
+  if(conv) return exTelechargerConverti(conv.dataset.exnom, conv.dataset.exconv, conv);
   const ouvrir = e.target.closest("[data-exopen]");
   if(ouvrir){
     const { data, error } = await sb.storage.from("justificatifs")
@@ -5571,6 +5574,120 @@ if($("#exList")) $("#exList").addEventListener("click", async e => {
   if(error) return toast("Suppression impossible : " + error.message);
   await renderExtraits(); toast("Extrait supprimé.");
 });
+
+
+/* ---------- extraits CSV → Excel et PDF (21/11/2026) ----------
+   Fabriqués dans le navigateur à partir du CSV ING déposé ; rien n'est envoyé ailleurs.
+   Servent au téléchargement (boutons Excel / PDF) et au ZIP du dossier de contrôle. */
+function exOperations(texte){
+  const lignes = lireCSV(texte); if(lignes.length < 2) return { ops: [], compte: "", nom: "" };
+  const tete = lignes[0], col = colonnesCSV(tete);
+  const iCompte = tete.findIndex(t => /^numero de compte$/.test(slug(t).replace(/[^a-z0-9]/g, " ").trim()));
+  const iNom = tete.findIndex(t => /^nom du compte$/.test(slug(t).replace(/[^a-z0-9]/g, " ").trim()));
+  const iIbanCp = tete.findIndex(t => /contrepartie/.test(slug(t)));
+  const ops = [];
+  lignes.slice(1).forEach(l => {
+    const g = k => col[k] === undefined ? "" : String(l[col[k]] ?? "").trim();
+    const d = dateCSV(g("date")), m = signeCSV(g("montant"));
+    if(!d || !Number.isFinite(m)) return;
+    const lu = lireLibelleING(g("objet"));
+    const det = (l.find((v, i) => i !== col.objet && /^Virement|^Paiement|^Domiciliation|^Retrait/i.test(String(v || ""))) || "");
+    const comm = (/Communication\s*:\s*(.+?)(?:\s+Info personnelle|$)/i.exec(String(det || g("objet"))) || [])[1] || lu.objet || g("note") || "";
+    ops.push({ date: d, ref: g("ref"), montant: Math.round(m * 100) / 100,
+      tiers: (lu.benef || "").trim(), iban: iIbanCp >= 0 ? String(l[iIbanCp] || "").trim() : "",
+      comm: String(comm).replace(/\s+/g, " ").trim(), libelle: g("objet").replace(/\s+/g, " ").trim() });
+  });
+  ops.sort((a, b) => a.date.localeCompare(b.date) || String(a.ref).localeCompare(String(b.ref), "fr", { numeric: true }));
+  const l1 = lignes[1] || [];
+  return { ops, compte: iCompte >= 0 ? String(l1[iCompte] || "") : "", nom: iNom >= 0 ? String(l1[iNom] || "") : "" };
+}
+const exTitre = nom => String(nom || "extrait").replace(/^\d{10,}-\d+-/, "").replace(/\.csv$/i, "");
+
+async function exVersXlsx(nom, texte){
+  const XLSX = await import("./lib/xlsx-mini.js");
+  const { ops, compte, nom: titulaire } = exOperations(texte);
+  const ent = ops.filter(o => o.montant > 0).reduce((s, o) => s + o.montant, 0);
+  const sor = ops.filter(o => o.montant < 0).reduce((s, o) => s + o.montant, 0);
+  const r = n => Math.round(n * 100) / 100;
+  const ws = XLSX.utils.aoa_to_sheet([
+    ["Extrait de compte" + (titulaire ? " — " + titulaire : "")],
+    [(compte ? "Compte " + compte + " · " : "") + (ops.length ? "du " + fdate(ops[0].date) + " au " + fdate(ops[ops.length - 1].date) : "") + " · " + ops.length + " opération(s)"],
+    [],
+    ["Date", "N° mouvement", "Contrepartie", "Compte contrepartie", "Communication", "Montant (€)", "Libellé complet"],
+    ...ops.map(o => [o.date, o.ref, o.tiers, o.iban, o.comm, o.montant, o.libelle]),
+    [],
+    ["", "", "", "", "Total des entrées", r(ent), ""],
+    ["", "", "", "", "Total des sorties", r(sor), ""],
+    ["", "", "", "", "Mouvement net", r(ent + sor), ""]
+  ]);
+  ws["!cols"] = [{wch:12},{wch:13},{wch:30},{wch:22},{wch:46},{wch:13},{wch:80}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Extrait");
+  return new Uint8Array(await XLSX.write(wb).arrayBuffer());
+}
+
+async function exVersPdf(nom, texte){
+  const { PDFDocument, StandardFonts, rgb } = await import("./lib/pdf-lib-1.17.1.js");
+  const { ops, compte, nom: titulaire } = exOperations(texte);
+  const pdf = await PDFDocument.create();
+  const F = await pdf.embedFont(StandardFonts.Helvetica), FB = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const W = 841.89, H = 595.28, M = 36, GRIS = rgb(0.42, 0.42, 0.42), NOIR = rgb(0.1, 0.1, 0.1),
+        VERT = rgb(0.1, 0.45, 0.2), ROUGE = rgb(0.7, 0.15, 0.15), TRAIT = rgb(0.8, 0.8, 0.8);
+  const COL = { date: M, ref: M + 58, tiers: M + 100, comm: M + 270, fin: W - M };
+  const coupe = (t, f, s, max) => { let v = dosTxt(t); if(f.widthOfTextAtSize(v, s) <= max) return v;
+    while(v.length > 1 && f.widthOfTextAtSize(v + "…", s) > max) v = v.slice(0, -1); return v + "."; };
+  let page, y;
+  const ent = ops.filter(o => o.montant > 0).reduce((s, o) => s + o.montant, 0);
+  const sor = ops.filter(o => o.montant < 0).reduce((s, o) => s + o.montant, 0);
+  const tete = () => {
+    page = pdf.addPage([W, H]); y = H - M;
+    page.drawText(dosTxt("Extrait de compte" + (titulaire ? " — " + titulaire : "")), { x: M, y: y - 14, size: 14, font: FB, color: NOIR });
+    y -= 30;
+    page.drawText(dosTxt((compte ? "Compte " + compte + "   ·   " : "") + (ops.length ? "du " + fdate(ops[0].date) + " au " + fdate(ops[ops.length - 1].date) : "") + "   ·   " + ops.length + " opération(s)"),
+      { x: M, y: y - 9, size: 9, font: F, color: GRIS });
+    y -= 24;
+    [["Date", COL.date], ["N°", COL.ref], ["Contrepartie", COL.tiers], ["Communication", COL.comm]].forEach(([t, x]) =>
+      page.drawText(t, { x, y: y - 8, size: 8, font: FB, color: GRIS }));
+    page.drawText("Montant", { x: COL.fin - FB.widthOfTextAtSize("Montant", 8), y: y - 8, size: 8, font: FB, color: GRIS });
+    y -= 13; page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.6, color: TRAIT }); y -= 4;
+  };
+  tete();
+  for(const o of ops){
+    if(y - 14 < M + 20) tete();
+    const s = 8.2;
+    page.drawText(dosTxt(fdate(o.date)), { x: COL.date, y: y - 9, size: s, font: F, color: NOIR });
+    page.drawText(coupe(o.ref, F, s, 38), { x: COL.ref, y: y - 9, size: s, font: F, color: NOIR });
+    page.drawText(coupe(o.tiers || "—", F, s, 162), { x: COL.tiers, y: y - 9, size: s, font: F, color: NOIR });
+    page.drawText(coupe(o.comm || o.libelle, F, s, COL.fin - 80 - COL.comm), { x: COL.comm, y: y - 9, size: s, font: F, color: NOIR });
+    const mt = (o.montant > 0 ? "+" : "") + dosEur(o.montant);
+    page.drawText(dosTxt(mt), { x: COL.fin - F.widthOfTextAtSize(dosTxt(mt), s), y: y - 9, size: s, font: F, color: o.montant < 0 ? ROUGE : VERT });
+    y -= 13;
+  }
+  if(y - 60 < M) tete();
+  y -= 6; page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.6, color: TRAIT }); y -= 6;
+  [["Total des entrées", ent], ["Total des sorties", sor], ["Mouvement net", ent + sor]].forEach(([t, v]) => {
+    const txt = dosTxt(t + " : " + dosEur(v));
+    page.drawText(txt, { x: COL.fin - FB.widthOfTextAtSize(txt, 9.5), y: y - 10, size: 9.5, font: FB, color: NOIR }); y -= 15;
+  });
+  const pages = pdf.getPages();
+  pages.forEach((pg, i) => pg.drawText(dosTxt(exTitre(nom) + "   ·   page " + (i + 1) + " / " + pages.length),
+    { x: M, y: 18, size: 7, font: F, color: GRIS }));
+  return await pdf.save();
+}
+
+async function exTelechargerConverti(nomFichier, format, btn){
+  if(btn) btn.disabled = true;
+  try{
+    const { data, error } = await sb.storage.from("justificatifs").download(DOSSIER_EXTRAITS + "/" + nomFichier);
+    if(error || !data) throw new Error("lecture du fichier impossible");
+    const texte = await lireTexteCsv(data);
+    if(!exOperations(texte).ops.length) throw new Error("aucune opération reconnue dans ce CSV");
+    const base = exTitre(nomFichier);
+    if(format === "xlsx") dosTelecharger(new Blob([await exVersXlsx(nomFichier, texte)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), base + ".xlsx");
+    else dosTelecharger(new Blob([await exVersPdf(nomFichier, texte)], { type: "application/pdf" }), base + ".pdf");
+  }catch(err){ toast("Conversion impossible : " + (err.message || err)); }
+  finally{ if(btn) btn.disabled = false; }
+}
 
 /* ---------- configuration partagée (caisse_config.compta) ----------
    Relit la config juste avant d'écrire, pour ne pas écraser une modification faite ailleurs. */
@@ -15472,6 +15589,16 @@ async function dosZip(ecr, per, cache, pdfBytes, prog, docs, extra){
   for(const x of (extra.extraits || [])){
     const b = cache.get(x.path); if(!b) continue;
     zip.file("Extraits-de-compte/" + x.nom, b);
+    if(/\.csv$/i.test(x.nom)){
+      try{
+        const texte = await lireTexteCsv(new Blob([b]));
+        if(exOperations(texte).ops.length){
+          const base = exTitre(x.nom);
+          zip.file("Extraits-de-compte/" + base + ".xlsx", await exVersXlsx(x.nom, texte));
+          zip.file("Extraits-de-compte/" + base + ".pdf", await exVersPdf(x.nom, texte));
+        }
+      }catch(err){ console.error("conversion extrait", x.nom, err); }
+    }
   }
   zip.file("recapitulatif.csv", "\uFEFF" + lignes.map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n"));
   if(pdfBytes) zip.file("dossier-de-controle.pdf", pdfBytes);
