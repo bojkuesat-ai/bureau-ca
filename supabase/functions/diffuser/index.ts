@@ -14,6 +14,8 @@
      - cat          : choix de notifications de chacun (onglet Notifs), appliqués ici
                       (notif_preparer_srv : coupé = rien, résumé de 18 h = mis de côté).
      - tous         : document officiel, envoyé même aux désabonnés des annonces.
+     - desabo       : diffusion (onglet Mailing) : la marque {{DESABO}} du contenu est remplacée,
+                      pour chaque destinataire, par son lien personnel de désabonnement.
    Chaque mail passe par « send-email » avec le jeton de la personne : mêmes limites
    (500 destinataires / heure) et même journal (mail_envois) qu'avant.
    Réponse : { total, ok, err, desabonnes, masque, sansPiece, enCours } — jamais d'adresse,
@@ -30,6 +32,14 @@ const admin = createClient(SB_URL, SERVICE, { auth: { persistSession: false } })
 const ORIGINES = ["https://bojkuesat-ai.github.io", "https://bureauetuidant.xyz", "https://www.bureauetuidant.xyz"];
 const RE_EMAIL = /^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$/i;
 const MAX_DEST = 300;
+const APP = "https://bojkuesat-ai.github.io/bureau-ca/";
+async function lienDesabo(email: string): Promise<string> {
+  try {
+    const { data, error } = await admin.rpc("ca_jeton_desabo", { p_email: email });
+    if (error || !data) return "";
+    return APP + "?desabo=" + encodeURIComponent(email) + "&t=" + String(data);
+  } catch (_) { return ""; }
+}
 
 function corsPour(req: Request) {
   const o = req.headers.get("origin") ?? "";
@@ -94,7 +104,7 @@ Deno.serve(async (req) => {
   if (html.length > 300000) return json({ error: "Contenu trop long." }, 400);
   const from = b.from ? String(b.from).slice(0, 120) : "";
   const cat = b.cat ? String(b.cat).slice(0, 40) : "";
-  const urgent = b.urgent === true, tous = b.tous === true;
+  const urgent = b.urgent === true, tous = b.tous === true, avecDesabo = b.desabo === true;
   const pieces = Array.isArray(b.attachments) ? b.attachments.slice(0, 5) : null;
 
   let liste: string[];
@@ -119,7 +129,12 @@ Deno.serve(async (req) => {
     let avec = !!(pieces && pieces.length), okAvecPiece = 0;
     for (const to of dest) {
       let bon = false;
-      const base: any = { to, subject, html }; if (from) base.from = from;
+      let h = html;
+      if (avecDesabo) {
+        const u = await lienDesabo(to);
+        h = h.split("{{DESABO}}").join(u ? '<p style="color:#bbb;font-size:11px;margin-top:14px">Vous recevez ce message en tant que contact du Bureau étudiant. <a href="' + u + '" style="color:#999">Se désabonner</a>.</p>' : "");
+      }
+      const base: any = { to, subject, html: h }; if (from) base.from = from;
       if (avec) {
         try { const r = await fetch(`${SB_URL}/functions/v1/send-email`, { method: "POST", headers, body: JSON.stringify({ ...base, attachments: pieces }) }); bon = r.ok; } catch { bon = false; }
         if (bon) okAvecPiece++;

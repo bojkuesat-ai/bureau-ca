@@ -1236,8 +1236,24 @@ async function envoyerMailComposeCA({toList, ccList, bccList, objet, corpsTexte,
     +pieceHtml
     +signatureExpediteurCA()
     +blocNoReplyCA();
+  /* 21/11/2026 : envoyé par le serveur (fonction « diffuser »), par lots de 300, avec le lien de
+     désabonnement de chacun ajouté côté serveur ; fermer la page n'arrête plus l'envoi d'un lot.
+     Si le serveur ne répond pas, le reste part comme avant depuis le navigateur. */
+  let ok=0, err=0, i=0, k=0;
+  const totalTout=tous.length;
+  try{
+    for(; k<tous.length; k+=300){
+      const lot=tous.slice(k, k+300);
+      const j=await diffuserServeur({mode:"liste", dest:lot, subject:objet, html:corpsHtml+"{{DESABO}}</div>", desabo:true});
+      ok+=j.ok||0; err+=j.err||0;
+      i=Math.min(k+300, tous.length); try{ if(typeof onProgress==="function") onProgress(i, tous.length); }catch(e){}
+    }
+    return {ok, err, total:tous.length, desabonnes:nbDesab};
+  }catch(e){
+    if(e && e.refus) return {ok, err:err+(tous.length-k), total:tous.length, desabonnes:nbDesab};
+    tous=tous.slice(k);
+  }
   const headers=await caSendHeaders();
-  let ok=0, err=0, i=0;
   const base=(function(){ try{ return caAppUrl(); }catch(e){ return ""; } })();
   for(const dest of tous){
     const url = base ? await lienDesabo(dest) : "";
@@ -1248,10 +1264,10 @@ async function envoyerMailComposeCA({toList, ccList, bccList, objet, corpsTexte,
         body:JSON.stringify({to:dest, subject:objet, html:html})});
       if(r && r.ok===false){ err++; } else { ok++; }
     }catch(e){ err++; }
-    i++; try{ if(typeof onProgress==="function") onProgress(i, tous.length); }catch(e){}
+    i++; try{ if(typeof onProgress==="function") onProgress(i, totalTout); }catch(e){}
     await new Promise(r=>setTimeout(r,150));
   }
-  return {ok, err, total:tous.length, desabonnes:nbDesab};
+  return {ok, err, total:totalTout, desabonnes:nbDesab};
 }
 /* ---- Extraction de toutes les adresses e-mail d'un fichier Excel / CSV ---- */
 const RE_EMAIL=/[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/gi;
