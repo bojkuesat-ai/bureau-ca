@@ -179,3 +179,8 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Rapprochement réel (01/07–19/11) : toutes les opérations bancaires ont leur écriture ; les deux virements de l'ancien CA (31/08 : 208,59 € ; 17/09 : 187,50 €) correspondent à la somme de plusieurs recettes « Remboursement du CA sortant ».
 - `taches_surveiller` : les délais d'attente de la base (« Timeout of 5000 ms ») ne comptent plus ; alerte à partir de 5 vraies erreurs / heure.
 - Rapprochement banque ↔ Caisse (et fiches du ZIP) : second passage `groupePourOperation` / `sousSomme` — un virement = plusieurs écritures (même sens, ±7 j, total exact).
+
+## Mode clair / sombre (21/11/2026)
+- Espace CA et Caisse : bouton `[data-theme-toggle]` (barre de l'utilisateur dans le CA, en-tête de la Caisse). Sombre par défaut.
+- Choix mémorisé sur l'appareil (`localStorage["be-theme"] = "clair" | "sombre"`), commun aux deux apps ; appliqué dans <head> avant l'affichage (pas de flash).
+- Thème clair = surcharge des variables CSS sous `html[data-theme="clair"]` + quelques corrections ciblées. Les fenêtres de sécurité (MFA) restent sombres, et les mails/PDF ne changent pas.

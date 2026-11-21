@@ -10,6 +10,28 @@
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <title>Caisse — Demandes de remboursement</title>
 <meta name="theme-color" content="#141026">
+<script>
+/* 21/11/2026 — Mode clair / mode sombre (sombre par défaut). Choix mémorisé sur l'appareil
+   (localStorage « be-theme »), commun à l'espace CA et à la Caisse (même site). */
+(function(){
+  var d=document.documentElement;
+  function couleurBarre(){ var m=document.querySelector('meta[name="theme-color"]'); if(!m) return;
+    if(!m.dataset.sombre) m.dataset.sombre=m.getAttribute("content")||"";
+    m.setAttribute("content", d.getAttribute("data-theme")==="clair" ? "#f6f4fb" : m.dataset.sombre); }
+  try{ if(localStorage.getItem("be-theme")==="clair") d.setAttribute("data-theme","clair"); }catch(e){}
+  couleurBarre();
+  window.beBasculerTheme=function(){
+    var clair=d.getAttribute("data-theme")!=="clair";
+    if(clair) d.setAttribute("data-theme","clair"); else d.removeAttribute("data-theme");
+    try{ localStorage.setItem("be-theme", clair?"clair":"sombre"); }catch(e){}
+    couleurBarre();
+  };
+  document.addEventListener("click", function(e){
+    var b=e.target && e.target.closest && e.target.closest("[data-theme-toggle]");
+    if(b){ e.preventDefault(); e.stopPropagation(); window.beBasculerTheme(); }
+  }, true);
+})();
+</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -621,6 +643,25 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
   .grpbar button{flex:1}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---------- mode clair (21/11/2026) : html[data-theme="clair"] ; le sombre reste le défaut ---------- */
+[data-theme-toggle]::after{content:"☀️ Mode clair"}
+html[data-theme="clair"] [data-theme-toggle]::after{content:"🌙 Mode sombre"}
+html[data-theme="clair"]{
+  color-scheme:light;
+  --bg:#f6f4fb; --bg2:#eeeaf7; --surface:#ffffff; --surface2:#f3f0fa;
+  --line:#dcd6ec; --gold:#a86f0c; --gold-soft:#8a5a08; --gold-dim:#c99a3c;
+  --text:#1d1838; --muted:#5a5380; --muted2:#7d779c;
+  --green:#18794e; --green-bg:#def3e8;
+  --red:#c0392f; --red-bg:#fde7e5;
+  --amber:#a8650a; --amber-bg:#fcf0d9;
+}
+html[data-theme="clair"] body{background:linear-gradient(180deg,#efeaf9 0%,var(--bg) 420px) fixed}
+html[data-theme="clair"] ::selection{background:rgba(168,111,12,.2);color:var(--text)}
+html[data-theme="clair"] input[type=date],html[data-theme="clair"] input[type=time]{color-scheme:light}
+html[data-theme="clair"] .btn.ok{color:#fff;background:linear-gradient(150deg,#1f9a64,#18794e)}
+html[data-theme="clair"] .t-paye{color:#fff}
+html[data-theme="clair"] .roleswitch button[aria-pressed="true"]{background:#fff;color:var(--text);box-shadow:inset 0 0 0 1px rgba(168,111,12,.35)}
 </style>
 </head>
 <body>
@@ -754,6 +795,7 @@ input.fe-auto,select.fe-auto{border-color:var(--gold-dim);background:rgba(232,17
     <button id="tabVS" aria-pressed="false">Vérifier une signature</button>
   </div>
   <div class="who"><b id="whoName">—</b><span id="whoRole">—</span><button id="btnMsg" class="btn ghost sm" style="display:none;margin-left:auto">✉️ Messagerie<span class="pill" id="btnMsgPill" hidden>0</span></button></div>
+  <button class="btn ghost sm" data-theme-toggle title="Passer en mode clair ou sombre (mémorisé sur cet appareil)"></button>
   <button class="btn ghost sm" id="changePass">Mot de passe</button>
   <button class="btn ghost sm" id="signOut">Se déconnecter</button>
 </header>

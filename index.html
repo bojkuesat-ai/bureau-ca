@@ -7,6 +7,28 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.3/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; media-src 'self' data: blob: https://mlgzdfyqjhvyubrywuim.supabase.co; connect-src 'self' https://mlgzdfyqjhvyubrywuim.supabase.co wss://mlgzdfyqjhvyubrywuim.supabase.co; frame-src 'self' blob: https://bojkuesat-ai.github.io; worker-src 'self' blob:; manifest-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#000000">
+<script>
+/* 21/11/2026 — Mode clair / mode sombre (sombre par défaut). Choix mémorisé sur l'appareil
+   (localStorage « be-theme »), commun à l'espace CA et à la Caisse (même site). */
+(function(){
+  var d=document.documentElement;
+  function couleurBarre(){ var m=document.querySelector('meta[name="theme-color"]'); if(!m) return;
+    if(!m.dataset.sombre) m.dataset.sombre=m.getAttribute("content")||"";
+    m.setAttribute("content", d.getAttribute("data-theme")==="clair" ? "#f6f4fb" : m.dataset.sombre); }
+  try{ if(localStorage.getItem("be-theme")==="clair") d.setAttribute("data-theme","clair"); }catch(e){}
+  couleurBarre();
+  window.beBasculerTheme=function(){
+    var clair=d.getAttribute("data-theme")!=="clair";
+    if(clair) d.setAttribute("data-theme","clair"); else d.removeAttribute("data-theme");
+    try{ localStorage.setItem("be-theme", clair?"clair":"sombre"); }catch(e){}
+    couleurBarre();
+  };
+  document.addEventListener("click", function(e){
+    var b=e.target && e.target.closest && e.target.closest("[data-theme-toggle]");
+    if(b){ e.preventDefault(); e.stopPropagation(); window.beBasculerTheme(); }
+  }, true);
+})();
+</script>
 <title>Bureau étudiant — CA</title>
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://mlgzdfyqjhvyubrywuim.supabase.co" crossorigin>
@@ -379,6 +401,24 @@ select.f{width:100%}
 .ces-fl{color:var(--slate)}
 .ces-evt{font-size:12.5px;color:var(--ink-soft);text-align:center;padding:4px 8px;border-top:1px dashed var(--line);margin:4px 0}
 .ces-decision{border-color:var(--stamp)}
+
+/* ---------- mode clair (21/11/2026) : html[data-theme="clair"] ; le sombre reste le défaut ---------- */
+[data-theme-toggle]::after{content:"☀️ Clair"}
+html[data-theme="clair"] [data-theme-toggle]::after{content:"🌙 Sombre"}
+html[data-theme="clair"]{
+  color-scheme:light;
+  --ink:#1d1838; --ink-soft:#544d78; --paper:#f6f4fb; --card:#ffffff; --line:#dcd6ec; --gold-dim:#c99a3c;
+  --surface2:#f1edf9; --bg2:#ebe6f6; --line-2:#e6e1f2; --stamp:#a86f0c; --stamp-soft:#8a5a08;
+  --red:#c0392f; --slate:#6a6390; --amber:#a8650a; --green:#18794e;
+}
+html[data-theme="clair"] ::selection{background:rgba(168,111,12,.2);color:var(--ink)}
+html[data-theme="clair"] input[type=date],html[data-theme="clair"] input[type=time]{color-scheme:light}
+html[data-theme="clair"] .choice.caisse .ic{background:#def3e8}
+html[data-theme="clair"] .choice.ca .ic{background:#fcf0d9}
+html[data-theme="clair"] .choice:hover{box-shadow:0 12px 26px rgba(60,40,120,.12)}
+html[data-theme="clair"] .home-admin:hover{background:#fff}
+html[data-theme="clair"] .tab[data-tab="procuration"]{color:#9a6a00!important;border-color:#d9a92a!important}
+html[data-theme="clair"] .tab[data-tab="soutien"]{color:#6b3fc4!important}
 </style>
 <!-- Versions figees et empreintes verifiees. L'URL « @2 » suivait la branche majeure :
      une version compromise publiee demain se serait executee chez tout le monde.
@@ -3245,6 +3285,7 @@ function viewDash(){
       ${estCoopte()?`<span class="badge-coopte">Coopté·e</span>`:`<button class="logout" data-action="set-tab" data-tab="search" title="Recherche">🔍</button>
       <button class="logout" data-action="set-tab" data-tab="notifs" title="À traiter">🔔${notifTot?" "+notifTot:""}</button>
       <a class="logout" href="caisse/" title="Ouvrir la Caisse (même compte, sans se reconnecter)" style="text-decoration:none">💶 Caisse</a>`}
+      <button class="logout" data-theme-toggle title="Passer en mode clair ou sombre (mémorisé sur cet appareil)"></button>
       <button class="logout" data-action="logout">Se déconnecter</button></div>
     <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():id==="soutien"?soutNonLus("ca"):id==="soutien_etu"?soutNonLus("etu"):id==="soutien_ces"?cesNonLus():id==="salle"?salleBadge():id==="pvsign"?pvsBadge():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:id==="soutien"?` style="border:2px solid #b48cf2;border-bottom:none;color:#d4bbff;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
   </div></header>
