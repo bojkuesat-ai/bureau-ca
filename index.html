@@ -4093,7 +4093,7 @@ function blocSignaturePV(m){
       btn.push(`<button class="btn sm" data-action="reu-pv-signer" data-id="${m.id}" data-sig="${esc(a.id)}">✍ Signer le PV et l'envoyer ${vice?"au vice-président":"à la présidente"} (${esc(((a.prenom||"")+" "+(a.nom||"")).trim())})</button>`); });
     else btn.push(`<p class="du" style="color:var(--red);margin:0">Aucune présidente ni aucun vice-président actif n'est inscrit.</p>`);
   }
-  if(secr && e && e.statut==="attente") btn.push(`<button class="btn ghost sm" data-action="reu-pv-retirer" data-id="${m.id}" data-pv="${esc(e.id)}">Retirer de la signature</button>`);
+  if(secr && e && e.statut==="attente") btn.push(`<button class="btn ghost sm" data-action="reu-pv-retirer" data-id="${m.id}" data-pv="${esc(e.id)}" style="border-color:var(--red);color:var(--red)">↩ Annuler l'envoi (erreur)</button><span class="du" style="flex-basis:100%">Possible tant que le PV n'est pas signé par le signataire.</span>`);
   if(e && e.statut==="valide") btn.push(secr&&e.signe?`<button class="chip" data-action="pvs-final" data-id="${esc(e.id)}">✅ PV signé</button>`:`<span class="du">Le PV signé est rangé dans Documents (catégorie « PV &amp; CR »).</span>`);
   return `<div class="grp-h" style="margin-top:26px"><h2 class="serif">Procès-verbal</h2><span class="l"></span></div>
     <div class="card2">${etat}
@@ -6127,10 +6127,21 @@ document.addEventListener("click", async e=>{
       try{ await navigator.clipboard.writeText(l); modaleInfo("Lien copié :\n"+l+"\n\nIl ouvre cette réunion dans l'app CA (membres du CA connectés).","Lien de la réunion"); }
       catch(_){ modaleInfo("Lien de la réunion :\n"+l,"Lien de la réunion"); } break; }
     case "reu-pv-retirer": { if(!estSecretaire()||!sb) break;
-      if(!(await modaleConfirm("Retirer le PV de la signature ?\n\nLa réunion redevient modifiable. Vous pourrez corriger le PV puis le signer et le renvoyer.","Retirer de la signature"))) break;
+      const motif=await modaleMotif("Annuler l'envoi du PV à la signature ?\n\nLa réunion redevient modifiable : vous pourrez corriger le PV puis le signer et le renvoyer. Le signataire sera prévenu par e-mail.","Annuler l'envoi",{placeholder:"Raison (facultatif) : mauvais fichier, erreur de date…",bouton:"Annuler l'envoi"});
+      if(motif===null) break;
+      const mm=(S.reunions||[]).find(x=>x.id===el.dataset.id), et=mm?reuPvEtat(mm):null;
+      let sigId=null; try{ const l=(pvsEtat().liste||[]).find(x=>String(x.id)===String(el.dataset.pv)); sigId=l&&l.signataire_id; }catch(_){ }
+      if(!sigId&&et){ const n=String(et.signataire_nom||"").trim(); const c=(pvsSignataires()||[]).find(x=>((x.prenom||"")+" "+(x.nom||"")).trim()===n); sigId=c&&c.id; }
       const r=await sb.rpc("pvs_retirer",{p_id:el.dataset.pv}); if(r.error){ modaleInfo("Impossible : "+r.error.message,"Erreur"); break; }
-      await loadReuPv(); try{ await loadPvSign(); }catch(_){ } try{ logAct("PV retiré de la signature"); }catch(_){ } render();
-      modaleInfo("✓ Le PV est retiré de la signature. La réunion est de nouveau modifiable.","PV"); break; }
+      await loadReuPv(); try{ await loadPvSign(); }catch(_){ } try{ logAct("PV retiré de la signature"+(motif?" — "+motif:"")); }catch(_){ }
+      let ok=false; const dest=sigId?pvsEmail(sigId):"";
+      if(dest){ const titre=(mm&&mm.titre)||"la réunion";
+        const corps=`<h2 style="margin:0 0 10px">PV retiré de la signature</h2>
+          <p><b>${caMailEsc(S.session.nom||"La secrétaire")}</b> a retiré le PV <b>${caMailEsc(titre)}</b> de votre liste à signer.${motif?` Raison : ${caMailEsc(motif)}`:""}</p>
+          <p>Il n'y a rien à faire pour l'instant : un PV corrigé vous sera envoyé et vous recevrez un nouveau mail.</p>`;
+        ok=await pvsMail(dest,"PV retiré de la signature — "+titre,corps,null); }
+      render();
+      modaleInfo("✓ L'envoi est annulé. La réunion est de nouveau modifiable."+(ok?" Le signataire a été prévenu par e-mail.":" ⚠ Le mail n'est pas parti : prévenez le signataire vous-même."),"PV"); break; }
     case "reu-pv-signer": { await reuPvSigner(el.dataset.id, el.dataset.sig); break; }
     case "pt-tache": { if(!estSecretaire()||!sb) break;
       const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
