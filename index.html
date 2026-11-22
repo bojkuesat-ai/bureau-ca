@@ -2660,7 +2660,7 @@ function tabPvSign(){
   const intro=`<div class="card2" style="border-left:4px solid #f5c542">
     <h3 class="serif" style="margin-top:0">✍ PV à signer</h3>
     <p class="du" style="margin:0">La secrétaire rédige le PV et le signe (article 16.5 des statuts) ; la présidente ou le vice-président le signe à son tour (article 17 : deux administrateur.trice.s). Le PV signé est rangé automatiquement dans <b>Documents</b>.</p>
-    ${secr&&!P.form?`<div class="row-btn" style="margin-top:12px"><button class="btn" data-action="pvs-nouveau">+ Faire signer un PV</button></div>`:""}</div>`;
+    ${secr&&!P.form?`<p class="du" style="margin:10px 0 0">📋 Pour envoyer un PV en signature : ouvrez la réunion dans <b>Réunions &amp; PV</b>, puis la partie « Procès-verbal » (PV rédigé dans l'app ou PDF fait dans Word).</p>`:""}</div>`;
   const err=P.err?`<div class="card2"><p class="du" style="color:var(--red);margin:0">${esc(P.err)}</p></div>`:"";
   const liste=P.liste.length?P.liste.map(pvsCarte).join(""):`<div class="empty">Aucun PV pour l'instant.</div>`;
   return intro+(secr&&P.form?pvsFormHTML():"")+err+`<div class="grp-h" style="margin-top:22px"><h2 class="serif">PV</h2><span class="c">${P.liste.length}</span><span class="l"></span></div>`+liste;
@@ -2678,7 +2678,10 @@ function pvsCarte(p){
   }
   if(p.statut==="valide" && p.pdf_path) act.push(`<button class="chip" data-action="pvs-final" data-id="${p.id}">✅ PV signé</button>`);
   if(p.statut==="valide" && !p.pdf_path && (secr || p.signataire_id===me)) act.push(`<button class="btn sm" data-action="pvs-finaliser" data-id="${p.id}">Terminer le PV signé</button>`);
-  if(p.statut==="refuse" && secr) act.push(`<button class="btn sm" data-action="pvs-corriger" data-id="${p.id}">Corriger et renvoyer</button>`);
+  if(p.statut==="refuse" && secr){
+    const reu=p.reunion_id?(S.reunions||[]).find(x=>String(x.id)===String(p.reunion_id)):null;
+    act.push(reu?`<button class="btn sm" data-action="pvs-ouvrir-reu" data-reu="${esc(String(reu.id))}">Corriger dans la réunion</button>`
+                :`<button class="btn sm" data-action="pvs-corriger" data-id="${p.id}">Corriger et renvoyer</button>`); }
   return `<div class="card2" style="margin-bottom:12px">
     <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
       <div style="flex:1;min-width:220px"><div class="du" style="margin:0">${esc(pvsRef(p))} · réunion : ${esc(pvsReunionLib(p))}</div>
@@ -3124,6 +3127,7 @@ document.addEventListener("click", async e=>{
     switch(a){
       case "pvs-nouveau": P.form={dm:"electronique"}; render(); break;
       case "pvs-annuler": P.form=null; render(); break;
+      case "pvs-ouvrir-reu": S.tab="reunions"; S.reuUI={sel:el.dataset.reu}; render(); try{ await loadReuPv(); }catch(_){ } render(); window.scrollTo({top:0}); break;
       case "pvs-corriger": if(!p) break;
         P.form={id:p.id, titre:p.titre, reu:p.reunion_id||"", dreu:p.date_reunion||"", sig:p.signataire_id, dm:p.date_mode, dman:p.date_manuelle||""};
         render(); window.scrollTo({top:0,behavior:"smooth"});
@@ -4184,7 +4188,15 @@ function blocSignaturePV(m){
         : ligne(false,`En attente de ${role(e.signataire_fonction)} — <b>${esc(e.signataire_nom||"")}</b>`));
   }
   const btn=[];
+  let depot="";
   if(secr && (!e || e.statut==="refuse")){
+    const f=(S.reuPvFichier||{})[String(m.id)];
+    depot=`<div style="margin-top:12px;border:1px dashed var(--line);border-radius:10px;padding:10px 12px">
+      <p style="margin:0 0 4px;font-size:13.5px;font-weight:600">PV final</p>
+      ${f?`<p style="margin:0;font-size:13.5px">📎 <b>${esc(f.name)}</b> — c'est ce PDF qui sera envoyé en signature. <button class="link" data-action="reu-pv-fichier-retirer" data-id="${m.id}">Retirer</button></p>`
+        :`<p class="du" style="margin:0 0 6px">Vous avez terminé le PV dans Word ? Enregistrez-le en PDF et déposez-le ici. Sinon, c'est le PV rédigé dans l'app qui est envoyé.</p>
+      <input class="f" type="file" accept="application/pdf,.pdf" data-reu-pv-fichier="${m.id}" style="margin:0">`}
+      ${procurationsDuPV(m).length?`<p class="du" style="margin:6px 0 0">Les procurations signées seront ajoutées en annexe automatiquement.</p>`:""}</div>`;
     const sigs=pvsSignataires();
     if(sigs.length) sigs.forEach(a=>{ const vice=pvsFonctionDe(a.fonction)==="vice";
       btn.push(`<button class="btn sm" data-action="reu-pv-signer" data-id="${m.id}" data-sig="${esc(a.id)}">✍ Signer le PV et l'envoyer ${vice?"au vice-président":"à la présidente"} (${esc(((a.prenom||"")+" "+(a.nom||"")).trim())})</button>`); });
@@ -4195,8 +4207,19 @@ function blocSignaturePV(m){
   return `<div class="grp-h" style="margin-top:26px"><h2 class="serif">Procès-verbal</h2><span class="l"></span></div>
     <div class="card2">${etat}
       <p class="du" style="margin:8px 0 0">${reuVerrou(m)?"🔒 La réunion est verrouillée pendant la signature et une fois le PV signé.":"Tant qu'il n'est pas envoyé à la signature, le PV peut être corrigé."}</p>
+      ${depot}
       ${btn.length?`<div class="row-btn" style="margin-top:10px;flex-wrap:wrap">${btn.join("")}</div>`:""}</div>`;
 }
+/* PDF final déposé dans la réunion (PV terminé dans Word) : gardé en mémoire jusqu'à l'envoi. */
+document.addEventListener("change", async e=>{
+  const t=e.target; if(!t||!t.dataset||!t.dataset.reuPvFichier) return;
+  const f=t.files&&t.files[0]; if(!f) return;
+  if(!(f.type==="application/pdf" || /\.pdf$/i.test(f.name))){ t.value=""; modaleInfo("Le PV doit être un fichier PDF. Dans Word : Fichier › Enregistrer sous › PDF.","Fichier refusé"); return; }
+  if(f.size>20*1024*1024){ t.value=""; modaleInfo("Ce PDF dépasse 20 Mo.","Fichier refusé"); return; }
+  S.reuPvFichier=S.reuPvFichier||{}; S.reuPvFichier[String(t.dataset.reuPvFichier)]=f;
+  if(_pvAutoT){ clearTimeout(_pvAutoT); try{ await pvAutoSave(); }catch(_){ } } /* ne pas perdre la rédaction en cours */
+  render();
+});
 
 /* ---- onglet IDEES & AVIS : espace de contribution des coopte-es.
        Ils ecrivent, le CA lit. Aucune valeur decisionnelle. ---- */
@@ -4627,11 +4650,18 @@ async function reuPvSigner(reuId, sigId){
   await loadReuPv(); const e=reuPvEtat(m);
   if(e&&e.statut!=="refuse"){ render(); modaleInfo("Ce PV est déjà en signature ou signé.","PV"); return; }
   const nomSig=((a.prenom||"")+" "+(a.nom||"")).trim(), vers=pvsFonctionDe(a.fonction)==="vice"?"au vice-président":"à la présidente";
-  if(!(await modaleConfirm("Signer le PV de « "+(m.titre||"la réunion")+" » et l'envoyer "+vers+" ("+nomSig+") ?\n\nPendant la signature, la réunion sera verrouillée.","Signer et envoyer"))) return;
+  const fichier=(S.reuPvFichier||{})[String(m.id)]||null;
+  if(!(await modaleConfirm("Signer le PV de « "+(m.titre||"la réunion")+" » et l'envoyer "+vers+" ("+nomSig+") ?\n\n"+(fichier?"PV envoyé : votre PDF « "+fichier.name+" ».":"PV envoyé : celui rédigé dans l'app.")+"\n\nPendant la signature, la réunion sera verrouillée.","Signer et envoyer"))) return;
   if(!(await pvsAuthentifier("Signer le PV et l'envoyer à "+nomSig))) return;
   try{ await loadProcurations(); }catch(_){ }
-  const d=reuPvDoc(m); let blob=null; try{ blob=await telechargerPDF(d.nom, d.css, d.corps, null, "blob"); }catch(_){ blob=null; }
-  if(!blob){ modaleInfo("Le PV n'a pas pu être généré. Rien n'a été signé ni envoyé.","Erreur"); return; }
+  let blob=null;
+  if(fichier){
+    try{ const t=new Uint8Array(await fichier.slice(0,5).arrayBuffer()); if(String.fromCharCode.apply(null,t)==="%PDF-") blob=new Blob([await fichier.arrayBuffer()],{type:"application/pdf"}); }catch(_){ blob=null; }
+    if(!blob){ modaleInfo("Ce fichier n'est pas un PDF lisible. Rien n'a été signé ni envoyé.","Erreur"); return; }
+  } else {
+    const d=reuPvDoc(m); try{ blob=await telechargerPDF(d.nom, d.css, d.corps, null, "blob"); }catch(_){ blob=null; }
+    if(!blob){ modaleInfo("Le PV n'a pas pu être généré. Rien n'a été signé ni envoyé.","Erreur"); return; }
+  }
   /* Procurations émises pour cette réunion : PDF joints en annexe, figés avec le PV. */
   if(procurationsDuPV(m).length){
     let r=null; try{ r=await pvAvecAnnexes(m,blob); }catch(_){ r=null; }
@@ -4646,6 +4676,7 @@ async function reuPvSigner(reuId, sigId){
   const r=await sb.rpc("pvs_envoyer",{p_id:(e&&e.statut==="refuse")?e.id:null, p_titre:titre, p_reunion:String(m.id), p_date_reunion:null,
     p_fichier:{path:chemin, name:fname, hash:hash}, p_signataire:sigId, p_date_mode:"electronique", p_date_manuelle:null});
   if(r.error){ modaleInfo("Le PV n'a pas été envoyé. Erreur : "+r.error.message,"Erreur"); return; }
+  if(S.reuPvFichier) delete S.reuPvFichier[String(m.id)];
   await loadReuPv(); try{ await loadPvSign(); }catch(_){ }
   const corps=`<h2 style="margin:0 0 10px">PV à signer ✍</h2>
     <p><b>${caMailEsc(S.session.nom||"La secrétaire")}</b> a signé le PV <b>${caMailEsc(titre)}</b>. Il attend maintenant votre signature.</p>
@@ -6372,6 +6403,7 @@ document.addEventListener("click", async e=>{
       render();
       modaleInfo("✓ L'envoi est annulé. La réunion est de nouveau modifiable."+(ok?" Le signataire a été prévenu par e-mail.":" ⚠ Le mail n'est pas parti : prévenez le signataire vous-même."),"PV"); break; }
     case "reu-pv-signer": { await reuPvSigner(el.dataset.id, el.dataset.sig); break; }
+    case "reu-pv-fichier-retirer": { if(S.reuPvFichier) delete S.reuPvFichier[String(el.dataset.id)]; render(); break; }
     case "pt-tache": { if(!estSecretaire()||!sb) break;
       const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
       const pt=(m.ordre||[]).find(p=>p.id===el.dataset.pt); if(!pt) break;
