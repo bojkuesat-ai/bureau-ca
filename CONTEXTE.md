@@ -186,3 +186,8 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Thème clair = surcharge des variables CSS sous `html[data-theme="clair"]` + quelques corrections ciblées. Les fenêtres de sécurité (MFA) restent sombres, et les mails/PDF ne changent pas.
 
 - 22/11/2026 : dispense de double authentification ajoutée pour Anais Dethy, Sidi Ahmed Youra et Amandine Culot Verboekhoven (table `mfa_dispenses`, comme Najwa Hit).
+
+## PV : police, taille et export Word (22/11/2026)
+- Rédaction du PV : choix de la police (Calibri, Arial, Times, Garamond, Cambria, Georgia, Verdana) et de la taille (9 à 12 pt, 10 pt par défaut). Enregistrés dans `pv_contenu.police/taille` ; dernier choix gardé sur l'appareil (`be-pv-style`). Utilisés par l'aperçu, le PDF signé et le Word.
+- Bouton « Télécharger en Word (.docx) » (`reu-word`, `pvDocxBlob` / `pvDocxFichiers` : HTML du PV → WordprocessingML, JSZip de caisse/lib). Styles Word réels (Titre, Titre 1/2, listes, pied « Page x / y »). Les procurations signées (PDF) ne sont pas dans le Word.
+- Mise en page plus classique : en-tête « Bureau étudiant · Conseil d'administration », texte justifié, plus de « Document généré automatiquement », « ✓ traité », « Proposé par ».

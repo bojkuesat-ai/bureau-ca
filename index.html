@@ -4368,9 +4368,131 @@ function pvBudgetsTexteAuto(L){
   return "<ul>"+L.map(b=>{ const v=b.votes||[], c=ch=>v.filter(x=>x.choix===ch).length;
     return "<li><b>"+esc(b.titre||"")+"</b>"+(b.cout>0?" — "+esc(eur(b.cout)):"")+" — décidé le "+esc(fmtDateLong(dateLocaleISO(b.decideLe)))+" — Approuvé ("+c("pour")+" pour, "+c("contre")+" contre, "+c("abst")+" abstention(s))</li>"; }).join("")+"</ul>";
 }
+/* ---- Mise en page du PV : police et taille au choix (22/11/2026) ----
+   Enregistrées dans pv_contenu (police, taille) ; le dernier choix sert de défaut aux PV suivants. */
+const PV_POLICES=[
+  ["calibri","Calibri","Calibri,Carlito,'Segoe UI',Arial,sans-serif"],
+  ["arial","Arial","Arial,Helvetica,'Liberation Sans',sans-serif"],
+  ["times","Times New Roman","'Times New Roman',Times,'Liberation Serif',serif"],
+  ["garamond","Garamond","Garamond,'EB Garamond','Times New Roman',serif"],
+  ["cambria","Cambria","Cambria,Caladea,Georgia,serif"],
+  ["georgia","Georgia","Georgia,serif"],
+  ["verdana","Verdana","Verdana,Geneva,sans-serif"]];
+const PV_TAILLES=[9,10,10.5,11,12];
+function pvStyle(m){
+  const pv=(m&&m.pvContenu)||{}; let def={};
+  try{ def=JSON.parse(localStorage.getItem("be-pv-style")||"{}")||{}; }catch(_){ def={}; }
+  const okP=k=>PV_POLICES.some(x=>x[0]===k), okT=t=>PV_TAILLES.includes(Number(t));
+  const police=okP(pv.police)?pv.police:okP(def.police)?def.police:"calibri";
+  const taille=okT(pv.taille)?Number(pv.taille):okT(def.taille)?Number(def.taille):10;
+  const P=PV_POLICES.find(x=>x[0]===police);
+  return {police, taille, nom:P[1], pile:P[2]};
+}
+document.addEventListener("change",e=>{ const t=e.target; if(!t||(t.id!=="pv_police"&&t.id!=="pv_taille")) return;
+  const sp=document.getElementById("pv_police"), sz=document.getElementById("pv_taille");
+  try{ localStorage.setItem("be-pv-style",JSON.stringify({police:sp&&sp.value,taille:sz&&Number(sz.value)})); }catch(_){ }
+  const P=PV_POLICES.find(x=>x[0]===(sp&&sp.value)); if(P) document.querySelectorAll(".pv-ed").forEach(x=>{ x.style.fontFamily=P[2]; });
+  pvAutoEtat("Modifications en cours…"); if(_pvAutoT) clearTimeout(_pvAutoT); _pvAutoT=setTimeout(pvAutoSave,800); });
+
+/* ---- Export Word (.docx) du PV : le même contenu que le PDF, modifiable librement dans Word ---- */
+function pvDocxFichiers(corps, st){
+  const X=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const base=Math.round(st.taille*2), REL={1:.7,2:.85,3:1,4:1.15,5:1.35,6:1.7,7:2};
+  const doc=new DOMParser().parseFromString("<body>"+corps+"</body>","text/html");
+  const BLOC=/^(P|DIV|H1|H2|H3|H4|UL|OL|LI|TABLE|SECTION)$/;
+  let out=[]; const olNums=[]; let prochainNum=2;
+  const R=(t,f)=>`<w:r><w:rPr>${f.b?"<w:b/>":""}${f.i?"<w:i/>":""}${f.u?'<w:u w:val="single"/>':""}${f.color?`<w:color w:val="${f.color}"/>`:""}${f.sz?`<w:sz w:val="${f.sz}"/><w:szCs w:val="${f.sz}"/>`:""}</w:rPr><w:t xml:space="preserve">${X(t)}</w:t></w:r>`;
+  const P=(pp,runs)=>`<w:p><w:pPr>${pp.style?`<w:pStyle w:val="${pp.style}"/>`:""}${pp.num?`<w:numPr><w:ilvl w:val="${pp.lvl||0}"/><w:numId w:val="${pp.num}"/></w:numPr>`:""}${pp.jc?`<w:jc w:val="${pp.jc}"/>`:""}</w:pPr>${runs.join("")}</w:p>`;
+  function walk(el,pp,f){
+    let runs=[], txt=false;
+    const flush=()=>{ if(txt) out.push(P(pp,runs)); runs=[]; txt=false; };
+    (function inl(n,g){
+      Array.prototype.forEach.call(n.childNodes,c=>{
+        if(c.nodeType===3){ const t=c.nodeValue.replace(/\s+/g," "); if(t.trim()) txt=true; if(t&&(runs.length||t.trim())) runs.push(R(t,g)); return; }
+        if(c.nodeType!==1) return;
+        const tg=c.tagName;
+        if(BLOC.test(tg)){ flush(); bloc(c,pp,g); return; }
+        if(tg==="BR"){ runs.push("<w:r><w:br/></w:r>"); return; }
+        const h={...g};
+        if(tg==="B"||tg==="STRONG"||tg==="TH") h.b=1;
+        if(tg==="I"||tg==="EM") h.i=1;
+        if(tg==="U") h.u=1;
+        if(tg==="FONT"){ const z=Number(c.getAttribute("size")); if(REL[z]) h.sz=Math.round(base*REL[z]); }
+        if(c.classList&&c.classList.contains("muted")) h.color="666666";
+        inl(c,h);
+      });
+    })(el,f);
+    flush();
+  }
+  function bloc(c,pp,f){
+    const tg=c.tagName, cl=c.classList;
+    if(tg==="H1") return walk(c,{style:"Titre"},f);
+    if(tg==="H2") return walk(c,{style:"Titre1"},f);
+    if(tg==="H3"||tg==="H4") return walk(c,{style:"Titre2"},f);
+    if(tg==="UL"||tg==="OL"){
+      const lvl=pp.num!=null?Math.min(2,(pp.lvl||0)+1):0;
+      let num=1; if(tg==="OL"){ num=prochainNum++; olNums.push(num); }
+      Array.prototype.forEach.call(c.children,li=>walk(li,{num,lvl},f)); return;
+    }
+    if(tg==="LI") return walk(c,{num:pp.num||1,lvl:pp.lvl||0},f);
+    if(tg==="TABLE"){
+      const lignes=[];
+      c.querySelectorAll("tr").forEach(tr=>{
+        const cellules=[];
+        tr.querySelectorAll("th,td").forEach(td=>{ const sauve=out; out=[]; walk(td,{style:"Tableau"},td.tagName==="TH"?{...f,b:1}:f);
+          const contenu=out.join("")||'<w:p><w:pPr><w:pStyle w:val="Tableau"/></w:pPr></w:p>'; out=sauve;
+          cellules.push(`<w:tc><w:tcPr><w:tcW w:w="0" w:type="auto"/></w:tcPr>${contenu}</w:tc>`); });
+        if(cellules.length) lignes.push(`<w:tr>${cellules.join("")}</w:tr>`);
+      });
+      if(lignes.length) out.push(`<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="999999"/><w:bottom w:val="single" w:sz="4" w:color="999999"/><w:insideH w:val="single" w:sz="4" w:color="CCCCCC"/></w:tblBorders><w:tblCellMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr>${lignes.join("")}</w:tbl><w:p/>`);
+      return;
+    }
+    if(cl&&cl.contains("entete")) return walk(c,{style:"Entete"},f);
+    if(cl&&cl.contains("d")) return walk(c,{style:"SousTitre"},f);
+    return walk(c,pp.num!=null?pp:{},f);
+  }
+  bloc(doc.body,{},{});
+  const F=X(st.nom), sz=n=>Math.round(base*n);
+  const document_xml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${out.join("")}<w:sectPr><w:footerReference w:type="default" r:id="rIdPied"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1418" w:right="1418" w:bottom="1418" w:left="1418" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const styles_xml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="${F}" w:hAnsi="${F}" w:eastAsia="${F}" w:cs="${F}"/><w:sz w:val="${base}"/><w:szCs w:val="${base}"/><w:lang w:val="fr-BE"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="100" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
+<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:pPr><w:jc w:val="both"/></w:pPr></w:style>
+<w:style w:type="paragraph" w:styleId="Entete"><w:name w:val="En-tête du PV"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:jc w:val="center"/><w:spacing w:after="240"/></w:pPr><w:rPr><w:caps/><w:color w:val="555555"/><w:spacing w:val="20"/><w:sz w:val="${sz(.85)}"/><w:szCs w:val="${sz(.85)}"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Titre"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:jc w:val="center"/><w:spacing w:after="60"/></w:pPr><w:rPr><w:b/><w:sz w:val="${sz(1.7)}"/><w:szCs w:val="${sz(1.7)}"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="SousTitre"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:jc w:val="center"/><w:spacing w:after="320"/></w:pPr><w:rPr><w:color w:val="444444"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Titre1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:jc w:val="left"/><w:spacing w:before="280" w:after="100"/><w:pBdr><w:bottom w:val="single" w:sz="4" w:space="2" w:color="888888"/></w:pBdr><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="${sz(1.2)}"/><w:szCs w:val="${sz(1.2)}"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Titre2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:jc w:val="left"/><w:spacing w:before="160" w:after="40"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Tableau"><w:name w:val="Texte de tableau"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="left"/><w:spacing w:before="40" w:after="40"/></w:pPr></w:style>
+<w:style w:type="paragraph" w:styleId="Pied"><w:name w:val="footer"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:color w:val="777777"/><w:sz w:val="${sz(.8)}"/><w:szCs w:val="${sz(.8)}"/></w:rPr></w:style>
+</w:styles>`;
+  const niveaux=(fmt,txt)=>[0,1,2].map(l=>`<w:lvl w:ilvl="${l}"><w:start w:val="1"/><w:numFmt w:val="${fmt}"/><w:lvlText w:val="${fmt==="bullet"?["•","◦","▪"][l]:"%"+(l+1)+"."}"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="${360*(l+1)+360}" w:hanging="360"/></w:pPr></w:lvl>`).join("");
+  const numbering_xml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="hybridMultilevel"/>${niveaux("bullet")}</w:abstractNum><w:abstractNum w:abstractNumId="1"><w:multiLevelType w:val="hybridMultilevel"/>${niveaux("decimal")}</w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>${olNums.map(n=>`<w:num w:numId="${n}"><w:abstractNumId w:val="1"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride></w:num>`).join("")}</w:numbering>`;
+  const pied_xml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:pStyle w:val="Pied"/></w:pPr><w:r><w:t xml:space="preserve">Page </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t xml:space="preserve"> / </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>`;
+  return {
+    "[Content_Types].xml":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>`,
+    "_rels/.rels":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`,
+    "word/_rels/document.xml.rels":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rIdNum" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/><Relationship Id="rIdPied" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>`,
+    "word/document.xml":document_xml, "word/styles.xml":styles_xml, "word/numbering.xml":numbering_xml, "word/footer1.xml":pied_xml };
+}
+async function pvDocxBlob(m){
+  const d=reuPvDoc(m), st=pvStyle(m);
+  const { default: JSZip } = await import("./caisse/lib/jszip-3.10.1.js");
+  const z=new JSZip(), f=pvDocxFichiers(d.corps, st);
+  Object.keys(f).forEach(k=>z.file(k,f[k]));
+  return await z.generateAsync({type:"blob", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document", compression:"DEFLATE"});
+}
 function pvCollect(m){
   const old=m.pvContenu||{};
   const o={intro:"",fin:"",points:{},budgets:(old.budgets==null?null:old.budgets),exclus:(old.exclus||[]).slice()};
+  const st=pvStyle(m), sp=document.getElementById("pv_police"), sz=document.getElementById("pv_taille");
+  o.police=sp?sp.value:st.police; o.taille=sz?Number(sz.value):st.taille;
   document.querySelectorAll(".pv-ed").forEach(e=>{ const k=String(e.dataset.pvkey||""), h=pvSanitize(e.innerHTML);
     if(k==="intro") o.intro=pvVide(h)?"":h;
     else if(k==="fin") o.fin=pvVide(h)?"":h;
@@ -4389,7 +4511,8 @@ function blocRedactionPV(m){
   const pv=m.pvContenu||{}, pts=pv.points||{}, ex=new Set((pv.exclus||[]).map(String));
   const prop=(pvBudgetsPlan().propose[m.id])||[];
   const retenus=prop.filter(b=>!ex.has(String(b.id)));
-  const ed=(key,html,ph)=>`<div class="pv-ed" contenteditable="true" role="textbox" aria-multiline="true" data-pvkey="${esc(key)}" data-ph="${esc(ph||"")}">${html||""}</div>`;
+  const stPV=pvStyle(m);
+  const ed=(key,html,ph)=>`<div class="pv-ed" contenteditable="true" role="textbox" aria-multiline="true" data-pvkey="${esc(key)}" data-ph="${esc(ph||"")}" style="font-family:${stPV.pile.replace(/"/g,"")}">${html||""}</div>`;
   const tb=(cmd,lib,val,tip)=>`<button type="button" class="btn ghost sm" data-action="pv-fmt" data-cmd="${cmd}"${val?` data-val="${val}"`:""} title="${esc(tip||lib)}">${lib}</button>`;
   const lignes=(m.ordre||[]).map((p,i)=>`<label class="du" style="display:block;margin-top:8px;font-weight:700">${i+1}. ${esc(p.texte)}</label>`
       +ed("pt:"+p.id, pts[p.id]!=null?pvSanitize(pts[p.id]):pvTexteEnHtml(p.notes), "Décision / compte rendu de ce point…")).join("");
@@ -4400,6 +4523,10 @@ function blocRedactionPV(m){
     <div class="row-btn"><button class="btn ghost sm" data-action="pv-bud-reset">↺ Régénérer le texte d'après la sélection</button></div>`:"";
   return `<div class="compose pv-red" style="margin-top:22px"><h3 class="serif" style="margin-top:0">✍️ Rédaction du PV</h3>
     <p class="du" style="margin:0 0 6px">Sélectionnez du texte puis choisissez la mise en forme. Rien n'est envoyé avant « Enregistrer ».</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 8px"><span class="du" style="font-weight:700">Police du PV</span>
+      <select class="f" id="pv_police" style="width:auto;margin:0">${PV_POLICES.map(x=>`<option value="${x[0]}"${x[0]===stPV.police?" selected":""} style="font-family:${x[2].replace(/"/g,"")}">${esc(x[1])}</option>`).join("")}</select>
+      <select class="f" id="pv_taille" style="width:auto;margin:0">${PV_TAILLES.map(t=>`<option value="${t}"${t===stPV.taille?" selected":""}>${String(t).replace(".",",")} pt</option>`).join("")}</select>
+      <span class="du">Utilisées pour l'aperçu, le PDF signé et le fichier Word.</span></div>
     <div class="row-btn" style="flex-wrap:wrap;gap:6px;position:sticky;top:0;z-index:2">${tb("bold","<b>G</b>","","Gras")}${tb("italic","<i>I</i>","","Italique")}${tb("underline","<u>S</u>","","Souligné")}
       ${tb("fontSize","Petit","2")}${tb("fontSize","Normal","3")}${tb("fontSize","Grand","5")}${tb("fontSize","Très grand","6")}
       ${tb("insertUnorderedList","• Liste","","Liste à puces")}${tb("insertOrderedList","1. Liste","","Liste numérotée")}${tb("removeFormat","Effacer le style","","Retirer la mise en forme")}</div>
@@ -4421,8 +4548,8 @@ function reuPvBudgetsHtml(m){
   const L=budgetsEnLignePourPV(m); if(!L.length) return "";
   const lignes=L.map(b=>{ const v=b.votes||[], c=ch=>v.filter(x=>x.choix===ch).length;
     return `<tr><td>${esc(b.titre||"")}</td><td style="text-align:right;white-space:nowrap">${b.cout>0?esc(eur(b.cout)):"—"}</td><td style="white-space:nowrap">${esc(fmtDateLong(dateLocaleISO(b.decideLe)))}</td><td>Approuvé — ${c("pour")} pour, ${c("contre")} contre, ${c("abst")} abstention(s)</td></tr>`; }).join("");
-  return `<h2>Budgets votés en ligne</h2><p class="muted" style="font-size:12px;margin:0 0 6px">Budgets approuvés par vote en ligne, repris automatiquement.</p>
-<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;border-bottom:1px solid #c9cdd6"><th>Budget</th><th style="text-align:right">Montant</th><th>Date</th><th>Résultat</th></tr></thead><tbody>${lignes}</tbody></table>`;
+  return `<h2>Budgets votés en ligne</h2>
+<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;border-bottom:1px solid #c9cdd6"><th>Budget</th><th style="text-align:right">Montant</th><th>Date</th><th>Résultat</th></tr></thead><tbody>${lignes}</tbody></table>`;
 }
 /* ---- Procurations : liste dans le PV + PDF en annexe, figés à la clôture (envoi en signature) ---- */
 function procurationsDuPV(m){
@@ -4467,22 +4594,27 @@ function reuPvDoc(m){
       const pres=m.presences||{};
       const nomDeCle=k=>{ const a=(S.admins||[]).find(x=>x.id===k); if(a) return ((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||k; const p=PERSONNES.find(x=>x.id===k); return p?(p.prenom+" "+p.nom):k; };
       const names=v=>Object.keys(pres).filter(k=>pres[k]===v).map(k=>esc(nomDeCle(k)));
-      const pts=(m.ordre||[]).map((p,i)=>`<div class="pt"><h3>${i+1}. ${esc(p.texte)} ${p.fait?"<span class='ok'>✓ traité</span>":""}</h3>${p.par?`<p class='muted' style='font-size:12px;margin:0 0 4px'>Proposé par ${esc(p.par)}</p>`:""}${p.sujet==="budget"&&p.budgetMontant?`<p><b>Montant demandé :</b> ${esc(eur(p.budgetMontant))}</p>`:""}${p.note?`<p style='white-space:pre-wrap'>${esc(p.note)}</p>`:""}${(pvc.points&&pvc.points[p.id]!=null)?(pvVide(pvc.points[p.id])?"<p class='muted'>—</p>":`<div class="rt">${pvSanitize(pvc.points[p.id])}</div>`):(p.notes?`<p>${esc(p.notes)}</p>`:"<p class='muted'>—</p>")}</div>`).join("");
-      const cssPV=`body{font-family:Georgia,serif;color:#1b2338;line-height:1.55}
-h1{font-size:24px;margin:0 0 2px}.d{color:#6a7182;font-size:13px;margin:0 0 20px}
-h2{font-size:17px;margin:24px 0 6px;border-bottom:2px solid #e8b04b;padding-bottom:4px}
-.pt h3{font-size:14px;margin:12px 0 2px}.pt p{margin:0 0 6px}.rt p,.rt div{margin:0 0 6px}.rt ul,.rt ol{margin:4px 0 8px 22px}.muted{color:#9aa1ad}.ok{color:#3c7a58;font-size:12px}`;
-      const corpsPV=`<h1>Procès-verbal — ${esc(m.titre)}</h1><p class="d">${esc(reuQuand(m))}${m.lieu?" · "+esc(m.lieu):""}</p>
+      const pts=(m.ordre||[]).map((p,i)=>`<div class="pt"><h3>${i+1}. ${esc(p.texte)}</h3>${p.sujet==="budget"&&p.budgetMontant?`<p><b>Montant demandé :</b> ${esc(eur(p.budgetMontant))}</p>`:""}${p.note?`<p style='white-space:pre-wrap'>${esc(p.note)}</p>`:""}${(pvc.points&&pvc.points[p.id]!=null)?(pvVide(pvc.points[p.id])?"<p class='muted'>—</p>":`<div class="rt">${pvSanitize(pvc.points[p.id])}</div>`):(p.notes?`<p>${esc(p.notes)}</p>`:"<p class='muted'>—</p>")}</div>`).join("");
+      /* Tailles en points Word : dans le PDF (A4, marges 10 mm, feuille de 794 px), 1 pt ≈ 1,474 px. */
+      const st=pvStyle(m), K=1.474, px=n=>(st.taille*n*K).toFixed(1)+"px";
+      const cssPV=`body{font-family:${st.pile};color:#111;line-height:1.4;font-size:${px(1)};text-align:justify}
+.entete{text-align:center;text-transform:uppercase;letter-spacing:.08em;color:#555;font-size:${px(.85)};margin:0 0 14px}
+h1{font-size:${px(1.7)};margin:0 0 2px;text-align:center}.d{color:#444;margin:0 0 22px;text-align:center}
+h2{font-size:${px(1.2)};margin:20px 0 6px;border-bottom:1px solid #888;padding-bottom:2px;text-align:left}
+.pt h3{font-size:${px(1)};margin:12px 0 2px;text-align:left}p{margin:0 0 6px}.rt p,.rt div{margin:0 0 6px}.rt ul,.rt ol{margin:4px 0 8px 22px}.muted{color:#777}
+font[size="1"]{font-size:.7em}font[size="2"]{font-size:.85em}font[size="3"]{font-size:1em}font[size="4"]{font-size:1.15em}font[size="5"]{font-size:1.35em}font[size="6"]{font-size:1.7em}font[size="7"]{font-size:2em}
+table{font-size:${px(.95)}}`;
+      const corpsPV=`<p class="entete">Bureau étudiant · Conseil d'administration</p>
+<h1>Procès-verbal</h1><p class="d">${esc(m.titre||"Réunion")}<br>${esc(reuQuand(m))}${m.lieu?" · "+esc(m.lieu):""}</p>
 ${pvc.intro&&!pvVide(pvc.intro)?`<div class="rt">${pvSanitize(pvc.intro)}</div>`:""}
 <h2>Présences</h2>
 <p><b>Présents :</b> ${names('present').join(", ")||"—"}</p>
 <p><b>Excusés :</b> ${names('excuse').join(", ")||"—"}</p>
 <p><b>Absents :</b> ${names('absent').join(", ")||"—"}</p>
-<h2>Ordre du jour</h2>${pts||"<p class='muted'>—</p>"}
+<h2>Ordre du jour</h2>${pts||"<p>—</p>"}
 ${reuPvBudgetsHtml(m)}
 ${reuPvProcurationsHtml(m)}
-${pvc.fin&&!pvVide(pvc.fin)?`<div class="rt" style="margin-top:14px">${pvSanitize(pvc.fin)}</div>`:""}
-<p class="d" style="margin-top:30px">Document généré automatiquement.</p>`;
+${pvc.fin&&!pvVide(pvc.fin)?`<div class="rt" style="margin-top:14px">${pvSanitize(pvc.fin)}</div>`:""}`;
       return {nom:nomPDF("PV "+(m.titre||"")), css:cssPV, corps:corpsPV};
 }
 /* Signer le PV depuis la réunion et l'envoyer à la présidente ou au vice-président.
@@ -4590,7 +4722,7 @@ function tabReunions(){
     ${presRows}
     ${blocRedactionPV(m)}
     ${blocApprobationPV(m)}
-    ${estSecretaire()?`<div class="row-btn" style="margin-top:16px;flex-wrap:wrap"><button class="btn ghost" data-action="reu-gen">Aperçu du PV (PDF)</button><button class="btn ghost" data-action="reu-lien" data-id="${m.id}">🔗 Copier le lien de la réunion</button></div>`:`<p class="du" style="margin-top:16px">Le PV est rédigé et diffusé par le secrétariat.</p>`}`;
+    ${estSecretaire()?`<div class="row-btn" style="margin-top:16px;flex-wrap:wrap"><button class="btn ghost" data-action="reu-gen">Aperçu du PV (PDF)</button><button class="btn ghost" data-action="reu-word">📝 Télécharger en Word (.docx)</button><button class="btn ghost" data-action="reu-lien" data-id="${m.id}">🔗 Copier le lien de la réunion</button></div>`:`<p class="du" style="margin-top:16px">Le PV est rédigé et diffusé par le secrétariat.</p>`}`;
 }
 
 /* Éditeur du PV : la mise en forme ne doit pas faire perdre la sélection ; collage en texte brut. */
@@ -6269,6 +6401,16 @@ document.addEventListener("click", async e=>{
       await majReunion(m.id, f=>({ordre:f.ordre.filter(p=>p.id!==pid)})); render(); break; }
     case "reu-pres": { if(!estSecretaire()) break; const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m||!sb) break; const who=el.dataset.person, v=el.dataset.val; await majReunion(m.id, f=>{ const pr={...f.presences}; if(pr[who]===v) delete pr[who]; else pr[who]=v; return {presences:pr}; }); render(); break; }
     case "reu-rappel": { await rappelReunionCA(id); break; }
+    case "reu-word": { if(!estSecretaire()) break;
+      const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
+      if(document.querySelector(".pv-ed") && !reuVerrou(m)){ const o=pvCollect(m); await pvEnregistrer(m,o); }
+      const m2=(S.reunions||[]).find(x=>x.id===S.reuUI.sel)||m;
+      try{ await loadProcurations(); }catch(_){ }
+      let b=null; try{ b=await pvDocxBlob(m2); }catch(e){ b=null; }
+      if(!b){ modaleInfo("Le fichier Word n'a pas pu être créé. Réessayez.","PV en Word"); break; }
+      const url=URL.createObjectURL(b), a2=document.createElement("a"); a2.href=url; a2.download=pvsNomFichier("pv-"+(m2.titre||"reunion")+"-"+(m2.date||""))+".docx"; document.body.appendChild(a2); a2.click(); a2.remove(); setTimeout(()=>URL.revokeObjectURL(url),30000);
+      modaleInfo("Le PV est téléchargé en Word : modifiez-le librement.\n\nQuand il est prêt, enregistrez-le en PDF dans Word (Fichier › Enregistrer sous › PDF), puis déposez ce PDF dans l'onglet « PV à signer » pour l'envoyer en signature."+(procurationsDuPV(m2).length?"\n\nLes procurations signées ne sont pas dans le fichier Word : elles restent jointes au PDF généré par l'app.":""),"PV en Word");
+      break; }
     case "reu-gen": { if(!estSecretaire()){ if(window.alert) window.alert("Seul le secrétariat peut générer le PV."); break; }
       const m=(S.reunions||[]).find(x=>x.id===S.reuUI.sel); if(!m) break;
       try{ await loadProcurations(); }catch(_){ }
