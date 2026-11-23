@@ -3,7 +3,7 @@
    - librairies à version figée (jsDelivr) et polices : gardées sur l'appareil ;
    - Supabase et tout le reste : jamais touchés (toujours en direct) ;
    - notifications sur le téléphone. */
-const CACHE = "ca-v2-2026-11-09";
+const CACHE = "ca-v3-2026-11-23";
 self.addEventListener("install", e => { self.skipWaiting(); });
 self.addEventListener("activate", e => {
   e.waitUntil((async () => {
@@ -20,7 +20,9 @@ self.addEventListener("fetch", e => {
   if (r.mode === "navigate" && u.origin === self.location.origin && !u.pathname.includes("/billets/")) {
     e.respondWith((async () => {
       const c = await caches.open(CACHE);
-      const reseau = fetch(r).then(rep => { if (rep && rep.ok) c.put(r, rep.clone()).catch(() => {}); return rep; });
+      // « no-cache » : le navigateur revalide toujours la page auprès du serveur
+      // (sinon le cache HTTP de GitHub Pages pouvait servir l'ancienne version jusqu'à 10 min)
+      const reseau = fetch(r.url, { cache: "no-cache", credentials: "same-origin" }).then(rep => { if (rep && rep.ok) c.put(r, rep.clone()).catch(() => {}); return rep; });
       const garde = await c.match(r, { ignoreSearch: true });
       if (!garde) return reseau;
       const lent = new Promise(ok => setTimeout(() => ok(null), 3500));
