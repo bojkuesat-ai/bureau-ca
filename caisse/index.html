@@ -1882,13 +1882,13 @@ html[data-theme="clair"] .roleswitch button[aria-pressed="true"]{background:#fff
       <div class="kpi wait"><div class="eyebrow">Sans aucune pièce</div><div class="n" id="prv_k">0</div></div>
       <div class="kpi wait"><div class="eyebrow">Preuve incomplète</div><div class="n" id="prv_kInc">0</div></div>
       <div class="kpi"><div class="eyebrow">Montant concerné</div><div class="n" id="prv_kAmt">0 €</div></div>
-      <div class="kpi" id="prv_kVieuxCard"><div class="eyebrow">En retard de plus de 30 jours</div><div class="n" id="prv_kVieux">0</div></div>
+      <div class="kpi" id="prv_kVieuxCard"><div class="eyebrow">En retard de plus de 10 jours</div><div class="n" id="prv_kVieux">0</div></div>
     </div>
     <div class="card pad stack" style="gap:12px">
       <div class="eyebrow">Réglages</div>
       <label class="check" style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text)">
         <input type="checkbox" id="prv_bloc" class="tgl">
-        <span><b>Bloquer les nouvelles demandes</b> d'un membre qui a une preuve en retard de plus de 30 jours, tant qu'il ne l'a pas déposée.</span></label>
+        <span><b>Bloquer les nouvelles demandes</b> d'un membre qui a une preuve en retard de plus de 10 jours, tant qu'il ne l'a pas déposée.</span></label>
     </div>
     <p class="hint" style="margin:-4px 2px 0">Remboursements et paiements directs (sauf refusés). « Sans aucune pièce » : rien n'a été joint. « Incomplète » : il manque la preuve d'achat ou, pour un remboursement payé autrement qu'en espèces, la preuve de paiement. Le membre ne peut qu'ajouter des pièces, ou une déclaration sur l'honneur s'il a perdu le justificatif. Dès que c'est fait, la demande quitte la liste.</p>
     <div class="toolbar">
@@ -6949,6 +6949,7 @@ function manqueDe(it){
 const preuveIncomplete = it => !!it && !preuveValidee(it) && !sansPreuve(it) && manqueDe(it).length > 0;
 const preuveManquante = it => sansPreuve(it) || preuveIncomplete(it);
 const ageDe = it => joursDepuis(it.created_at || it.expense_date);
+const PRV_DELAI = 10;   // jours : au-delà, preuve « en retard » (et blocage des nouvelles demandes si activé)
 const demandesSansPreuve = () => ouvert(state.items || []).filter(sansPreuve);
 const demandesIncompletes = () => ouvert(state.items || []).filter(preuveIncomplete);
 const cleMembre = i => i.user_id || i.requester_name || "?";
@@ -6964,7 +6965,7 @@ function groupesHTML(liste, q){
   if(!groupes.length) return null;
   return groupes.map(g => {
     const lignes = g.its.map(i => {
-      const age = ageDe(i), vieux = age > 30;
+      const age = ageDe(i), vieux = age > PRV_DELAI;
       const dernier = i.preuve_relance_at ? "rappel le " + fstamp(i.preuve_relance_at) : "jamais relancé";
       const manque = sansPreuve(i) ? "" : " · manque " + manqueDe(i).join(" et ");
       return `<div class="row" style="cursor:default${vieux ? ";border-left:4px solid var(--red)" : ""}">
@@ -6999,7 +7000,7 @@ function renderPreuves(){
   if(!$("#prvList") || !isTreso() || state.view !== "preuves") return;
   const cfg = comptaCfg();
   $("#prv_bloc").checked = !!cfg.prvBlocage;
-  const vieux = tout.filter(i => ageDe(i) > 30).length;
+  const vieux = tout.filter(i => ageDe(i) > PRV_DELAI).length;
   $("#prv_k").textContent = a.length;
   $("#prv_kInc").textContent = b.length;
   $("#prv_kAmt").textContent = euro(tout.reduce((s,i) => s + Number(i.amount||0), 0));
@@ -7055,7 +7056,7 @@ async function mailRappelPreuves(its, auto){
       <tr style="background:#f4f6f8"><th style="padding:7px 8px;text-align:left">Réf.</th><th style="padding:7px 8px;text-align:left">Objet</th><th style="padding:7px 8px;text-align:right">Montant</th><th style="padding:7px 8px"></th></tr>
       ${lignes}</table>
     <p style="color:#555;font-size:13px">Le lien ouvre la demande : vous pourrez seulement y ajouter la pièce, rien d'autre ne change. Justificatif perdu ? Utilisez « J'ai perdu mon justificatif » pour faire une déclaration sur l'honneur.</p>
-    ${bloc ? `<p style="color:#b3261e;font-size:13px">Attention : au-delà de 30 jours sans preuve, vous ne pourrez plus introduire de nouvelle demande.</p>` : ""}
+    ${bloc ? `<p style="color:#b3261e;font-size:13px">Attention : au-delà de 10 jours sans preuve, vous ne pourrez plus introduire de nouvelle demande.</p>` : ""}
     <p style="text-align:center;margin:22px 0"><a href="${lienDemande(it0)}" style="background:#2d6a4f;color:#fff;padding:13px 24px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block">Déposer ma preuve</a></p>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
     <p style="color:#777;font-size:12px">Ce rappel concerne une obligation comptable : il ne peut pas être désactivé.</p>
@@ -7205,7 +7206,7 @@ $("#prvTous").onclick = async () => {
 /* --- côté membre --- */
 function preuvesBloquantes(){
   if(isTreso() || !comptaCfg().prvBlocage || !state.profile) return [];
-  return ouvert(state.items || []).filter(i => i.user_id === state.profile.id && preuveManquante(i) && ageDe(i) > 30);
+  return ouvert(state.items || []).filter(i => i.user_id === state.profile.id && preuveManquante(i) && ageDe(i) > PRV_DELAI);
 }
 
 function blocPreuve(it){
@@ -7309,7 +7310,7 @@ function majBandeauPreuves(){
   box.hidden = false;
   const tous = [...new Map(miennes.concat(bloque).map(i => [i.id, i])).values()];
   box.innerHTML = `<b>${tous.length} demande(s) attendent votre preuve</b>
-    <p>${bloque.length ? `<span style="color:var(--red);font-weight:700">Vous ne pouvez plus introduire de nouvelle demande tant que ${bloque.length > 1 ? "celles en retard de plus de 30 jours ne sont pas justifiées" : "celle en retard de plus de 30 jours n'est pas justifiée"}.</span> ` : ""}Ouvrez-la et utilisez « Ajouter ma preuve ».</p>
+    <p>${bloque.length ? `<span style="color:var(--red);font-weight:700">Vous ne pouvez plus introduire de nouvelle demande tant que ${bloque.length > 1 ? "celles en retard de plus de 10 jours ne sont pas justifiées" : "celle en retard de plus de 10 jours n'est pas justifiée"}.</span> ` : ""}Ouvrez-la et utilisez « Ajouter ma preuve ».</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${tous.map(i =>
       `<button class="btn ghost sm" data-prv-ouvrir-m="${esc(i.id)}">${esc(i.object||refOf(i))} · ${euro(i.amount)}</button>`).join("")}</div>`;
 }
@@ -9613,7 +9614,7 @@ $("#reqForm").addEventListener("submit", async e => {
       throw new Error("Le dépôt de demandes est fermé pour le moment. " + texteHoraires());
     }
     { const _blq = preuvesBloquantes();
-      if(_blq.length) throw new Error("Vous avez " + _blq.length + " demande(s) sans preuve depuis plus de 30 jours ("
+      if(_blq.length) throw new Error("Vous avez " + _blq.length + " demande(s) sans preuve depuis plus de 10 jours ("
         + _blq.slice(0,3).map(i => refOf(i)).join(", ") + "). Déposez d'abord vos preuves (bandeau en haut de « Mes demandes »).");
     }
     refusSiClos($("#f_date").value);
@@ -9756,7 +9757,7 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       throw new Error("Le dépôt de demandes est fermé pour le moment. " + texteHoraires());
     }
     { const _blq = preuvesBloquantes();
-      if(_blq.length) throw new Error("Vous avez " + _blq.length + " demande(s) sans preuve depuis plus de 30 jours ("
+      if(_blq.length) throw new Error("Vous avez " + _blq.length + " demande(s) sans preuve depuis plus de 10 jours ("
         + _blq.slice(0,3).map(i => refOf(i)).join(", ") + "). Déposez d'abord vos preuves (bandeau en haut de « Mes demandes »).");
     }
     // Saisie par le trésorier au nom d'un membre (sinon : demande normale, pour soi)
