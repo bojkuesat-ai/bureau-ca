@@ -6948,6 +6948,11 @@ function manqueDe(it){
 }
 const preuveIncomplete = it => !!it && !preuveValidee(it) && !sansPreuve(it) && manqueDe(it).length > 0;
 const preuveManquante = it => sansPreuve(it) || preuveIncomplete(it);
+/* 23/11/2026 : « Preuve non donnée » — le trésorier constate que le membre n'a rien déposé malgré les rappels.
+   La demande reste dans la liste ; la mention disparaît d'elle-même dès que la preuve est déposée. */
+const nonDonnee = it => !!(it && it.preuve_non_donnee_at) && preuveManquante(it);
+const badgeNonDonnee = it => nonDonnee(it)
+  ? ` <span title="Constaté le ${esc(fstamp(it.preuve_non_donnee_at))}${it.preuve_non_donnee_motif ? " : " + esc(it.preuve_non_donnee_motif) : ""}" style="color:var(--red);font-weight:700;font-size:12px">⛔ Aucune preuve déposée</span>` : "";
 const ageDe = it => joursDepuis(it.created_at || it.expense_date);
 const PRV_DELAI = 10;   // jours : au-delà, preuve « en retard » (et blocage des nouvelles demandes si activé)
 const demandesSansPreuve = () => ouvert(state.items || []).filter(sansPreuve);
@@ -6970,7 +6975,7 @@ function groupesHTML(liste, q){
       const manque = sansPreuve(i) ? "" : " · manque " + manqueDe(i).join(" et ");
       return `<div class="row" style="cursor:default${vieux ? ";border-left:4px solid var(--red)" : ""}">
         <div class="date mono" style="font-size:13px">${fdate(i.expense_date)}</div>
-        <div><div class="obj">${esc(i.object||"")}</div>
+        <div><div class="obj">${esc(i.object||"")}${badgeNonDonnee(i)}</div>
           <div class="meta">${esc(refOf(i))} · ${i.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${i.beneficiary?" → "+esc(i.beneficiary):""}`:"Remboursement"}
             · <span style="${vieux ? "color:var(--red);font-weight:700" : ""}">depuis ${age} j</span> · ${esc(dernier)}${esc(manque)}</div>
           ${piecesDe(i).length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${piecesDe(i).map((pc, n) =>
@@ -6979,7 +6984,8 @@ function groupesHTML(liste, q){
             <button class="btn ok sm" data-prv-valider="${esc(i.id)}">Valider</button>
             <button class="btn sm" data-prv-rappel="${esc(i.id)}">Rappel</button>
             <button class="btn ghost sm" data-prv-ouvrir="${esc(i.id)}">Ouvrir</button>
-            <button class="btn ghost sm" data-prv-perdue="${esc(i.id)}">Preuve perdue</button></div></div>
+            <button class="btn ghost sm" data-prv-perdue="${esc(i.id)}">Preuve perdue</button>
+            ${nonDonnee(i) ? "" : `<button class="btn ghost sm" data-prv-nondonnee="${esc(i.id)}">Preuve non donnée</button>`}</div></div>
         <div><span class="tag ${tagClass(i.status)}">${esc(i.status)}</span></div>
         <div class="amt">${euro(i.amount)}</div><div class="chev"></div></div>`;
     }).join("");
@@ -7126,6 +7132,20 @@ async function tresoPreuvePerdue(it){
   }catch(err){ toast("Attestation impossible : " + (err.message || err)); }
 }
 
+async function tresoPreuveNonDonnee(it){
+  const motif = await saisir("Preuve non donnée — " + refOf(it),
+    (it.requester_name || "") + " · " + (it.object || "") + " · " + euro(it.amount)
+    + "\n\nLa demande reste dans la liste et porte la mention « Aucune preuve déposée », visible aussi par le membre. "
+    + "La mention disparaît dès que la preuve est déposée. Indiquez pourquoi (ex. « 3 rappels sans réponse »).",
+    { bouton:"Confirmer", verifier: v => String(v||"").trim().length < 5 ? "Indiquez le motif en quelques mots." : "" });
+  if(motif === null) return;
+  const { data, error } = await sb.from("requests").update({ preuve_non_donnee_at: new Date().toISOString(), preuve_non_donnee_motif: motif.trim().slice(0, 300) })
+    .eq("id", it.id).select("id");
+  if(error || !data || !data.length) return toast("Enregistrement impossible : " + (error ? error.message : "la base a refusé la mise à jour"));
+  try{ await sb.from("events").insert({ request_id: it.id, who: state.profile.name, what: "Aucune preuve déposée (constat du trésorier) — " + motif.trim() }); }catch(_){ __errSilence(_); }
+  await refresh(); toast("Mention « Aucune preuve déposée » ajoutée à la demande.");
+}
+
 $("#viewPreuves").addEventListener("click", async e => {
   const o = e.target.closest("[data-prv-ouvrir]");
   if(o) return openDrawer(o.dataset.prvOuvrir);
@@ -7168,6 +7188,8 @@ $("#viewPreuves").addEventListener("click", async e => {
   }
   const pp = e.target.closest("[data-prv-perdue]");
   if(pp){ const it = state.items.find(x => x.id === pp.dataset.prvPerdue); if(it) await tresoPreuvePerdue(it); return; }
+  const nd = e.target.closest("[data-prv-nondonnee]");
+  if(nd){ const it = state.items.find(x => x.id === nd.dataset.prvNondonnee); if(it) await tresoPreuveNonDonnee(it); return; }
   const b = e.target.closest("[data-prv-rappel],[data-prv-personne]"); if(!b) return;
   const liste = ouvert(state.items || []).filter(preuveManquante);
   const its = b.dataset.prvRappel ? liste.filter(i => i.id === b.dataset.prvRappel)
@@ -9910,7 +9932,7 @@ const caseEnchainer = () => `<label class="check" style="margin-top:10px;font-si
   <input type="checkbox" id="d_enchainer" ${enchainerActif() ? "checked" : ""}> Ouvrir la demande suivante après la décision</label>`;
 const rowHTML = (it, showWho) => `<div class="row" data-id="${it.id}" tabindex="0" role="button">
   <div class="date mono" style="font-size:13px">${showWho?`<input type="checkbox" class="tgl sm" data-selchk data-id="${it.id}" ${state.sel&&state.sel.has(it.id)?"checked":""} style="margin-right:9px;vertical-align:middle;cursor:pointer">`:""}${fdate(it.expense_date)}</div>
-  <div><div class="obj">${esc(it.object)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}${it.hors_budget?` <span title="Demande urgente hors budget" style="color:var(--red);font-weight:700;font-size:12px">🔴 URGENTE</span>`:""}${tbBadge(it)}${showWho && budgetNonApprouve(it)?` <span title="Rattachée à un budget qui n'est plus approuvé" style="color:var(--amber);font-weight:700;font-size:12px">⚠ budget non approuvé</span>`:""}${showWho && it.status!=="Remboursée" && depensesSimilaires(it).length?` <span title="Une dépense du même montant, à une date proche, figure déjà dans les dépenses de l'ASBL" style="color:var(--red);font-weight:700;font-size:12px">\u26a0 déjà payée ?</span>`:""}${showWho && attesteDoublon(it)?` <span title="Doublon possible écarté par le demandeur — attestation signée jointe" style="color:var(--amber);font-weight:700;font-size:12px">\u26a0 doublon ?</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div><div style="margin-top:4px">${barreAvancement(it)}</div></div>
+  <div><div class="obj">${esc(it.object)}${badgeNonDonnee(it)}${estIncomplet(it)?` <span title="Justificatif ou IBAN manquant" style="color:#c47f17;font-weight:700">\u26a0</span>`:""}${it.hors_budget?` <span title="Demande urgente hors budget" style="color:var(--red);font-weight:700;font-size:12px">🔴 URGENTE</span>`:""}${tbBadge(it)}${showWho && budgetNonApprouve(it)?` <span title="Rattachée à un budget qui n'est plus approuvé" style="color:var(--amber);font-weight:700;font-size:12px">⚠ budget non approuvé</span>`:""}${showWho && it.status!=="Remboursée" && depensesSimilaires(it).length?` <span title="Une dépense du même montant, à une date proche, figure déjà dans les dépenses de l'ASBL" style="color:var(--red);font-weight:700;font-size:12px">\u26a0 déjà payée ?</span>`:""}${showWho && attesteDoublon(it)?` <span title="Doublon possible écarté par le demandeur — attestation signée jointe" style="color:var(--amber);font-weight:700;font-size:12px">\u26a0 doublon ?</span>`:""}</div><div class="meta">${showWho?esc(it.requester_name)+" · ":""}${it.kind==="direct"?`<span style="color:#8b7bd8;font-weight:700">DIRECT</span>${it.beneficiary?" · "+esc(it.beneficiary):""}`:`${esc(it.category)} · ${piecesDe(it).length} pièce(s)`}${it.reexamen_at&&it.status==="Refusée"?` · <span style="color:#c47f17;font-weight:700">réexamen</span>`:""}</div><div style="margin-top:4px">${barreAvancement(it)}</div></div>
   <div><span class="tag ${tagClass(it.status)}">${it.status}</span></div>
   <div class="amt">${euro(it.amount)}</div><div class="chev">›</div></div>`;
 const emptyHTML = (t,m) => `<div class="empty"><strong>${t}</strong>${m}</div>`;
@@ -14354,7 +14376,7 @@ function champMotif(it){
 
 function renderDrawer(it){
   $("#d_ref").textContent = refOf(it) + " · " + it.status;
-  $("#d_object").textContent = it.object;
+  $("#d_object").innerHTML = esc(it.object || "") + badgeNonDonnee(it);
   const proofHTML = state.proofUrls[it.id]
     || `<div class="proof"><div class="file">Chargement des pièces…</div></div>`;
 
