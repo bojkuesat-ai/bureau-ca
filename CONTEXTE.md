@@ -186,6 +186,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - Thème clair = surcharge des variables CSS sous `html[data-theme="clair"]` + quelques corrections ciblées. Les fenêtres de sécurité (MFA) restent sombres, et les mails/PDF ne changent pas.
 
 - 22/11/2026 : dispense de double authentification ajoutée pour Anais Dethy, Sidi Ahmed Youra et Amandine Culot Verboekhoven (table `mfa_dispenses`, comme Najwa Hit).
+- 24/11/2026 : **décharge double authentification** (`sql/2026-11-24_mfa_decharges.sql`, fonction `mfa-decharge`, page `decharge-mfa.html`). Lien Sécurité-BE (sans expiration, une fois) envoyé à Lamia Zerouali, Aysin Emiroglu, Waled Buzzian, Hamza El Fartakhe. Signature au mot de passe sans code → `mfa_dispenses` + PDF (code SIG-…) dans `fin-mandat/decharges-mfa` (espace Propriétaire › Fin de mandat › Copies gardées) + PDF par mail à la personne seule.
 
 ## PV : police, taille et export Word (22/11/2026)
 - Rédaction du PV : choix de la police (Calibri, Arial, Times, Garamond, Cambria, Georgia, Verdana) et de la taille (9 à 12 pt, 10 pt par défaut). Enregistrés dans `pv_contenu.police/taille` ; dernier choix gardé sur l'appareil (`be-pv-style`). Utilisés par l'aperçu, le PDF signé et le Word.
