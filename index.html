@@ -10656,7 +10656,7 @@ function carteFinMandat(){
     <div><b>${txt}</b> — ${esc(fmQuand(quand))}${detail?`<div class="du" style="margin:2px 0 0">${detail}</div>`:""}</div></div>`;
   const A=E.archives||{}, partsTxt=t=>{ const s=A[t]; return s&&s.parts?s.parts.length+" partie(s)"+(s.fini?"":" (en cours)"):""; };
   const dest=(E.destinataires||[]).map(d=>`${esc(FM_ROLES[d.role]||d.role)} : ${esc(d.nom)} &lt;${esc(d.email)}&gt;`).join("<br>");
-  const fichiers=(F.fichiers||[]).map(f=>`<div class="doc" style="cursor:default"><span class="ic">${/\.besav$/.test(f.chemin)?"💾":"📦"}</span>
+  const fichiers=(F.fichiers||[]).map(f=>`<div class="doc" style="cursor:default"><span class="ic">${/\.besav$/.test(f.chemin)?"💾":/\.pdf$/i.test(f.chemin)?"📄":"📦"}</span>
       <span class="meta"><p class="dt">${esc(f.chemin.split("/").pop())}</p><p class="du">${esc(f.chemin.split("/")[0])} · ${fmMo(f.octets)}</p></span>
       <button class="chip" data-fm="lien" data-id="${esc(f.chemin)}">⬇ Télécharger</button></div>`).join("");
   const envois=(E.envois||[]).slice(0,12).map(x=>`<li>${esc(new Date(x.le).toLocaleString("fr-BE"))} — <b>${esc(x.quoi)}</b>${x.a?" · "+esc(x.a):""}${x.detail?" · "+esc(x.detail):""}</li>`).join("");

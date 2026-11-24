@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Décharge – Double authentification</title>
+<!-- Décharge « double authentification » (24/11/2026). Lien personnel reçu par mail (Sécurité-BE),
+     jeton dans le fragment #t=… (jamais envoyé dans l'adresse au serveur). Signature avec le mot de passe
+     CAISSE, sans code. Serveur : fonction Edge « mfa-decharge ». -->
+<style>
+  :root{--ink:#1a1a2e;--muted:#666;--accent:#241c46;--red:#a33;--ok:#1f6a4a}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3f1f8;color:var(--ink);line-height:1.5}
+  main{max-width:620px;margin:0 auto;padding:28px 18px 60px}
+  .card{background:#fff;border-radius:14px;padding:24px 22px;box-shadow:0 2px 14px rgba(36,28,70,.08)}
+  .sur{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+  h1{font-size:21px;margin:0 0 16px}
+  ol{padding-left:22px} li{margin:6px 0}
+  label{display:block;margin:14px 0 4px;font-weight:bold}
+  input[type=password]{width:100%;padding:12px;border:1px solid #ccc;border-radius:9px;font-size:16px}
+  .cb{display:flex;gap:10px;align-items:flex-start;font-weight:normal;margin-top:18px}
+  .cb input{margin-top:4px;width:18px;height:18px}
+  button{margin-top:18px;width:100%;padding:14px;border:0;border-radius:10px;background:var(--accent);color:#fff;font-size:16px;font-weight:bold;cursor:pointer}
+  button:disabled{opacity:.5;cursor:default}
+  .err{color:var(--red);margin-top:12px}
+  .ok{color:var(--ok)}
+  .code{font-family:monospace;font-size:17px;background:#f3f1f8;padding:8px 12px;border-radius:8px;display:inline-block}
+  .petit{font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<main><div class="card" id="zone"><p>Chargement…</p></div></main>
+<script>
+(function(){
+  "use strict";
+  var FN="https://mlgzdfyqjhvyubrywuim.supabase.co/functions/v1/mfa-decharge";
+  var CLE="sb_publishable_xoVRiE99YOepw-sb5Tmtcg_SJ3VE_0s";
+  var zone=document.getElementById("zone");
+  var t=(new URLSearchParams(location.hash.slice(1))).get("t")||"";
+  function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+  function appel(corps){
+    return fetch(FN,{method:"POST",headers:{"Content-Type":"application/json","apikey":CLE,"Authorization":"Bearer "+CLE},body:JSON.stringify(corps)})
+      .then(function(r){return r.json().catch(function(){return {ok:false,erreur:"Réponse illisible du serveur ("+r.status+")."};});})
+      .catch(function(){return {ok:false,erreur:"Connexion impossible. Réessayez."};});
+  }
+  function fini(code,date,heure,mailOk){
+    zone.innerHTML='<p class="sur">Bureau Étudiant – Sécurité</p><h1 class="ok">Décharge signée</h1>'
+      +(date?'<p>Signée le <b>'+esc(date)+' à '+esc(heure)+'</b>.</p>':'')
+      +'<p>Code de signature :<br><span class="code">'+esc(code||"")+'</span></p>'
+      +'<p>La double authentification n\'est plus obligatoire pour votre compte : vous pouvez vous connecter avec votre mot de passe seul.</p>'
+      +(mailOk===false?'<p class="err">Le mail avec votre PDF n\'a pas pu partir. Contactez le trésorier.</p>':'<p>Votre décharge en PDF vous a été envoyée par mail.</p>')
+      +'<p class="petit">Vous pouvez fermer cette page.</p>';
+  }
+  if(!t){ zone.innerHTML='<h1>Lien incomplet</h1><p>Ouvrez le lien reçu par mail, sans le modifier.</p>'; return; }
+  history.replaceState(null,"",location.pathname); // retire le jeton de la barre d'adresse
+  appel({action:"info",t:t}).then(function(d){
+    if(!d.ok){ zone.innerHTML='<h1>Lien invalide</h1><p>'+esc(d.erreur||"Ce lien n'est pas valable.")+'</p>'; return; }
+    if(d.signe){ fini(d.code); return; }
+    if(d.bloque){ zone.innerHTML='<h1>Lien bloqué</h1><p>Trop d\'essais de mot de passe. Contactez le trésorier.</p>'; return; }
+    zone.innerHTML='<p class="sur">Bureau Étudiant – Sécurité</p><h1>'+esc(d.titre)+'</h1>'
+      +'<p>'+esc(d.intro)+'</p><ol>'+d.points.map(function(p){return '<li>'+esc(p)+'</li>';}).join("")+'</ol>'
+      +'<label class="cb"><input type="checkbox" id="lu"> <span>J\'ai lu et j\'accepte cette décharge.</span></label>'
+      +'<label for="mdp">Mot de passe CAISSE ('+esc(d.email)+')</label>'
+      +'<input type="password" id="mdp" autocomplete="current-password">'
+      +'<p class="petit">Votre mot de passe sert uniquement à signer : il n\'est pas conservé. Aucun code ne sera demandé.</p>'
+      +'<button id="go" disabled>Signer la décharge</button><div class="err" id="err"></div>';
+    var lu=document.getElementById("lu"), mdp=document.getElementById("mdp"), go=document.getElementById("go"), err=document.getElementById("err");
+    function maj(){ go.disabled=!(lu.checked&&mdp.value); }
+    lu.addEventListener("change",maj); mdp.addEventListener("input",maj);
+    mdp.addEventListener("keydown",function(e){ if(e.key==="Enter"&&!go.disabled) go.click(); });
+    go.addEventListener("click",function(){
+      go.disabled=true; go.textContent="Signature en cours…"; err.textContent="";
+      appel({action:"signer",t:t,mdp:mdp.value}).then(function(r){
+        if(r.ok){ fini(r.code,r.date,r.heure,r.mail); return; }
+        if(r.deja&&r.code){ fini(r.code); return; }
+        err.textContent=r.erreur||"Signature impossible."; mdp.value=""; go.textContent="Signer la décharge"; maj();
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>
