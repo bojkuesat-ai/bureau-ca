@@ -8475,7 +8475,7 @@ async function ouvrirRecette(id){
 function typesPieces(actuel){
   const tous = ["Facture","Ticket de caisse","Extrait de compte","Preuve de virement","Reçu de paiement par carte",
     "Reçu signé du commerçant","Bon de commande","Devis","Facture émise","Convention de subside","Reçu",
-    "Attestation de don","Décompte d'événement","Déclaration de perte","Attestation du trésorier","Attestation absence de doublon","Attestation de demande signée","Justificatif","Autre pièce"];
+    "Attestation de don","Décompte d'événement","Déclaration de perte","Attestation du trésorier","Attestation absence de doublon","Attestation de demande signée","Certification d'approbation du CA","Justificatif","Autre pièce"];
   if(actuel && !tous.includes(actuel)) tous.unshift(actuel);
   return tous;
 }
@@ -8963,6 +8963,121 @@ async function signerDemande(montant, direct, iban){
     caseTxt:"J'atteste que la demande est fondée et que les informations fournies sont correctes.", bouton:"Signer et envoyer" });
 }
 
+/* ---------- budgets à certification du CA (25/11/2026) ----------
+   sql/2026-11-25_budget_certification_ca.sql. Pour les budgets listés dans caisse_budget_certif
+   (premier usage : budget CES, urgences, réserve du trésorier sur la totalité), le membre voit la mention
+   sous le budget et doit, avant l'envoi, certifier l'approbation du CA (date du vote obligatoire) et signer
+   avec son mot de passe. Le serveur (caisse_certif_ca_signer) délivre le code du registre des signatures ;
+   un PDF « Certification d'approbation du CA » est joint à la demande. */
+state.budCertif = {};
+async function chargerBudgetsCertif(){
+  try{
+    const { data, error } = await sb.from("caisse_budget_certif").select("budget_id,mention,points").eq("actif", true);
+    if(!error) state.budCertif = Object.fromEntries((data || []).map(x => [String(x.budget_id), x]));
+  }catch(_){ __errSilence(_); }
+}
+const certifDe = bid => bid ? (state.budCertif[String(bid)] || null) : null;
+const KIND_CERTIF_CA = "Certification d'approbation du CA";
+const certifPoints = (cfg, dateVote) => (cfg.points || []).map((p, n) =>
+  (n + 1) + ". " + String(p).replace("[date du vote]", dateVote ? fdate(dateVote) : "[date du vote]"));
+function certifierCA(cfg){
+  if(_dlgFermer) _dlgFermer(null);
+  return new Promise(resolve => {
+    const ov = document.createElement("div");
+    ov.className = "overlay open";
+    const qui = (state.profile.name || "") + (state.profile.position ? ", " + state.profile.position : "");
+    ov.innerHTML = `<div class="sheetd" style="max-width:560px"><div class="sb" style="padding:24px">
+      <div style="font-size:34px;line-height:1;text-align:center;margin-bottom:10px">✍️</div>
+      <h2 style="font-size:21px;margin:0 0 10px;text-align:center">Certification — Aide urgente</h2>
+      <p style="color:var(--muted);font-size:13.5px;margin:0 0 12px;line-height:1.55">${esc(cfg.mention || "")}</p>
+      <div class="field"><label for="cca_date">Date du vote du CA (obligatoire)</label>
+        <input type="date" id="cca_date" max="${esc(dateLocale())}"></div>
+      <div style="background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:13px 14px;font-size:14px;line-height:1.6">
+        <p style="margin:0 0 8px">Je soussigné·e, <b>${esc(qui)}</b>, certifie :</p>
+        <div data-cca-pts></div>
+        <label class="check" style="display:flex;align-items:center;gap:11px;cursor:pointer;margin:12px 0 0;text-transform:none;letter-spacing:0;font-size:13.5px;font-weight:600;color:var(--text)">
+          <input type="checkbox" class="tgl" data-cca-ok><span>Je certifie ces trois points.</span></label>
+      </div>
+      <div class="field" style="margin-top:14px"><label for="cca_mdp">Votre mot de passe, pour signer</label>
+        <input type="password" id="cca_mdp" autocomplete="current-password">
+        <span class="hint">Votre certification est signée par ce mot de passe. Un PDF est joint à votre demande, et le trésorier le verra.</span></div>
+      <div class="err" data-cca-err hidden style="margin-top:10px"></div>
+      <div style="display:flex;gap:10px;margin-top:18px">
+        <button class="btn" data-cca-go style="flex:1" disabled>Signer et envoyer</button>
+        <button class="btn ghost" data-cca-non>Annuler</button></div>
+    </div></div>`;
+    document.body.appendChild(ov);
+    const dt = ov.querySelector("#cca_date"), ok = ov.querySelector("[data-cca-ok]"), mdp = ov.querySelector("#cca_mdp");
+    const go = ov.querySelector("[data-cca-go]"), err = ov.querySelector("[data-cca-err]"), pts = ov.querySelector("[data-cca-pts]");
+    const dessiner = () => { pts.innerHTML = certifPoints(cfg, dt.value).map(t => `<p style="margin:0 0 6px">${esc(t)}</p>`).join(""); };
+    dessiner();
+    let fini = false;
+    const fin = v => { if(fini) return; fini = true; document.removeEventListener("keydown", clavier, true); ov.remove(); resolve(v); };
+    const maj = () => { go.disabled = !(dt.value && ok.checked && mdp.value.length > 0); };
+    function clavier(e){
+      if(e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); fin(null); }
+      else if(e.key === "Enter" && !go.disabled){ e.preventDefault(); e.stopPropagation(); go.click(); }
+    }
+    dt.oninput = dt.onchange = () => { dessiner(); maj(); };
+    ok.onchange = maj; mdp.oninput = maj;
+    ov.querySelector("[data-cca-non]").onclick = () => fin(null);
+    ov.addEventListener("click", e => { if(e.target === ov) fin(null); });
+    document.addEventListener("keydown", clavier, true);
+    go.onclick = async () => {
+      if(go.disabled) return;
+      err.hidden = true;
+      if(dt.value > dateLocale()){ err.textContent = "La date du vote du CA ne peut pas être dans le futur."; err.hidden = false; return; }
+      go.disabled = true; go.textContent = "Vérification…";
+      let r;
+      try{ r = await verifierMotDePasse(mdp.value); }catch(eV){ r = { ok:false, msg: eV.message || String(eV) }; }
+      if(!r.ok){
+        err.textContent = r.msg; err.hidden = false;
+        go.textContent = "Signer et envoyer"; mdp.value = ""; maj(); mdp.focus();
+        return;
+      }
+      fin({ dateVote: dt.value, signeAt: maintenant().toISOString(), email: r.email, mdp: mdp.value, cfg });
+    };
+    setTimeout(() => dt.focus(), 60);
+  });
+}
+async function signerCertifServeur(demande, sig){
+  if(!sig || !sig.mdp) return "";
+  try{
+    const res = await gjAvecMotDePasse(sig.mdp, cli => cli.rpc("caisse_certif_ca_signer", { p_request: demande.id, p_date_vote: sig.dateVote })
+      .then(r => { if(r.error) throw new Error(r.error.message); return r.data || {}; }));
+    sig.code = res.code || ""; sig.texte = res.texte || "";
+  }catch(e){ sig.code = ""; sig.erreurCode = e.message || String(e); }
+  sig.mdp = ""; delete sig.mdp;
+  return sig.code;
+}
+// jsPDF (Helvetica) : Latin-1 seulement ; « · » est gardé, « € » devient « EUR ».
+const txtPdfCA = v => String(v == null ? "" : v).replace(/€/g, "EUR").replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
+  .replace(/[–—]/g, "-").replace(/…/g, "...").replace(/[  ]/g, " ").replace(/[^\x00-\xff]/g, "");
+async function attestationCertifCA(it, sig){
+  const qui = (state.profile.name || it.requester_name || "") + (state.profile.position ? ", " + state.profile.position : "");
+  const texte = sig.texte || ("Je soussigné·e, " + qui + ", certifie :\n" + certifPoints(sig.cfg, sig.dateVote).join("\n"));
+  const b = budgetParId(it.budget_id);
+  const champs = champsDemande(it).concat([["Budget", b ? b.titre : String(it.budget_id || "")], ["Vote du CA", fdate(sig.dateVote)],
+    ["Compte", sig.email || ""], ["Signée le", fstamp(sig.signeAt)]]);
+  if(sig.code) champs.push(["Code de vérification", sig.code]);
+  const blob = await attestationPdf({
+    titre: "Certification - Aide urgente",
+    champs: champs.map(([k, v]) => [k, txtPdfCA(v)]),
+    texte: txtPdfCA(texte),
+    pied: txtPdfCA("Signature électronique par authentification, le " + fstamp(sig.signeAt) + " depuis le compte " + (sig.email || "") + "." + codeVerifTexte(sig.code)) });
+  const nom = "certification-CA-" + refOf(it) + ".pdf";
+  let f;
+  try{ f = new File([blob], nom, { type:"application/pdf" }); }
+  catch(_){ f = blob; f.name = nom; }
+  return f;
+}
+async function noterCertifCA(it, sig, pdfOk){
+  try{ await sb.from("events").insert({ request_id:it.id, who:state.profile.name,
+    what: "Certification d'approbation du CA (vote du " + fdate(sig.dateVote) + ") signée par mot de passe le " + fstamp(sig.signeAt)
+      + (sig.code ? " — code de vérification " + sig.code : " — code de vérification non délivré" + (sig.erreurCode ? " (" + sig.erreurCode + ")" : ""))
+      + (pdfOk ? " (PDF joint)" : " (PDF non joint)") }); }catch(_){ __errSilence(_); }
+}
+
 /* ---------- budgets reliés aux demandeurs ----------
    budgets_caisse() (fonction serveur) renvoie les budgets approuvés avec leurs titulaires :
    tous pour le trésorier, seulement les siens pour un membre.
@@ -8979,6 +9094,7 @@ async function chargerBudgetsCaisse(){
   const { data, error } = await sb.rpc("budgets_caisse");
   if(error){ state.budErr = error.message || String(error); state.budCaisse = []; return; }
   state.budErr = null;
+  await chargerBudgetsCertif();
   state.budCaisse = (data || []).map(b => ({ ...b, id:String(b.id), cout:Number(b.cout||0), consomme:Number(b.consomme||0), membres:b.membres||[],
     paye:null, valide:null, attente:null, nbUrg:0, fin:null, gel:null }));
   try{
@@ -9216,7 +9332,9 @@ function majBudgetForm(px){
     .map(x => `<div class="bud-txt"><span class="warn">« ${esc(x.titre)} » indisponible</span> : ${esc(budgetEtat(x, dDep).raison)}.</div>`).join("");
   $("#" + px + "_budJauge").innerHTML = (b ? jaugeHTML(b, montant)
     : (oblig && !isTreso() ? `<div class="bud-txt">${utilisables.length ? "Choisissez le budget de cette dépense." : "<span class=\"warn\">Aucun budget utilisable à votre nom.</span>" + (urgCfg(uid).geles.length ? "" : " Si la dépense est urgente, activez « Demande urgente — hors budget ».")}</div>` : ""))
-    + bloques;
+    + bloques
+    + (certifDe(sel.value) && !isTreso() ? `<div class="bud-txt" style="margin-top:8px;padding:10px 12px;border:1px solid #7a561b;background:var(--amber-bg);border-radius:10px;line-height:1.5">
+        ✍️ ${esc(certifDe(sel.value).mention)}<br><b>À l'envoi, vous devrez certifier l'approbation du CA (date du vote) et signer avec votre mot de passe.</b></div>` : "");
   const uc = urgCfg(uid);
   const urgBloque = uc.off || uc.geles.length > 0;
   $("#" + px + "_urgWrap").hidden = isTreso() || urgBloque;
@@ -9671,6 +9789,11 @@ $("#reqForm").addEventListener("submit", async e => {
       sigDem = await signerDemande(parseFloat($("#f_amount").value), false, "");
       if(!sigDem) throw new Error("__annule__");
     }
+    let sigCA = null;
+    if(!isTreso() && budR && certifDe(budR.budget_id)){
+      sigCA = await certifierCA(certifDe(budR.budget_id));
+      if(!sigCA) throw new Error("__annule__");
+    }
     const { data, error } = await sb.from("requests").insert({
       ...(budR || {}),
       ...tbChamps("f"),
@@ -9687,6 +9810,7 @@ $("#reqForm").addEventListener("submit", async e => {
     if(error) throw error;
     if(sigDbl) await signerDemandeServeur(data, sigDbl, "doublon", (sigDbl.similaires||[]).map(x => x.titre));
     if(sigDem) await signerDemandeServeur(data, sigDem, "demande", (sigDem.similaires||[]).map(x => x.titre));
+    if(sigCA) await signerCertifServeur(data, sigCA);
     // L'échec d'envoi des pièces était avalé : la demande partait sans justificatif
     // et le membre lisait « Demande envoyée ». On le lui dit maintenant.
     let piecesOk = true, piecesErr = "", attestOk = true;
@@ -9694,6 +9818,8 @@ $("#reqForm").addEventListener("submit", async e => {
                 catch(_){ attestOk = false; } }
     if(sigDem){ try{ staged.req.push({ kind: KIND_SIGNEE, file: await attestationDemande(data, sigDem) }); }
                 catch(_){ attestOk = false; } }
+    if(sigCA){ try{ staged.req.push({ kind: KIND_CERTIF_CA, file: await attestationCertifCA(data, sigCA) }); }
+               catch(_){ attestOk = false; } }
     try{ const _att = await envoyerPieces("req", "dem", bandeauRef(data));
          if(_att.length){ await sb.from("requests").update({ attachments:_att }).eq("id", data.id); data.attachments=_att; }
          else piecesOk = false; }
@@ -9709,6 +9835,7 @@ $("#reqForm").addEventListener("submit", async e => {
       what: "Demande signée par mot de passe le " + fstamp(sigDem.signeAt)
         + (sigDem.code ? " — code de vérification " + sigDem.code : " — code de vérification non délivré" + (sigDem.erreurCode ? " (" + sigDem.erreurCode + ")" : ""))
         + (attestOk && piecesOk ? " (attestation PDF jointe)" : " (attestation PDF non jointe)") }); }catch(_){ __errSilence(_); } }
+    if(sigCA) await noterCertifCA(data, sigCA, attestOk && piecesOk);
     if(data.hors_budget){ try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
       what: "Demande URGENTE hors budget — " + (data.urgence_motif||"") }); }catch(_){ __errSilence(_); } }
     mailAccuse(data, false);
@@ -9825,6 +9952,11 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       sigDemD = await signerDemande(amount, true, mode==="virement" ? iban : "");
       if(!sigDemD) throw new Error("__annule__");
     }
+    let sigCAD = null;
+    if(!isTreso() && budD && certifDe(budD.budget_id)){
+      sigCAD = await certifierCA(certifDe(budD.budget_id));
+      if(!sigCAD) throw new Error("__annule__");
+    }
     const { data, error } = await sb.from("requests").insert({
       ...(budD || {}),
       ...tbChamps("fd"),
@@ -9847,11 +9979,14 @@ $("#directForm")?.addEventListener("submit", async (e) => {
     if(error) throw error;
     if(sigDblD) await signerDemandeServeur(data, sigDblD, "doublon", (sigDblD.similaires||[]).map(x => x.titre));
     if(sigDemD) await signerDemandeServeur(data, sigDemD, "demande", (sigDemD.similaires||[]).map(x => x.titre));
+    if(sigCAD) await signerCertifServeur(data, sigCAD);
     let dirPiecesOk = true, dirErr = "", dirAttestOk = true;
     if(sigDblD){ try{ staged.dir.push({ kind: KIND_DOUBLON, file: await attestationDoublon(data, sigDblD) }); }
                  catch(_){ dirAttestOk = false; } }
     if(sigDemD){ try{ staged.dir.push({ kind: KIND_SIGNEE, file: await attestationDemande(data, sigDemD) }); }
                  catch(_){ dirAttestOk = false; } }
+    if(sigCAD){ try{ staged.dir.push({ kind: KIND_CERTIF_CA, file: await attestationCertifCA(data, sigCAD) }); }
+                catch(_){ dirAttestOk = false; } }
     if(staged.dir.length){
       try{ const _att = await envoyerPieces("dir", "dir", bandeauRef(data));
            if(_att.length){ await sb.from("requests").update({ attachments:_att }).eq("id", data.id); data.attachments=_att; }
@@ -9877,6 +10012,7 @@ $("#directForm")?.addEventListener("submit", async (e) => {
       what: "Demande signée par mot de passe le " + fstamp(sigDemD.signeAt)
         + (sigDemD.code ? " — code de vérification " + sigDemD.code : " — code de vérification non délivré" + (sigDemD.erreurCode ? " (" + sigDemD.erreurCode + ")" : ""))
         + (dirAttestOk && dirPiecesOk ? " (attestation PDF jointe)" : " (attestation PDF non jointe)") }); }catch(_){ __errSilence(_); } }
+    if(sigCAD) await noterCertifCA(data, sigCAD, dirAttestOk && dirPiecesOk);
     if(data.hors_budget){ try{ await sb.from("events").insert({ request_id:data.id, who:state.profile.name,
       what: "Demande URGENTE hors budget — " + (data.urgence_motif||"") }); }catch(_){ __errSilence(_); } }
     if(pour){
@@ -17339,7 +17475,7 @@ if($("#tabVS")) $("#tabVS").onclick = () => choisirVue("vs");
    et quand. Un code inventé ou recopié sur un autre document est refusé. Depuis la
    Caisse, seules les signatures de la Caisse sont consultables.
    ===================================================================== */
-const VS_TYPES = { demande:"Demande signée", demande_doublon:"Déclaration d'absence de doublon", acte_vp:"Signature conjointe — vice-président",
+const VS_TYPES = { demande:"Demande signée", demande_doublon:"Déclaration d'absence de doublon", certif_ca:"Certification d'approbation du CA", acte_vp:"Signature conjointe — vice-président",
   acte_treso:"Signature conjointe — trésorier", gj_tresorier:"Gestion journalière — trésorier", gj_presidente:"Gestion journalière — présidente",
   decision_validee:"Décision du trésorier — demande validée", decision_refusee:"Décision du trésorier — demande refusée",
   decision_corriger:"Décision du trésorier — renvoi pour correction", decision_payee:"Décision du trésorier — paiement effectué",
