@@ -906,7 +906,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-25 · dossier de la secrétaire : remise en fin de mandat";
+const CA_VERSION="2026-11-25 · Transparence : réglage du propriétaire";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -2174,6 +2174,7 @@ function viewProprio(){
     </div>
 
     <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Modules en option</h2><span class="l"></span></div>
+    <div class="card2">${sw('data-pa="transparence"', !!(S.appEtat&&S.appEtat.transparence), "Onglet Transparence", ' <span class="du">— dans l\'Espace CA (désactivé par défaut)</span>')}</div>
     <div class="card2">${Object.keys(MODULES_LIB).map(m=>sw(`data-pa="module" data-id="${m}"`, mods[m]!==false, esc(MODULES_LIB[m]))).join("")}
       <p class="du">Avec le mode licence, un module n'est actif que s'il est coché ici <b>et</b> compris dans la licence.</p></div>
 
@@ -2323,6 +2324,7 @@ document.addEventListener("change", async e=>{
   else if(pa==="admin"){ r=await sb.rpc("proprio_set_admin",{p_membre:id,p_on:on}); }
   else if(pa==="hors-ca"){ r=await sb.rpc("proprio_set_hors_ca",{p_on:on}); }
   else if(pa==="mails-gestion"){ r=await sb.rpc("proprio_reglages",{p:{mails_gestion:on}}); }
+  else if(pa==="transparence"){ r=await sb.rpc("proprio_reglages",{p:{transparence:on}}); }
   else return;
   if(r&&r.error){ b.checked=!on; modaleInfo("Non enregistré : "+r.error.message,"Erreur"); return; }
   await chargerProprio(); await chargerEtatApp(); await loadAccounts();
@@ -3693,7 +3695,9 @@ function viewDash(){
   if(voitJournalCA()) tabs.push(["registre","\ud83d\uddf3","Registre des votes"]);
   if(S.appEtat && S.appEtat.mode_licence && !estCoopte() && (S.appEtat.peut_demander || estAdminCA() || (S.appEtat.demande && S.appEtat.demande.moi)))
     tabs.push(["licence","\ud83d\udcc4","Licence"]);
-  if(!estCoopte()) tabs.push(["transparence","\ud83d\udd0d","Transparence"]);
+  /* Transparence : seulement si le propriétaire l'a activée (désactivée par défaut). */
+  if(!estCoopte() && S.appEtat && S.appEtat.transparence) tabs.push(["transparence","\ud83d\udd0d","Transparence"]);
+  if(S.tab==="transparence" && !tabs.some(t=>t[0]==="transparence")) S.tab="accueil";
   if(S.tab==="admin" && !estAdminCA()) S.tab="accueil";
   if((S.tab==="journal"||S.tab==="registre") && !voitJournalCA()) S.tab="accueil";
   if(S.tab==="proprio" && !proprioOuvert()) S.tab="accueil";
