@@ -33,7 +33,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 
 - **Supabase** : projet `mlgzdfyqjhvyubrywuim` (base, Auth, fonctions Edge, `pg_cron`, `pg_net`).
 - **Publication** : GitHub Pages (`https://bojkuesat-ai.github.io/bureau-ca/`). Cache d'environ 10 minutes ; en cas de doute, ajouter `?v=…`.
-- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-25 · dossier de la secrétaire : plusieurs fichiers »).
+- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-25 · dossier de la secrétaire : éléments automatiques modifiables »).
 
 ## 3. Rôles et droits
 
@@ -197,3 +197,4 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - 25/11/2026 : **rappel annuel subside BEA/CASE** (`sql/2026-11-25_rappel_subside_bea.sql`) : tâche `subside-bea-rappel`, chaque 1er mars à 08h07 UTC, mail « Trésorerie-BE » à la présidence et à la trésorerie en poste (`subside_rappel_annuel()`). Date à ajuster selon le calendrier du BEA.
 - 25/11/2026 : **📁 Dossier de la secrétaire** (onglet `secdossier`, `sql/2026-11-25_dossier_secretaire.sql`). Secrétaire, Admin, propriétaire : tout voir — automatique (PV signés / refusés / en attente via `sec_dossier_pv()`, documents « PV & CR », ODJ + présences de chaque réunion, courriers signés par le secrétariat) + documents déposés par catégorie, bouton « Télécharger tout (ZIP) » (`secdZip`). Autres membres du CA (pas cooptés) : « Envoyer un document à la secrétaire », ne voient que leurs envois. Le déposant modifie/supprime ; la secrétaire (et le propriétaire) peut supprimer tout dépôt. Pastille seulement (pas de mail). Table `ca_sec_dossier`, fichiers `ca-documents/secretariat/<id>/…` (lecture restreinte par `ca_st_doc_sel`), inclus dans le ZIP « Archives du CA » (fonction `fin-mandat` v2).
 - 25/11/2026 : dossier de la secrétaire — **plusieurs fichiers par document** (`ca_sec_dossier.fichiers` jsonb, max 20, `sql/2026-11-25_dossier_secretaire_multi.sql`). Avant l'envoi : liste des fichiers avec ✕ (retirer) et ✎ (remplacer), ajout d'autres fichiers. Le déposant peut ensuite ajouter / retirer / remplacer des fichiers. ZIP : un sous-dossier par document à plusieurs fichiers.
+- 25/11/2026 : dossier de la secrétaire — la secrétaire (et le propriétaire) peut **retirer** (✕) ou **modifier** (✎ nom affiché + note) les éléments automatiques **dans le dossier seulement** ; les originaux (PV, réunions, courriers, Documents) ne changent jamais. « Afficher les éléments retirés » → « Remettre ». Les retirés ne vont pas dans le ZIP. Table `ca_sec_auto` (clé `pv:`, `doc:`, `reu:`, `cour:`), `sql/2026-11-25_dossier_secretaire_auto.sql`.

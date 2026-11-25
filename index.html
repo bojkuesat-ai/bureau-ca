@@ -906,7 +906,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-25 · dossier de la secrétaire : plusieurs fichiers";
+const CA_VERSION="2026-11-25 · dossier de la secrétaire : éléments automatiques modifiables";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -3213,7 +3213,7 @@ document.addEventListener("click", async e=>{
    ===================================================================== */
 const SECD_CATS=["Contrats","Conventions","Courriers reçus","Courriers envoyés","PV & comptes rendus","Statuts & règlements","Assurances","Factures & devis","Divers"];
 const SECD_MAX=25*1024*1024;
-function secdEtat(){ if(!S.secd) S.secd={liste:[], pv:[], err:null, form:null, busy:false}; return S.secd; }
+function secdEtat(){ if(!S.secd) S.secd={liste:[], pv:[], auto:{}, err:null, form:null, busy:false}; return S.secd; }
 function secdPeut(){ return !!S.session && !estCoopte() && !estProprioRetire(); }
 function secdVoit(){ return secdPeut() && (estSecretaire() || estAdminCA() || estProprioCA()); }
 function secdMoi(){ return (S.session&&S.session.id)||""; }
@@ -3237,7 +3237,9 @@ async function loadSecDossier(){
     if(r.error){ E.err=r.error.message; E.liste=[]; } else { E.err=null; E.liste=r.data||[]; }
   }catch(e){ E.err=String(e&&e.message||e); E.liste=[]; }
   E.pv=[];
-  if(secdVoit()){ try{ const p=await sb.rpc("sec_dossier_pv"); if(p&&!p.error) E.pv=p.data||[]; }catch(_){ } }
+  E.auto={};
+  if(secdVoit()){ try{ const p=await sb.rpc("sec_dossier_pv"); if(p&&!p.error) E.pv=p.data||[]; }catch(_){ }
+    try{ const q=await sb.from("ca_sec_auto").select("*"); if(q&&!q.error) (q.data||[]).forEach(x=>{ E.auto[x.cle]=x; }); }catch(_){ } }
 }
 
 /* ---------- ODJ / convocation d'une réunion (HTML autonome) ---------- */
@@ -3290,6 +3292,53 @@ function secdFormHTML(){
       <button class="btn ghost" data-action="secd-annuler">Annuler</button></div></div>`;
 }
 function secdSection(titre, n, corps){ return `<div class="grp-h" style="margin-top:22px"><h2 class="serif">${titre}</h2><span class="c">${n}</span><span class="l"></span></div>${corps}`; }
+/* Éléments automatiques : clé stable, titre d'origine, boutons d'ouverture. */
+function secdAuto(cle){ return (secdEtat().auto||{})[cle]||null; }
+function secdAutoPeut(){ return estSecretaire() || !!(S.session&&S.session.role==="owner"); }
+function secdAutoItems(){
+  const E=secdEtat(), out=[];
+  const add=o=>{ const a=secdAuto(o.cle); o.ret=!!(a&&a.retire); o.titreAff=(a&&a.titre)||o.titre; o.note=(a&&a.note)||""; out.push(o); };
+  const pvLib={valide:"Signé",attente:"En attente de signature",refuse:"Refusé / retiré"};
+  for(const p of E.pv) add({section:"pv", cle:"pv:"+p.id, src:p, ic:p.statut==="valide"?"✅":p.statut==="refuse"?"⛔":"⏳", titre:p.titre||"PV",
+    du:(pvLib[p.statut]||p.statut)+(p.date_reunion?" · réunion du "+fmtDateLong(String(p.date_reunion).slice(0,10)):"")+(p.signataire_nom?" · "+p.signataire_nom:"")+(p.sig_sign_at?" le "+fmtQuand(p.sig_sign_at):"")+(p.code_sign?" · code "+p.code_sign:""),
+    motif:p.motif||"", boutons:(p.statut==="valide"&&p.pdf_path?`<button class="chip" data-action="secd-fichier" data-path="${esc(p.pdf_path)}">PV signé</button>`:"")
+      +(p.fichier&&p.fichier.path?`<button class="chip" data-action="secd-fichier" data-path="${esc(p.fichier.path)}">PV d'origine</button>`:"")});
+  const pvPaths=new Set(E.pv.map(p=>p.pdf_path).filter(Boolean));
+  for(const d of (S.docs||[]).filter(d=>d.cat==="PV & CR" && !pvPaths.has(d.chemin))) add({section:"pv", cle:"doc:"+d.chemin, src:d, ic:"📄", titre:d.titre, du:"Documents · PV & CR",
+    boutons:`<button class="chip" data-action="secd-fichier" data-path="${esc(d.chemin)}">Ouvrir</button>`});
+  for(const m of [...(S.reunions||[])].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))) add({section:"reu", cle:"reu:"+m.id, src:m, ic:"🗓", titre:m.titre||"Réunion",
+    du:reuQuand(m)+(m.lieu?" · "+m.lieu:"")+" · "+(m.ordre||[]).length+" point(s)"+(m.odjEnvoyeLe?" · ODJ envoyé le "+fmtQuand(m.odjEnvoyeLe):""),
+    boutons:`<button class="chip" data-action="secd-odj" data-id="${esc(m.id)}">ODJ / convocation</button>`});
+  const ids=secretairesExtra();
+  for(const c of (courEtat().liste||[]).filter(c=>ids.indexOf(c.signataire_id)>=0)) add({section:"cour", cle:"cour:"+c.id, src:c, ic:"✒", titre:c.objet,
+    du:courRef(c)+" · "+(c.signataire_nom||"")+" · "+fmtQuand(c.signe_le),
+    boutons:c.pdf_path?`<button class="chip" data-action="secd-fichier" data-path="${esc(c.pdf_path)}">PDF signé</button>`:""});
+  return out;
+}
+function secdLigneAuto(x){
+  const E=secdEtat(), peut=secdAutoPeut();
+  if(peut && E.autoEdit===x.cle) return `<div class="compose" style="border:2px solid #8fb3ff;margin:6px 0">
+    <p class="du" style="margin:0 0 6px">Modifier dans le dossier seulement — l'original (${esc(x.titre)}) ne change pas.</p>
+    <input class="f" id="secd_auto_titre" maxlength="200" value="${esc(x.titreAff)}" placeholder="Nom affiché dans le dossier">
+    <textarea class="f" id="secd_auto_note" maxlength="2000" rows="2" placeholder="Note (facultatif)">${esc(x.note)}</textarea>
+    <div class="row-btn"><button class="btn sm" data-action="secd-auto-enreg" data-cle="${esc(x.cle)}">Enregistrer</button>
+      <button class="btn ghost sm" data-action="secd-auto-annuler">Annuler</button></div></div>`;
+  return `<div class="doc"${x.ret?' style="opacity:.55"':""}><span class="ic">${x.ic}</span>
+    <span class="meta"><p class="dt">${esc(x.titreAff)}${x.ret?` <span class="badge no">Retiré du dossier</span>`:""}</p>
+      <p class="du">${esc(x.du)}${x.titreAff!==x.titre?" · titre d'origine : "+esc(x.titre):""}</p>
+      ${x.motif?`<p class="du" style="white-space:pre-wrap">Motif : ${esc(x.motif)}</p>`:""}
+      ${x.note?`<p class="du" style="white-space:pre-wrap">📝 ${esc(x.note)}</p>`:""}</span>
+    ${x.boutons}
+    ${peut?(x.ret?`<button class="chip" data-action="secd-auto-remettre" data-cle="${esc(x.cle)}">Remettre</button>`
+      :`<button class="chip" data-action="secd-auto-modifier" data-cle="${esc(x.cle)}">✎ Modifier</button><button class="rm2" data-action="secd-auto-retirer" data-cle="${esc(x.cle)}" title="Retirer du dossier">✕</button>`):""}</div>`;
+}
+async function secdAutoEcrire(cle, champs){
+  const anc=secdAuto(cle)||{};
+  const row={cle, retire:!!anc.retire, titre:anc.titre||null, note:anc.note||null, ...champs};
+  const r=await sb.from("ca_sec_auto").upsert(row,{onConflict:"cle"}).select();
+  if(r.error||!(r.data||[]).length) throw new Error(r.error?r.error.message:"enregistrement refusé");
+  secdEtat().auto[cle]=r.data[0];
+}
 function tabSecDossier(){
   const E=secdEtat();
   if(!secdPeut()) return `<div class="empty">Réservé aux membres du CA.</div>`;
@@ -3310,31 +3359,17 @@ function tabSecDossier(){
   /* Dépôts, par catégorie */
   const cats=[...new Set(SECD_CATS.concat(E.liste.map(d=>d.categorie)))].filter(c=>E.liste.some(d=>d.categorie===c));
   const depots=E.liste.length?cats.map(c=>`<p class="du" style="margin:14px 0 4px;font-weight:700">${esc(c)}</p>`+E.liste.filter(d=>d.categorie===c).map(secdLigneDepot).join("")).join(""):`<div class="empty">Aucun document déposé.</div>`;
-  /* PV */
-  const pvLib={valide:"Signé",attente:"En attente de signature",refuse:"Refusé / retiré"};
-  const pvs=E.pv.length?E.pv.map(p=>`<div class="doc"><span class="ic">${p.statut==="valide"?"✅":p.statut==="refuse"?"⛔":"⏳"}</span>
-    <span class="meta"><p class="dt">${esc(p.titre||"PV")}</p><p class="du">${esc(pvLib[p.statut]||p.statut)}${p.date_reunion?" · réunion du "+esc(fmtDateLong(String(p.date_reunion).slice(0,10))):""}${p.signataire_nom?" · "+esc(p.signataire_nom):""}${p.sig_sign_at?" le "+esc(fmtQuand(p.sig_sign_at)):""}${p.code_sign?" · code "+esc(p.code_sign):""}</p>
-    ${p.motif?`<p class="du" style="white-space:pre-wrap">Motif : ${esc(p.motif)}</p>`:""}</span>
-    ${p.statut==="valide"&&p.pdf_path?`<button class="chip" data-action="secd-fichier" data-path="${esc(p.pdf_path)}">PV signé</button>`:""}
-    ${p.fichier&&p.fichier.path?`<button class="chip" data-action="secd-fichier" data-path="${esc(p.fichier.path)}">PV d'origine</button>`:""}</div>`).join(""):`<div class="empty">Aucun PV.</div>`;
-  const pvPaths=new Set(E.pv.map(p=>p.pdf_path).filter(Boolean));
-  const docsPv=(S.docs||[]).filter(d=>d.cat==="PV & CR" && !pvPaths.has(d.chemin));
-  const docsPvH=docsPv.map(d=>`<div class="doc"><span class="ic">📄</span><span class="meta"><p class="dt">${esc(d.titre)}</p><p class="du">Documents · PV &amp; CR</p></span><button class="chip" data-action="secd-fichier" data-path="${esc(d.chemin)}">Ouvrir</button></div>`).join("");
-  /* Réunions */
-  const reus=[...(S.reunions||[])].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
-  const reusH=reus.length?reus.map(m=>`<div class="doc"><span class="ic">🗓</span><span class="meta"><p class="dt">${esc(m.titre||"Réunion")}</p>
-    <p class="du">${esc(reuQuand(m))}${m.lieu?" · "+esc(m.lieu):""} · ${(m.ordre||[]).length} point(s)${m.odjEnvoyeLe?" · ODJ envoyé le "+esc(fmtQuand(m.odjEnvoyeLe)):""}</p></span>
-    <button class="chip" data-action="secd-odj" data-id="${esc(m.id)}">ODJ / convocation</button></div>`).join(""):`<div class="empty">Aucune réunion.</div>`;
-  /* Courriers signés par le secrétariat */
-  const ids=secretairesExtra();
-  const cours=(courEtat().liste||[]).filter(c=>ids.indexOf(c.signataire_id)>=0);
-  const coursH=cours.length?cours.map(c=>`<div class="doc"><span class="ic">✒</span><span class="meta"><p class="dt">${esc(c.objet)}</p><p class="du">${esc(courRef(c))} · ${esc(c.signataire_nom||"")} · ${esc(fmtQuand(c.signe_le))}</p></span>
-    ${c.pdf_path?`<button class="chip" data-action="secd-fichier" data-path="${esc(c.pdf_path)}">PDF signé</button>`:""}</div>`).join(""):`<div class="empty">Aucun courrier signé par le secrétariat.</div>`;
+  /* Éléments ajoutés automatiquement (retirer / renommer : seulement dans le dossier) */
+  const items=secdAutoItems(), nRet=items.filter(x=>x.ret).length;
+  const parSection=sec=>{ const l=items.filter(x=>x.section===sec), vis=l.filter(x=>!x.ret||E.voirRetires);
+    return [l.filter(x=>!x.ret).length, vis.length?vis.map(secdLigneAuto).join(""):`<div class="empty">Rien ici.</div>`]; };
+  const [nPv,hPv]=parSection("pv"), [nReu,hReu]=parSection("reu"), [nCour,hCour]=parSection("cour");
+  const bascule=nRet?`<div class="row-btn" style="margin-top:18px"><button class="chip" data-action="secd-voir-retires">${E.voirRetires?"Masquer":"Afficher"} les éléments retirés (${nRet})</button></div>`:"";
   return head+(E.form?secdFormHTML():"")+err
     +secdSection("Documents déposés", E.liste.length, depots)
-    +secdSection("PV", E.pv.length+docsPv.length, pvs+docsPvH)
-    +secdSection("Réunions : ordres du jour et convocations", reus.length, reusH)
-    +secdSection("Courriers signés", cours.length, coursH);
+    +secdSection("PV", nPv, hPv)
+    +secdSection("Réunions : ordres du jour et convocations", nReu, hReu)
+    +secdSection("Courriers signés", nCour, hCour)+bascule;
 }
 
 /* ---------- formulaire ---------- */
@@ -3390,26 +3425,32 @@ async function secdZip(){
     const pris2=[];
     for(const x of fl){ const nm=fl.length>1?secdNomZip(x.nom.replace(/\.[^.]+$/,""))+ext(x.nom||x.chemin):ext(x.nom||x.chemin); pris2.push(await ajouter(x.chemin, dos+nm)); }
     lignes.push(["Document déposé",d.titre,d.categorie,fmtQuand(d.created_at),d.depose_nom||"",pris2.filter(Boolean).join(" | "),d.note||""]); }
+  const AU=(cle,tit)=>{ const a=secdAuto(cle); return {ret:!!(a&&a.retire), titre:(a&&a.titre)||tit, note:(a&&a.note)||""}; };
   for(const p of E.pv){
-    const base=secdNomZip((p.titre||"PV")+(p.statut==="valide"?"":p.statut==="refuse"?" - REFUSE":" - EN ATTENTE"));
+    const A=AU("pv:"+p.id, p.titre||"PV"); if(A.ret) continue;
+    const base=secdNomZip(A.titre+(p.statut==="valide"?"":p.statut==="refuse"?" - REFUSE":" - EN ATTENTE"));
     let f1="", f2="";
     if(p.pdf_path) f1=await ajouter(p.pdf_path, "PV/signes/"+base+" - signe.pdf");
     if(p.fichier&&p.fichier.path) f2=await ajouter(p.fichier.path, "PV/"+(p.statut==="valide"?"originaux":"non-signes")+"/"+base+ext(p.fichier.path));
-    lignes.push(["PV",p.titre||"",p.statut+(p.motif?" (motif : "+p.motif+")":""),p.date_reunion||"",p.signataire_nom||"",[f1,f2].filter(Boolean).join(" | "),p.code_sign?"code "+p.code_sign:""]); }
-  for(const d of (S.docs||[]).filter(x=>x.cat==="PV & CR")){ if(pris.has(d.chemin)) continue;
-    const f=await ajouter(d.chemin, "PV/documents-PV-CR/"+secdNomZip(d.titre)+ext(d.chemin)); lignes.push(["Document PV & CR",d.titre,"PV & CR","","",f,""]); }
+    lignes.push(["PV",A.titre,p.statut+(p.motif?" (motif : "+p.motif+")":""),p.date_reunion||"",p.signataire_nom||"",[f1,f2].filter(Boolean).join(" | "),[p.code_sign?"code "+p.code_sign:"",A.note].filter(Boolean).join(" · ")]); }
+  const pvPaths=new Set(E.pv.map(p=>p.pdf_path).filter(Boolean));
+  for(const d of (S.docs||[]).filter(x=>x.cat==="PV & CR")){ if(pris.has(d.chemin)||pvPaths.has(d.chemin)) continue;
+    const A=AU("doc:"+d.chemin, d.titre); if(A.ret) continue;
+    const f=await ajouter(d.chemin, "PV/documents-PV-CR/"+secdNomZip(A.titre)+ext(d.chemin)); lignes.push(["Document PV & CR",A.titre,"PV & CR","","",f,A.note]); }
   for(const m of (S.reunions||[])){
-    const dos="Reunions/"+secdNomZip((m.date?String(m.date).slice(0,10)+" ":"")+(m.titre||"Reunion"))+"/";
+    const A=AU("reu:"+m.id, m.titre||"Réunion"); if(A.ret) continue;
+    const dos="Reunions/"+secdNomZip((m.date?String(m.date).slice(0,10)+" ":"")+A.titre)+"/";
     const f=unique(dos+"ordre-du-jour.html"); z.file(f, secdOdjHtml(m));
     const prs=(S.procurations||[]).filter(p=>p.pdfPath && m.date && String(p.dateReunion||"").slice(0,10)===String(m.date).slice(0,10));
     for(const p of prs) await ajouter(p.pdfPath, dos+"procurations/"+secdNomZip("Procuration "+p.mandantNom+" - "+p.mandataireNom)+".pdf");
-    lignes.push(["Réunion",m.titre||"",(m.ordre||[]).length+" point(s)",m.date||"","",f,prs.length?prs.length+" procuration(s)":""]); }
+    lignes.push(["Réunion",A.titre,(m.ordre||[]).length+" point(s)",m.date||"","",f,[prs.length?prs.length+" procuration(s)":"",A.note].filter(Boolean).join(" · ")]); }
   const ids=secretairesExtra();
   for(const c of (courEtat().liste||[]).filter(x=>ids.indexOf(x.signataire_id)>=0)){
+    const A=AU("cour:"+c.id, c.objet); if(A.ret) continue;
     let f="";
-    if(c.pdf_path) f=await ajouter(c.pdf_path, "Courriers-signes/"+secdNomZip(courRef(c)+" "+c.objet)+".pdf");
-    if(c.fichier&&c.fichier.path&&!courEstPdf(c.fichier)) await ajouter(c.fichier.path, "Courriers-signes/"+secdNomZip(courRef(c)+" "+c.objet)+" - original"+ext(c.fichier.path));
-    lignes.push(["Courrier signé",c.objet,courRef(c),fmtQuand(c.signe_le),c.signataire_nom||"",f,""]); }
+    if(c.pdf_path) f=await ajouter(c.pdf_path, "Courriers-signes/"+secdNomZip(courRef(c)+" "+A.titre)+".pdf");
+    if(c.fichier&&c.fichier.path&&!courEstPdf(c.fichier)) await ajouter(c.fichier.path, "Courriers-signes/"+secdNomZip(courRef(c)+" "+A.titre)+" - original"+ext(c.fichier.path));
+    lignes.push(["Courrier signé",A.titre,courRef(c),fmtQuand(c.signe_le),c.signataire_nom||"",f,A.note]); }
   const cel=v=>{ const s=String(v==null?"":v); return /[;"\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
   z.file("recapitulatif.csv", "﻿"+lignes.map(l=>l.map(cel).join(";")).join("\r\n"));
   z.file("LISEZMOI.txt", ["Dossier de la secrétaire — "+(S.meta&&S.meta.nom||"Bureau étudiant"), "Téléchargé le "+fmtQuand(new Date().toISOString())+" par "+(S.session.nom||""), "",
@@ -3433,6 +3474,18 @@ document.addEventListener("click", async e=>{
         if(!F.files[i].file && !(await modaleConfirm("Retirer « "+F.files[i].nom+" » de ce document ?\n\nLe fichier sera supprimé quand vous cliquerez sur Enregistrer.","Retirer le fichier"))) break;
         F.files.splice(i,1); render(); break; }
       case "secd-annuler": E.form=null; render(); break;
+      case "secd-voir-retires": E.voirRetires=!E.voirRetires; render(); break;
+      case "secd-auto-modifier": if(!secdAutoPeut()) break; E.autoEdit=el.dataset.cle; render(); break;
+      case "secd-auto-annuler": E.autoEdit=null; render(); break;
+      case "secd-auto-enreg": { if(!secdAutoPeut()) break; const cle=el.dataset.cle;
+        const t=(document.getElementById("secd_auto_titre")||{}).value||"", n=(document.getElementById("secd_auto_note")||{}).value||"";
+        const it=secdAutoItems().find(x=>x.cle===cle); const tt=String(t).trim();
+        await secdAutoEcrire(cle,{titre:(!tt||(it&&tt===it.titre))?null:tt, note:String(n).trim()||null});
+        E.autoEdit=null; try{ logAct("Dossier secrétaire : élément modifié — "+(tt||cle)); }catch(_){ } render(); break; }
+      case "secd-auto-retirer": { if(!secdAutoPeut()) break; const cle=el.dataset.cle; const it=secdAutoItems().find(x=>x.cle===cle);
+        if(!(await modaleConfirm("Retirer « "+(it?it.titreAff:cle)+" » du dossier ?\n\nIl reste intact ailleurs dans l'Espace CA et ne sera plus dans le ZIP du dossier. Vous pourrez le remettre (« Afficher les éléments retirés »).","Retirer du dossier"))) break;
+        await secdAutoEcrire(cle,{retire:true}); try{ logAct("Dossier secrétaire : élément retiré — "+(it?it.titreAff:cle)); }catch(_){ } render(); break; }
+      case "secd-auto-remettre": { if(!secdAutoPeut()) break; await secdAutoEcrire(el.dataset.cle,{retire:false}); render(); break; }
       case "secd-enregistrer": {
         if(E.busy) break; secdLireForm(); const F=E.form; if(!F) break;
         const titre=String(F.titre||"").trim();
