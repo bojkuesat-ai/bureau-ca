@@ -36,7 +36,7 @@ const ZIPS: Record<string, { titre: string; fichier: string; bucket: string; tab
     titre: "Archives du CA", fichier: "archives-CA", bucket: "ca-documents",
     tables: ["ca_membres", "ca_reunions", "ca_pv_signatures", "ca_procurations", "ca_votes", "ca_vote_options", "ca_budgets", "ca_budget_votes",
       "ca_budget_reserves", "ca_docs", "ca_courriers", "ca_annonces", "ca_evenements", "ca_event_presence", "ca_taches", "ca_org", "ca_contacts",
-      "ca_journal", "ca_avis", "ca_salle_reservations", "bil_evenements", "signatures_registre", "transparence_journal"],
+      "ca_journal", "ca_avis", "ca_salle_reservations", "bil_evenements", "signatures_registre", "transparence_journal", "ca_sec_dossier"],
   },
   compta: {
     titre: "Comptabilité de la Caisse", fichier: "comptabilite-Caisse", bucket: "justificatifs",
@@ -142,7 +142,7 @@ async function partie(type: "ca" | "compta", dossier: string, date: string, suiv
       "Dossier « tableaux » : chaque table au format CSV (séparateur « ; », s'ouvre dans Excel ou LibreOffice).",
       ...resume, "",
       `Dossier « fichiers » : ${fichiers.length} fichier(s) (${mo(total)}) tels qu'ils étaient dans l'application`,
-      type === "ca" ? "  (PV signés, documents, courriers signés…)." : "  (justificatifs, factures, extraits…).",
+      type === "ca" ? "  (PV signés, documents, courriers signés… ; dossier de la secrétaire : fichiers/secretariat/, liste dans tableaux/ca_sec_dossier.csv)." : "  (justificatifs, factures, extraits…).",
       "Si l'archive est découpée en plusieurs parties (partie-1, partie-2…), les fichiers sont répartis entre elles : gardez-les toutes.", "",
       type === "compta" ? "À conserver : la comptabilité et ses pièces doivent être gardées plusieurs années (obligation légale de l'ASBL)." :
         "Les échanges confidentiels (soutien, médiation, messages privés) ne sont pas inclus.",

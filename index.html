@@ -906,7 +906,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-17 · simulation : annonce à l'activation";
+const CA_VERSION="2026-11-25 · dossier de la secrétaire";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -1642,7 +1642,7 @@ async function refreshSession(){
   const jobsCoopte=[loadConflits,loadEvenements,loadMeta,loadAvis,loadAvisVotes,loadMediation,loadSoutien];
   const jobs=(S.session.role==="coopte")?jobsCoopte:[loadDocs,loadMessages,loadConflits,loadTaches,loadContacts,loadAnnonces,loadReactions,loadPresence,
     loadEvenements,loadReunions,loadCreneaux,loadOrg,loadBudgets,loadVotes,loadMeta,loadBilans,loadJournal,
-    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes,loadSalle,loadBillets,loadPvSign,loadCourriers];
+    loadMailing,loadGroupes,loadProgrammes,loadDesabonnes,loadAvis,loadAvisVotes,loadProcurations,loadMediation,loadSoutien,loadCes,loadSalle,loadBillets,loadPvSign,loadCourriers,loadSecDossier];
   if(S.session.role==="coopte"){ ["docs","messages","taches","contacts","annonces","reunions","creneaux","budgets","votes","bilans","journal","mailing","procurations"].forEach(k=>{ S[k]=[]; }); }
   await Promise.all(jobs.map(f=>{ try{ return f(); }catch(e){ return null; } }));
   await traiterLiensSpeciaux();
@@ -3199,10 +3199,272 @@ document.addEventListener("click", async e=>{
   }catch(err){ modaleInfo("Erreur : "+(err&&err.message||err),"PV à signer"); }
 });
 
+/* =====================================================================
+   DOSSIER DE LA SECRÉTAIRE (25/11/2026)
+   - Voit tout : la secrétaire, l'Admin, le propriétaire.
+   - Rangé automatiquement : PV signés, PV refusés / en attente, ODJ et
+     convocations de chaque réunion, documents « PV & CR », courriers signés
+     par le secrétariat.
+   - Dépôts : la secrétaire et tout membre du CA (pas les coopté·es).
+     Le déposant modifie ou supprime ses dépôts ; la secrétaire peut supprimer
+     n'importe quel dépôt. Pastille seulement (pas de mail).
+   - Fichiers : ca-documents/secretariat/<id du déposant>/… (repris dans le ZIP
+     « Archives du CA » de la fin de mandat). Table ca_sec_dossier, RPC sec_dossier_pv.
+   ===================================================================== */
+const SECD_CATS=["Contrats","Conventions","Courriers reçus","Courriers envoyés","PV & comptes rendus","Statuts & règlements","Assurances","Factures & devis","Divers"];
+const SECD_MAX=25*1024*1024;
+function secdEtat(){ if(!S.secd) S.secd={liste:[], pv:[], err:null, form:null, busy:false}; return S.secd; }
+function secdPeut(){ return !!S.session && !estCoopte() && !estProprioRetire(); }
+function secdVoit(){ return secdPeut() && (estSecretaire() || estAdminCA() || estProprioCA()); }
+function secdMoi(){ return (S.session&&S.session.id)||""; }
+function secdPeutModif(d){ return !!d && d.depose_par===secdMoi(); }
+function secdPeutSuppr(d){ return !!d && (d.depose_par===secdMoi() || estSecretaire() || (S.session&&S.session.role==="owner")); }
+function secdNomPersonne(id){ const a=(S.admins||[]).find(x=>x.id===id); return a?(((a.prenom||"")+" "+(a.nom||"")).trim()||a.email||""):""; }
+function secdNomsSecretaires(){ return secretairesExtra().map(secdNomPersonne).filter(Boolean); }
+function secdFichierSur(s){ return String(s||"fichier").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-zA-Z0-9._-]+/g,"_").replace(/_+/g,"_").slice(-120)||"fichier"; }
+function secdNomZip(s){ return String(s||"").replace(/[\\/:*?"<>|\u0000-\u001f]+/g,"-").replace(/\s+/g," ").trim().slice(0,90)||"sans-titre"; }
+function secdBadge(){ if(!estSecretaire()) return 0; const t=seenTs("secdossier"), me=secdMoi();
+  return secdEtat().liste.filter(d=>d.depose_par!==me && new Date(d.created_at).getTime()>t).length; }
+
+async function loadSecDossier(){
+  const E=secdEtat();
+  if(!secdPeut()){ E.liste=[]; E.pv=[]; return; }
+  try{
+    const r=await sb.from("ca_sec_dossier").select("*").order("created_at",{ascending:false});
+    if(r.error){ E.err=r.error.message; E.liste=[]; } else { E.err=null; E.liste=r.data||[]; }
+  }catch(e){ E.err=String(e&&e.message||e); E.liste=[]; }
+  E.pv=[];
+  if(secdVoit()){ try{ const p=await sb.rpc("sec_dossier_pv"); if(p&&!p.error) E.pv=p.data||[]; }catch(_){ } }
+}
+
+/* ---------- ODJ / convocation d'une réunion (HTML autonome) ---------- */
+function secdOdjHtml(m){
+  const pres=m.presences||{};
+  const noms=v=>Object.keys(pres).filter(k=>pres[k]===v).map(k=>esc(secdNomPersonne(k)||k));
+  const ligne=(l,v)=>{ const n=noms(v); return n.length?`<p><b>${l} (${n.length}) :</b> ${n.join(", ")}</p>`:""; };
+  const pts=(m.ordre||[]).map((p,i)=>`<li><b>${esc(p.texte||"")}</b>${p.fait?" ✓":""}${p.note?`<br><span style="white-space:pre-wrap">${esc(p.note)}</span>`:""}${p.notes?`<br><i style="white-space:pre-wrap">${esc(p.notes)}</i>`:""}</li>`).join("");
+  const e=reuPvEtat(m);
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>${esc(m.titre||"Réunion")}</title>
+<style>body{font-family:Calibri,Arial,sans-serif;max-width:760px;margin:30px auto;padding:0 20px;color:#111;line-height:1.5}h1{font-size:22px;margin:0 0 4px}.d{color:#555;margin:0 0 18px}li{margin:6px 0}.e{color:#666;font-size:13px;margin-top:28px;border-top:1px solid #ddd;padding-top:8px}</style></head><body>
+<p class="d">${esc(S.meta&&S.meta.nom||"Bureau étudiant")} · Conseil d'administration</p>
+<h1>${esc(m.titre||"Réunion")}</h1>
+<p class="d">${esc(reuQuand(m))}${m.lieu?" · "+esc(m.lieu):""}</p>
+<h2 style="font-size:17px">Ordre du jour</h2>${pts?`<ol>${pts}</ol>`:"<p>(aucun point)</p>"}
+${ligne("Présents","present")}${ligne("Excusés","excuse")}${ligne("Absents","absent")}
+<p class="e">Convocation et ordre du jour envoyés par l'Espace CA${m.odjEnvoyeLe?" · ODJ définitif envoyé le "+esc(fmtQuand(m.odjEnvoyeLe)):""}${e?" · PV : "+esc(e.statut==="valide"?"signé":e.statut==="attente"?"en signature":e.statut==="refuse"?"refusé":e.statut):""}.</p>
+</body></html>`;
+}
+
+/* ---------- affichage ---------- */
+function secdLigneDepot(d){
+  const ref=secdEtat().vuAvant!=null?secdEtat().vuAvant:seenTs("secdossier"); const neuf=estSecretaire() && d.depose_par!==secdMoi() && new Date(d.created_at).getTime()>ref;
+  const act=[`<button class="chip" data-action="secd-ouvrir" data-id="${esc(d.id)}">Ouvrir</button>`];
+  if(secdPeutModif(d)) act.push(`<button class="chip" data-action="secd-modifier" data-id="${esc(d.id)}">Modifier</button>`);
+  if(secdPeutSuppr(d)) act.push(`<button class="rm2" data-action="secd-suppr" data-id="${esc(d.id)}" title="Supprimer">✕</button>`);
+  return `<div class="doc"><span class="ic">📄</span>
+    <span class="meta"><p class="dt">${esc(d.titre)}${neuf?` <span class="badge open">Nouveau</span>`:""}</p>
+      <p class="du">${esc(d.categorie)} · ${esc(d.nom_fichier)}${d.taille?" ("+courTaille(d.taille)+")":""} · déposé par ${esc(d.depose_nom||secdNomPersonne(d.depose_par)||"—")} le ${esc(fmtQuand(d.created_at))}${d.modifie_le?" · modifié le "+esc(fmtQuand(d.modifie_le)):""}</p>
+      ${d.note?`<p class="du" style="white-space:pre-wrap;margin-top:2px">📝 ${esc(d.note)}</p>`:""}</span>
+    ${act.join("")}</div>`;
+}
+function secdFormHTML(){
+  const F=secdEtat().form, edit=!!F.id, B=secdEtat().busy?" disabled":"";
+  const pourAutre=!secdVoit()||!estSecretaire();
+  return `<div class="compose" style="border:2px solid #8fb3ff">
+    <h3 class="serif">${edit?"Modifier le document":pourAutre?"📤 Envoyer un document à la secrétaire":"Ajouter un document"}</h3>
+    <input class="f" id="secd_titre" maxlength="200" value="${esc(F.titre||"")}" placeholder="Nom du document (ex. Contrat de location salle)">
+    <div class="two"><select class="f" id="secd_cat">${SECD_CATS.map(c=>`<option${(F.categorie||"Divers")===c?" selected":""}>${esc(c)}</option>`).join("")}</select>
+      <input class="f" id="secd_file" type="file"></div>
+    ${F.file?`<p class="du" style="margin:4px 0 0">✓ ${esc(F.file.name)} (${courTaille(F.file.size)})</p>`:edit?`<p class="du" style="margin:4px 0 0">Fichier actuel : ${esc(F.nom_fichier||"")} — choisissez un fichier seulement pour le remplacer.</p>`:""}
+    <textarea class="f" id="secd_note" maxlength="2000" rows="3" placeholder="Note pour la secrétaire (facultatif)">${esc(F.note||"")}</textarea>
+    <div class="row-btn"><button class="btn" data-action="secd-enregistrer"${B}>${edit?"Enregistrer":pourAutre?"Envoyer au dossier":"Ajouter au dossier"}</button>
+      <button class="btn ghost" data-action="secd-annuler">Annuler</button></div></div>`;
+}
+function secdSection(titre, n, corps){ return `<div class="grp-h" style="margin-top:22px"><h2 class="serif">${titre}</h2><span class="c">${n}</span><span class="l"></span></div>${corps}`; }
+function tabSecDossier(){
+  const E=secdEtat();
+  if(!secdPeut()) return `<div class="empty">Réservé aux membres du CA.</div>`;
+  const secr=secdNomsSecretaires().join(", ")||"la secrétaire";
+  const err=E.err?`<div class="card2"><p class="du" style="color:var(--red);margin:0">${esc(E.err)}</p></div>`:"";
+  if(!secdVoit()){
+    const miens=E.liste.filter(d=>d.depose_par===secdMoi());
+    return `<div class="card2" style="border-left:4px solid #8fb3ff"><h3 class="serif" style="margin-top:0">📤 Envoyer un document à la secrétaire</h3>
+      <p class="du" style="margin:0">Déposez un document (contrat, convention, courrier…) directement dans le dossier de ${esc(secr)}. Vous seul·e voyez vos envois ici ; vous pouvez les modifier ou les supprimer en cas d'erreur.</p>
+      ${!E.form?`<div class="row-btn" style="margin-top:12px"><button class="btn" data-action="secd-nouveau">+ Envoyer un document</button></div>`:""}</div>`
+      +(E.form?secdFormHTML():"")+err+secdSection("Mes envois", miens.length, miens.length?miens.map(secdLigneDepot).join(""):`<div class="empty">Aucun envoi pour l'instant.</div>`);
+  }
+  if(estSecretaire()){ if(E.vuAvant==null) E.vuAvant=seenTs("secdossier"); try{ localStorage.setItem("ca:seen:secdossier", String(Date.now())); }catch(_){ } }
+  const head=`<div class="card2" style="border-left:4px solid #8fb3ff"><h3 class="serif" style="margin-top:0">📁 Dossier de la secrétaire</h3>
+    <p class="du" style="margin:0">Tout ce qui concerne le secrétariat (${esc(secr)}) : les PV, ordres du jour et courriers sont rangés automatiquement ; les membres du CA peuvent y déposer des documents. À la fin du mandat, téléchargez tout en un ZIP.</p>
+    <div class="row-btn" style="margin-top:12px;flex-wrap:wrap">${!E.form?`<button class="btn" data-action="secd-nouveau">+ Ajouter un document</button>`:""}
+      <button class="btn ghost" data-action="secd-zip"${E.busy?" disabled":""}>⬇ Télécharger tout (ZIP)</button></div></div>`;
+  /* Dépôts, par catégorie */
+  const cats=[...new Set(SECD_CATS.concat(E.liste.map(d=>d.categorie)))].filter(c=>E.liste.some(d=>d.categorie===c));
+  const depots=E.liste.length?cats.map(c=>`<p class="du" style="margin:14px 0 4px;font-weight:700">${esc(c)}</p>`+E.liste.filter(d=>d.categorie===c).map(secdLigneDepot).join("")).join(""):`<div class="empty">Aucun document déposé.</div>`;
+  /* PV */
+  const pvLib={valide:"Signé",attente:"En attente de signature",refuse:"Refusé / retiré"};
+  const pvs=E.pv.length?E.pv.map(p=>`<div class="doc"><span class="ic">${p.statut==="valide"?"✅":p.statut==="refuse"?"⛔":"⏳"}</span>
+    <span class="meta"><p class="dt">${esc(p.titre||"PV")}</p><p class="du">${esc(pvLib[p.statut]||p.statut)}${p.date_reunion?" · réunion du "+esc(fmtDateLong(String(p.date_reunion).slice(0,10))):""}${p.signataire_nom?" · "+esc(p.signataire_nom):""}${p.sig_sign_at?" le "+esc(fmtQuand(p.sig_sign_at)):""}${p.code_sign?" · code "+esc(p.code_sign):""}</p>
+    ${p.motif?`<p class="du" style="white-space:pre-wrap">Motif : ${esc(p.motif)}</p>`:""}</span>
+    ${p.statut==="valide"&&p.pdf_path?`<button class="chip" data-action="secd-fichier" data-path="${esc(p.pdf_path)}">PV signé</button>`:""}
+    ${p.fichier&&p.fichier.path?`<button class="chip" data-action="secd-fichier" data-path="${esc(p.fichier.path)}">PV d'origine</button>`:""}</div>`).join(""):`<div class="empty">Aucun PV.</div>`;
+  const pvPaths=new Set(E.pv.map(p=>p.pdf_path).filter(Boolean));
+  const docsPv=(S.docs||[]).filter(d=>d.cat==="PV & CR" && !pvPaths.has(d.chemin));
+  const docsPvH=docsPv.map(d=>`<div class="doc"><span class="ic">📄</span><span class="meta"><p class="dt">${esc(d.titre)}</p><p class="du">Documents · PV &amp; CR</p></span><button class="chip" data-action="secd-fichier" data-path="${esc(d.chemin)}">Ouvrir</button></div>`).join("");
+  /* Réunions */
+  const reus=[...(S.reunions||[])].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
+  const reusH=reus.length?reus.map(m=>`<div class="doc"><span class="ic">🗓</span><span class="meta"><p class="dt">${esc(m.titre||"Réunion")}</p>
+    <p class="du">${esc(reuQuand(m))}${m.lieu?" · "+esc(m.lieu):""} · ${(m.ordre||[]).length} point(s)${m.odjEnvoyeLe?" · ODJ envoyé le "+esc(fmtQuand(m.odjEnvoyeLe)):""}</p></span>
+    <button class="chip" data-action="secd-odj" data-id="${esc(m.id)}">ODJ / convocation</button></div>`).join(""):`<div class="empty">Aucune réunion.</div>`;
+  /* Courriers signés par le secrétariat */
+  const ids=secretairesExtra();
+  const cours=(courEtat().liste||[]).filter(c=>ids.indexOf(c.signataire_id)>=0);
+  const coursH=cours.length?cours.map(c=>`<div class="doc"><span class="ic">✒</span><span class="meta"><p class="dt">${esc(c.objet)}</p><p class="du">${esc(courRef(c))} · ${esc(c.signataire_nom||"")} · ${esc(fmtQuand(c.signe_le))}</p></span>
+    ${c.pdf_path?`<button class="chip" data-action="secd-fichier" data-path="${esc(c.pdf_path)}">PDF signé</button>`:""}</div>`).join(""):`<div class="empty">Aucun courrier signé par le secrétariat.</div>`;
+  return head+(E.form?secdFormHTML():"")+err
+    +secdSection("Documents déposés", E.liste.length, depots)
+    +secdSection("PV", E.pv.length+docsPv.length, pvs+docsPvH)
+    +secdSection("Réunions : ordres du jour et convocations", reus.length, reusH)
+    +secdSection("Courriers signés", cours.length, coursH);
+}
+
+/* ---------- formulaire ---------- */
+function secdLireForm(){ const F=secdEtat().form; if(!F) return;
+  const t=document.getElementById("secd_titre"); if(t) F.titre=t.value;
+  const c=document.getElementById("secd_cat"); if(c) F.categorie=c.value;
+  const n=document.getElementById("secd_note"); if(n) F.note=n.value; }
+document.addEventListener("input", e=>{ const t=e.target; if(t && (t.id==="secd_titre"||t.id==="secd_note")) secdLireForm(); });
+document.addEventListener("change", e=>{
+  const t=e.target; if(!t || !secdEtat().form) return;
+  if(t.id==="secd_cat"){ secdLireForm(); return; }
+  if(t.id==="secd_file"){ secdLireForm(); const f=t.files&&t.files[0];
+    if(f && f.size>SECD_MAX){ t.value=""; modaleInfo("Fichier trop lourd ("+courTaille(f.size)+"). Maximum : 25 Mo.","Fichier refusé"); return; }
+    if(f && !String(secdEtat().form.titre||"").trim()) secdEtat().form.titre=f.name.replace(/\.[^.]+$/,"");
+    secdEtat().form.file=f||null; render(); }
+});
+async function secdEnvoyerFichier(file){
+  const chemin="secretariat/"+secdMoi()+"/"+uid()+"-"+secdFichierSur(file.name);
+  const up=await sb.storage.from("ca-documents").upload(chemin, file, {contentType:typeFichier(file), upsert:false});
+  if(up&&up.error) throw new Error("Envoi du fichier : "+up.error.message);
+  return chemin;
+}
+async function secdLien(path, nom){
+  const su=await sb.storage.from("ca-documents").createSignedUrl(path, 3600, nom?{download:nom}:undefined);
+  if(!su||su.error||!su.data) throw new Error("Ouverture impossible"+(su&&su.error?" : "+su.error.message:""));
+  return su.data.signedUrl;
+}
+
+/* ---------- ZIP ---------- */
+async function secdZip(){
+  const E=secdEtat();
+  const { default: JSZip } = await import("./caisse/lib/jszip-3.10.1.js");
+  const z=new JSZip(), manques=[], lignes=[["Rubrique","Titre","Catégorie / état","Date","Par","Fichier dans le ZIP","Note"]];
+  const pris=new Set(), noms=new Set();
+  const unique=ch=>{ let c=ch, i=2; while(noms.has(c.toLowerCase())){ c=ch.replace(/(\.[^./]+)?$/, m=>" ("+(i++)+")"+m); } noms.add(c.toLowerCase()); return c; };
+  const ajouter=async(path, dest)=>{ if(!path) return ""; const ch=unique(dest);
+    try{ const d=await sb.storage.from("ca-documents").download(path); if(!d||d.error||!d.data) throw new Error(d&&d.error?d.error.message:"?");
+      z.file(ch, await d.data.arrayBuffer()); pris.add(path); return ch; }catch(e){ manques.push(dest+" : "+(e&&e.message||e)); return ""; } };
+  const ext=p=>{ const m=String(p||"").match(/\.[a-z0-9]{1,5}$/i); return m?m[0]:""; };
+  for(const d of E.liste){
+    const f=await ajouter(d.chemin, "Documents-deposes/"+secdNomZip(d.categorie)+"/"+secdNomZip(d.titre)+ext(d.nom_fichier||d.chemin));
+    lignes.push(["Document déposé",d.titre,d.categorie,fmtQuand(d.created_at),d.depose_nom||"",f,d.note||""]); }
+  for(const p of E.pv){
+    const base=secdNomZip((p.titre||"PV")+(p.statut==="valide"?"":p.statut==="refuse"?" - REFUSE":" - EN ATTENTE"));
+    let f1="", f2="";
+    if(p.pdf_path) f1=await ajouter(p.pdf_path, "PV/signes/"+base+" - signe.pdf");
+    if(p.fichier&&p.fichier.path) f2=await ajouter(p.fichier.path, "PV/"+(p.statut==="valide"?"originaux":"non-signes")+"/"+base+ext(p.fichier.path));
+    lignes.push(["PV",p.titre||"",p.statut+(p.motif?" (motif : "+p.motif+")":""),p.date_reunion||"",p.signataire_nom||"",[f1,f2].filter(Boolean).join(" | "),p.code_sign?"code "+p.code_sign:""]); }
+  for(const d of (S.docs||[]).filter(x=>x.cat==="PV & CR")){ if(pris.has(d.chemin)) continue;
+    const f=await ajouter(d.chemin, "PV/documents-PV-CR/"+secdNomZip(d.titre)+ext(d.chemin)); lignes.push(["Document PV & CR",d.titre,"PV & CR","","",f,""]); }
+  for(const m of (S.reunions||[])){
+    const dos="Reunions/"+secdNomZip((m.date?String(m.date).slice(0,10)+" ":"")+(m.titre||"Reunion"))+"/";
+    const f=unique(dos+"ordre-du-jour.html"); z.file(f, secdOdjHtml(m));
+    const prs=(S.procurations||[]).filter(p=>p.pdfPath && m.date && String(p.dateReunion||"").slice(0,10)===String(m.date).slice(0,10));
+    for(const p of prs) await ajouter(p.pdfPath, dos+"procurations/"+secdNomZip("Procuration "+p.mandantNom+" - "+p.mandataireNom)+".pdf");
+    lignes.push(["Réunion",m.titre||"",(m.ordre||[]).length+" point(s)",m.date||"","",f,prs.length?prs.length+" procuration(s)":""]); }
+  const ids=secretairesExtra();
+  for(const c of (courEtat().liste||[]).filter(x=>ids.indexOf(x.signataire_id)>=0)){
+    let f="";
+    if(c.pdf_path) f=await ajouter(c.pdf_path, "Courriers-signes/"+secdNomZip(courRef(c)+" "+c.objet)+".pdf");
+    if(c.fichier&&c.fichier.path&&!courEstPdf(c.fichier)) await ajouter(c.fichier.path, "Courriers-signes/"+secdNomZip(courRef(c)+" "+c.objet)+" - original"+ext(c.fichier.path));
+    lignes.push(["Courrier signé",c.objet,courRef(c),fmtQuand(c.signe_le),c.signataire_nom||"",f,""]); }
+  const cel=v=>{ const s=String(v==null?"":v); return /[;"\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  z.file("recapitulatif.csv", "﻿"+lignes.map(l=>l.map(cel).join(";")).join("\r\n"));
+  z.file("LISEZMOI.txt", ["Dossier de la secrétaire — "+(S.meta&&S.meta.nom||"Bureau étudiant"), "Téléchargé le "+fmtQuand(new Date().toISOString())+" par "+(S.session.nom||""), "",
+    "Documents-deposes/ : documents ajoutés au dossier, par catégorie.", "PV/ : PV signés, originaux, PV refusés ou en attente, documents « PV & CR ».",
+    "Reunions/ : ordre du jour, présences et procurations de chaque réunion.", "Courriers-signes/ : courriers signés par le secrétariat.",
+    "recapitulatif.csv : la liste complète (s'ouvre dans Excel).", manques.length?"\r\n⚠ Fichiers non téléchargés :\r\n- "+manques.join("\r\n- "):""].join("\r\n"));
+  const blob=await z.generateAsync({type:"blob", compression:"DEFLATE"});
+  const u=URL.createObjectURL(blob); ouvrirFichier(u, "dossier-secretaire-"+new Date().toISOString().slice(0,10)+".zip"); setTimeout(()=>URL.revokeObjectURL(u),120000);
+  return manques.length;
+}
+
+/* ---------- actions ---------- */
+document.addEventListener("click", async e=>{
+  const el=e.target.closest("[data-action^='secd-']"); if(!el || !sb || !S.session || !secdPeut()) return;
+  const E=secdEtat(), a=el.dataset.action, d=el.dataset.id?E.liste.find(x=>x.id===el.dataset.id):null;
+  try{
+    switch(a){
+      case "secd-nouveau": E.form={titre:"", categorie:"Divers", note:"", file:null}; render(); break;
+      case "secd-modifier": if(!secdPeutModif(d)) break; E.form={id:d.id, titre:d.titre, categorie:d.categorie, note:d.note||"", nom_fichier:d.nom_fichier, file:null}; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
+      case "secd-annuler": E.form=null; render(); break;
+      case "secd-enregistrer": {
+        if(E.busy) break; secdLireForm(); const F=E.form; if(!F) break;
+        const titre=String(F.titre||"").trim();
+        if(!titre){ modaleInfo("Donnez un nom au document.","Il manque quelque chose"); break; }
+        if(!F.id && !F.file){ modaleInfo("Choisissez le fichier à déposer.","Il manque quelque chose"); break; }
+        E.busy=true; render();
+        let nouveau=null;
+        try{
+          if(F.file) nouveau=await secdEnvoyerFichier(F.file);
+          const champs={titre, categorie:F.categorie||"Divers", note:String(F.note||"").trim()||null};
+          if(nouveau) Object.assign(champs,{chemin:nouveau, nom_fichier:F.file.name.slice(0,255), taille:F.file.size, type_mime:typeFichier(F.file)});
+          if(F.id){
+            const anc=E.liste.find(x=>x.id===F.id);
+            const r=await sb.from("ca_sec_dossier").update(champs).eq("id",F.id).select();
+            if(r.error||!(r.data||[]).length) throw new Error(r.error?r.error.message:"modification refusée");
+            if(nouveau && anc && anc.chemin && anc.chemin!==nouveau){ try{ await sb.storage.from("ca-documents").remove([anc.chemin]); }catch(_){ } }
+            try{ logAct("Dossier secrétaire : document modifié — "+titre); }catch(_){ }
+          } else {
+            const r=await sb.from("ca_sec_dossier").insert(champs);
+            if(r.error) throw new Error(r.error.message);
+            try{ logAct("Dossier secrétaire : document déposé — "+titre); }catch(_){ }
+          }
+          nouveau=null; E.form=null; E.busy=false; await loadSecDossier(); render();
+          modaleInfo(F.id?"✓ Document modifié.":"✓ Document déposé dans le dossier de la secrétaire.","Dossier de la secrétaire");
+        }catch(err){
+          if(nouveau){ try{ await sb.storage.from("ca-documents").remove([nouveau]); }catch(_){ } }
+          E.busy=false; render(); modaleInfo("Erreur : "+(err&&err.message||err),"Dossier de la secrétaire");
+        }
+        break; }
+      case "secd-suppr": {
+        if(!secdPeutSuppr(d)) break;
+        const autre=d.depose_par!==secdMoi();
+        if(!(await modaleConfirm("Supprimer « "+d.titre+" » du dossier ?"+(autre?"\n\nCe document a été déposé par "+(d.depose_nom||"un autre membre")+".":"")+"\n\nLe fichier sera définitivement supprimé.","Supprimer"))) break;
+        const r=await sb.from("ca_sec_dossier").delete().eq("id",d.id).select();
+        if(r.error||!(r.data||[]).length){ modaleInfo("Suppression refusée"+(r.error?" : "+r.error.message:"")+".","Dossier de la secrétaire"); break; }
+        try{ await sb.storage.from("ca-documents").remove([d.chemin]); }catch(_){ }
+        try{ logAct("Dossier secrétaire : document supprimé — "+d.titre); }catch(_){ }
+        await loadSecDossier(); render(); break; }
+      case "secd-ouvrir": { if(!d) break; ouvrirFichier(await secdLien(d.chemin, d.nom_fichier), d.nom_fichier); break; }
+      case "secd-fichier": { const p=el.dataset.path; if(!p) break; window.open(await secdLien(p), "_blank", "noopener"); break; }
+      case "secd-odj": { const m=(S.reunions||[]).find(x=>x.id===el.dataset.id); if(!m) break;
+        const u=URL.createObjectURL(new Blob([secdOdjHtml(m)],{type:"text/html"})); window.open(u,"_blank","noopener"); setTimeout(()=>URL.revokeObjectURL(u),60000); break; }
+      case "secd-zip": {
+        if(!secdVoit() || E.busy) break;
+        E.busy=true; render();
+        try{ await loadSecDossier(); const n=await secdZip(); try{ logAct("Dossier secrétaire : ZIP téléchargé"); }catch(_){ }
+          if(n) modaleInfo("ZIP prêt, mais "+n+" fichier(s) n'ont pas pu être ajoutés (voir LISEZMOI.txt).","Télécharger tout"); }
+        finally{ E.busy=false; render(); }
+        break; }
+    }
+  }catch(err){ E.busy=false; modaleInfo("Erreur : "+(err&&err.message||err),"Dossier de la secrétaire"); }
+});
+
 /* ---- DASHBOARD ---- */
-const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["verifsig","\ud83d\udd0e","V\u00e9rifier une signature"],["courriers","\u2712","Courriers sign\u00e9s"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["simulation","€","Simulation budget"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
+const TABS = [["accueil","🏠","Accueil"],["org","01","Organigramme"],["taches","02","Tâches"],["planning","03","Planning"],["reunions","04","Réunions"],["procuration","\u270d","Procuration"],["verifsig","\ud83d\udd0e","V\u00e9rifier une signature"],["courriers","\u2712","Courriers sign\u00e9s"],["evenements","05","Événements"],["salle","🏫","Réservation salle fac"],["billetterie","🎟","Billetterie"],["budgets","06","Budgets & projets"],["simulation","€","Simulation budget"],["votes","07","Votes"],["contacts","08","Contacts"],["mail","✉","Envoyer un mail"],["calendrier","📅","Calendrier"],["docs","09","Documents"],["secdossier","\ud83d\udcc1","Dossier de la secr\u00e9taire"],["rgpd","⚖","RGPD"],["annonces","10","Annonces"],["messages","11","Messages"],["soutien","\ud83d\udc9c","Soutien psychologique"],["conflits","12","M\u00e9diation"]];
 function viewDash(){
-  const map={admin:viewAdmin,proprio:viewProprio,licence:tabLicence,transparence:tabTransparence,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,courriers:tabCourriers,simulation:tabSimulation,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
+  const map={admin:viewAdmin,proprio:viewProprio,licence:tabLicence,transparence:tabTransparence,agenda:tabAgendaCoopte,avis:tabAvis,org:tabOrg,taches:tabTaches,planning:tabPlanning,budgets:tabBudgets,votes:tabVotes,docs:tabDocs,annonces:tabAnnonces,bilan:tabBilan,messages:tabMessages,conflits:tabConflits,reunions:tabReunions,procuration:tabProcuration,verifsig:tabVerifSig,courriers:tabCourriers,secdossier:tabSecDossier,simulation:tabSimulation,pvsign:tabPvSign,evenements:tabEvenements,accueil:tabAccueil,contacts:tabContacts,mail:tabMail,calendrier:tabCalendrier,rgpd:tabRgpd,soutien:tabSoutien,soutien_etu:tabSoutienEtu,soutien_ces:tabCes,salle:tabSalle,billetterie:tabBilletterie,journal:tabJournal,notifs:tabNotifs,notifprefs:tabNotifPrefs,registre:tabRegistre,search:tabSearch};
   if(S.goto==="bilan"){ if(bilanOnglet()){ S.tab="bilan"; } S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
   if(S.goto==="salle"){ S.tab="salle"; S.salleUI={vue:S.gotoRes?"detail":"accueil", sel:S.gotoRes||null, mois:""}; S.goto=null; S.gotoRes=null; try{ sessionStorage.removeItem("ca:goto"); sessionStorage.removeItem("ca:r"); }catch(_){ } }
   if(S.goto==="coopte"){ S.goto=null; try{ sessionStorage.removeItem("ca:goto"); }catch(_){ } }
@@ -3291,7 +3553,7 @@ function viewDash(){
       <a class="logout" href="caisse/" title="Ouvrir la Caisse (même compte, sans se reconnecter)" style="text-decoration:none">💶 Caisse</a>`}
       <button class="logout" data-theme-toggle title="Passer en mode clair ou sombre (mémorisé sur cet appareil)"></button>
       <button class="logout" data-action="logout">Se déconnecter</button></div>
-    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():id==="soutien"?soutNonLus("ca"):id==="soutien_etu"?soutNonLus("etu"):id==="soutien_ces"?cesNonLus():id==="salle"?salleBadge():id==="pvsign"?pvsBadge():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:id==="soutien"?` style="border:2px solid #b48cf2;border-bottom:none;color:#d4bbff;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
+    <div class="tabs">${tabs.map(([id,n,l])=>{ const ub=id==="messages"?unreadMessagesCA():id==="annonces"?unreadAnnoncesCA():id==="soutien"?soutNonLus("ca"):id==="soutien_etu"?soutNonLus("etu"):id==="soutien_ces"?cesNonLus():id==="salle"?salleBadge():id==="pvsign"?pvsBadge():id==="secdossier"?secdBadge():0; return `<button class="tab" aria-selected="${S.tab===id}" data-action="set-tab" data-tab="${id}"${id==="procuration"?` style="border:2px solid #f5c542;border-bottom:none;color:#f5c542;font-weight:600"`:id==="soutien"?` style="border:2px solid #b48cf2;border-bottom:none;color:#d4bbff;font-weight:600"`:""}><span class="n">${n}</span>${l}${ub?` <span class="pill" style="background:var(--red);color:#fff">${ub}</span>`:""}</button>`; }).join("")}</div>
   </div></header>
   <main class="body">${bienvenue}${bandeauRappels()}${body}</main>`;
 }
