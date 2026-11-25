@@ -3754,6 +3754,7 @@ async function verifierEtatCaisse(){
     const r = await sb.rpc("app_etat", { p_app: "caisse" });
     if(r.error) return;
     const E = state.appEtat = r.data || {};
+    try{ majOngletMessages(); }catch(_){ __errSilence(_); }
     const app = $("#app"); if(!app) return;
     let ban = document.getElementById("etatBan");
     if(!ban){ ban = document.createElement("div"); ban.id = "etatBan"; app.insertBefore(ban, app.firstChild); }
@@ -3822,7 +3823,7 @@ async function loadProfile(user){
   if($("#tabPreuves")) $("#tabPreuves").hidden = !isTreso();
   $("#tabIncomes").hidden = !isTreso();
   $("#tabMembers").hidden = !isTreso();
-  $("#tabMessages").hidden = !isTreso();
+  $("#tabMessages").hidden = !isTreso() || !messagesCaisseOk();
   if($("#tabMails")) $("#tabMails").hidden = !isTreso();
   if($("#tabBudget")) $("#tabBudget").hidden = !isTreso();
   if($("#tabCompta")) $("#tabCompta").hidden = !isTreso();
@@ -10073,7 +10074,15 @@ const rowHTML = (it, showWho) => `<div class="row" data-id="${it.id}" tabindex="
   <div class="amt">${euro(it.amount)}</div><div class="chev">›</div></div>`;
 const emptyHTML = (t,m) => `<div class="empty"><strong>${t}</strong>${m}</div>`;
 
+/* 25/11/2026 : onglet Messages — seulement si le propriétaire l'a activé (désactivé par défaut). */
+function messagesCaisseOk(){ return !!(state.appEtat && state.appEtat.messages_caisse); }
+function majOngletMessages(){
+  const b = $("#tabMessages"); if(!b) return;
+  b.hidden = !isTreso() || !messagesCaisseOk();
+  if(b.hidden && state.view === "messages") setView(isTreso() ? "treso" : "mine");
+}
 function setView(v){
+  if(v === "messages" && !messagesCaisseOk()) v = isTreso() ? "treso" : "mine";
   state.view = v;
   if($("#tabGJ")) $("#tabGJ").setAttribute("aria-pressed", v==="gj");
   if($("#viewGJ")) $("#viewGJ").hidden = v!=="gj";

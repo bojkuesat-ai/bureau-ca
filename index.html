@@ -906,7 +906,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-25 · Transparence et CES : réglages du propriétaire";
+const CA_VERSION="2026-11-25 · Transparence, CES, Messages Caisse : réglages du propriétaire";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -2174,7 +2174,8 @@ function viewProprio(){
     </div>
 
     <div class="grp-h" style="margin:26px 0 12px"><h2 class="serif">Modules en option</h2><span class="l"></span></div>
-    <div class="card2">${sw('data-pa="transparence"', !!(S.appEtat&&S.appEtat.transparence), "Onglet Transparence", ' <span class="du">— dans l\'Espace CA (désactivé par défaut)</span>')}</div>
+    <div class="card2">${sw('data-pa="transparence"', !!(S.appEtat&&S.appEtat.transparence), "Onglet Transparence", ' <span class="du">— dans l\'Espace CA (désactivé par défaut)</span>')}
+      ${sw('data-pa="messages-caisse"', !!(S.appEtat&&S.appEtat.messages_caisse), "Onglet Messages", ' <span class="du">— dans la Caisse (désactivé par défaut)</span>')}</div>
     <div class="card2">${Object.keys(MODULES_LIB).map(m=>sw(`data-pa="module" data-id="${m}"`, mods[m]!==false, esc(MODULES_LIB[m]))).join("")}
       <p class="du">Avec le mode licence, un module n'est actif que s'il est coché ici <b>et</b> compris dans la licence.</p></div>
 
@@ -2325,6 +2326,7 @@ document.addEventListener("change", async e=>{
   else if(pa==="hors-ca"){ r=await sb.rpc("proprio_set_hors_ca",{p_on:on}); }
   else if(pa==="mails-gestion"){ r=await sb.rpc("proprio_reglages",{p:{mails_gestion:on}}); }
   else if(pa==="transparence"){ r=await sb.rpc("proprio_reglages",{p:{transparence:on}}); }
+  else if(pa==="messages-caisse"){ r=await sb.rpc("proprio_reglages",{p:{messages_caisse:on}}); }
   else return;
   if(r&&r.error){ b.checked=!on; modaleInfo("Non enregistré : "+r.error.message,"Erreur"); return; }
   await chargerProprio(); await chargerEtatApp(); await loadAccounts();
