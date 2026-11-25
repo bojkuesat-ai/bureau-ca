@@ -33,7 +33,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 
 - **Supabase** : projet `mlgzdfyqjhvyubrywuim` (base, Auth, fonctions Edge, `pg_cron`, `pg_net`).
 - **Publication** : GitHub Pages (`https://bojkuesat-ai.github.io/bureau-ca/`). Cache d'environ 10 minutes ; en cas de doute, ajouter `?v=…`.
-- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-25 · Transparence, CES, Messages Caisse : réglages du propriétaire »).
+- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-25 · Transparence, CES, Messages : réglages du propriétaire »).
 
 ## 3. Rôles et droits
 
@@ -202,4 +202,4 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - 25/11/2026 : **fin de mandat — dossier de la secrétaire** (fonction `fin-mandat` v3) : 3e zip `dossier-secretaire-…` (même rangement que le bouton ZIP du dossier, construit par `secPlan()` / `partieSec()`), le 24/06/2027 envoyé **à la secrétaire seule** (`ca_meta.secretaires`, sinon secrétariat de `fin_mandat_destinataires`) pour le transmettre à la nouvelle secrétaire (liens 30 jours). Copie dans Propriétaire › Fin de mandat ; « Renvoyer » (case secrétariat) renvoie aussi ce zip ; « Aperçu » le fabrique aussi. Corbeille et éléments retirés exclus, noms modifiés repris.
 - 25/11/2026 : **onglet Transparence désactivé par défaut**. Réglage « Onglet Transparence » dans l'espace Propriétaire (au-dessus des modules en option) → `proprio_config.transparence_actif`, via `proprio_reglages({transparence})` ; `app_etat` renvoie `transparence`. Le bandeau Transparence de la Caisse (après passation) n'est pas concerné. `sql/2026-11-25_transparence_reglage.sql`.
 - 25/11/2026 : **CES** : même règle que Transparence — réglage dans l'espace Propriétaire (`ca_meta.ces_actif`, désactivé, défaut `false`) ; désactivée, l'onglet « Soutien social — CES » disparaît pour tout le monde, **propriétaire compris** (`cesOngletVisible`).
-- 25/11/2026 : **onglet Messages de la Caisse désactivé par défaut** (Espace CA inchangé). Réglage « Onglet Messages » dans l'espace Propriétaire → `proprio_config.messages_caisse_actif`, `proprio_reglages({messages_caisse})`, `app_etat` → `messages_caisse` ; Caisse : `messagesCaisseOk()`, `majOngletMessages()`, `setView` redirige. `sql/2026-11-25_messages_caisse_reglage.sql`.
+- 25/11/2026 : **onglet Messages de l'Espace CA désactivé par défaut** (la Caisse n'est pas concernée). Réglage « Onglet Messages » dans l'espace Propriétaire → `proprio_config.messages_ca_actif`, `proprio_reglages({messages_ca})`, `app_etat` → `messages_ca`. `sql/2026-11-25_messages_ca_reglage.sql`.

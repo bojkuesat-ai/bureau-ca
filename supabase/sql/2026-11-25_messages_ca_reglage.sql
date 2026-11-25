@@ -1,10 +1,12 @@
 -- =====================================================================
---  Onglet Messages de la Caisse : réglage du propriétaire (25/11/2026) — migration messages_caisse_reglage
---  - proprio_config.messages_caisse_actif (désactivé par défaut).
---  - proprio_reglages({messages_caisse: true|false}) : propriétaire seulement.
---  - app_etat renvoie « messages_caisse » : la Caisse n'affiche l'onglet Messages que s'il est activé.
+--  Onglet Messages de l'Espace CA : réglage du propriétaire (25/11/2026)
+--  migrations messages_caisse_reglage puis messages_ca_reglage (colonne renommée : c'est l'Espace CA,
+--  pas la Caisse).
+--  - proprio_config.messages_ca_actif (désactivé par défaut).
+--  - proprio_reglages({messages_ca: true|false}) : propriétaire seulement.
+--  - app_etat renvoie « messages_ca » : l'Espace CA n'affiche l'onglet Messages que s'il est activé.
 -- =====================================================================
-alter table public.proprio_config add column if not exists messages_caisse_actif boolean not null default false;
+alter table public.proprio_config add column if not exists messages_ca_actif boolean not null default false;
 
 create or replace function public.proprio_reglages(p jsonb)
  returns void language plpgsql security definer set search_path to 'public' as $function$
@@ -15,7 +17,7 @@ begin
   if p ? 'mode_licence' then c.mode_licence := (p ->> 'mode_licence')::boolean; end if;
   if p ? 'mails_gestion' then c.mails_gestion := (p ->> 'mails_gestion')::boolean; end if;
   if p ? 'transparence' then c.transparence_actif := (p ->> 'transparence')::boolean; end if;
-  if p ? 'messages_caisse' then c.messages_caisse_actif := (p ->> 'messages_caisse')::boolean; end if;
+  if p ? 'messages_ca' then c.messages_ca_actif := (p ->> 'messages_ca')::boolean; end if;
   if p ? 'etat' then
     for k, v in select * from jsonb_each(p -> 'etat') loop
       if k not in ('ca','caisse') or (v #>> '{}') not in ('ouverte','lecture','fermee') then raise exception 'État invalide.'; end if;
@@ -36,7 +38,7 @@ begin
   end if;
   update proprio_config set mode_licence = c.mode_licence, etat = c.etat, messages = c.messages, modules = c.modules,
     mails_gestion = c.mails_gestion, transparence_actif = c.transparence_actif,
-    messages_caisse_actif = c.messages_caisse_actif, maj_le = now() where id = 1;
+    messages_ca_actif = c.messages_ca_actif, maj_le = now() where id = 1;
 end $function$;
 
 create or replace function public.app_etat(p_app text)
@@ -67,7 +69,7 @@ begin
     'med_dispatch', auth.uid() is not null and auth.uid() = public.ca_med_owner(),
     'peut_demander', c.mode_licence and public.licence_peut_demander(),
     'transparence', coalesce(c.transparence_actif, false),
-    'messages_caisse', coalesce(c.messages_caisse_actif, false),
+    'messages_ca', coalesce(c.messages_ca_actif, false),
     'demande', case when d.id is null then null else jsonb_build_object('statut', d.statut, 'le', d.demande_le, 'par', d.demandeur_nom,
                  'duree_mois', d.duree_mois, 'options', to_jsonb(d.options), 'fin', d.fin, 'moi', d.demandeur_id = auth.uid()) end);
 end $function$;
