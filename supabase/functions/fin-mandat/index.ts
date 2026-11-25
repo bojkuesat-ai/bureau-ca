@@ -8,6 +8,9 @@
 //   - sauvegarde finale (jour J) : toutes les tables, chiffrées avec SAUVEGARDE_PHRASE (format BESAV1).
 //   - suppression (jour J) : fin_mandat_vider() en base, puis tous les fichiers (sauf « fin-mandat »),
 //     mail d'adieu aux anciens comptes, rapport au propriétaire.
+//   - dossier de la secrétaire (25/11/2026) : 3e zip, rangé comme le bouton « Télécharger tout » du
+//     dossier (documents déposés hors corbeille, PV, réunions + ODJ + procurations, courriers du
+//     secrétariat, récapitulatif), envoyé à la secrétaire seule pour le transmettre à la suivante.
 //  Les mails au propriétaire partent avec l'expéditeur « Licence-BE » (seul admis après la passation).
 //  À déployer avec « Verify JWT » DÉSACTIVÉ.
 // =====================================================================
@@ -163,6 +166,133 @@ async function partie(type: "ca" | "compta", dossier: string, date: string, suiv
   return { parts: [...suivi.parts, { chemin, octets: zip.length, fichiers: nb }], prochain: i, fini: i >= fichiers.length };
 }
 
+// ---------------------------------------------------------------- dossier de la secrétaire
+const SEC_FICHIER = "dossier-secretaire";
+const nomZip = (s: unknown) => String(s ?? "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 90) || "sans-titre";
+const extF = (p: unknown) => { const m = String(p ?? "").match(/\.[a-z0-9]{1,5}$/i); return m ? m[0] : ""; };
+type SecPlan = { fichiers: { src: string; dest: string }[]; textes: Record<string, string> };
+
+async function secretaires(): Promise<any[]> {
+  const { data: meta } = await db.from("ca_meta").select("secretaires").eq("id", 1).maybeSingle();
+  const ids = Array.isArray(meta?.secretaires) ? (meta!.secretaires as string[]) : [];
+  if (!ids.length) return [];
+  const { data } = await db.from("ca_membres").select("id,prenom,nom,email,statut").in("id", ids);
+  return ((data ?? []) as any[]).filter((m) => m.statut === "actif" && m.email);
+}
+function odjHtml(m: any, nomDe: (id: string) => string, pv: any) {
+  const pres = (m.presences ?? {}) as Record<string, string>;
+  const ligne = (l: string, v: string) => { const n = Object.keys(pres).filter((k) => pres[k] === v).map((k) => esc(nomDe(k) || k)); return n.length ? `<p><b>${l} (${n.length}) :</b> ${n.join(", ")}</p>` : ""; };
+  const pts = ((m.ordre ?? []) as any[]).map((p) => `<li><b>${esc(p.texte ?? "")}</b>${p.fait ? " ✓" : ""}${p.note ? `<br><span style="white-space:pre-wrap">${esc(p.note)}</span>` : ""}${p.notes ? `<br><i style="white-space:pre-wrap">${esc(p.notes)}</i>` : ""}</li>`).join("");
+  const h = (t: unknown) => t ? String(t).slice(0, 5).replace(":", "h") : "";
+  const q = (m.date ? new Date(String(m.date).slice(0, 10) + "T12:00:00Z").toLocaleDateString("fr-BE", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }) : "date à préciser") + (m.heure ? (m.heure_fin ? " de " + h(m.heure) + " à " + h(m.heure_fin) : " à " + h(m.heure)) : "");
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>${esc(m.titre || "Réunion")}</title>
+<style>body{font-family:Calibri,Arial,sans-serif;max-width:760px;margin:30px auto;padding:0 20px;color:#111;line-height:1.5}h1{font-size:22px;margin:0 0 4px}.d{color:#555;margin:0 0 18px}li{margin:6px 0}.e{color:#666;font-size:13px;margin-top:28px;border-top:1px solid #ddd;padding-top:8px}</style></head><body>
+<p class="d">Bureau étudiant · Conseil d'administration</p><h1>${esc(m.titre || "Réunion")}</h1><p class="d">${esc(q)}${m.lieu ? " · " + esc(m.lieu) : ""}</p>
+<h2 style="font-size:17px">Ordre du jour</h2>${pts ? `<ol>${pts}</ol>` : "<p>(aucun point)</p>"}
+${ligne("Présents", "present")}${ligne("Excusés", "excuse")}${ligne("Absents", "absent")}
+<p class="e">Espace CA${m.odj_envoye_at ? " · ODJ définitif envoyé le " + esc(quand(m.odj_envoye_at)) : ""}${pv ? " · PV : " + esc(pv.statut === "valide" ? "signé" : pv.statut === "attente" ? "en signature" : pv.statut === "refuse" ? "refusé" : pv.statut) : ""}.</p></body></html>`;
+}
+// Liste ordonnée de ce que contient le zip (identique d'une partie à l'autre).
+async function secPlan(): Promise<SecPlan> {
+  const fichiers: { src: string; dest: string }[] = [], textes: Record<string, string> = {}, noms = new Set<string>();
+  const lignes: unknown[][] = [["Rubrique", "Titre", "Catégorie / état", "Date", "Par", "Fichier dans le ZIP", "Note"]];
+  const unique = (ch: string) => { let c = ch, i = 2; while (noms.has(c.toLowerCase())) { c = ch.replace(/(\.[^./]+)?$/, (x) => " (" + (i++) + ")" + x); } noms.add(c.toLowerCase()); return c; };
+  const add = (src: unknown, dest: string) => { if (!src) return ""; const d = unique(dest); fichiers.push({ src: String(src), dest: d }); return d; };
+  const auto = new Map(((await lireTable("ca_sec_auto")) ?? []).map((a: any) => [a.cle, a]));
+  const AU = (cle: string, tit: string) => { const a: any = auto.get(cle); return { ret: !!a?.retire, titre: a?.titre || tit, note: a?.note || "" }; };
+  const membres = (await lireTable("ca_membres")) ?? [];
+  const nomDe = (id: string) => { const m: any = membres.find((x: any) => x.id === id); return m ? `${m.prenom ?? ""} ${m.nom ?? ""}`.trim() : ""; };
+  // Documents déposés (hors corbeille)
+  const deps = ((await lireTable("ca_sec_dossier")) ?? []).filter((d: any) => !d.supprime_le).sort((a: any, b: any) => String(a.created_at).localeCompare(String(b.created_at)));
+  for (const d of deps as any[]) {
+    const fl = (Array.isArray(d.fichiers) && d.fichiers.length ? d.fichiers : [{ chemin: d.chemin, nom: d.nom_fichier }]) as any[];
+    const dos = "Documents-deposes/" + nomZip(d.categorie) + "/" + nomZip(d.titre) + (fl.length > 1 ? "/" : "");
+    const pris = fl.map((x) => add(x.chemin, dos + (fl.length > 1 ? nomZip(String(x.nom ?? "").replace(/\.[^.]+$/, "")) + extF(x.nom || x.chemin) : extF(x.nom || x.chemin))));
+    lignes.push(["Document déposé", d.titre, d.categorie, quand(d.created_at), d.depose_nom || nomDe(d.depose_par), pris.filter(Boolean).join(" | "), d.note || ""]);
+  }
+  // PV
+  const pvs = ((await lireTable("ca_pv_signatures")) ?? []).sort((a: any, b: any) => (b.numero ?? 0) - (a.numero ?? 0));
+  const pvPaths = new Set(pvs.map((p: any) => p.pdf_path).filter(Boolean));
+  for (const p of pvs as any[]) {
+    const A = AU("pv:" + p.id, p.titre || "PV"); if (A.ret) continue;
+    const base = nomZip(A.titre + (p.statut === "valide" ? "" : p.statut === "refuse" ? " - REFUSE" : " - EN ATTENTE"));
+    const f1 = p.pdf_path ? add(p.pdf_path, "PV/signes/" + base + " - signe.pdf") : "";
+    const f2 = p.fichier?.path ? add(p.fichier.path, "PV/" + (p.statut === "valide" ? "originaux" : "non-signes") + "/" + base + extF(p.fichier.path)) : "";
+    lignes.push(["PV", A.titre, p.statut + (p.motif ? " (motif : " + p.motif + ")" : ""), p.date_reunion || "", p.signataire_nom || "", [f1, f2].filter(Boolean).join(" | "), [p.code_sign ? "code " + p.code_sign : "", A.note].filter(Boolean).join(" · ")]);
+  }
+  for (const d of ((await lireTable("ca_docs")) ?? []).filter((x: any) => x.categorie === "PV & CR" && !pvPaths.has(x.chemin)) as any[]) {
+    const A = AU("doc:" + d.chemin, d.titre); if (A.ret) continue;
+    lignes.push(["Document PV & CR", A.titre, "PV & CR", "", "", add(d.chemin, "PV/documents-PV-CR/" + nomZip(A.titre) + extF(d.chemin)), A.note]);
+  }
+  // Réunions : ODJ, présences, procurations
+  const procs = ((await lireTable("ca_procurations")) ?? []) as any[];
+  const pvReu = new Map(pvs.filter((p: any) => p.reunion_id).map((p: any) => [String(p.reunion_id), p]));
+  for (const m of ((await lireTable("ca_reunions")) ?? []) as any[]) {
+    const A = AU("reu:" + m.id, m.titre || "Réunion"); if (A.ret) continue;
+    const dos = "Reunions/" + nomZip((m.date ? String(m.date).slice(0, 10) + " " : "") + A.titre) + "/";
+    const f = unique(dos + "ordre-du-jour.html"); textes[f] = odjHtml(m, nomDe, pvReu.get(String(m.id)));
+    const prs = procs.filter((p) => p.pdf_path && m.date && String(p.date_reunion ?? "").slice(0, 10) === String(m.date).slice(0, 10));
+    for (const p of prs) add(p.pdf_path, dos + "procurations/" + nomZip("Procuration " + (p.mandant_nom ?? "") + " - " + (p.mandataire_nom ?? "")) + ".pdf");
+    lignes.push(["Réunion", A.titre, ((m.ordre ?? []) as any[]).length + " point(s)", m.date || "", "", f, [prs.length ? prs.length + " procuration(s)" : "", A.note].filter(Boolean).join(" · ")]);
+  }
+  // Courriers signés par le secrétariat
+  const { data: meta } = await db.from("ca_meta").select("secretaires").eq("id", 1).maybeSingle();
+  const ids = new Set(Array.isArray(meta?.secretaires) ? (meta!.secretaires as string[]) : []);
+  for (const c of ((await lireTable("ca_courriers")) ?? []).filter((x: any) => ids.has(x.signataire_id)) as any[]) {
+    const A = AU("cour:" + c.id, c.objet); if (A.ret) continue;
+    const ref = "C-" + String(c.numero ?? 0).padStart(3, "0");
+    const f = c.pdf_path ? add(c.pdf_path, "Courriers-signes/" + nomZip(ref + " " + A.titre) + ".pdf") : "";
+    if (c.fichier?.path && !/\.pdf$/i.test(String(c.fichier.name ?? c.fichier.path))) add(c.fichier.path, "Courriers-signes/" + nomZip(ref + " " + A.titre) + " - original" + extF(c.fichier.path));
+    lignes.push(["Courrier signé", A.titre, ref, c.signe_le ? quand(c.signe_le) : "", c.signataire_nom || "", f, A.note]);
+  }
+  const cel = (v: unknown) => { const t = String(v ?? ""); return /[;"\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  textes["recapitulatif.csv"] = "\ufeff" + lignes.map((l) => l.map(cel).join(";")).join("\r\n");
+  textes["LISEZMOI.txt"] = ["Dossier de la secrétaire — Bureau étudiant", `Créé le ${quand(new Date())} (fin du mandat).`, "",
+    "À transmettre à la nouvelle secrétaire.", "",
+    "Documents-deposes/ : documents ajoutés au dossier, par catégorie.", "PV/ : PV signés, originaux, PV refusés ou en attente, documents « PV & CR ».",
+    "Reunions/ : ordre du jour, présences et procurations de chaque réunion.", "Courriers-signes/ : courriers signés par le secrétariat.",
+    "recapitulatif.csv : la liste complète (s'ouvre dans Excel).",
+    "Si l'archive est découpée en plusieurs parties (partie-1, partie-2…), gardez-les toutes."].join("\r\n");
+  return { fichiers, textes };
+}
+async function partieSec(dossier: string, date: string, suivi: Suivi): Promise<Suivi> {
+  const plan = await secPlan();
+  const n = suivi.parts.length + 1;
+  const contenu: Record<string, Uint8Array | [Uint8Array, { level: 0 | 6 }]> = {};
+  if (n === 1) for (const [k, v] of Object.entries(plan.textes)) contenu[k] = [strToU8(v), { level: 6 }];
+  let i = suivi.prochain, taille = 0, nb = 0;
+  while (i < plan.fichiers.length && (nb === 0 || taille < PARTIE_MAX)) {
+    const f = plan.fichiers[i];
+    const { data, error } = await db.storage.from("ca-documents").download(f.src);
+    if (!error && data) { const u = new Uint8Array(await data.arrayBuffer()); contenu[f.dest] = [u, { level: 0 }]; taille += u.length; nb++; }
+    else contenu[f.dest + ".INTROUVABLE.txt"] = [strToU8("Fichier non téléchargeable : " + (error?.message ?? "?")), { level: 6 }];
+    i++;
+  }
+  const zip = zipSync(contenu as any);
+  const chemin = `${dossier}/${SEC_FICHIER}-${date}-partie-${n}.zip`;
+  const up = await db.storage.from(BUCKET).upload(chemin, zip, { contentType: "application/zip", upsert: true });
+  if (up.error) throw new Error("Stockage : " + up.error.message);
+  return { parts: [...suivi.parts, { chemin, octets: zip.length, fichiers: nb }], prochain: i, fini: i >= plan.fichiers.length };
+}
+// Envoie le dossier de la secrétaire (liens de 30 jours) à la ou aux secrétaires.
+async function envoyerSecretaire(dest: any[], f: any, motif: string) {
+  const l = await liens(f.archives?.secretaire?.parts ?? []);
+  const exp = new Date(Date.now() + LIEN_DUREE * 1000);
+  const res: { nom: string; email: string; ok: boolean; err: string }[] = [];
+  for (const d of dest) {
+    const corps = `<h2 style="margin:0 0 10px">📁 Votre dossier de secrétaire</h2><p>Bonjour ${esc(String(d.nom ?? "").split(" ")[0])},</p>
+      <p>Voici le <b>dossier de la secrétaire</b> complet : documents déposés, PV, ordres du jour et procurations des réunions, courriers signés, avec un tableau récapitulatif.</p>
+      <p><b>Merci de le télécharger et de le transmettre à la nouvelle secrétaire.</b> Le <b>${jour(f.suppression_le)}</b>, toutes les données de l'application seront supprimées.</p>
+      ${blocLiens("Dossier de la secrétaire", l)}
+      <p style="color:#a33"><b>Liens valables jusqu'au ${jour(exp)}.</b></p>
+      <p style="color:#777;font-size:13px">Le zip contient un fichier LISEZMOI.txt qui explique son contenu.</p>`;
+    const e = await mail(d.email, "📁 Dossier de la secrétaire — à transmettre à la nouvelle secrétaire", corps, "Bureau étudiant");
+    res.push({ nom: d.nom, email: d.email, ok: !e, err: e });
+    await noter(motif, `Dossier de la secrétaire — ${d.nom} <${d.email}>`, e ? "échec : " + e : "envoyé (liens 30 jours)");
+  }
+  return res;
+}
+
 async function liens(parts: Partie[]) {
   const out: { nom: string; url: string; octets: number }[] = [];
   for (const p of parts) {
@@ -274,12 +404,20 @@ async function tick() {
     // 1. Archives (une partie par passage), puis envoi.
     if (now >= new Date(f.archives_le).getTime() && !f.archives_envoye) {
       const A = f.archives ?? {};
-      for (const t of ["ca", "compta"] as const) {
+      for (const t of ["ca", "compta", "secretaire"] as const) {
         const s: Suivi = A[t] ?? { parts: [], prochain: 0, fini: false };
-        if (!s.fini) { A[t] = await partie(t, "archives", date, s); await maj({ archives: A, derniere_erreur: null }); return { partie: t }; }
+        if (!s.fini) { A[t] = t === "secretaire" ? await partieSec("archives", date, s) : await partie(t, "archives", date, s); await maj({ archives: A, derniere_erreur: null }); return { partie: t }; }
       }
       const dest = (await db.rpc("fin_mandat_destinataires")).data as any[] ?? [];
       const res = await envoyerArchives(dest, { ...f, archives: A }, "archives");
+      // Dossier de la secrétaire : à la ou aux secrétaires (droits du CA), sinon au secrétariat des destinataires.
+      const vus = new Set<string>(), dSec: any[] = [];
+      for (const m of await secretaires()) { const e = String(m.email).toLowerCase(); if (!vus.has(e)) { vus.add(e); dSec.push({ nom: `${m.prenom ?? ""} ${m.nom ?? ""}`.trim(), email: m.email }); } }
+      if (!dSec.length) for (const d of dest.filter((x) => x.role === "secretaire")) { const e = String(d.email).toLowerCase(); if (!vus.has(e)) { vus.add(e); dSec.push({ nom: d.nom, email: d.email }); } }
+      A.secretaire = { ...A.secretaire, dest: dSec };
+      await maj({ archives: A });
+      const resSec = await envoyerSecretaire(dSec, { ...f, archives: A }, "archives");
+      res.push(...resSec.map((x) => ({ ...x, nom: x.nom + " (dossier de la secrétaire)" })));
       await maj({ archives_envoye: new Date().toISOString(), destinataires: dest, derniere_erreur: null });
       await auProprio("📦 Fin de mandat : archives envoyées", `<h2 style="margin:0 0 10px">📦 Archives envoyées</h2>
         <ul>${res.map((x) => `<li>${esc(x.nom)} &lt;${esc(x.email)}&gt; : ${x.ok ? "✅ envoyé" : "❌ " + esc(x.err)}</li>`).join("") || "<li>❌ Aucun destinataire trouvé (présidente, secrétaire, trésorier)</li>"}</ul>
@@ -352,6 +490,10 @@ Deno.serve(async (req: Request) => {
       const dest = (f.destinataires as any[]).filter((d) => roles.has(d.role));
       if (!dest.length) return rep(req, { ok: false, erreur: "Choisissez au moins une personne." }, 400);
       const res = await envoyerArchives(dest, f, "renvoi");
+      if (roles.has("secretaire") && f.archives?.secretaire?.parts?.length) {
+        const dSec = (f.archives.secretaire.dest ?? []) as any[];
+        res.push(...(await envoyerSecretaire(dSec.length ? dSec : dest.filter((d) => d.role === "secretaire"), f, "renvoi")).map((x) => ({ ...x, nom: x.nom + " (dossier de la secrétaire)" })));
+      }
       return rep(req, { ok: true, resultats: res });
     }
     if (b.action === "apercu") {
@@ -360,9 +502,9 @@ Deno.serve(async (req: Request) => {
       if (anciens.length) await db.storage.from(BUCKET).remove(anciens);
       const date = "apercu-" + new Date().toISOString().slice(0, 10);
       const out: Partie[] = [];
-      for (const t of ["ca", "compta"] as const) {
+      for (const t of ["ca", "compta", "secretaire"] as const) {
         let s: Suivi = { parts: [], prochain: 0, fini: false };
-        for (let k = 0; k < 20 && !s.fini; k++) s = await partie(t, "apercu", date, s);
+        for (let k = 0; k < 20 && !s.fini; k++) s = t === "secretaire" ? await partieSec("apercu", date, s) : await partie(t, "apercu", date, s);
         out.push(...s.parts);
       }
       await noter("aperçu", "propriétaire", out.length + " fichier(s) zip");

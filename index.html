@@ -906,7 +906,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-25 · dossier de la secrétaire : recherche, aperçu, corbeille";
+const CA_VERSION="2026-11-25 · dossier de la secrétaire : remise en fin de mandat";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -11131,7 +11131,8 @@ function carteFinMandat(){
     <p class="du" style="margin:0 0 8px">À la date de suppression, <b>tout est vidé</b> (comptes sauf le vôtre, données du CA et de la Caisse, fichiers, registre des signatures, Transparence, journaux). Restent : votre compte, les réglages techniques et ces copies.</p>
     ${etape(!!E.prevenance_fait,"1. Prévenance de tous les membres",E.prevenance_le,E.prevenance_fait?"envoyée le "+esc(fmQuand(E.prevenance_fait)):"")}
     ${etape(!!E.archives_envoye,"2. Archives du CA + comptabilité de la Caisse",E.archives_le,
-      (E.archives_envoye?"envoyées le "+esc(fmQuand(E.archives_envoye))+"<br>":"à la présidente, la secrétaire et le trésorier en fonction ce jour-là (liens de 30 jours)<br>")+(partsTxt("ca")?"CA : "+partsTxt("ca")+" · Caisse : "+(partsTxt("compta")||"—")+"<br>":"")+dest)}
+      (E.archives_envoye?"envoyées le "+esc(fmQuand(E.archives_envoye))+"<br>":"à la présidente, la secrétaire et le trésorier en fonction ce jour-là (liens de 30 jours)<br>")+(partsTxt("ca")?"CA : "+partsTxt("ca")+" · Caisse : "+(partsTxt("compta")||"—")+" · Dossier de la secrétaire : "+(partsTxt("secretaire")||"—")+"<br>":"")+dest
+      +"<br><span class=\"du\">+ le <b>dossier de la secrétaire</b> (zip séparé) à la secrétaire seule, à transmettre à la nouvelle secrétaire.</span>")}
     ${etape(!!E.suppression_fait,"3. Sauvegarde finale chiffrée, puis suppression",E.suppression_le,
       (E.sauvegarde?"sauvegarde faite le "+esc(fmQuand(E.sauvegarde.le))+"<br>":"")+(E.rapport?esc(JSON.stringify(E.rapport)):"")+(F.phrase===false?`<span style="color:var(--red)">⚠ Phrase secrète des sauvegardes absente : la sauvegarde finale (et donc la suppression) sera bloquée.</span>`:""))}
     ${E.derniere_erreur?`<p class="du" style="color:var(--red)">⚠ Dernier problème : ${esc(E.derniere_erreur)} (nouvel essai toutes les 10 minutes)</p>`:""}
@@ -11170,7 +11171,7 @@ document.addEventListener("click", async e=>{
       if(!L.length) return modaleInfo("Aucun destinataire enregistré.","Renvoyer");
       const choix=await new Promise(res=>{
         const d=document.createElement("div"); d.className="ca-mod";
-        d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true" style="max-width:440px"><h3>Renvoyer les archives</h3><p style="font-size:13.5px;color:var(--ink)">Nouveaux liens de 30 jours (archives du CA + comptabilité) à :</p>'
+        d.innerHTML='<div class="ca-mod-box" role="dialog" aria-modal="true" style="max-width:440px"><h3>Renvoyer les archives</h3><p style="font-size:13.5px;color:var(--ink)">Nouveaux liens de 30 jours (archives du CA + comptabilité ; la secrétaire reçoit aussi son dossier) à :</p>'
           +L.map(x=>'<label style="display:flex;gap:8px;align-items:center;margin:6px 0;font-size:14px"><input type="checkbox" value="'+esc(x.role)+'" checked> '+esc(FM_ROLES[x.role]||x.role)+' — '+esc(x.nom)+' <span class="du">('+esc(x.email)+')</span></label>').join("")
           +'<div class="ca-mod-btns"><button class="btn ghost sm" id="fm_no">Annuler</button><button class="btn sm" id="fm_ok">Renvoyer</button></div></div>';
         document.body.appendChild(d);

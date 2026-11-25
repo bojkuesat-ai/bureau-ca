@@ -33,7 +33,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 
 - **Supabase** : projet `mlgzdfyqjhvyubrywuim` (base, Auth, fonctions Edge, `pg_cron`, `pg_net`).
 - **Publication** : GitHub Pages (`https://bojkuesat-ai.github.io/bureau-ca/`). Cache d'environ 10 minutes ; en cas de doute, ajouter `?v=…`.
-- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-25 · dossier de la secrétaire : recherche, aperçu, corbeille »).
+- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-25 · dossier de la secrétaire : remise en fin de mandat »).
 
 ## 3. Rôles et droits
 
@@ -199,3 +199,4 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - 25/11/2026 : dossier de la secrétaire — **plusieurs fichiers par document** (`ca_sec_dossier.fichiers` jsonb, max 20, `sql/2026-11-25_dossier_secretaire_multi.sql`). Avant l'envoi : liste des fichiers avec ✕ (retirer) et ✎ (remplacer), ajout d'autres fichiers. Le déposant peut ensuite ajouter / retirer / remplacer des fichiers. ZIP : un sous-dossier par document à plusieurs fichiers.
 - 25/11/2026 : dossier de la secrétaire — la secrétaire (et le propriétaire) peut **retirer** (✕) ou **modifier** (✎ nom affiché + note) les éléments automatiques **dans le dossier seulement** ; les originaux (PV, réunions, courriers, Documents) ne changent jamais. « Afficher les éléments retirés » → « Remettre ». Les retirés ne vont pas dans le ZIP. Table `ca_sec_auto` (clé `pv:`, `doc:`, `reu:`, `cour:`), `sql/2026-11-25_dossier_secretaire_auto.sql`.
 - 25/11/2026 : dossier de la secrétaire — **recherche + filtres** (texte, rubrique, année, déposant), **aperçu** PDF / image dans l'app (`secdApercu`), **glisser-déposer** + bouton 📷 Photo, bouton **« 📁 Dossier secrétaire »** sur chaque document de l'onglet Documents (copie du fichier), **corbeille 30 jours** (`supprime_le`, RPC `sec_dossier_corbeille`, `sql/2026-11-25_dossier_secretaire_corbeille.sql` ; restauration ou suppression définitive ; purge automatique par l'app après 30 jours).
+- 25/11/2026 : **fin de mandat — dossier de la secrétaire** (fonction `fin-mandat` v3) : 3e zip `dossier-secretaire-…` (même rangement que le bouton ZIP du dossier, construit par `secPlan()` / `partieSec()`), le 24/06/2027 envoyé **à la secrétaire seule** (`ca_meta.secretaires`, sinon secrétariat de `fin_mandat_destinataires`) pour le transmettre à la nouvelle secrétaire (liens 30 jours). Copie dans Propriétaire › Fin de mandat ; « Renvoyer » (case secrétariat) renvoie aussi ce zip ; « Aperçu » le fabrique aussi. Corbeille et éléments retirés exclus, noms modifiés repris.
