@@ -906,7 +906,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-25 · Transparence : réglage du propriétaire";
+const CA_VERSION="2026-11-25 · Transparence et CES : réglages du propriétaire";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -2237,7 +2237,7 @@ function viewProprio(){
         <input type="checkbox" class="sw" role="switch" ${ongletsOff().indexOf(k)<0?"checked":""} data-action="toggle-onglet" data-id="${k}"> ${l}</label>`).join("")}
     </div>`:""}
     ${`<div class="card2"><h3 class="serif">Commission Entraide Sociale (CES)</h3>
-      <p class="du">Activez ou désactivez l'onglet « Soutien social — CES » de Waled Buzzian, quand vous le voulez. Désactivé, l'onglet disparaît pour lui (vous le gardez). Ses dossiers ne sont ni modifiés ni effacés.</p>
+      <p class="du">Activez ou désactivez l'onglet « Soutien social — CES » de Waled Buzzian, quand vous le voulez. Désactivé par défaut. Désactivé, l'onglet disparaît pour tout le monde, vous compris. Ses dossiers ne sont ni modifiés ni effacés.</p>
       <label style="display:flex;align-items:center;gap:9px;margin:7px 0;font-size:15px;font-weight:700;cursor:pointer">
         <input type="checkbox" class="sw" role="switch" id="ces_actif_chk" ${cesActif()?"checked":""}> ${cesActif()?"CES activée":"CES désactivée"} <span class="du">(état enregistré)</span></label>
       <div class="row-btn"><button class="btn sm" data-action="save-ces-actif">Enregistrer</button></div>`}
@@ -3687,6 +3687,7 @@ function viewDash(){
      qui n'existe que pour le proprietaire, une fois connecte. */
   if(S.sout && S.sout.info && S.sout.info.est_lamia && !estCoopte()) tabs.push(["soutien_etu","\ud83c\udf93","Soutien psy — étudiants"]);
   if(cesOngletVisible() && !estCoopte()) tabs.push(["soutien_ces","\ud83e\udd1d","Soutien social — CES"]);
+  if(S.tab==="soutien_ces" && !(cesOngletVisible() && !estCoopte())) S.tab="accueil";
   const estProprio = S.session && S.session.role==="owner";
   if(estAdminCA() && !estCoopte()) tabs.push(["admin","\u2699","Admin"]);
   /* Espace Propriétaire, Journal et Registre : seulement après le lien secret. */
@@ -7376,7 +7377,7 @@ document.addEventListener("click", async e=>{
       S.meta.cesActif=voulu; logAct("CES "+(voulu?"activée":"désactivée"));
       render();
       modaleInfo(voulu?"✅ Enregistré : la CES est ACTIVÉE. Waled Buzzian voit son onglet « Soutien social — CES »."
-                      :"✅ Enregistré : la CES est DÉSACTIVÉE. L'onglet « Soutien social — CES » a disparu pour Waled Buzzian (vous le gardez).","Enregistré");
+                      :"✅ Enregistré : la CES est DÉSACTIVÉE. L'onglet « Soutien social — CES » a disparu pour tout le monde, vous compris.","Enregistré");
       break; }
     case "save-mediateurs": {
       if(!(estAdminCA())||!sb) break;
@@ -9434,8 +9435,9 @@ function cesRCleLocale(){ return "ces:resp:"+((S.session&&S.session.id)||""); }
 function cesNonLus(){ const r=S.cesR; if(!r||!r.info||!r.info.est_resp) return 0; return (r.liste||[]).filter(d=>d.non_lu).length; }
 const cesActif=()=>!(S.meta&&S.meta.cesActif===false);
 /* Interrupteur du propriétaire : désactivé, l'onglet CES disparaît pour tous sauf pour lui */
-function cesOngletVisible(){ const r=S.cesR; const proprio=!!(S.session&&S.session.role==="owner");
-  return !!(r&&r.info&&(r.info.est_resp||r.info.est_successeur||r.info.est_owner)&&(cesActif()||proprio)); }
+/* 25/11/2026 : comme Transparence, désactivée = invisible pour tout le monde, propriétaire compris. */
+function cesOngletVisible(){ const r=S.cesR;
+  return !!(r&&r.info&&(r.info.est_resp||r.info.est_successeur||r.info.est_owner)&&cesActif()); }
 async function loadCes(){
   try{ const r=cesREtat(); if(!S.session) return; r.info=await cesRpcR("ces_resp_info");
     if(r.info.est_resp){ r.liste=(await cesRpcR("ces_resp_liste"))||[]; } }catch(e){}

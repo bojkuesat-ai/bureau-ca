@@ -33,7 +33,7 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 
 - **Supabase** : projet `mlgzdfyqjhvyubrywuim` (base, Auth, fonctions Edge, `pg_cron`, `pg_net`).
 - **Publication** : GitHub Pages (`https://bojkuesat-ai.github.io/bureau-ca/`). Cache d'environ 10 minutes ; en cas de doute, ajouter `?v=…`.
-- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-25 · Transparence : réglage du propriétaire »).
+- Version affichée dans l'app CA : constante `CA_VERSION` dans `index.html` (actuellement « 2026-11-25 · Transparence et CES : réglages du propriétaire »).
 
 ## 3. Rôles et droits
 
@@ -201,3 +201,4 @@ Il ne contient **aucun secret** (pas de lien secret, pas de clé, pas de mot de 
 - 25/11/2026 : dossier de la secrétaire — **recherche + filtres** (texte, rubrique, année, déposant), **aperçu** PDF / image dans l'app (`secdApercu`), **glisser-déposer** + bouton 📷 Photo, bouton **« 📁 Dossier secrétaire »** sur chaque document de l'onglet Documents (copie du fichier), **corbeille 30 jours** (`supprime_le`, RPC `sec_dossier_corbeille`, `sql/2026-11-25_dossier_secretaire_corbeille.sql` ; restauration ou suppression définitive ; purge automatique par l'app après 30 jours).
 - 25/11/2026 : **fin de mandat — dossier de la secrétaire** (fonction `fin-mandat` v3) : 3e zip `dossier-secretaire-…` (même rangement que le bouton ZIP du dossier, construit par `secPlan()` / `partieSec()`), le 24/06/2027 envoyé **à la secrétaire seule** (`ca_meta.secretaires`, sinon secrétariat de `fin_mandat_destinataires`) pour le transmettre à la nouvelle secrétaire (liens 30 jours). Copie dans Propriétaire › Fin de mandat ; « Renvoyer » (case secrétariat) renvoie aussi ce zip ; « Aperçu » le fabrique aussi. Corbeille et éléments retirés exclus, noms modifiés repris.
 - 25/11/2026 : **onglet Transparence désactivé par défaut**. Réglage « Onglet Transparence » dans l'espace Propriétaire (au-dessus des modules en option) → `proprio_config.transparence_actif`, via `proprio_reglages({transparence})` ; `app_etat` renvoie `transparence`. Le bandeau Transparence de la Caisse (après passation) n'est pas concerné. `sql/2026-11-25_transparence_reglage.sql`.
+- 25/11/2026 : **CES** : même règle que Transparence — réglage dans l'espace Propriétaire (`ca_meta.ces_actif`, désactivé, défaut `false`) ; désactivée, l'onglet « Soutien social — CES » disparaît pour tout le monde, **propriétaire compris** (`cesOngletVisible`).
