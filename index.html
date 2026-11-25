@@ -906,7 +906,7 @@ function modaleInfo(texte, titre){
   document.addEventListener("keydown",function k(e){ if(e.key==="Escape"||e.key==="Enter"){ fermer(); document.removeEventListener("keydown",k); } });
 }
 try{ window.alert = function(m){ modaleInfo(String(m==null?"":m)); }; }catch(_){ }
-const CA_VERSION="2026-11-25 · dossier de la secrétaire";
+const CA_VERSION="2026-11-25 · dossier de la secrétaire : plusieurs fichiers";
 /* Confirmation maison. Asynchrone : les actions du menu sont deja async,
    on peut donc attendre la reponse sans figer la page comme le fait confirm(). */
 /* Saisie libre dans une fenetre maison. Renvoie le texte, ou null si annule. */
@@ -3223,6 +3223,9 @@ function secdNomPersonne(id){ const a=(S.admins||[]).find(x=>x.id===id); return 
 function secdNomsSecretaires(){ return secretairesExtra().map(secdNomPersonne).filter(Boolean); }
 function secdFichierSur(s){ return String(s||"fichier").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-zA-Z0-9._-]+/g,"_").replace(/_+/g,"_").slice(-120)||"fichier"; }
 function secdNomZip(s){ return String(s||"").replace(/[\\/:*?"<>|\u0000-\u001f]+/g,"-").replace(/\s+/g," ").trim().slice(0,90)||"sans-titre"; }
+function secdFichiers(d){ return (d && Array.isArray(d.fichiers) && d.fichiers.length) ? d.fichiers : (d&&d.chemin?[{chemin:d.chemin, nom:d.nom_fichier, taille:d.taille, type:d.type_mime}]:[]); }
+const SECD_MAX_NB=20;
+function secdIcone(n){ const e=String(n||"").toLowerCase().split(".").pop(); return /^(png|jpe?g|gif|webp|heic|bmp|svg)$/.test(e)?"🖼":/^(docx?|odt|rtf)$/.test(e)?"📝":/^(xlsx?|ods|csv)$/.test(e)?"📊":/^(pptx?|odp)$/.test(e)?"📽":e==="pdf"?"📕":"📄"; }
 function secdBadge(){ if(!estSecretaire()) return 0; const t=seenTs("secdossier"), me=secdMoi();
   return secdEtat().liste.filter(d=>d.depose_par!==me && new Date(d.created_at).getTime()>t).length; }
 
@@ -3258,13 +3261,15 @@ ${ligne("Présents","present")}${ligne("Excusés","excuse")}${ligne("Absents","a
 /* ---------- affichage ---------- */
 function secdLigneDepot(d){
   const ref=secdEtat().vuAvant!=null?secdEtat().vuAvant:seenTs("secdossier"); const neuf=estSecretaire() && d.depose_par!==secdMoi() && new Date(d.created_at).getTime()>ref;
-  const act=[`<button class="chip" data-action="secd-ouvrir" data-id="${esc(d.id)}">Ouvrir</button>`];
+  const fl=secdFichiers(d);
+  const act=[];
   if(secdPeutModif(d)) act.push(`<button class="chip" data-action="secd-modifier" data-id="${esc(d.id)}">Modifier</button>`);
   if(secdPeutSuppr(d)) act.push(`<button class="rm2" data-action="secd-suppr" data-id="${esc(d.id)}" title="Supprimer">✕</button>`);
   return `<div class="doc"><span class="ic">📄</span>
     <span class="meta"><p class="dt">${esc(d.titre)}${neuf?` <span class="badge open">Nouveau</span>`:""}</p>
-      <p class="du">${esc(d.categorie)} · ${esc(d.nom_fichier)}${d.taille?" ("+courTaille(d.taille)+")":""} · déposé par ${esc(d.depose_nom||secdNomPersonne(d.depose_par)||"—")} le ${esc(fmtQuand(d.created_at))}${d.modifie_le?" · modifié le "+esc(fmtQuand(d.modifie_le)):""}</p>
-      ${d.note?`<p class="du" style="white-space:pre-wrap;margin-top:2px">📝 ${esc(d.note)}</p>`:""}</span>
+      <p class="du">${esc(d.categorie)} · ${fl.length} fichier${fl.length>1?"s":""} · déposé par ${esc(d.depose_nom||secdNomPersonne(d.depose_par)||"—")} le ${esc(fmtQuand(d.created_at))}${d.modifie_le?" · modifié le "+esc(fmtQuand(d.modifie_le)):""}</p>
+      ${d.note?`<p class="du" style="white-space:pre-wrap;margin-top:2px">📝 ${esc(d.note)}</p>`:""}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${fl.map((f,i)=>`<button class="chip" data-action="secd-ouvrir" data-id="${esc(d.id)}" data-i="${i}" title="Ouvrir">${secdIcone(f.nom)} ${esc(f.nom)}${f.taille?" · "+courTaille(f.taille):""}</button>`).join("")}</div></span>
     ${act.join("")}</div>`;
 }
 function secdFormHTML(){
@@ -3274,8 +3279,12 @@ function secdFormHTML(){
     <h3 class="serif">${edit?"Modifier le document":pourAutre?"📤 Envoyer un document à la secrétaire":"Ajouter un document"}</h3>
     <input class="f" id="secd_titre" maxlength="200" value="${esc(F.titre||"")}" placeholder="Nom du document (ex. Contrat de location salle)">
     <div class="two"><select class="f" id="secd_cat">${SECD_CATS.map(c=>`<option${(F.categorie||"Divers")===c?" selected":""}>${esc(c)}</option>`).join("")}</select>
-      <input class="f" id="secd_file" type="file"></div>
-    ${F.file?`<p class="du" style="margin:4px 0 0">✓ ${esc(F.file.name)} (${courTaille(F.file.size)})</p>`:edit?`<p class="du" style="margin:4px 0 0">Fichier actuel : ${esc(F.nom_fichier||"")} — choisissez un fichier seulement pour le remplacer.</p>`:""}
+      <label class="btn ghost" style="cursor:pointer;text-align:center">📎 ${(F.files||[]).length?"Ajouter d'autres fichiers":"Choisir les fichiers"}<input id="secd_file" type="file" multiple style="display:none"></label></div>
+    <p class="du" style="margin:6px 0 4px">PDF, Word, Excel, PowerPoint, images… — 25 Mo max par fichier, ${SECD_MAX_NB} fichiers max.</p>
+    ${(F.files||[]).length?`<div style="border:1px solid var(--line,#444);border-radius:10px;padding:6px 10px;margin:4px 0 8px">${F.files.map((x,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;${i?"border-top:1px solid var(--line,#444);":""}">
+      <span>${secdIcone(x.nom)}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.nom)} <span class="du">${x.taille?"· "+courTaille(x.taille):""}${x.file?" · nouveau":""}</span></span>
+      <label class="chip" style="cursor:pointer" title="Remplacer par un autre fichier">✎ Remplacer<input type="file" style="display:none" data-secd-rep="${i}"></label>
+      <button class="rm2" data-action="secd-retirer" data-i="${i}" title="Retirer ce fichier">✕</button></div>`).join("")}</div>`:`<p class="du" style="margin:4px 0 8px">Aucun fichier choisi.</p>`}
     <textarea class="f" id="secd_note" maxlength="2000" rows="3" placeholder="Note pour la secrétaire (facultatif)">${esc(F.note||"")}</textarea>
     <div class="row-btn"><button class="btn" data-action="secd-enregistrer"${B}>${edit?"Enregistrer":pourAutre?"Envoyer au dossier":"Ajouter au dossier"}</button>
       <button class="btn ghost" data-action="secd-annuler">Annuler</button></div></div>`;
@@ -3337,10 +3346,21 @@ document.addEventListener("input", e=>{ const t=e.target; if(t && (t.id==="secd_
 document.addEventListener("change", e=>{
   const t=e.target; if(!t || !secdEtat().form) return;
   if(t.id==="secd_cat"){ secdLireForm(); return; }
-  if(t.id==="secd_file"){ secdLireForm(); const f=t.files&&t.files[0];
-    if(f && f.size>SECD_MAX){ t.value=""; modaleInfo("Fichier trop lourd ("+courTaille(f.size)+"). Maximum : 25 Mo.","Fichier refusé"); return; }
-    if(f && !String(secdEtat().form.titre||"").trim()) secdEtat().form.titre=f.name.replace(/\.[^.]+$/,"");
-    secdEtat().form.file=f||null; render(); }
+  const F=secdEtat().form;
+  const trop=[], item=f=>({file:f, nom:f.name.slice(0,255), taille:f.size, type:typeFichier(f)});
+  if(t.id==="secd_file"){ secdLireForm(); F.files=F.files||[];
+    for(const f of Array.from(t.files||[])){
+      if(f.size>SECD_MAX){ trop.push(f.name+" ("+courTaille(f.size)+")"); continue; }
+      if(F.files.length>=SECD_MAX_NB){ trop.push(f.name+" (maximum "+SECD_MAX_NB+" fichiers)"); continue; }
+      F.files.push(item(f)); }
+    if(F.files.length && !String(F.titre||"").trim()) F.titre=F.files[0].nom.replace(/\.[^.]+$/,"");
+    t.value=""; render();
+    if(trop.length) modaleInfo("Non ajouté(s) — 25 Mo maximum par fichier :\n- "+trop.join("\n- "),"Fichier refusé");
+    return; }
+  if(t.dataset && t.dataset.secdRep!=null){ secdLireForm(); const i=+t.dataset.secdRep, f=t.files&&t.files[0];
+    if(!f || !F.files || !F.files[i]) return;
+    if(f.size>SECD_MAX){ t.value=""; modaleInfo("Fichier trop lourd ("+courTaille(f.size)+"). Maximum : 25 Mo.","Fichier refusé"); return; }
+    F.files[i]=item(f); render(); }
 });
 async function secdEnvoyerFichier(file){
   const chemin="secretariat/"+secdMoi()+"/"+uid()+"-"+secdFichierSur(file.name);
@@ -3366,8 +3386,10 @@ async function secdZip(){
       z.file(ch, await d.data.arrayBuffer()); pris.add(path); return ch; }catch(e){ manques.push(dest+" : "+(e&&e.message||e)); return ""; } };
   const ext=p=>{ const m=String(p||"").match(/\.[a-z0-9]{1,5}$/i); return m?m[0]:""; };
   for(const d of E.liste){
-    const f=await ajouter(d.chemin, "Documents-deposes/"+secdNomZip(d.categorie)+"/"+secdNomZip(d.titre)+ext(d.nom_fichier||d.chemin));
-    lignes.push(["Document déposé",d.titre,d.categorie,fmtQuand(d.created_at),d.depose_nom||"",f,d.note||""]); }
+    const fl=secdFichiers(d), dos="Documents-deposes/"+secdNomZip(d.categorie)+"/"+secdNomZip(d.titre)+(fl.length>1?"/":"");
+    const pris2=[];
+    for(const x of fl){ const nm=fl.length>1?secdNomZip(x.nom.replace(/\.[^.]+$/,""))+ext(x.nom||x.chemin):ext(x.nom||x.chemin); pris2.push(await ajouter(x.chemin, dos+nm)); }
+    lignes.push(["Document déposé",d.titre,d.categorie,fmtQuand(d.created_at),d.depose_nom||"",pris2.filter(Boolean).join(" | "),d.note||""]); }
   for(const p of E.pv){
     const base=secdNomZip((p.titre||"PV")+(p.statut==="valide"?"":p.statut==="refuse"?" - REFUSE":" - EN ATTENTE"));
     let f1="", f2="";
@@ -3405,48 +3427,55 @@ document.addEventListener("click", async e=>{
   const E=secdEtat(), a=el.dataset.action, d=el.dataset.id?E.liste.find(x=>x.id===el.dataset.id):null;
   try{
     switch(a){
-      case "secd-nouveau": E.form={titre:"", categorie:"Divers", note:"", file:null}; render(); break;
-      case "secd-modifier": if(!secdPeutModif(d)) break; E.form={id:d.id, titre:d.titre, categorie:d.categorie, note:d.note||"", nom_fichier:d.nom_fichier, file:null}; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
+      case "secd-nouveau": E.form={titre:"", categorie:"Divers", note:"", files:[]}; render(); break;
+      case "secd-modifier": if(!secdPeutModif(d)) break; E.form={id:d.id, titre:d.titre, categorie:d.categorie, note:d.note||"", files:secdFichiers(d).map(f=>({...f}))}; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
+      case "secd-retirer": { secdLireForm(); const F=E.form; const i=+el.dataset.i; if(!F||!F.files||!F.files[i]) break;
+        if(!F.files[i].file && !(await modaleConfirm("Retirer « "+F.files[i].nom+" » de ce document ?\n\nLe fichier sera supprimé quand vous cliquerez sur Enregistrer.","Retirer le fichier"))) break;
+        F.files.splice(i,1); render(); break; }
       case "secd-annuler": E.form=null; render(); break;
       case "secd-enregistrer": {
         if(E.busy) break; secdLireForm(); const F=E.form; if(!F) break;
         const titre=String(F.titre||"").trim();
         if(!titre){ modaleInfo("Donnez un nom au document.","Il manque quelque chose"); break; }
-        if(!F.id && !F.file){ modaleInfo("Choisissez le fichier à déposer.","Il manque quelque chose"); break; }
+        if(!(F.files||[]).length){ modaleInfo("Ajoutez au moins un fichier.","Il manque quelque chose"); break; }
         E.busy=true; render();
-        let nouveau=null;
+        const nouveaux=[];
         try{
-          if(F.file) nouveau=await secdEnvoyerFichier(F.file);
-          const champs={titre, categorie:F.categorie||"Divers", note:String(F.note||"").trim()||null};
-          if(nouveau) Object.assign(champs,{chemin:nouveau, nom_fichier:F.file.name.slice(0,255), taille:F.file.size, type_mime:typeFichier(F.file)});
+          const liste=[];
+          for(const x of F.files){
+            if(x.file){ const ch=await secdEnvoyerFichier(x.file); nouveaux.push(ch); liste.push({chemin:ch, nom:x.nom, taille:x.taille, type:x.type}); }
+            else liste.push({chemin:x.chemin, nom:x.nom, taille:x.taille||null, type:x.type||null}); }
+          const champs={titre, categorie:F.categorie||"Divers", note:String(F.note||"").trim()||null, fichiers:liste,
+            chemin:liste[0].chemin, nom_fichier:liste[0].nom, taille:liste[0].taille, type_mime:liste[0].type};
           if(F.id){
             const anc=E.liste.find(x=>x.id===F.id);
             const r=await sb.from("ca_sec_dossier").update(champs).eq("id",F.id).select();
             if(r.error||!(r.data||[]).length) throw new Error(r.error?r.error.message:"modification refusée");
-            if(nouveau && anc && anc.chemin && anc.chemin!==nouveau){ try{ await sb.storage.from("ca-documents").remove([anc.chemin]); }catch(_){ } }
+            const garde=new Set(liste.map(x=>x.chemin)), aSuppr=secdFichiers(anc).map(x=>x.chemin).filter(c=>c&&!garde.has(c));
+            if(aSuppr.length){ try{ await sb.storage.from("ca-documents").remove(aSuppr); }catch(_){ } }
             try{ logAct("Dossier secrétaire : document modifié — "+titre); }catch(_){ }
           } else {
             const r=await sb.from("ca_sec_dossier").insert(champs);
             if(r.error) throw new Error(r.error.message);
             try{ logAct("Dossier secrétaire : document déposé — "+titre); }catch(_){ }
           }
-          nouveau=null; E.form=null; E.busy=false; await loadSecDossier(); render();
+          nouveaux.length=0; E.form=null; E.busy=false; await loadSecDossier(); render();
           modaleInfo(F.id?"✓ Document modifié.":"✓ Document déposé dans le dossier de la secrétaire.","Dossier de la secrétaire");
         }catch(err){
-          if(nouveau){ try{ await sb.storage.from("ca-documents").remove([nouveau]); }catch(_){ } }
+          if(nouveaux.length){ try{ await sb.storage.from("ca-documents").remove(nouveaux); }catch(_){ } }
           E.busy=false; render(); modaleInfo("Erreur : "+(err&&err.message||err),"Dossier de la secrétaire");
         }
         break; }
       case "secd-suppr": {
         if(!secdPeutSuppr(d)) break;
         const autre=d.depose_par!==secdMoi();
-        if(!(await modaleConfirm("Supprimer « "+d.titre+" » du dossier ?"+(autre?"\n\nCe document a été déposé par "+(d.depose_nom||"un autre membre")+".":"")+"\n\nLe fichier sera définitivement supprimé.","Supprimer"))) break;
+        if(!(await modaleConfirm("Supprimer « "+d.titre+" » du dossier ?"+(autre?"\n\nCe document a été déposé par "+(d.depose_nom||"un autre membre")+".":"")+"\n\n"+(secdFichiers(d).length>1?"Ses "+secdFichiers(d).length+" fichiers seront définitivement supprimés.":"Le fichier sera définitivement supprimé."),"Supprimer"))) break;
         const r=await sb.from("ca_sec_dossier").delete().eq("id",d.id).select();
         if(r.error||!(r.data||[]).length){ modaleInfo("Suppression refusée"+(r.error?" : "+r.error.message:"")+".","Dossier de la secrétaire"); break; }
-        try{ await sb.storage.from("ca-documents").remove([d.chemin]); }catch(_){ }
+        try{ await sb.storage.from("ca-documents").remove(secdFichiers(d).map(x=>x.chemin)); }catch(_){ }
         try{ logAct("Dossier secrétaire : document supprimé — "+d.titre); }catch(_){ }
         await loadSecDossier(); render(); break; }
-      case "secd-ouvrir": { if(!d) break; ouvrirFichier(await secdLien(d.chemin, d.nom_fichier), d.nom_fichier); break; }
+      case "secd-ouvrir": { if(!d) break; const f=secdFichiers(d)[+el.dataset.i||0]; if(!f) break; ouvrirFichier(await secdLien(f.chemin, f.nom), f.nom); break; }
       case "secd-fichier": { const p=el.dataset.path; if(!p) break; window.open(await secdLien(p), "_blank", "noopener"); break; }
       case "secd-odj": { const m=(S.reunions||[]).find(x=>x.id===el.dataset.id); if(!m) break;
         const u=URL.createObjectURL(new Blob([secdOdjHtml(m)],{type:"text/html"})); window.open(u,"_blank","noopener"); setTimeout(()=>URL.revokeObjectURL(u),60000); break; }
